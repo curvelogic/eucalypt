@@ -334,6 +334,22 @@ fn constructor_env(env: DemandEnv) -> DemandEnv {
         .collect()
 }
 
+/// The demand a lambda value places on the variables its body captures.
+///
+/// The lambda may be applied any number of times, so a used variable is
+/// demanded Multi (eu-oaz72.41). Strictness is left unchanged.
+fn shared_env(env: DemandEnv) -> DemandEnv {
+    env.into_iter()
+        .map(|(k, d)| {
+            let cardinality = match d.cardinality {
+                Cardinality::AtMostOnce => Cardinality::Multi,
+                c => c,
+            };
+            (k, Demand { cardinality, ..d })
+        })
+        .collect()
+}
+
 /// Merge two demand environments, combining demands for the same
 /// variable using `plus` (sequential composition).
 fn merge_envs(a: &DemandEnv, b: &DemandEnv) -> DemandEnv {
@@ -692,7 +708,10 @@ impl DemandAnalyser {
             // an untaken branch made its RHS's free variables strict, and
             // they were forced eagerly. Cardinality is left as the RHS's
             // own: an updated thunk evaluates its RHS at most once however
-            // often the binding is demanded.
+            // often the binding is demanded. A `Lam` RHS is a value, not a
+            // thunk, and its body runs once per call; `analyse_lam` has
+            // already raised its captured variables to Multi for that
+            // (eu-oaz72.41).
             //
             // The exception is an alias, a binding whose RHS is a bare bound
             // variable: the STG optimiser erases it, substituting the
@@ -767,8 +786,32 @@ impl DemandAnalyser {
         (RcExpr::from(Expr::Let(s, new_scope, let_type)), outer_env)
     }
 
-    /// Analyse a `Lam` expression.
+    /// Analyse a `Lam` expression as a value.
+    ///
+    /// A lambda value can be applied any number of times, and every
+    /// application evaluates its body afresh, so a variable the body
+    /// captures from an enclosing scope is demanded Multi even when the
+    /// body refers to it once. Leaving it AtMostOnce let the STG compiler
+    /// skip the captured binding's update frame and recompute it on every
+    /// call, e.g. `{ b: ds sum  h(x): x + b }.(h(1) + h(2))` (eu-oaz72.41).
     fn analyse_lam(&mut self, s: Smid, inl: bool, scope: &LamScope<RcExpr>) -> (RcExpr, DemandEnv) {
+        let (new_lam, env) = self.analyse_lam_once(s, inl, scope);
+        (new_lam, shared_env(env))
+    }
+
+    /// Analyse a `Lam` expression that is applied exactly once, returning
+    /// its body's demands on captured variables unscaled.
+    ///
+    /// Only sound where the lambda is the function of an `App` (a
+    /// beta-redex): it is applied once each time the application is
+    /// evaluated, and that application's own cardinality is accounted for
+    /// by the enclosing expression.
+    fn analyse_lam_once(
+        &mut self,
+        s: Smid,
+        inl: bool,
+        scope: &LamScope<RcExpr>,
+    ) -> (RcExpr, DemandEnv) {
         let num_params = scope.pattern.len();
 
         // Analyse the body
@@ -801,8 +844,13 @@ impl DemandAnalyser {
 
     /// Analyse an `App` expression.
     fn analyse_app(&mut self, s: Smid, f: &RcExpr, args: &[RcExpr]) -> (RcExpr, DemandEnv) {
-        // Analyse the function
-        let (new_f, f_env) = self.analyse_expr(f);
+        // Analyse the function. A lambda literal in function position is
+        // applied once here, so its captured variables keep their
+        // cardinality (see `analyse_lam_once`).
+        let (new_f, f_env) = match &*f.inner {
+            Expr::Lam(ls, inl, scope) => self.analyse_lam_once(*ls, *inl, scope),
+            _ => self.analyse_expr(f),
+        };
         let mut env = f_env;
 
         // Try to find the function's signature
@@ -1355,6 +1403,71 @@ mod tests {
                     scope.pattern[0].demand.cardinality,
                     Cardinality::Multi,
                     "x captured in lambda passed to unknown function — must be Multi"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn binding_captured_by_let_bound_lambda_gets_multi() {
+        // let x = 1 in (let h = \y -> ADD(x, y) in ADD(h(1), h(2)))
+        // h is called twice and each call evaluates its body, so x is
+        // demanded twice although the body refers to it once. It must be
+        // Multi, or its update is elided and it is recomputed per call
+        // (eu-oaz72.41).
+        let x = free("x");
+        let y = free("y");
+        let h = free("h");
+        let expr = let_(
+            vec![(x.clone(), num(1))],
+            let_(
+                vec![(
+                    h.clone(),
+                    lam(vec!["y".to_string()], app(bif("ADD"), vec![var(x), var(y)])),
+                )],
+                app(
+                    bif("ADD"),
+                    vec![app(var(h.clone()), vec![num(1)]), app(var(h), vec![num(2)])],
+                ),
+            ),
+        );
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::Multi,
+                    "x captured by a lambda that is called twice — must be Multi"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn binding_captured_by_directly_applied_lambda_stays_at_most_once() {
+        // let x = 1 in (\y -> ADD(x, y))(2)
+        // A lambda literal applied in place runs its body once, so the
+        // binding it captures keeps its single-use cardinality.
+        let x = free("x");
+        let y = free("y");
+        let expr = let_(
+            vec![(x.clone(), num(1))],
+            app(
+                lam(vec!["y".to_string()], app(bif("ADD"), vec![var(x), var(y)])),
+                vec![num(2)],
+            ),
+        );
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::AtMostOnce,
+                    "x captured by a lambda applied once in place — AtMostOnce"
                 );
             }
             other => panic!("expected Let, got: {other:?}"),

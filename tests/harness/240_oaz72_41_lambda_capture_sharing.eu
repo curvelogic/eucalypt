@@ -1,0 +1,37 @@
+{
+  title: "240 a binding captured by a lambda is shared across calls"
+  doc: "eu-oaz72.41: a binding referred to once in a lambda's body is
+        evaluated on every call if the lambda is called more than once, so
+        demand analysis must not mark it AtMostOnce (which skips its update
+        frame). The tick gate is in `tests/harness_test.rs`, which runs these
+        targets with demand analysis on and requires the six-call targets to
+        cost about one fold."
+}
+
+` "the target computes the right value"
+passes(context): (context.result.ok) then(:PASS, :FAIL)
+
+one(ds): { b: ds foldl(+, 0)  h(x): x + b }.(h(1))
+six(ds): { b: ds foldl(+, 0)  h(x): x + b }.(h(1) + h(2) + h(3) + h(4) + h(5) + h(6))
+adder(ds): { b: ds foldl(+, 0)  h(x): x + b }.(h)
+
+` { target: :fold
+    verify: [:passes] }
+fold: {
+  ok: one(range(0, 20000)) = 199990001
+}
+
+# A let-bound lambda called six times: one fold if b is shared.
+` { target: :let-bound
+    verify: [:passes] }
+let-bound: {
+  ok: six(range(0, 20000)) = 1199940021
+}
+
+# A returned lambda called six times: one fold if b is shared.
+` { target: :returned
+    verify: [:passes] }
+returned: {
+  g: adder(range(0, 20000))
+  ok: (g(1) + g(2) + g(3) + g(4) + g(5) + g(6)) = 1199940021
+}
