@@ -1,2 +1,0 @@
-# eu-oaz72.21: a dict.of element must be a [key, value] pair.
-result: dict.of([[1, 2], [3, 4, 5]]) dict.size

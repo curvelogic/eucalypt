@@ -1,2 +1,0 @@
-# eu-oaz72.21: a block cannot be a dict key.
-result: dict.of([[{a: 1}, 2]]) dict.size

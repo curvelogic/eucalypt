@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/241_oaz72_21_dict_bad_pair
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/241_oaz72_21_dict_bad_pair.eu
+fixture: errors/250_dict_bad_pair
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_bad_pair.eu
 prelude-modes: divergent
 
 === blob prelude ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/241_oaz72_21_dict_bad_pair.eu:2:9
+primary: user tests/harness/errors/250_dict_bad_pair.eu:2:9
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -19,20 +19,20 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: invalid dict entry: expected a [key, value] pair, found a list of 3 elements
-  ┌─ tests/harness/errors/241_oaz72_21_dict_bad_pair.eu:2:9
+  ┌─ tests/harness/errors/250_dict_bad_pair.eu:2:9
   │
-2 │ result: dict.of([[1, 2], [3, 4, 5]]) dict.size
-  │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2 │ result: dict.of[[1, 2], [3, 4, 5]] dict.size
+  │         ^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
-    - result at 241_oaz72_21_dict_bad_pair.eu:2:38
+    - result at 250_dict_bad_pair.eu:2:36
 
 === --source-prelude ===
 exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/241_oaz72_21_dict_bad_pair.eu:2:9
+primary: user tests/harness/errors/250_dict_bad_pair.eu:2:9
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -43,10 +43,10 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: invalid dict entry: expected a [key, value] pair, found a list of 3 elements
-  ┌─ tests/harness/errors/241_oaz72_21_dict_bad_pair.eu:2:9
+  ┌─ tests/harness/errors/250_dict_bad_pair.eu:2:9
   │
-2 │ result: dict.of([[1, 2], [3, 4, 5]]) dict.size
+2 │ result: dict.of[[1, 2], [3, 4, 5]] dict.size
   │         ^^^^
   │
   = while evaluating (outermost first):
-    - result at 241_oaz72_21_dict_bad_pair.eu:2:38
+    - result at 250_dict_bad_pair.eu:2:36

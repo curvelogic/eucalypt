@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/241_oaz72_21_dict_not_a_dict
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/241_oaz72_21_dict_not_a_dict.eu
+fixture: errors/250_dict_not_a_dict
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_not_a_dict.eu
 prelude-modes: divergent
 
 === blob prelude ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: EU-EVAL-TYPE
-primary: user tests/harness/errors/241_oaz72_21_dict_not_a_dict.eu:2:16
+primary: user tests/harness/errors/250_dict_not_a_dict.eu:2:16
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -19,20 +19,20 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error[EU-EVAL-TYPE]: type mismatch: expected dict, found {}
-  ┌─ tests/harness/errors/241_oaz72_21_dict_not_a_dict.eu:2:16
+  ┌─ tests/harness/errors/250_dict_not_a_dict.eu:2:16
   │
 2 │ result: {a: 1} dict.get(:a)
   │                ^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
-    - result at 241_oaz72_21_dict_not_a_dict.eu:2:16
+    - result at 250_dict_not_a_dict.eu:2:16
 
 === --source-prelude ===
 exit: 1
 errors: 1
 warnings: 0
 code: EU-EVAL-TYPE
-primary: user tests/harness/errors/241_oaz72_21_dict_not_a_dict.eu:2:16
+primary: user tests/harness/errors/250_dict_not_a_dict.eu:2:16
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -43,10 +43,10 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error[EU-EVAL-TYPE]: type mismatch: expected dict, found {}
-  ┌─ tests/harness/errors/241_oaz72_21_dict_not_a_dict.eu:2:16
+  ┌─ tests/harness/errors/250_dict_not_a_dict.eu:2:16
   │
 2 │ result: {a: 1} dict.get(:a)
   │                ^^^^
   │
   = while evaluating (outermost first):
-    - result at 241_oaz72_21_dict_not_a_dict.eu:2:16
+    - result at 250_dict_not_a_dict.eu:2:16

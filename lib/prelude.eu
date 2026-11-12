@@ -2063,7 +2063,7 @@ dict: {
 
   ` { doc: "`dict.empty` - the empty dict."
       type: s"any" }
-  empty: of([])
+  empty: of[]
 
   ` { doc: "`dict.to-list(d)` - return the entries of dict `d` as `[key, value]` pairs in key order."
       type: s"any → [[any]]" }

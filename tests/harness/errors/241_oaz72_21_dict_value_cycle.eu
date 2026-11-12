@@ -1,5 +1,0 @@
-# eu-oaz72.21: a dict value that depends on itself is reported as a
-# cycle, not looped on, because its cell black-holes while it is computed.
-` :suppress
-d: dict.of([[1, (d dict.get(1)) + 1]])
-result: d dict.get(1)
