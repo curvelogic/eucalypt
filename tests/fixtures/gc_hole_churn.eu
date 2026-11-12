@@ -4,4 +4,4 @@
 
 xs(n): range(0, n) map(_ * 3) filter(_ > 10) reverse
 f(i): xs(300 + i) sum
-result: range(0, 6) map(f) sum
+result: range(0, 100) map(f) sum

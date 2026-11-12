@@ -4518,7 +4518,7 @@ fn gc_poison_small_heap_churn_reports_no_hole() {
         "eu failed: {}",
         &stderr[..stderr.len().min(4000)]
     );
-    assert!(stdout.contains("820752"), "wrong result: {stdout}");
+    assert!(stdout.contains("18393300"), "wrong result: {stdout}");
     // Precondition: the run must actually collect, or it proves nothing.
     let collections: usize = stderr
         .lines()
