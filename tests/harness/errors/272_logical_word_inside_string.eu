@@ -1,0 +1,5 @@
+cells: vec.of["a", "S"]
+i: 1
+
+` "`and` appears only inside a string: the lexer reads it as text, not a name, so the `and`/`or` note is not shown (eu-oaz72.28)"
+r: cells vec.nth(i) = "S and T"

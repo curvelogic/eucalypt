@@ -34,7 +34,7 @@ warnings: 0
 code: -
 primary: none
 help-lines: 0
-note-lines: 2
+note-lines: 1
 secondary-labels: 0
 trace-frames: 0
 trace-user-frames: 0
@@ -43,5 +43,4 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: head requires a list, found "Hello, "
- = to concatenate strings, use string interpolation (e.g. "{a}{b}") or 'str.join-on', not '++' (which is for list append)
  = to get individual characters of a string, use 'str.letters'

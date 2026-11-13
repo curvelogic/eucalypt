@@ -1,0 +1,2 @@
+exit: 1
+stderr: "str.*namespace of string functions"

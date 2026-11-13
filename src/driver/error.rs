@@ -91,4 +91,17 @@ impl EucalyptError {
             e => default_diagnostic(e),
         }
     }
+
+    /// Convert to a diagnostic, reading `files` for the source evidence
+    /// that gates some hints (eu-oaz72.28).
+    pub fn to_diagnostic_with_source(
+        &self,
+        source_map: &SourceMap,
+        files: &codespan_reporting::files::SimpleFiles<String, String>,
+    ) -> Diagnostic<usize> {
+        match self {
+            EucalyptError::Execution(e) => e.to_diagnostic_with_source(source_map, files),
+            e => e.to_diagnostic(source_map),
+        }
+    }
 }

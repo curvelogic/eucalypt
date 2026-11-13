@@ -1,0 +1,6 @@
+exit: 1
+stderr: "the value called here is the result of '='"
+# no guess about precedence, and no 'and'/'or' note without 'and' or 'or' (eu-oaz72.28)
+stderr-absent: "catenation \(juxtaposition\)"
+stderr-absent: "'and' and 'or'"
+stderr-absent: "boolean expression"

@@ -10,7 +10,7 @@ warnings: 1
 code: -
 primary: user tests/harness/errors/138_internal_no_panic_prefix.eu:1:17
 help-lines: 0
-note-lines: 2
+note-lines: 1
 secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
@@ -32,7 +32,6 @@ error: head requires a list, found "hello"
   │         │
   │         expected [a], found "hello"
   │
-  = to concatenate strings, use string interpolation (e.g. "{a}{b}") or 'str.join-on', not '++' (which is for list append)
   = to get individual characters of a string, use 'str.letters'
   = while evaluating (outermost first):
     - result at 138_internal_no_panic_prefix.eu:1:17

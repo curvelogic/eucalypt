@@ -1,0 +1,4 @@
+exit: 1
+stderr: "tried to call a false as a function"
+# `and` inside a string is not evidence (eu-oaz72.28)
+stderr-absent: "'and' and 'or'"

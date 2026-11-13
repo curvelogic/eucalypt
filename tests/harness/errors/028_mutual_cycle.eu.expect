@@ -1,2 +1,4 @@
 exit: 1
 stderr: "unresolved variable"
+# no '->' in the source, so no arrow-function hint (eu-oaz72.28)
+stderr-absent: "arrow functions"

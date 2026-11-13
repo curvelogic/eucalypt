@@ -3648,6 +3648,72 @@ pub fn test_error_235_oaz72_49_window_all_step_zero() {
     run_error_test(&error_opts("235_oaz72_49_window_all_step_zero.eu"));
 }
 
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_261_and_or_between_booleans() {
+    run_error_test(&error_opts("261_and_or_between_booleans.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_262_catenation_before_comparison() {
+    run_error_test(&error_opts("262_catenation_before_comparison.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_263_catenation_before_sum() {
+    run_error_test(&error_opts("263_catenation_before_sum.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_264_literal_after_value() {
+    run_error_test(&error_opts("264_literal_after_value.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_266_const_operator_unresolved_name() {
+    run_error_test(&error_opts("266_const_operator_unresolved_name.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_267_str_looked_up_on_number() {
+    run_error_test(&error_opts("267_str_looked_up_on_number.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_268_arrow_lambda_in_call_argument() {
+    run_error_test(&error_opts("268_arrow_lambda_in_call_argument.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_269_lookup_on_string_literal() {
+    run_error_test(&error_opts("269_lookup_on_string_literal.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_270_lookup_on_continuation_line() {
+    run_error_test(&error_opts("270_lookup_on_continuation_line.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_271_namespace_call_beside_merge() {
+    run_error_test(&error_opts("271_namespace_call_beside_merge.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_272_logical_word_inside_string() {
+    run_error_test(&error_opts("272_logical_word_inside_string.eu"));
+}
+
 #[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.

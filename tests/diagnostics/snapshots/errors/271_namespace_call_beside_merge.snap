@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/271_namespace_call_beside_merge
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/271_namespace_call_beside_merge.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/271_namespace_call_beside_merge.eu:4:17
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected block, found number
+  ┌─ tests/harness/errors/271_namespace_call_beside_merge.eu:4:17
+  │
+4 │ r: [1 str.of, x {a: 1}]
+  │                 ^^^^^^
+  │
+  = while evaluating (outermost first):
+    - r at 271_namespace_call_beside_merge.eu:4:7

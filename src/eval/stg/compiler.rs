@@ -5,6 +5,7 @@ use std::{collections::HashMap, convert::TryInto, rc::Rc};
 use crate::core::binding::{BoundVar, Var};
 use crate::core::demand::Demand;
 use crate::{
+    common::evidence::{arrow_function_shape, LabelSource},
     common::sourcemap::{HasSmid, Smid, SourceMap},
     core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr, INTERNAL_FREE_VAR_PREFIX},
     eval::{
@@ -13,6 +14,7 @@ use crate::{
     },
 };
 use codespan_reporting::diagnostic::Diagnostic;
+use codespan_reporting::files::SimpleFiles;
 
 use thiserror::Error;
 
@@ -70,8 +72,29 @@ impl HasSmid for CompileError {
 }
 
 impl CompileError {
+    /// Build the diagnostic without access to source text: hints that need
+    /// evidence from the source (eu-oaz72.28) are omitted.
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
+        self.diagnostic_impl(source_map, None)
+    }
+
+    /// Build the diagnostic, reading `files` for the source evidence that
+    /// gates some hints (eu-oaz72.28).
+    pub fn to_diagnostic_with_source(
+        &self,
+        source_map: &SourceMap,
+        files: &SimpleFiles<String, String>,
+    ) -> Diagnostic<usize> {
+        self.diagnostic_impl(source_map, Some(files))
+    }
+
+    fn diagnostic_impl(
+        &self,
+        source_map: &SourceMap,
+        files: Option<&SimpleFiles<String, String>>,
+    ) -> Diagnostic<usize> {
         let diag = source_map.diagnostic(self);
+        let source = files.and_then(|f| LabelSource::of(&diag, f));
         match self {
             CompileError::FreeVar(_, name) => {
                 // Detect bindings that are internal to their unit (marked
@@ -102,19 +125,28 @@ impl CompileError {
                          its anonymous-function scope does not extend"
                             .to_string(),
                     );
-                    notes.push(
-                        "hint: 'f(_)' does not create a section — use a named function \
-                         or pass the function directly, e.g. 'map(double)' not \
-                         'map(double(_))'"
-                            .to_string(),
-                    );
+                    // Only when the '_' is written as a call argument,
+                    // `f(_)` or `f(a, _)` (eu-oaz72.28).
+                    if source.as_ref().is_some_and(|src| {
+                        src.text().trim() == "_" && src.before().trim_end().ends_with(['(', ','])
+                    }) {
+                        notes.push(
+                            "hint: 'f(_)' does not create a section — use a named function \
+                             or pass the function directly, e.g. 'map(double)' not \
+                             'map(double(_))'"
+                                .to_string(),
+                        );
+                    }
                     return friendly_diag.with_notes(notes);
                 }
-                // If the name is a single letter it almost certainly comes from an
-                // arrow-function expression like `x -> x + 1`.  Avoid showing this
-                // hint for longer names (e.g. `xs`, `zdt`) that are more likely
-                // genuine unresolved identifiers rather than misused lambda parameters.
-                if name.len() == 1 && name.chars().all(|c| c.is_alphanumeric()) {
+                // Only when the source shows an arrow-function shape, read
+                // through the lexer: `map(x -> y + 1)`, `(x, y) -> 1` or
+                // `x -> x + 1`, but not `xs foo -> 1`, which is the const
+                // operator used correctly (eu-oaz72.28).
+                if source.as_ref().is_some_and(|src| {
+                    src.text() == name.as_str()
+                        && arrow_function_shape(src.before(), src.after(), name)
+                }) {
                     notes.push(
                         "note: eucalypt has no arrow functions; '->' is the const \
                          operator, not lambda syntax"

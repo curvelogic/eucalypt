@@ -684,7 +684,8 @@ impl<'a> Executor<'a> {
                 self.ensure_prelude_source_registered();
                 match error_format {
                     ErrorFormat::Human => {
-                        let mut diagnostic = e.to_diagnostic(&self.source_map);
+                        let mut diagnostic =
+                            e.to_diagnostic_with_source(&self.source_map, &self.files);
                         self.promote_type_findings(&e, &mut diagnostic);
 
                         let mut notes = vec![];
@@ -986,7 +987,7 @@ impl<'a> Executor<'a> {
         // Reuse the human path's diagnostic wholesale so that message, primary
         // label, and secondary labels come from exactly the same selection —
         // including the type checker's promoted argument findings (eu-1tkk.7.40).
-        let mut diagnostic = error.to_diagnostic(&self.source_map);
+        let mut diagnostic = error.to_diagnostic_with_source(&self.source_map, &self.files);
         self.promote_type_findings(error, &mut diagnostic);
 
         // Map each codespan label to a JsonLabel, resolving in_user_file via

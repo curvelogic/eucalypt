@@ -1,10 +1,12 @@
 //! Execution errors
 use crate::common::diagnostic_json::FrameKind;
+use crate::common::evidence::{self, LabelSource};
 use crate::common::sourcemap::{compress_cycles, HasSmid, Smid, SourceMap};
 use crate::eval::emit::Rejection;
 use crate::eval::stg::tags::DataConstructor;
 use crate::eval::types::IntrinsicType;
 use codespan_reporting::diagnostic::Diagnostic;
+use codespan_reporting::files::SimpleFiles;
 use serde_json::Number;
 use std::convert::TryFrom;
 use std::io;
@@ -258,9 +260,15 @@ fn format_type_mismatch(
 }
 
 /// Generate contextual help notes for type mismatch errors
-fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<String> {
+fn type_mismatch_notes(
+    expected: &IntrinsicType,
+    actual: &IntrinsicType,
+    ev: &Evidence,
+) -> Vec<String> {
     use IntrinsicType::*;
     match (expected, actual) {
+        // The '.' notes need a '.' lookup in the source (eu-oaz72.28).
+        (Record(_), _) if !ev.has_lookup() => vec![],
         (Record(_), List(_)) => vec![
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
             "for lists, use the index operator for indexing (e.g. xs index 0) or \
@@ -293,20 +301,31 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
                 .to_string(),
         ],
         (Number, String) => {
-            vec![
-                "to convert a string to a number, use 'num', e.g. 's num'".to_string(),
-                "to concatenate strings, use string interpolation or 'str.join-on' \
-                 instead of '+'"
-                    .to_string(),
-            ]
+            let mut notes =
+                vec!["to convert a string to a number, use 'num', e.g. 's num'".to_string()];
+            if ev.line_has_operator("+") {
+                notes.push(
+                    "to concatenate strings, use string interpolation or 'str.join-on' \
+                     instead of '+'"
+                        .to_string(),
+                );
+            }
+            notes
         }
-        (String, Number) => vec!["if you need to convert a number to a string, use 'str' or \
+        (String, Number) => vec!["to convert a number to a string, use 'str.of' or \
              string interpolation"
             .to_string()],
-        (Number, List(_)) => vec![
-            "arithmetic operators like '+' work on numbers, not lists".to_string(),
-            "to concatenate two lists, use 'append(xs, ys)' or the '++' operator".to_string(),
-        ],
+        (Number, List(_)) => {
+            let mut notes =
+                vec!["arithmetic operators like '+' work on numbers, not lists".to_string()];
+            if ev.line_has_operator("+") {
+                notes.push(
+                    "to concatenate two lists, use 'append(xs, ys)' or the '++' operator"
+                        .to_string(),
+                );
+            }
+            notes
+        }
         (Symbol, String) => vec![
             "a symbol was expected but a string was passed; \
              add a colon prefix to make it a symbol: ':yaml' not \"yaml\", \
@@ -320,8 +339,20 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
     }
 }
 
+/// The 'str'-as-converter note for a number, shown when the source uses a
+/// bare `str` (eu-oaz72.28).
+const STR_NAMESPACE_NUMBER_NOTE: &str = "note: 'str' is a namespace of string functions, \
+     not a type conversion function; to convert a number to a string use 'str.of(x)' or \
+     string interpolation";
+
+/// The 'str'-as-converter note for a string, shown when the source uses a
+/// bare `str` (eu-oaz72.28).
+const STR_NAMESPACE_STRING_NOTE: &str = "note: 'str' is a namespace of string functions, \
+     not a type conversion function; use 'str.of(x)' or string interpolation to convert \
+     values to strings";
+
 /// Generate contextual help notes for data tag mismatch errors
-fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
+fn data_tag_mismatch_notes(actual: u8, expected: &[u8], ev: &Evidence) -> Vec<String> {
     let is_list =
         actual == DataConstructor::ListCons.tag() || actual == DataConstructor::ListNil.tag();
     let is_string = actual == DataConstructor::BoxedString.tag();
@@ -342,7 +373,17 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
         ];
     }
 
-    if is_list && expects_block {
+    if (is_list || is_number || is_string) && expects_block && !ev.has_lookup() {
+        // The '.' notes need a '.' lookup in the source (eu-oaz72.28);
+        // the 'str' note has its own evidence.
+        if is_number && ev.uses_bare("str") {
+            vec![STR_NAMESPACE_NUMBER_NOTE.to_string()]
+        } else if is_string && ev.uses_bare("str") {
+            vec![STR_NAMESPACE_STRING_NOTE.to_string()]
+        } else {
+            vec![]
+        }
+    } else if is_list && expects_block {
         vec![
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
             "for lists, use pipeline functions: 'xs count' (length), 'xs head' (first element), \
@@ -366,34 +407,40 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
                 .to_string(),
         ]
     } else if is_list && expects_number {
-        vec![
-            "arithmetic operators like '+' work on numbers, not lists".to_string(),
-            "to concatenate two lists, use 'append(xs, ys)' or the '++' operator".to_string(),
-        ]
+        let mut notes =
+            vec!["arithmetic operators like '+' work on numbers, not lists".to_string()];
+        if ev.line_has_operator("+") {
+            notes.push(
+                "to concatenate two lists, use 'append(xs, ys)' or the '++' operator".to_string(),
+            );
+        }
+        notes
     } else if is_number && expects_block {
-        vec![
+        let mut notes = vec![
             "the '.' operator performs key lookup on blocks; \
              numbers do not have fields"
                 .to_string(),
             "to apply a function to a number, use pipeline catenation, \
              e.g. 'x abs' or 'x negate' instead of 'x.abs'"
                 .to_string(),
-            "note: 'str' is a namespace of string functions, not a type conversion function; \
-             to convert a number to a string use 'str.of(x)' or string interpolation"
-                .to_string(),
-        ]
+        ];
+        if ev.uses_bare("str") {
+            notes.push(STR_NAMESPACE_NUMBER_NOTE.to_string());
+        }
+        notes
     } else if is_string && expects_block {
-        vec![
+        let mut notes = vec![
             "the '.' operator performs key lookup on blocks; \
              strings do not have fields"
                 .to_string(),
             "to apply string functions, use pipeline catenation, \
              e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'"
                 .to_string(),
-            "note: 'str' is a namespace of string functions, not a type conversion function; \
-             use 'str.of(x)' or string interpolation to convert values to strings"
-                .to_string(),
-        ]
+        ];
+        if ev.uses_bare("str") {
+            notes.push(STR_NAMESPACE_STRING_NOTE.to_string());
+        }
+        notes
     } else if is_block && expects_number && expects_string {
         // Block found where a scalar value was expected — this typically happens when
         // a block is passed to string interpolation or a scalar conversion function.
@@ -410,14 +457,18 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
                 .to_string(),
         ]
     } else if is_string && expects_number {
-        vec![
-            "to convert a string to a number, use 'num', e.g. 's num'".to_string(),
-            "to concatenate strings, use string interpolation or 'str.join-on' \
-             instead of '+'"
-                .to_string(),
-        ]
+        let mut notes =
+            vec!["to convert a string to a number, use 'num', e.g. 's num'".to_string()];
+        if ev.line_has_operator("+") {
+            notes.push(
+                "to concatenate strings, use string interpolation or 'str.join-on' \
+                 instead of '+'"
+                    .to_string(),
+            );
+        }
+        notes
     } else if is_number && expects_string {
-        vec!["to convert a number to a string, use 'str' or string interpolation".to_string()]
+        vec!["to convert a number to a string, use 'str.of' or string interpolation".to_string()]
     } else if is_string && expects_symbol {
         vec![
             "a symbol was expected but a string was passed; \
@@ -553,9 +604,8 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
              e.g. 'text str.replace(\"foo\", \"bar\")'"
                 .to_string(),
         ],
-        "strip" | "trim" | "rstrip" | "lstrip" => vec!["eucalypt has no 'trim'/'strip' function; \
-             to remove surrounding whitespace use a regex: \
-             'text str.extract(\"^\\\\s*(.*?)\\\\s*$\")'"
+        "strip" | "trim" | "rstrip" | "lstrip" => vec!["to remove surrounding whitespace from a \
+             string, use 'str.trim', e.g. 'text str.trim'"
             .to_string()],
         "startswith" | "starts_with" | "startsWith" | "hasPrefix" => vec![
             "use 'str.starts-with?(re, s)' to test if a string starts with a pattern, \
@@ -659,35 +709,81 @@ fn format_not_value(context: &str) -> String {
     }
 }
 
-/// Generate contextual notes for "not callable" errors based on the actual type
-fn not_callable_notes(actual_type: &str) -> Vec<String> {
-    match actual_type {
-        "list" => vec![
+/// The source evidence available to gate a hint (eu-oaz72.28): the line
+/// under the diagnostic's primary label, or nothing when no source text is
+/// available. A hint that guesses at a cause is shown only when its
+/// evidence is present.
+struct Evidence<'a>(Option<LabelSource<'a>>);
+
+impl Evidence<'_> {
+    /// The labelled line contains the operator `op`.
+    fn line_has_operator(&self, op: &str) -> bool {
+        self.0.as_ref().is_some_and(|s| s.line_has_operator(op))
+    }
+
+    /// The labelled line contains `word` as a whole identifier.
+    fn line_has_word(&self, word: &str) -> bool {
+        self.0.as_ref().is_some_and(|s| s.line_has_word(word))
+    }
+
+    /// The labelled line uses `name` bare — as a name not followed by
+    /// `.` — as in `str(x)`, `x str` or `x.str`, but not `str.of`.
+    fn uses_bare(&self, name: &str) -> bool {
+        self.0
+            .as_ref()
+            .is_some_and(|s| evidence::uses_bare(s.line, name))
+    }
+
+    /// The labelled value is looked up with '.': `x.name`, `"abc".upper`,
+    /// or `[1, 2]` followed by `.name` on a continuation line. A namespace
+    /// call elsewhere on the line, such as `str.of`, is not evidence.
+    fn has_lookup(&self) -> bool {
+        self.0.as_ref().is_some_and(LabelSource::is_looked_up)
+    }
+}
+
+/// Generate notes for "not callable" errors (eu-oaz72.28).
+///
+/// Every note here is either a fact about the value that was called or is
+/// shown only when the source under the error's label gives evidence for
+/// it.
+fn not_callable_notes(actual_type: &str, ev: &Evidence) -> Vec<String> {
+    let mut notes = vec![];
+    if actual_type == "list" {
+        notes.push(
             "lists are not callable; to access elements by index use 'nth(index, list)' \
              or pipeline form 'list nth(index)'"
                 .to_string(),
+        );
+        notes.push(
             "for the first element use 'list head'; for the rest use 'list tail'".to_string(),
-        ],
-        "true" | "false" => vec![
-            format!(
-                "a {actual_type} value is not a function; if this result of a boolean \
-                 expression, check operator precedence"
-            ),
-            "note: 'and' and 'or' are identifiers in eucalypt, not logical operators; \
-             use '&&' and '||' for logical conjunction and disjunction"
-                .to_string(),
-        ],
-        "number" | "string" | "symbol" | "datetime" | "empty list" => vec![
-            format!(
-                "a {actual_type} value is not a function; check for a missing operator or \
-                 extra argument"
-            ),
-            "note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as \
-             'f(a + 1)'; add parentheses to disambiguate"
-                .to_string(),
-        ],
-        _ => vec![],
+        );
     }
+    let label = ev.0.as_ref().map_or("", |s| s.text().trim());
+    if evidence::is_operator(label) {
+        notes.push(format!(
+            "note: the value called here is the result of '{label}'"
+        ));
+    } else if let Some(source) = ev.0.as_ref() {
+        // A literal called because it follows another expression: `x 5`.
+        if evidence::is_literal(label) && evidence::ends_with_value(source.before()) {
+            notes.push(format!(
+                "note: '{label}' follows another expression with no operator between \
+                 them, so it is called with that expression as its argument \
+                 (catenation: 'x f' means 'f(x)')"
+            ));
+        }
+    }
+    if matches!(actual_type, "true" | "false")
+        && (ev.line_has_word("and") || ev.line_has_word("or"))
+    {
+        notes.push(
+            "note: 'and' and 'or' are ordinary functions in eucalypt, not infix logical \
+             operators; use '&&' and '||' for logical conjunction and disjunction"
+                .to_string(),
+        );
+    }
+    notes
 }
 
 /// Generate contextual notes for `UnexpectedFunction` errors: a function
@@ -699,10 +795,6 @@ fn unexpected_function_notes() -> Vec<String> {
         "a function value cannot be used directly here; it must first be called with \
          all of its remaining arguments"
             .to_string(),
-        "this can happen when a function is under-applied (missing an argument), or when \
-         low-precedence catenation groups an expression differently than intended — \
-         add parentheses to disambiguate"
-            .to_string(),
     ]
 }
 
@@ -713,8 +805,7 @@ fn format_not_callable(actual_type: &str) -> String {
     } else {
         format!(
             "tried to call a {actual_type} as a function\n  \
-             help: only functions and blocks can be called with arguments\n  \
-             help: this often means too many arguments were passed to a function"
+             help: only functions and blocks can be called with arguments"
         )
     }
 }
@@ -750,7 +841,7 @@ fn format_lookup_on_function(key: Option<&str>) -> String {
 /// `xs head + 1` which parses as `xs (head + 1)` rather than the
 /// intended `(xs head) + 1`.
 fn format_cannot_return_fun(expected_tags: &[u8]) -> String {
-    let mut msg = if expected_tags.is_empty() {
+    let msg = if expected_tags.is_empty() {
         "type mismatch: received a function where a value was expected".to_string()
     } else {
         format!(
@@ -758,10 +849,6 @@ fn format_cannot_return_fun(expected_tags: &[u8]) -> String {
             display_expected_tags(expected_tags)
         )
     };
-    msg.push_str(
-        "\n  help: this often happens due to operator precedence; \
-         try adding parentheses, e.g. `(xs f) + 1` instead of `xs f + 1`",
-    );
     msg
 }
 
@@ -1211,12 +1298,35 @@ impl HasSmid for ExecutionError {
 }
 
 impl ExecutionError {
+    /// Build the diagnostic without access to source text: hints that need
+    /// evidence from the source (eu-oaz72.28) are omitted.
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
+        self.diagnostic_impl(source_map, None)
+    }
+
+    /// Build the diagnostic, reading `files` for the source evidence that
+    /// gates some hints (eu-oaz72.28).
+    pub fn to_diagnostic_with_source(
+        &self,
+        source_map: &SourceMap,
+        files: &SimpleFiles<String, String>,
+    ) -> Diagnostic<usize> {
+        self.diagnostic_impl(source_map, Some(files))
+    }
+
+    fn diagnostic_impl(
+        &self,
+        source_map: &SourceMap,
+        files: Option<&SimpleFiles<String, String>>,
+    ) -> Diagnostic<usize> {
         use codespan_reporting::diagnostic::Label;
 
         // Delegate CompileError to its own diagnostic
         if let ExecutionError::Compile(e) = self {
-            return e.to_diagnostic(source_map);
+            return match files {
+                Some(files) => e.to_diagnostic_with_source(source_map, files),
+                None => e.to_diagnostic(source_map),
+            };
         }
         let mut diag = source_map.diagnostic(self);
         if let Some(code) = self.code() {
@@ -1476,13 +1586,16 @@ impl ExecutionError {
             diag = diag.with_notes(dump);
         }
 
+        let ev = Evidence(files.and_then(|f| LabelSource::of(&diag, f)));
         let notes = match inner {
-            ExecutionError::TypeMismatch(_, detail) => type_mismatch_notes(&detail.0, &detail.1),
+            ExecutionError::TypeMismatch(_, detail) => {
+                type_mismatch_notes(&detail.0, &detail.1, &ev)
+            }
             // One note per violation. The lines were rendered in eucalypt by
             // `lib/contract.eu`, so the presentation is changeable there.
             ExecutionError::ContractViolation(_, detail) => detail.1.clone(),
             ExecutionError::NoBranchForDataTag(_, actual, expected) => {
-                data_tag_mismatch_notes(*actual, expected)
+                data_tag_mismatch_notes(*actual, expected, &ev)
             }
             ExecutionError::NoBranchForNative(_, type_desc) => {
                 let mut notes = vec![
@@ -1490,7 +1603,7 @@ impl ExecutionError {
                      list arguments"
                         .to_string(),
                 ];
-                if type_desc == "string" {
+                if type_desc == "string" && (ev.line_has_word("head") || ev.line_has_word("tail")) {
                     // This type description arises in two common scenarios:
                     // 1. The user passed an actual string to a list operation (e.g. '++').
                     // 2. The user called 'head' or 'tail' on an empty list — eucalypt
@@ -1506,15 +1619,17 @@ impl ExecutionError {
                          'if(xs nil?, default, xs head)'"
                             .to_string(),
                     );
-                    notes.push(
-                        "note: to concatenate strings, use string interpolation \
-                         or 'str.join-on' on a list of strings; '++' is for list append"
-                            .to_string(),
-                    );
-                } else {
+                } else if type_desc != "string" {
                     notes.push(
                         "check that the value is a list before applying list operations; \
                          use 'nil?' to test for an empty list"
+                            .to_string(),
+                    );
+                }
+                if type_desc == "string" && ev.line_has_operator("++") {
+                    notes.push(
+                        "note: to concatenate strings, use string interpolation \
+                         or 'str.join-on' on a list of strings; '++' is for list append"
                             .to_string(),
                     );
                 }
@@ -1533,17 +1648,17 @@ impl ExecutionError {
                     "valid number formats are: integers (e.g. 42), decimals (e.g. 3.14), and \
                      scientific notation (e.g. 1.5e10)"
                         .to_string(),
-                    "use 'str' to convert numbers to strings; to convert strings to numbers use 'num'"
+                    "use 'str.of' to convert numbers to strings; to convert strings to numbers use 'num'"
                         .to_string(),
                 ]
             }
-            ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
+            ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name, &ev),
             ExecutionError::UnexpectedFunction(..) => unexpected_function_notes(),
             ExecutionError::LookupFailure(_, detail) => lookup_failure_notes(&detail.0, &detail.1),
             ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
                 let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
                     || expected_tags.contains(&DataConstructor::BoolFalse.tag());
-                if expects_bool {
+                if expects_bool && ev.line_has_word("_") {
                     vec![
                         "if using '_' anaphora in a predicate, note that each '_' creates a \
                          separate parameter — '(_ > _ - 1)' is a two-argument function, not \
@@ -1590,11 +1705,13 @@ impl ExecutionError {
             ExecutionError::HeadOfNonList(_, found) => {
                 let mut notes = vec![];
                 if found.starts_with('"') {
-                    notes.push(
-                        "to concatenate strings, use string interpolation (e.g. \"{a}{b}\") \
-                         or 'str.join-on', not '++' (which is for list append)"
-                            .to_string(),
-                    );
+                    if ev.line_has_operator("++") {
+                        notes.push(
+                            "to concatenate strings, use string interpolation (e.g. \"{a}{b}\") \
+                             or 'str.join-on', not '++' (which is for list append)"
+                                .to_string(),
+                        );
+                    }
                     notes.push(
                         "to get individual characters of a string, use 'str.letters'".to_string(),
                     );
@@ -1605,7 +1722,7 @@ impl ExecutionError {
             }
             ExecutionError::TailOfNonList(_, found) => {
                 let mut notes = vec![];
-                if found.starts_with('"') {
+                if found.starts_with('"') && ev.line_has_operator("++") {
                     notes.push(
                         "to concatenate strings, use string interpolation (e.g. \"{a}{b}\") \
                          or 'str.join-on', not '++' (which is for list append)"
@@ -1632,9 +1749,7 @@ impl ExecutionError {
                     "guard against empty lists with 'nil?', e.g. \
                      'if(xs nil?, default, xs head)'"
                         .to_string(),
-                    "'head' and 'tail' are only defined on non-empty lists; \
-                     use 'nth(0, xs)' or pattern matching if the list may be empty"
-                        .to_string(),
+                    "'head' and 'tail' are only defined on non-empty lists".to_string(),
                 ]
             }
             // The emitter that refused supplies its own remediation, so

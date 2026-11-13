@@ -41,6 +41,10 @@ pub struct ErrorExpectation {
     exit: Option<i32>,
     /// Regex pattern to match against stderr
     stderr_pattern: Option<String>,
+    /// Regex patterns that must *not* match stderr (`stderr-absent:`, may
+    /// repeat) — used to gate that a hint is not shown without evidence
+    /// (eu-oaz72.28)
+    stderr_absent: Vec<String>,
 }
 
 impl ErrorExpectation {
@@ -73,6 +77,15 @@ impl ErrorExpectation {
                 ));
             }
         }
+        for pattern in &self.stderr_absent {
+            let re = Regex::new(pattern)
+                .map_err(|e| format!("invalid stderr-absent regex pattern '{pattern}': {e}"))?;
+            if re.is_match(actual_stderr) {
+                return Err(format!(
+                    "stderr matched absent pattern '{pattern}'\nactual stderr:\n{actual_stderr}"
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -82,10 +95,14 @@ impl ErrorExpectation {
     /// ```yaml
     /// exit: 1
     /// stderr: "pattern"
+    /// stderr-absent: "pattern that must not appear"
     /// ```
+    ///
+    /// `stderr-absent:` may be given more than once.
     pub fn parse(content: &str) -> Result<Self, String> {
         let mut exit = None;
         let mut stderr_pattern = None;
+        let mut stderr_absent = vec![];
 
         for line in content.lines() {
             let line = line.trim();
@@ -107,6 +124,13 @@ impl ErrorExpectation {
                     .and_then(|v| v.strip_suffix('"'))
                     .unwrap_or(value);
                 stderr_pattern = Some(value.to_string());
+            } else if let Some(value) = line.strip_prefix("stderr-absent:") {
+                let value = value.trim();
+                let value = value
+                    .strip_prefix('"')
+                    .and_then(|v| v.strip_suffix('"'))
+                    .unwrap_or(value);
+                stderr_absent.push(value.to_string());
             }
         }
 
@@ -117,6 +141,7 @@ impl ErrorExpectation {
         Ok(ErrorExpectation {
             exit,
             stderr_pattern,
+            stderr_absent,
         })
     }
 
@@ -400,6 +425,15 @@ pub mod tests {
     }
 
     #[test]
+    fn test_parse_expect_sidecar_stderr_absent() {
+        let content = "exit: 1\nstderr-absent: \"arrow\"\nstderr-absent: \"and\"\n";
+        let exp = ErrorExpectation::parse(content).unwrap();
+        assert!(exp.validate(1, "unresolved variable 'g'").is_ok());
+        assert!(exp.validate(1, "note: no arrow functions").is_err());
+        assert!(exp.validate(1, "'and' and 'or'").is_err());
+    }
+
+    #[test]
     fn test_parse_expect_sidecar_stderr_only() {
         let content = "stderr: \"unterminated string\"\n";
         let exp = ErrorExpectation::parse(content).expect("should parse");
@@ -434,6 +468,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: Some(1),
             stderr_pattern: Some("division by zero".to_string()),
+            stderr_absent: vec![],
         };
         assert!(exp.validate(1, "error: division by zero at line 5").is_ok());
     }
@@ -443,6 +478,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: Some(1),
             stderr_pattern: None,
+            stderr_absent: vec![],
         };
         let result = exp.validate(0, "");
         assert!(result.is_err());
@@ -454,6 +490,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: None,
             stderr_pattern: Some("expected pattern".to_string()),
+            stderr_absent: vec![],
         };
         let result = exp.validate(1, "something else entirely");
         assert!(result.is_err());
@@ -465,6 +502,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: None,
             stderr_pattern: Some(r"line \d+".to_string()),
+            stderr_absent: vec![],
         };
         assert!(exp.validate(1, "error at line 42").is_ok());
         assert!(exp.validate(1, "error at line XY").is_err());

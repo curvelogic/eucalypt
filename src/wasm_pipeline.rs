@@ -362,7 +362,7 @@ fn execution_error_to_pipeline_error(
     files: &SimpleFiles<String, String>,
     source_map: &SourceMap,
 ) -> PipelineError {
-    let diag = e.to_diagnostic(source_map);
+    let diag = e.to_diagnostic_with_source(source_map, files);
     PipelineError {
         message: diag.message.clone(),
         location: extract_diagnostic_location(&diag, files),
