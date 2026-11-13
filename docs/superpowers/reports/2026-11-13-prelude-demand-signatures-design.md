@@ -9,8 +9,8 @@
 The hand-written prelude signature table in `build_prelude_signatures()`
 claims more strictness than the prelude has for **31 of its 64 entries**, and one more (`nth`) changes which error is reported. In
 blob mode, 23 small programs that are correct and lazy give a different
-answer from source mode: they panic where source mode returns a value
-(§2.2). Two further defects come from looking signatures up by name. A
+answer from source mode: 22 panic where source mode returns a value, and
+one reports a different error (§2.2). Two further defects come from looking signatures up by name. A
 user's helper can lend its signature to the prelude function of the same
 name. And whether the table applies at all depends on unrelated bindings
 elsewhere in the program (§2.3).
@@ -27,8 +27,9 @@ elsewhere in the program (§2.3).
 
 Intrinsic signatures stay where they are, in the intrinsic catalogue.
 
-Removing the over-claims costs nothing in ticks: the canonical suite uses
-1–5% *fewer* ticks without them. It does cost stack in one pattern that
+Removing the over-claims costs nothing in ticks: the 22 benches in
+`tests/harness/bench/` use up to 5% fewer ticks with the audited table and
+up to 8% fewer with no table (one bench +0.1%). It does cost stack in one pattern that
 matters for AoC: `range(…) map(…) sum` goes from constant stack to O(n) in
 blob mode. That is what source mode already does today, so the fast blob
 result was coming from an unsound claim (§4).
@@ -48,7 +49,7 @@ always by the callee's name. A `Var::Bound` callee and a `Var::Free` callee
 are treated alike. A signature applies to any call with at least as many
 arguments as it has entries. A complex argument in a `Strict` position is
 bound and then `seq`-forced before the call. A signature of exactly the
-call's arity also selects `DirectApp` dispatch (`compiler.rs:1321`).
+call's arity also selects `DirectApp` dispatch (`compiler.rs:1312`, call at 1318).
 
 Three facts about the blob path matter:
 
@@ -58,8 +59,8 @@ Three facts about the blob path matter:
   shapes intra-prelude calls too, and demand analysis is **not** run on
   prelude bodies at blob-build time.
 - **Small prelude functions are inlined into user code** in blob mode
-  (`inlinable_bindings`). Calls to `map`, `foldl`, `compose`, `when`,
-  `map2` and `drop-while` therefore reach the compiler as analysed bodies,
+  (`inlinable_bindings`). Calls to `map`, `foldl`, `foldr`, `compose`,
+  `flip`, `when`, `map2` and `drop-while` therefore reach the compiler as analysed bodies,
   and their table entries never apply. Whether an entry matters depends on
   the inliner's decisions.
 - **In source mode** (`--source-prelude`, or a checkout with no
@@ -91,7 +92,7 @@ claimed, should be lazy):
 | `map2`, `zip-with` | S S S | L S L | `nil?(l1) ∥ …` short-circuits |
 | `foldl`, `foldr` | S S S | L L S | `op` unused on `[]`; `i` not forced when `op` ignores it |
 | `take` | S S | S L | `(n <= 0) ∨ (l nil?)`: `take(0, ⊥) = []` |
-| `append` (and `++`) | S S | S L | `foldr(cons, l2, l1)` never forces `l2` |
+| `append` | S S | S L | `foldr(cons, l2, l1)` never forces `l2` |
 | `zip` | S S | S L | `zip-with(pair)` (see `map2`) |
 | `snoc` | S S | L S | `l ++ [x]` |
 | `interleave` | S S | S L | `b` only reached as a lazy tail |
@@ -211,10 +212,11 @@ uncommitted change, with the blob regenerated for each.
 |---|---|---|---|
 | 019 list_scale (`range map sum`, n=6000) | 1,079,258 / **16** | 1,031,233 / **12,009** | 995,230 / 12,009 |
 | 015 block_merge | 2,027,082 / 3,032 | 1,983,912 / 6,017 | 1,950,897 / 6,017 |
-| 016 yaml / 017 toml | 5,547,807 / 25 | 5,505,968 / 2,175 | 5,401,883 / 2,175 |
+| 016 yaml | 5,547,807 / 25 | 5,505,968 / 2,175 | 5,401,883 / 2,175 |
+| 017 toml | 5,491,964 / 25 | 5,450,125 / 2,175 | 5,346,040 / 2,175 |
 | 022 hof_fold | 51,700,735 / 800,006 | 49,700,710 / 800,006 | 48,500,710 / 800,006 |
 | 005 drop_cons | 2,020,356 / 9 | 1,940,350 / 11 | 1,880,350 / 12 |
-| other 17 | — | ticks −5% to +0.1%; stack +0 to +29, except 020 lookup_curve 47 → 304 | ticks −0 to −6%; same stacks as audited, except 003 (138 → 188) |
+| other 16 | — | ticks −5% to +0.1%; stack +0 to +29, except 020 lookup_curve 47 → 304 | ticks −0 to −6%; same stacks as audited, except 003 (138 → 188) |
 
 `range(0, 1000000) map(_ + 1) sum`:
 
