@@ -25,13 +25,13 @@
 use std::cmp::Ordering;
 use std::mem::{align_of, size_of};
 
-use ordered_float::OrderedFloat;
 use serde_json::Number;
 
 use super::{
     alloc::{MutatorScope, ScopedAllocator, StgObject},
     collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr},
     mutator::MutatorHeapView,
+    number::ExactNum,
     string::HeapString,
     symbol::{SymbolId, SymbolPool},
     syntax::RefPtr,
@@ -54,12 +54,8 @@ const RATIO: u64 = 2;
 /// both in the GC heap and traced through the node that holds the key.
 #[derive(Clone, Copy, Debug)]
 pub enum DictKey {
-    /// An integer in `i64` range.
-    Int(i64),
-    /// An integer above `i64::MAX` (never used for values in `i64` range).
-    UInt(u64),
-    /// A non-integer number (or one stored as a float), ordered totally.
-    Float(OrderedFloat<f64>),
+    /// A number key, kept exact.
+    Num(ExactNum),
     /// A string key.
     Str(RefPtr<HeapString>),
     /// A symbol key.
@@ -71,22 +67,14 @@ pub enum DictKey {
 impl DictKey {
     /// Convert a number to a key, keeping integers exact.
     pub fn from_number(n: &Number) -> Self {
-        if let Some(i) = n.as_i64() {
-            DictKey::Int(i)
-        } else if let Some(u) = n.as_u64() {
-            DictKey::UInt(u)
-        } else {
-            DictKey::Float(OrderedFloat(n.as_f64().unwrap_or(f64::NAN)))
-        }
+        DictKey::Num(ExactNum::from_number(n))
     }
 
     /// Convert a number key back to a number (`None` for other keys or a
     /// non-finite float, which a `Number` cannot hold).
     pub fn to_number(&self) -> Option<Number> {
         match self {
-            DictKey::Int(i) => Some(Number::from(*i)),
-            DictKey::UInt(u) => Some(Number::from(*u)),
-            DictKey::Float(f) => Number::from_f64(f.into_inner()),
+            DictKey::Num(n) => n.to_number(),
             _ => None,
         }
     }
@@ -94,7 +82,7 @@ impl DictKey {
     /// Rank of the key's type in the cross-type order.
     fn type_rank(&self) -> u8 {
         match self {
-            DictKey::Int(_) | DictKey::UInt(_) | DictKey::Float(_) => 0,
+            DictKey::Num(_) => 0,
             DictKey::Str(_) => 1,
             DictKey::Sym(_) => 2,
             DictKey::List(_) => 3,
@@ -164,33 +152,8 @@ impl DictKey {
     }
 }
 
-/// Exact comparison of an integer (within ±2^64) with a float. NaN is
-/// greater than every integer.
-pub(crate) fn cmp_int_float(i: i128, f: f64) -> Ordering {
-    const TWO_64: f64 = 18_446_744_073_709_551_616.0;
-    if f.is_nan() || f >= TWO_64 {
-        return Ordering::Less;
-    }
-    if f < -TWO_64 {
-        return Ordering::Greater;
-    }
-    let t = f.trunc();
-    // Exact: |t| < 2^64, and every float of that magnitude with no
-    // fractional part is an integer representable in i128.
-    let ti = t as i128;
-    match i.cmp(&ti) {
-        Ordering::Equal => {
-            if f > t {
-                Ordering::Less
-            } else if f < t {
-                Ordering::Greater
-            } else {
-                Ordering::Equal
-            }
-        }
-        o => o,
-    }
-}
+// Exact number keys must not grow dict keys.
+const _: () = assert!(size_of::<DictKey>() <= 16);
 
 // Allocations are 16-byte aligned, enough for the header and elements.
 const _: () = assert!(align_of::<DictKeyList>() <= 16 && align_of::<DictKey>() <= 16);
@@ -404,15 +367,7 @@ impl<'a> Dict<'a> {
     pub fn cmp_keys(&self, a: &DictKey, b: &DictKey) -> Ordering {
         use DictKey::*;
         match (a, b) {
-            (Int(x), Int(y)) => x.cmp(y),
-            (UInt(x), UInt(y)) => x.cmp(y),
-            (Int(x), UInt(y)) => (*x as i128).cmp(&(*y as i128)),
-            (UInt(x), Int(y)) => (*x as i128).cmp(&(*y as i128)),
-            (Float(x), Float(y)) => x.cmp(y),
-            (Int(x), Float(y)) => cmp_int_float(*x as i128, y.into_inner()),
-            (UInt(x), Float(y)) => cmp_int_float(*x as i128, y.into_inner()),
-            (Float(x), Int(y)) => cmp_int_float(*y as i128, x.into_inner()).reverse(),
-            (Float(x), UInt(y)) => cmp_int_float(*y as i128, x.into_inner()).reverse(),
+            (Num(x), Num(y)) => x.cmp(y),
             (Str(x), Str(y)) => {
                 if x == y {
                     Ordering::Equal
@@ -893,11 +848,11 @@ mod tests {
     use crate::eval::memory::syntax::{Native, StgBuilder};
 
     fn int(i: i64) -> DictKey {
-        DictKey::Int(i)
+        DictKey::Num(ExactNum::Int(i))
     }
 
     fn float(f: f64) -> DictKey {
-        DictKey::Float(OrderedFloat(f))
+        DictKey::Num(f.into())
     }
 
     fn val(i: i64) -> BcValue {
@@ -913,7 +868,7 @@ mod tests {
 
     fn int_of(k: &DictKey) -> i64 {
         match k {
-            DictKey::Int(i) => *i,
+            DictKey::Num(ExactNum::Int(i)) => *i,
             other => panic!("not an int key: {other:?}"),
         }
     }
@@ -952,7 +907,7 @@ mod tests {
         assert_eq!(d.cmp_keys(&float(-2.5), &int(-2)), Ordering::Less);
         assert_eq!(d.cmp_keys(&float(-2.5), &int(-3)), Ordering::Greater);
         // u64 above i64::MAX.
-        let u = DictKey::UInt(u64::MAX);
+        let u = DictKey::Num(ExactNum::UInt(u64::MAX));
         assert_eq!(d.cmp_keys(&int(i64::MAX), &u), Ordering::Less);
         assert_eq!(d.cmp_keys(&u, &float(1e30)), Ordering::Less);
         assert_eq!(d.cmp_keys(&float(-1e30), &int(i64::MIN)), Ordering::Less);
@@ -967,14 +922,16 @@ mod tests {
             Ordering::Less
         );
         // Conversion keeps integers exact.
-        assert!(matches!(DictKey::from_number(&Number::from(big)), DictKey::Int(i) if i == big));
+        assert!(
+            matches!(DictKey::from_number(&Number::from(big)), DictKey::Num(ExactNum::Int(i)) if i == big)
+        );
         assert!(matches!(
             DictKey::from_number(&Number::from(u64::MAX)),
-            DictKey::UInt(u64::MAX)
+            DictKey::Num(ExactNum::UInt(u64::MAX))
         ));
         assert!(matches!(
             DictKey::from_number(&Number::from_f64(2.5).unwrap()),
-            DictKey::Float(f) if f.into_inner() == 2.5
+            DictKey::Num(ExactNum::Float(f)) if f.into_inner() == 2.5
         ));
     }
 
@@ -1045,7 +1002,7 @@ mod tests {
         let t2 = d.insert(t, float(5.0), val(-1)).unwrap();
         assert_eq!(d.size(t2), n as u64);
         let p = d.lookup(t2, &int(5)).unwrap();
-        assert!(matches!(d.node(p).key(), DictKey::Int(5)));
+        assert!(matches!(d.node(p).key(), DictKey::Num(ExactNum::Int(5))));
         assert_eq!(val_of(d.node(p).value()), -1);
         assert_eq!(val_of(d.node(d.lookup(t, &int(5)).unwrap()).value()), 50);
 
@@ -1210,7 +1167,7 @@ mod tests {
         // The first key of an equal run is kept, as repeated inserts keep it.
         assert!(matches!(
             d.node(d.lookup(t, &int(7)).unwrap()).key(),
-            DictKey::Int(7)
+            DictKey::Num(ExactNum::Int(7))
         ));
         assert_eq!(val_of(d.node(d.lookup(t, &int(3)).unwrap()).value()), -3);
         assert_eq!(val_of(d.node(d.lookup(t, &int(4)).unwrap()).value()), 4);
@@ -1280,7 +1237,7 @@ mod tests {
             assert_eq!(elems.len(), width as usize);
             for (j, e) in elems.iter().enumerate() {
                 assert!(
-                    matches!(e, DictKey::Int(x) if *x == i * 1000 + j as i64),
+                    matches!(e, DictKey::Num(ExactNum::Int(x)) if *x == i * 1000 + j as i64),
                     "key list {i} element {j} corrupted: {e:?}"
                 );
             }
