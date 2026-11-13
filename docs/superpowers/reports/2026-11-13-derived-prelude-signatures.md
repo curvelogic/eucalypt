@@ -1,7 +1,7 @@
 # Derived prelude demand signatures: implementation report
 
 **Bead:** eu-oaz72.77 (AoC 2026 preparation epic eu-oaz72)
-**Date:** 2026-11-13, branch `eu-oaz72.77/derived-prelude-signatures` from master `b8bfb43`
+**Date:** 2026-11-13, branch `eu-oaz72.77/derived-prelude-signatures` from master `b8bfb43`, merged with master `ca647b1` (#1169, eu-oaz72.72)
 **Design:** step 2 of `2026-11-13-prelude-demand-signatures-design.md` (eu-oaz72.75)
 
 ## What changed
@@ -11,20 +11,23 @@
   SCC split source mode also applies. It keeps each top-level lambda's
   signature by binder (the pointer-keyed table), not the name-merged one.
   A name bound twice along the top-level chain, and every non-lambda
-  binding, gets no signature. 233 of 367 slots carry one.
+  binding, gets no signature. 235 of 369 slots carry one (after merging master).
 - The signatures are stored in the blob as `demand_signatures`, parallel
   to `binding_entries`. They are used to compile the blob's own bodies
   (intra-prelude calls) and, at run time, for user calls.
 - `build_prelude_signatures` (the 64-entry hand table) is deleted.
 - Compiler lookup is keyed by callee identity: intrinsic → catalogue;
   `Var::Bound` → the analysis' named table; `Var::Free` resolving to a
-  prelude global → that global's slot. This closes L1 and L3 of the design
-  report: a user helper's signature no longer reaches a same-named prelude
-  global, and no prelude signature reaches a user binding.
+  prelude global → that global's slot. #1169 had already split bound from
+  free callees; this keys the free side by slot instead of name. L1–L3 of
+  the design report are closed, and L2's dependence on pruning (`-e r`)
+  with it: the slot a call resolves to does not depend on which other
+  bindings survive.
 - Blob format: wire-format version 9 → 10. The freshness hash also absorbs
-  `src/core/analyse_demand.rs` and `src/core/demand.rs`
-  (`DEMAND_ANALYSIS_PATHS`), so a blob built by an older analysis is stale
-  and falls back to the source prelude rather than being misread.
+  `src/core/analyse_demand.rs`, `src/core/demand.rs` and
+  `src/eval/stg/compiler.rs` (`DEMAND_ANALYSIS_PATHS`), so a blob built by
+  an older analysis or compiler is stale and falls back to the source
+  prelude rather than being misread.
 - Intrinsic signatures are unchanged. Alias and partial-application
   propagation (`zip-with: map2`, `zip: zip-with(pair)`) is not done: those
   slots have no signature, which is sound.
@@ -37,8 +40,12 @@ source-mode result in blob mode (L3 checked by hand with
 master binary panics on 22 of the 23 and reports the wrong error on `nth`.
 Gating checks:
 
-- `tests/harness/165_demand_annotation.eu`, targets `test-prelude-laziness`
-  (§2.2) and `test-prelude-names` (L1, L2);
+- `tests/harness/165_demand_annotation.eu`: target `test-prelude-laziness`
+  (§2.2; #1169's checks plus `iota(panic) nil?`, `iota(panic) tail nil?`,
+  `head-or(…) block?`, an empty `discriminate` and a `foldl` whose
+  intermediate accumulator fails if forced) and target
+  `test-prelude-names` (L1, L2). #1169 had kept `iota` and the `foldl`
+  accumulator strict; derived signatures make them lazy in both modes;
 - `tests/harness/errors/274_nth_negative_lazy_list.eu` (the `nth` error);
 - unit tests `top_level_signatures_are_per_binder`,
   `demand_signatures_round_trip` and `demand_analysis_changes_change_the_hash`.
