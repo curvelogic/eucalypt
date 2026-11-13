@@ -1,0 +1,3 @@
+# Error: numeric range overflow - sum of two in-range integer powers
+a: 2 ^ 62
+x: a + a
