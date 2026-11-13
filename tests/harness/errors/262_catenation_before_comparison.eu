@@ -1,5 +1,5 @@
 cells: vec.of["a", "S"]
 i: 1
 
-` "A boolean called through catenation, with no `and`/`or` anywhere: the catenation note is shown, the `and`/`or` note is not (eu-oaz72.28)"
+` "A boolean called through catenation, with no `and`/`or` anywhere: the note names the `=` whose result was called, and neither the `and`/`or` note nor a precedence guess is shown (eu-oaz72.28)"
 r: cells vec.nth(i) = "S"

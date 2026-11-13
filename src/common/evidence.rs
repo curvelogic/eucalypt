@@ -3,12 +3,17 @@
 //! A hint that guesses at the cause of an error is shown only when the
 //! source gives evidence for that guess. The evidence is read from the
 //! text under a diagnostic's primary label, so it always describes what
-//! the user is shown. With no source text available (the LSP, or any
+//! the user is shown. Text is read through the eucalypt lexer, so what
+//! counts as a name, an operator or a literal is exactly what the parser
+//! reads, and nothing inside a string or a comment counts. With no source text available (the LSP, or any
 //! caller that renders without the file database) no evidence is found
 //! and evidence-gated hints are simply not shown.
 
 use codespan_reporting::diagnostic::{Diagnostic, LabelStyle};
 use codespan_reporting::files::{Files, SimpleFiles};
+
+use crate::syntax::rowan::kind::SyntaxKind::{self, *};
+use crate::syntax::rowan::lex::Lexer;
 
 /// The source line under a diagnostic's primary label, with the label's
 /// byte range within that line.
@@ -67,10 +72,16 @@ impl<'a> LabelSource<'a> {
         &self.line[..self.start]
     }
 
-    /// Whether `word` appears on the line as a whole identifier (not as
-    /// part of a longer name such as `order` or `band`).
+    /// Whether `word` appears on the line as a name.
     pub fn line_has_word(&self, word: &str) -> bool {
         has_word(self.line, word)
+    }
+
+    /// Whether the operator `op` appears on the line.
+    pub fn line_has_operator(&self, op: &str) -> bool {
+        tokens(self.line)
+            .iter()
+            .any(|&(k, t)| k == OPERATOR_IDENTIFIER && t == op)
     }
 
     /// Whether the labelled value is looked up with `.`: the label holds
@@ -79,147 +90,104 @@ impl<'a> LabelSource<'a> {
     /// namespace call elsewhere on the line, such as `str.of`, is not
     /// a lookup on the labelled value.
     pub fn is_looked_up(&self) -> bool {
-        has_lookup(self.text()) || starts_lookup(self.following.trim_start())
+        // A lookup inside the label needs a value before its '.'.
+        tokens(self.text()).windows(2).skip(1).any(is_lookup)
+            || tokens(self.following).get(..2).is_some_and(is_lookup)
     }
 }
 
-/// Whether `text` starts with a `.` followed by a key name, as in `.name`
-/// (not `.5`).
-fn starts_lookup(text: &str) -> bool {
-    text.strip_prefix('.')
-        .and_then(|rest| rest.chars().next())
-        .is_some_and(|c| c.is_alphabetic() || c == '_')
-}
-
-/// Whether `text` contains a `.` lookup between a value and a key name:
-/// `x.name`, `f(x).name`, `"abc".upper` or `xs!.name` (not `1.5`).
-fn has_lookup(text: &str) -> bool {
-    text.match_indices('.').any(|(i, _)| {
-        text[..i]
-            .chars()
-            .next_back()
-            .is_some_and(|c| is_ident_char(c) || matches!(c, ')' | ']' | '}' | '"'))
-            && starts_lookup(&text[i..])
-    })
-}
-
-/// Whether the left operand of an operator, given the text `before` it on
-/// its line, is a catenation: two or more juxtaposed terms, as in `x f(y)`
-/// of `x f(y) + 1`. The operand runs back to the nearest unmatched opening
-/// bracket, or a `:` or `,` at its own nesting level.
-pub fn left_operand_is_catenation(before: &str) -> bool {
-    let mut depth = 0i32;
-    let mut start = 0;
-    for (i, c) in before.char_indices().rev() {
-        match c {
-            ')' | ']' | '}' => depth += 1,
-            '(' | '[' | '{' if depth == 0 => {
-                start = i + 1;
-                break;
-            }
-            '(' | '[' | '{' => depth -= 1,
-            ':' | ',' if depth == 0 => {
-                start = i + 1;
-                break;
-            }
-            _ => {}
-        }
-    }
-    let operand = &before[start..];
-    let mut terms = vec![];
-    let mut depth = 0i32;
-    let mut current = String::new();
-    for c in operand.chars() {
-        match c {
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' => depth -= 1,
-            _ => {}
-        }
-        if c.is_whitespace() && depth == 0 {
-            if !current.is_empty() {
-                terms.push(std::mem::take(&mut current));
-            }
-        } else {
-            current.push(c);
-        }
-    }
-    if !current.is_empty() {
-        terms.push(current);
-    }
-    terms.len() >= 2 && !terms.iter().any(|t| is_operator(t))
-}
-
-/// The infix operator under or straight after the label whose left operand
-/// is a catenation, if any: `+` in `x f(y) + z`, whether the label is the
-/// `+` itself or the `f(y)` before it.
-pub fn operator_after_catenation(source: &LabelSource) -> Option<String> {
-    let label = source.text().trim();
-    if is_operator(label) {
-        if !binds_tighter_than_catenation(label) {
-            return None;
-        }
-        return left_operand_is_catenation(source.before()).then(|| label.to_string());
-    }
-    let after = source.after().trim_start();
-    let op: String = after.chars().take_while(|c| !c.is_whitespace()).collect();
-    let operand = &source.line[..source.end];
-    (is_operator(&op)
-        && binds_tighter_than_catenation(&op)
-        && after[op.len()..].starts_with(char::is_whitespace)
-        && left_operand_is_catenation(operand))
-    .then_some(op)
-}
-
-/// Whether an infix operator binds more tightly than catenation
-/// (precedence 20). The prelude operators that do not — `=>` and `⇒`
-/// (15), `@` (`:apply`, 10), and the `:meta` operators `//`, `//=`,
-/// `//=>`, `=!`, `%!` and the rest of the `//` family (5) — would make
-/// the catenation note false. A user-defined operator is assumed to bind
-/// tightly.
-fn binds_tighter_than_catenation(op: &str) -> bool {
-    !(op.starts_with("//") || matches!(op, "=>" | "⇒" | "@" | "=!" | "%!"))
-}
-
-/// Whether `c` can occur in a eucalypt normal identifier.
-pub fn is_ident_char(c: char) -> bool {
-    c.is_alphanumeric() || matches!(c, '_' | '-' | '?' | '!' | '$' | '\'' | '*')
-}
-
-/// Whether `word` occurs in `text` delimited by non-identifier characters.
-pub fn has_word(text: &str, word: &str) -> bool {
-    text.match_indices(word).any(|(i, _)| {
-        let before_ok = text[..i]
-            .chars()
-            .next_back()
-            .is_none_or(|c| !is_ident_char(c));
-        let after_ok = text[i + word.len()..]
-            .chars()
-            .next()
-            .is_none_or(|c| !is_ident_char(c));
-        before_ok && after_ok
-    })
-}
-
-/// Whether `text` is an infix operator made of symbol characters, such as
-/// `+`, `=`, `&&` or `>=`.
-pub fn is_operator(text: &str) -> bool {
-    !text.is_empty()
-        && text.chars().all(|c| {
-            !c.is_alphanumeric()
-                && !c.is_whitespace()
-                && !matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '"' | ',' | ':' | '_')
+/// The significant tokens of `text` as the eucalypt lexer reads them:
+/// whitespace and comments are dropped.
+pub fn tokens(text: &str) -> Vec<(SyntaxKind, &str)> {
+    Lexer::from_text(text)
+        .filter(|(k, _)| !matches!(k, WHITESPACE | COMMENT))
+        .filter_map(|(k, span)| {
+            text.get(span.start().to_usize()..span.end().to_usize())
+                .map(|t| (k, t))
         })
+        .collect()
 }
 
-/// Whether `text` is a number or string literal.
+/// Whether a pair of tokens is a `.` lookup of a key name: `.name`.
+fn is_lookup(pair: &[(SyntaxKind, &str)]) -> bool {
+    matches!(pair, [(OPERATOR_IDENTIFIER, "."), (UNQUOTED_IDENTIFIER, _)])
+}
+
+/// Whether `word` occurs in `text` as a name (not as part of a longer
+/// name such as `order`, nor inside a string or comment).
+pub fn has_word(text: &str, word: &str) -> bool {
+    tokens(text)
+        .iter()
+        .any(|&(k, t)| k == UNQUOTED_IDENTIFIER && t == word)
+}
+
+/// Whether `name` occurs in `text` as a name not followed by `.` — as in
+/// `str(x)`, `x str` or `x.str`, but not `str.of`.
+pub fn uses_bare(text: &str, name: &str) -> bool {
+    let toks = tokens(text);
+    toks.iter().enumerate().any(|(i, &(k, t))| {
+        k == UNQUOTED_IDENTIFIER
+            && t == name
+            && !matches!(toks.get(i + 1), Some((OPERATOR_IDENTIFIER, ".")))
+    })
+}
+
+/// Whether `text` is a single operator, such as `+`, `=` or `>=`.
+pub fn is_operator(text: &str) -> bool {
+    matches!(tokens(text)[..], [(OPERATOR_IDENTIFIER, _)])
+}
+
+/// Whether `text` is a single number or string literal.
 pub fn is_literal(text: &str) -> bool {
-    let t = text.trim();
-    (t.len() >= 2 && t.starts_with('"') && t.ends_with('"'))
-        || (!t.is_empty()
-            && t.trim_start_matches('-')
-                .chars()
-                .all(|c| c.is_ascii_digit() || c == '.')
-            && t.chars().any(|c| c.is_ascii_digit()))
+    matches!(tokens(text)[..], [(NUMBER | STRING, _)])
+}
+
+/// Whether the last token of `text` ends a value, so that a term written
+/// after it is applied to it by catenation: not an operator, an opening
+/// bracket, a `,` or a `:`.
+pub fn ends_with_value(text: &str) -> bool {
+    tokens(text).last().is_some_and(|&(k, _)| {
+        !matches!(
+            k,
+            OPERATOR_IDENTIFIER
+                | OPEN_PAREN
+                | OPEN_PAREN_APPLY
+                | OPEN_SQUARE
+                | OPEN_SQUARE_APPLY
+                | OPEN_BRACE
+                | OPEN_BRACE_APPLY
+                | COMMA
+                | COLON
+                | BACKTICK
+        )
+    })
+}
+
+/// Whether an unresolved `name`, with the text `before` and `after` it on
+/// its line, has the shape of an arrow function: the name, possibly with
+/// further parameters, followed by `->`, and either opening a call
+/// argument or parameter list (`map(x -> y + 1)`, `(x, y) -> 1`) or used
+/// again after the arrow (`x -> x + 1`). `xs foo -> 1` is the const
+/// operator used correctly.
+pub fn arrow_function_shape(before: &str, after: &str, name: &str) -> bool {
+    let after = tokens(after);
+    let Some(arrow) = after
+        .iter()
+        .position(|&(k, t)| k == OPERATOR_IDENTIFIER && t == "->")
+    else {
+        return false;
+    };
+    let params_only = after[..arrow]
+        .iter()
+        .all(|&(k, _)| matches!(k, UNQUOTED_IDENTIFIER | COMMA | CLOSE_PAREN));
+    let opens_argument = matches!(
+        tokens(before).last(),
+        Some((OPEN_PAREN | OPEN_PAREN_APPLY | COMMA, _))
+    );
+    let used_again = after[arrow + 1..]
+        .iter()
+        .any(|&(k, t)| k == UNQUOTED_IDENTIFIER && t == name);
+    params_only && (opens_argument || used_again)
 }
 
 #[cfg(test)]
@@ -227,35 +195,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn words_are_delimited() {
+    fn words_are_names() {
         assert!(has_word("x and y", "and"));
         assert!(has_word("(a)or(b)", "or"));
         assert!(!has_word("sort-order(band)", "or"));
         assert!(!has_word("random", "and"));
         assert!(!has_word("or-else", "or"));
+        assert!(!has_word("\"this and that\"", "and"));
+        assert!(!has_word("x # this and that", "and"));
     }
 
     #[test]
-    fn lookups_on_the_labelled_value() {
-        assert!(has_lookup("x.name"));
-        assert!(has_lookup("\"abc\".upper"));
-        assert!(has_lookup("xs!.name"));
-        assert!(has_lookup("f(x).name"));
-        assert!(!has_lookup("1.5"));
-        assert!(!has_lookup("x {a: 1}"));
-        assert!(starts_lookup(".name"));
-        assert!(!starts_lookup(".5"));
-        assert!(!starts_lookup("{a: 1}]"));
+    fn bare_names() {
+        assert!(uses_bare("x str", "str"));
+        assert!(uses_bare("x.str", "str"));
+        assert!(!uses_bare("str.of(x)", "str"));
     }
 
     #[test]
-    fn loose_operators_are_not_catenation_traps() {
-        assert!(binds_tighter_than_catenation("+"));
-        assert!(binds_tighter_than_catenation("="));
-        assert!(!binds_tighter_than_catenation("=>"));
-        assert!(!binds_tighter_than_catenation("//"));
-        assert!(!binds_tighter_than_catenation("//=>"));
-        assert!(!binds_tighter_than_catenation("@"));
+    fn lookups() {
+        assert!(is_lookup(&tokens(".name")));
+        assert!(!is_lookup(&tokens(".5")));
+        assert!(!is_lookup(&tokens("{a: 1}")[..2]));
     }
 
     #[test]
@@ -265,9 +226,17 @@ mod tests {
         assert!(!is_operator("f"));
         assert!(!is_operator("(x)"));
         assert!(is_literal("5"));
-        assert!(is_literal("-2.5"));
+        assert!(is_literal("2.5"));
         assert!(is_literal("\"a\""));
         assert!(!is_literal("x"));
         assert!(!is_literal("-"));
+    }
+
+    #[test]
+    fn arrow_shapes() {
+        assert!(arrow_function_shape("xs map(", " -> y + 1)", "x"));
+        assert!(arrow_function_shape("r: ", " -> x + 1", "x"));
+        assert!(arrow_function_shape("(", ", y) -> 1", "x"));
+        assert!(!arrow_function_shape("r: xs ", " -> 1", "foo"));
     }
 }

@@ -1,4 +1,6 @@
 exit: 1
-stderr: "binds more loosely than '=', so 'x f\(y\) = z' is read as 'x \(f\(y\) = z\)'"
+stderr: "the value called here is the result of '='"
+# no guess about precedence, and no 'and'/'or' note without 'and' or 'or' (eu-oaz72.28)
+stderr-absent: "catenation \(juxtaposition\)"
 stderr-absent: "'and' and 'or'"
 stderr-absent: "boolean expression"

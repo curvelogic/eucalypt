@@ -3668,12 +3668,6 @@ pub fn test_error_264_literal_after_value() {
 
 /// Diagnostic hints shown only on source evidence (eu-oaz72.28).
 #[test]
-pub fn test_error_265_loose_operator_after_call() {
-    run_error_test(&error_opts("265_loose_operator_after_call.eu"));
-}
-
-/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
-#[test]
 pub fn test_error_266_const_operator_unresolved_name() {
     run_error_test(&error_opts("266_const_operator_unresolved_name.eu"));
 }
@@ -3706,6 +3700,12 @@ pub fn test_error_270_lookup_on_continuation_line() {
 #[test]
 pub fn test_error_271_namespace_call_beside_merge() {
     run_error_test(&error_opts("271_namespace_call_beside_merge.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_272_logical_word_inside_string() {
+    run_error_test(&error_opts("272_logical_word_inside_string.eu"));
 }
 
 #[test]

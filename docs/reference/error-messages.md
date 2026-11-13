@@ -203,18 +203,16 @@ error: tried to call a number as a function
   │                ^
   │
   = note: the value called here is the result of '+'
-  = note: catenation (juxtaposition) binds more loosely than '+', so 'x f(y) + z' is read as 'x (f(y) + z)' — write '(x f(y)) + z'
   = while evaluating (outermost first):
     - result at example.eu:3:16
 ```
 
-The two notes explain the precedence trap behind this error: because
-catenation binds very loosely, `x f(1) + 1` calls the number `f(1) + 1`
-with `x`. Hints like these are shown only when the source shows the
-shape they describe — here, an operator whose left operand is a
-catenation; a number called as `3(4)` gets no such note. See
-[Syntax Gotchas](../appendices/syntax-gotchas.md) for the precedence
-traps behind these messages.
+The note states which operator's result was called. Behind it is a
+precedence trap: catenation binds more loosely than `+`, so `x f(1) + 1`
+calls the number `f(1) + 1` with `x`. Notes that guess at a cause are
+shown only when the source gives evidence for them, read through the
+eucalypt lexer. See [Syntax Gotchas](../appendices/syntax-gotchas.md) for
+the precedence traps behind these messages.
 
 ## Reading "while evaluating" traces and source locations
 

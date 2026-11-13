@@ -5,7 +5,7 @@ use std::{collections::HashMap, convert::TryInto, rc::Rc};
 use crate::core::binding::{BoundVar, Var};
 use crate::core::demand::Demand;
 use crate::{
-    common::evidence::{has_word, LabelSource},
+    common::evidence::{arrow_function_shape, LabelSource},
     common::sourcemap::{HasSmid, Smid, SourceMap},
     core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr, INTERNAL_FREE_VAR_PREFIX},
     eval::{
@@ -139,22 +139,13 @@ impl CompileError {
                     }
                     return friendly_diag.with_notes(notes);
                 }
-                // Only when the source shows an arrow-function shape: the
-                // unresolved name is followed by '->', possibly after further
-                // parameters, and either opens a call argument or parameter
-                // list, as in `map(x -> y + 1)` or `(x, y) -> 1`, or is used
-                // again after the arrow, as in `x -> x + 1` (eu-oaz72.28).
-                // `xs foo -> 1` is the const operator used correctly.
+                // Only when the source shows an arrow-function shape, read
+                // through the lexer: `map(x -> y + 1)`, `(x, y) -> 1` or
+                // `x -> x + 1`, but not `xs foo -> 1`, which is the const
+                // operator used correctly (eu-oaz72.28).
                 if source.as_ref().is_some_and(|src| {
-                    let opens_argument = src.before().trim_end().ends_with(['(', ',']);
                     src.text() == name.as_str()
-                        && src.after().find("->").is_some_and(|i| {
-                            src.after()[..i].chars().all(|c| {
-                                c.is_alphanumeric()
-                                    || c.is_whitespace()
-                                    || matches!(c, ',' | ')' | '_' | '-' | '?')
-                            }) && (opens_argument || has_word(&src.after()[i + 2..], name))
-                        })
+                        && arrow_function_shape(src.before(), src.after(), name)
                 }) {
                     notes.push(
                         "note: eucalypt has no arrow functions; '->' is the const \

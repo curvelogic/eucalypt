@@ -35,12 +35,12 @@ or keyed on the exact name or key the user wrote).
 | `format_not_callable` | "this often means too many arguments were passed" | X (guess). A replacement keyed on `f(a, b)` was tried and dropped in review: `foldl(5, 0, xs)` raises the same error for a non-function argument, so the call shape is no evidence |
 | `not_callable_notes` true/false | "if this result of a boolean expression, check operator precedence" | X (guess, ungrammatical) |
 | `not_callable_notes` true/false | "'and' and 'or' are identifiers …" | G: `and`/`or` a whole word on the label's line; R: "ordinary functions" |
-| `not_callable_notes` number/string/… | "a X value is not a function; check for a missing operator or extra argument" | X (repeats the headline, then guesses) |
-| `not_callable_notes` number/string/… | "'f(a) + 1' binds as 'f(a + 1)'" | R + G: correct example `x f(y) + z` read as `x (f(y) + z)`, only when an infix operator that binds more tightly than catenation (not `=>`, `⇒`, `@`, `=!`, `%!` or the `//` family) has a catenation as its left operand; a called literal juxtaposed after an expression gets a factual catenation note |
+| `not_callable_notes` number/string/… | "'f(a) + 1' binds as 'f(a + 1)'" | X: the precedence guess is removed, since the diagnostic has no fixity information and a copied precedence table would drift from the prelude (owner review). K: "the value called here is the result of '{op}'" when the label is an operator; a called literal juxtaposed after an expression gets a factual catenation note |
+| `not_callable_notes` number/string/… | "'f(a) + 1' binds as 'f(a + 1)'" | X: the precedence guess is removed, since the diagnostic has no fixity information and a copied precedence table would drift from the prelude (owner review). K: "the value called here is the result of '{op}'" when the label is an operator; a called literal juxtaposed after an expression gets a factual catenation note |
 | `not_callable_notes` list | nth/head/tail | K (fact about the called value) |
-| `unexpected_function_notes` | "must first be called with all of its remaining arguments" | K |
-| `unexpected_function_notes` | "this can happen when … under-applied, or when low-precedence catenation …" | X; G catenation note as above |
-| `format_cannot_return_fun` | "this often happens due to operator precedence" (headline) | X; G catenation note for `CannotReturnFunToCase` |
+| `unexpected_function_notes` | "this can happen when … under-applied, or when low-precedence catenation …" | X |
+| `unexpected_function_notes` | "this can happen when … under-applied, or when low-precedence catenation …" | X |
+| `format_cannot_return_fun` | "this often happens due to operator precedence" (headline) | X |
 | `CannotReturnFunToCase` bool | "'_' anaphora … two-argument function" | G: `_` on the label's line |
 | `type_mismatch_notes` / `data_tag_mismatch_notes` | "to concatenate strings/lists … instead of '+'" | G: `+` on the line |
 | `data_tag_mismatch_notes` | "'str' is a namespace … not a type conversion function" | G: bare `str` (not `str.…`) on the line, as in `str(x)`, `x str` or `x.str` |
@@ -79,3 +79,13 @@ or keyed on the exact name or key the user wrote).
   need the parser.
 - The LSP does not show gated hints; it would need the file database
   passed to its diagnostic conversion.
+
+## Evidence is read through the lexer
+
+After owner review, every evidence check reads tokens from the eucalypt
+lexer (`syntax::rowan::lex::Lexer`) rather than matching characters, so a
+name, an operator, a literal and a `.` lookup are what the parser reads,
+and nothing inside a string or a comment counts as evidence. The
+catenation-precedence note was removed rather than kept on a copied
+precedence table; showing it exactly would need the cooked operator
+fixities carried into diagnostics.

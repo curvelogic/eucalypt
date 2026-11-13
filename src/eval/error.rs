@@ -303,7 +303,7 @@ fn type_mismatch_notes(
         (Number, String) => {
             let mut notes =
                 vec!["to convert a string to a number, use 'num', e.g. 's num'".to_string()];
-            if ev.line_has("+") {
+            if ev.line_has_operator("+") {
                 notes.push(
                     "to concatenate strings, use string interpolation or 'str.join-on' \
                      instead of '+'"
@@ -318,7 +318,7 @@ fn type_mismatch_notes(
         (Number, List(_)) => {
             let mut notes =
                 vec!["arithmetic operators like '+' work on numbers, not lists".to_string()];
-            if ev.line_has("+") {
+            if ev.line_has_operator("+") {
                 notes.push(
                     "to concatenate two lists, use 'append(xs, ys)' or the '++' operator"
                         .to_string(),
@@ -409,7 +409,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8], ev: &Evidence) -> Vec<St
     } else if is_list && expects_number {
         let mut notes =
             vec!["arithmetic operators like '+' work on numbers, not lists".to_string()];
-        if ev.line_has("+") {
+        if ev.line_has_operator("+") {
             notes.push(
                 "to concatenate two lists, use 'append(xs, ys)' or the '++' operator".to_string(),
             );
@@ -459,7 +459,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8], ev: &Evidence) -> Vec<St
     } else if is_string && expects_number {
         let mut notes =
             vec!["to convert a string to a number, use 'num', e.g. 's num'".to_string()];
-        if ev.line_has("+") {
+        if ev.line_has_operator("+") {
             notes.push(
                 "to concatenate strings, use string interpolation or 'str.join-on' \
                  instead of '+'"
@@ -716,9 +716,9 @@ fn format_not_value(context: &str) -> String {
 struct Evidence<'a>(Option<LabelSource<'a>>);
 
 impl Evidence<'_> {
-    /// The labelled line contains `pat`.
-    fn line_has(&self, pat: &str) -> bool {
-        self.0.as_ref().is_some_and(|s| s.line.contains(pat))
+    /// The labelled line contains the operator `op`.
+    fn line_has_operator(&self, op: &str) -> bool {
+        self.0.as_ref().is_some_and(|s| s.line_has_operator(op))
     }
 
     /// The labelled line contains `word` as a whole identifier.
@@ -726,19 +726,12 @@ impl Evidence<'_> {
         self.0.as_ref().is_some_and(|s| s.line_has_word(word))
     }
 
-    /// The labelled line uses `name` bare — as a whole identifier not
-    /// followed by `.` — as in `str(x)`, `x str` or `x.str`, but not
-    /// `str.of`.
+    /// The labelled line uses `name` bare — as a name not followed by
+    /// `.` — as in `str(x)`, `x str` or `x.str`, but not `str.of`.
     fn uses_bare(&self, name: &str) -> bool {
-        self.0.as_ref().is_some_and(|s| {
-            let ident = |c: char| c.is_alphanumeric() || "-_?!$'*.".contains(c);
-            // A preceding '.' still counts: `x.str` looks `str` up as if
-            // it were a field of `x`.
-            s.line.match_indices(name).any(|(i, _)| {
-                !s.line[..i].ends_with(|c: char| c != '.' && ident(c))
-                    && !s.line[i + name.len()..].starts_with(ident)
-            })
-        })
+        self.0
+            .as_ref()
+            .is_some_and(|s| evidence::uses_bare(s.line, name))
     }
 
     /// The labelled value is looked up with '.': `x.name`, `"abc".upper`,
@@ -746,16 +739,6 @@ impl Evidence<'_> {
     /// call elsewhere on the line, such as `str.of`, is not evidence.
     fn has_lookup(&self) -> bool {
         self.0.as_ref().is_some_and(LabelSource::is_looked_up)
-    }
-
-    /// When the label is an infix operator whose left operand is a
-    /// catenation (`x f(y) + z`), the note that explains how that parses.
-    fn catenation_under_operator(&self) -> Option<String> {
-        let op = evidence::operator_after_catenation(self.0.as_ref()?)?;
-        Some(format!(
-            "note: catenation (juxtaposition) binds more loosely than '{op}', so \
-             'x f(y) {op} z' is read as 'x (f(y) {op} z)' — write '(x f(y)) {op} z'"
-        ))
     }
 }
 
@@ -777,22 +760,13 @@ fn not_callable_notes(actual_type: &str, ev: &Evidence) -> Vec<String> {
         );
     }
     let label = ev.0.as_ref().map_or("", |s| s.text().trim());
-    if let Some(note) = ev.catenation_under_operator() {
-        if evidence::is_operator(label) {
-            notes.push(format!(
-                "note: the value called here is the result of '{label}'"
-            ));
-        }
-        notes.push(note);
+    if evidence::is_operator(label) {
+        notes.push(format!(
+            "note: the value called here is the result of '{label}'"
+        ));
     } else if let Some(source) = ev.0.as_ref() {
         // A literal called because it follows another expression: `x 5`.
-        let before = source.before().trim_end();
-        let last = before.rsplit(char::is_whitespace).next().unwrap_or("");
-        if evidence::is_literal(label)
-            && !before.is_empty()
-            && !before.ends_with(['(', '[', '{', ',', ':'])
-            && !evidence::is_operator(last)
-        {
+        if evidence::is_literal(label) && evidence::ends_with_value(source.before()) {
             notes.push(format!(
                 "note: '{label}' follows another expression with no operator between \
                  them, so it is called with that expression as its argument \
@@ -816,14 +790,12 @@ fn not_callable_notes(actual_type: &str, ev: &Evidence) -> Vec<String> {
 /// value (an unsaturated lambda or a partial application) found where a
 /// non-function value was expected. Deliberately does not suggest
 /// `block.field` — the value is a function, never a block (eu-1tkk.7.9).
-fn unexpected_function_notes(ev: &Evidence) -> Vec<String> {
-    let mut notes = vec![
+fn unexpected_function_notes() -> Vec<String> {
+    vec![
         "a function value cannot be used directly here; it must first be called with \
          all of its remaining arguments"
             .to_string(),
-    ];
-    notes.extend(ev.catenation_under_operator());
-    notes
+    ]
 }
 
 /// Format a "not callable" error message with the actual type of value found
@@ -1654,7 +1626,7 @@ impl ExecutionError {
                             .to_string(),
                     );
                 }
-                if type_desc == "string" && ev.line_has("++") {
+                if type_desc == "string" && ev.line_has_operator("++") {
                     notes.push(
                         "note: to concatenate strings, use string interpolation \
                          or 'str.join-on' on a list of strings; '++' is for list append"
@@ -1681,7 +1653,7 @@ impl ExecutionError {
                 ]
             }
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name, &ev),
-            ExecutionError::UnexpectedFunction(..) => unexpected_function_notes(&ev),
+            ExecutionError::UnexpectedFunction(..) => unexpected_function_notes(),
             ExecutionError::LookupFailure(_, detail) => lookup_failure_notes(&detail.0, &detail.1),
             ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
                 let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
@@ -1697,7 +1669,7 @@ impl ExecutionError {
                             .to_string(),
                     ]
                 } else {
-                    ev.catenation_under_operator().into_iter().collect()
+                    vec![]
                 }
             }
             ExecutionError::DictKeyNotFound(_, _) => {
@@ -1733,7 +1705,7 @@ impl ExecutionError {
             ExecutionError::HeadOfNonList(_, found) => {
                 let mut notes = vec![];
                 if found.starts_with('"') {
-                    if ev.line_has("++") {
+                    if ev.line_has_operator("++") {
                         notes.push(
                             "to concatenate strings, use string interpolation (e.g. \"{a}{b}\") \
                              or 'str.join-on', not '++' (which is for list append)"
@@ -1750,7 +1722,7 @@ impl ExecutionError {
             }
             ExecutionError::TailOfNonList(_, found) => {
                 let mut notes = vec![];
-                if found.starts_with('"') && ev.line_has("++") {
+                if found.starts_with('"') && ev.line_has_operator("++") {
                     notes.push(
                         "to concatenate strings, use string interpolation (e.g. \"{a}{b}\") \
                          or 'str.join-on', not '++' (which is for list append)"
