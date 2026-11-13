@@ -145,8 +145,8 @@ monad(m): {
 # Compatibility alias: deprecated, use random.stream. Returns a lazy cons-list of floats.
 random-stream(seed): random.stream(seed) random.as-list
 
-# Helper: advance an opaque stream n steps.
-stream-advance(n, s): if(n = 0, s, stream-advance(n - 1, __STREAM_ADVANCE(s)))
+# Helper: advance an opaque stream n steps; a count that is not positive leaves it unadvanced.
+stream-advance(n, s): (n <= 0) then(s, stream-advance(n - 1, __STREAM_ADVANCE(s)))
 
 random-ret(v, stream): { value: v, rest: stream }
 
@@ -1424,7 +1424,8 @@ rotate(n, l): { s: __split-at(n, l) }.(__require-int("rotate count", n, second(s
 split-at(n, l): __require-int("split-at count", n, __split-at(n, l))
 
 ` { doc: "`__split-at(n, l)` - internal: `split-at` without its integer check."
-    export: :suppress }
+    export: :suppress
+    blame: :transparent }
 __split-at(n, l): {
   aux(n, xs, prefix): if((xs nil?) ∨ (n <= 0), [prefix reverse, xs], aux(n dec, xs tail, cons(xs head, prefix)))
 }.aux(n, l, [])
@@ -2057,13 +2058,13 @@ set: {
   ` :suppress
   sample-raw: '__SET.SAMPLE'
 
-  ` { doc: "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`. Returns value/rest block; a negative or non-integer `n` is an error."
+  ` { doc: "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`. Returns value/rest block; a negative `n` samples nothing; a non-integer `n` is an error."
       type: s"number → any → any → {..}" }
-  sample(k, s, stream): __require-int("set.sample count", k, (k < 0) then(panic("set.sample count {k} must not be negative"), {
+  sample(k, s, stream): __require-int("set.sample count", k, {
     floats: (stream random.as-list) __take(k)
     value: s sample-raw(floats)
     rest: stream-advance(k, stream)
-  }))
+  })
 }
 
 ` "`∅` - the empty set."
@@ -2167,13 +2168,13 @@ vec: {
   ` :suppress
   sample-raw: '__VEC.SAMPLE'
 
-  ` { doc: "`vec.sample(n, v)` - random monad action: pick `n` random elements from vec `v` without replacement; a negative or non-integer `n` is an error."
+  ` { doc: "`vec.sample(n, v)` - random monad action: pick `n` random elements from vec `v` without replacement; a negative `n` samples nothing; a non-integer `n` is an error."
       type: s"number → vec → any → {..}" }
-  sample(n, v, stream): __require-int("vec.sample count", n, (n < 0) then(panic("vec.sample count {n} must not be negative"), {
+  sample(n, v, stream): __require-int("vec.sample count", n, {
     floats: (stream random.as-list) __take(n)
     value: v sample-raw(floats)
     rest: stream-advance(n, stream)
-  }))
+  })
 
   ` :suppress
   shuffle-raw: '__VEC.SHUFFLE'

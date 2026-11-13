@@ -1,2 +1,0 @@
-` "A negative count to `vec.sample` is an error, not a hang (eu-oaz72.95)."
-x: vec.sample(-1, vec.of([1, 2, 3]), random.stream(42)).rest random.as-list head

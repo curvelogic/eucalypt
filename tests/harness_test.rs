@@ -934,7 +934,28 @@ pub fn test_harness_129() {
 }
 
 #[test]
+/// 130_vec.eu includes negative sample counts and an empty-vec shuffle,
+/// which once recursed forever in `stream-advance` (eu-oaz72.95). A
+/// regression there hangs rather than fails, so a bounded run of the
+/// `test` target gates first and `run_test` then applies the verdict.
 pub fn test_harness_130() {
+    let mut cmd = std::process::Command::new(eu_binary());
+    cmd.args([
+        "--heap-limit-mib",
+        "2048",
+        "-t",
+        "test",
+        "tests/harness/130_vec.eu",
+    ]);
+    let deadline = std::time::Duration::from_secs(30);
+    run_with_deadline(cmd, deadline).unwrap_or_else(|| {
+        panic!(
+            "130_vec.eu did not complete within {}s — a negative sample count \
+             or an empty-vec shuffle no longer returns (`stream-advance` in \
+             lib/prelude.eu)",
+            deadline.as_secs()
+        )
+    });
     run_test(&opts("130_vec.eu"));
 }
 
@@ -4998,16 +5019,4 @@ pub fn test_error_275_non_integer_set_sample() {
 #[test]
 pub fn test_error_275_non_integer_vec_sample() {
     run_error_test(&error_opts("275_non_integer_vec_sample.eu"));
-}
-
-/// A negative sample count is an error, not a hang (eu-oaz72.95).
-#[test]
-pub fn test_error_277_negative_set_sample() {
-    run_error_test(&error_opts("277_negative_set_sample.eu"));
-}
-
-/// A negative sample count is an error, not a hang (eu-oaz72.95).
-#[test]
-pub fn test_error_277_negative_vec_sample() {
-    run_error_test(&error_opts("277_negative_vec_sample.eu"));
 }

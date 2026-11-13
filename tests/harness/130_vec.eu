@@ -48,6 +48,16 @@ test: {
   vec-sample-zero-rest: (vec.sample(0, data, random.stream(42)).rest random.as-list head) = unadvanced
   set-sample-zero-rest: (set.sample(0, test-set, random.stream(42)).rest random.as-list head) = unadvanced
 
+  # A negative count behaves like take: an empty sample, the stream unadvanced
+  vec-sample-negative: vec.sample(-1, data, random.stream(42)).value vec.len //= 0
+  set-sample-negative: set.sample(-1, test-set, random.stream(42)).value set.size //= 0
+  vec-sample-negative-rest: (vec.sample(-1, data, random.stream(42)).rest random.as-list head) = unadvanced
+  set-sample-negative-rest: (set.sample(-1, test-set, random.stream(42)).rest random.as-list head) = unadvanced
+
+  # Shuffling an empty vec needs -1 floats; it returns at once
+  shuffle-empty: vec.shuffle(vec.of([]), random.stream(42)).value vec.len //= 0
+  shuffle-empty-rest: (vec.shuffle(vec.of([]), random.stream(42)).rest random.as-list head) = unadvanced
+
   # Computed (thunk) elements — vec.of must deep-force before extraction
   interp: ["a", "b", "c"] map("x-{}") vec.of
   interp-len: interp vec.len //= 3
@@ -64,6 +74,9 @@ test: {
            , set-sample-size
            , vec-sample-zero, set-sample-zero
            , vec-sample-zero-rest, set-sample-zero-rest
+           , vec-sample-negative, set-sample-negative
+           , vec-sample-negative-rest, set-sample-negative-rest
+           , shuffle-empty, shuffle-empty-rest
            , interp-len, interp-first
            , computed-nums-len, computed-nums-trip
            ] all-true? then(:PASS, :FAIL)
