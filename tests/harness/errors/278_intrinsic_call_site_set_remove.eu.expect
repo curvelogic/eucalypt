@@ -1,2 +1,2 @@
 exit: 1
-stderr: "(?s)type mismatch.*278_intrinsic_call_site_set_remove\.eu:5:30"
+stderr: "(?s)type mismatch.*errors/278_intrinsic_call_site_set_remove\.eu:5:30"

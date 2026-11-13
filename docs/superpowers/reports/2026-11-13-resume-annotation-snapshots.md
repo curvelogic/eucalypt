@@ -29,7 +29,7 @@ from" pointer, and several snapshots relied on it.
 ## Changed snapshots
 
 `tests/diagnostics/DIVERGENCE.md` goes from 61 of 274 fixtures diverging
-between blob and source prelude to 59 of 278. "Old" and "new" are the
+between blob and source prelude to 59 of 279. "Old" and "new" are the
 primary location (`line:column`), the same in both prelude modes unless
 marked.
 
@@ -61,8 +61,15 @@ marked.
 | provocations/catenation_arith | 2:7 | 2:19 | same program as 229 | **worse** — see below |
 | provocations/metadata_span | 3:1 | 2:27 | was the `doubled` call passing `"2"`; now `* factor` in `scale`'s body; trace frame gone | **worse** — see below |
 
-`tests/diagnostics/DIVERGENCE.md` is regenerated to match. Four new goldens
-(`errors/278_intrinsic_call_site_*`) record the fixed behaviour.
+`tests/diagnostics/DIVERGENCE.md` is regenerated to match. Five new goldens
+(`errors/278_intrinsic_call_site_*`, `errors/088_numeric_range_literal_operands`)
+record the fixed behaviour. The last is a case raised by eu-oaz72.12: an
+overflow between two computed operands, `(2^62) + (2^62)`, used to caret the
+second `^` (the operand evaluated last) rather than the `+`.
+
+The errors/229 fixture no longer pins the eleven-column under-applied-call
+span from eu-1tkk.7.38; nothing else does either, so that span is unguarded
+until the operand's location is carried with the error.
 
 ## Locations that are worse for a user
 
@@ -91,8 +98,12 @@ papered over.
 - Four new error fixtures, `tests/harness/errors/278_intrinsic_call_site_*`
   (`set.add`, `set.remove`, `set.from-list`, `vec.of`, each with an element
   computed by an annotated user function), assert the call-site location.
-  Fault injection: with the restore removed they report the helper's body
-  (`2:16`, `1:16`, `3:9`) and fail; restored, they pass — in both prelude
-  modes.
+  `tests/harness/errors/088_numeric_range_literal_operands` asserts that
+  `(2^62) + (2^62)` carets the overflowing `+` (2:11), not the second `^`.
+  Each `.expect` anchors on the primary's `errors/<fixture>.eu:line:col`
+  (the trace line names the bare file, so it cannot satisfy the regex).
+  Fault injection: with `machine.rs` reverted to master all five fail in
+  both prelude modes (the 278 fixtures report `pair`'s body, 2:16, or for
+  `vec_of` the list literal, 5:9); restored, all five pass in both modes.
 - `cargo test` (all gates), `scripts/blob-mode-tests.sh`, and the harness
   under `EU_GC_VERIFY=2 EU_GC_STRESS=1`.

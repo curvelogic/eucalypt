@@ -10,13 +10,11 @@ expected_class = "number"
 # push-time annotation on resume, the primary is the failing `* factor` in
 # `scale`'s body (2:27). The gate keeps the primary on the user's own lines;
 # see docs/superpowers/reports/2026-11-13-resume-annotation-snapshots.md.
-# Region narrowed from 2..3 to 3..3 (eu-1tkk.7.34). Line 3 is `doubled(xs):
-# scale("2", xs)` — the call that passes the offending "2", and so the line the
-# user has to edit. Line 2 is `scale`'s own body: true about where the
-# multiplication failed, but correct code needing no change. Both lines used to
-# satisfy the gate, which left the distinction resting on the golden snapshot
-# alone; pinning 3..3 makes the gate itself reject a "fix" that walks the
-# primary back onto the callee.
+# History: eu-1tkk.7.34 had narrowed the region from 2..3 to 3..3, because
+# line 3 (`doubled(xs): scale("2", xs)`) passes the offending "2" and is the
+# line the user has to edit, while line 2 is correct code. That pin relied on
+# the stale annotation and no longer holds; recovering line 3 needs the
+# operand's own location carried with the error (a separate change).
 # No xfail: eu-1tkk.7.12 fixed this. The invariant (iv) violation was a
 # non-empty trace containing only a 'transparent' [prelude] map frame and no
 # user frame. `map` declares `blame: :transparent`, and the Phase 2 curation

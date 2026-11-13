@@ -1501,6 +1501,13 @@ pub fn test_error_088() {
     run_error_test(&error_opts("088_numeric_range.eu"));
 }
 
+/// An overflow between two computed operands carets the failing operator,
+/// not the last operand evaluated (eu-oaz72.63).
+#[test]
+pub fn test_error_088_numeric_range_literal_operands() {
+    run_error_test(&error_opts("088_numeric_range_literal_operands.eu"));
+}
+
 #[test]
 pub fn test_error_089() {
     run_error_test(&error_opts("089_numeric_domain.eu"));
