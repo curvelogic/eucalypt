@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
+
+use crossbeam_channel::{Receiver, Sender};
 
 use crate::core::typecheck::types::Type;
 
@@ -38,8 +40,8 @@ pub struct LspTestSession {
     uri: Url,
     content: String,
     prelude_table: SymbolTable,
-    pipeline_rx: mpsc::Receiver<PipelineResult>,
-    pipeline_tx: mpsc::Sender<PipelineResult>,
+    pipeline_rx: Receiver<PipelineResult>,
+    pipeline_tx: Sender<PipelineResult>,
     cancel: Arc<AtomicBool>,
     /// Query store tracking parse results, pipeline results, and the
     /// import graph.
@@ -57,7 +59,7 @@ impl LspTestSession {
         let uri = Url::parse("file:///test.eu").expect("test URI");
         let prelude_uri = super::ServerState::write_prelude_to_temp()
             .unwrap_or_else(|| Url::parse("resource:prelude").expect("prelude URI"));
-        let (pipeline_tx, pipeline_rx) = mpsc::channel();
+        let (pipeline_tx, pipeline_rx) = crossbeam_channel::unbounded();
         Self {
             uri,
             content: String::new(),
