@@ -131,6 +131,23 @@ operator-checks: {
   ]
 }
 
+` "Churn — rebuilt set storage spans many lines, and once collected its
+blocks are reused for the next rebuild"
+
+churn-checks: {
+  rounds: 3000
+  churn(s, i): s set.remove(i % 1000) set.add(i % 1000)
+  done?(s, i): (i = rounds) ∨ ((s set.size) < 0)
+  loop(s, i): done?(s, i) then(s, loop(churn(s, i), i + 1))
+  final: loop(range(0, 1000) set.from-list, 0)
+  trues: [
+    (final set.size) = 1000,
+    0 ∈ final,
+    999 ∈ final,
+    not(1000 ∈ final)
+  ]
+}
+
 pass: [
   construction-checks.trues all-true?,
   empty-checks.trues all-true?,
@@ -140,7 +157,8 @@ pass: [
   algebra-checks.trues all-true?,
   render-checks.trues all-true?,
   computed-checks.trues all-true?,
-  operator-checks.trues all-true?
+  operator-checks.trues all-true?,
+  churn-checks.trues all-true?
 ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)

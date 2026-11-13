@@ -604,6 +604,10 @@ fn gc_poll(
         if let Some((live_mib, limit_mib)) = heap.heap_limit_exceeded() {
             return Err(ExecutionError::HeapLimitExceeded(live_mib, limit_mib));
         }
+        // Nor may the blocks held outgrow it (eu-oaz72.73).
+        if let Some((held_mib, limit_mib)) = heap.enforce_footprint_limit() {
+            return Err(ExecutionError::HeapLimitExceeded(held_mib, limit_mib));
+        }
     }
     Ok(())
 }
