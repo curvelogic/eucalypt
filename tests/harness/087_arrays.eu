@@ -202,6 +202,16 @@ neighbours-checks: {
   ]
 }
 
+` "Integral float indices are accepted; negative and non-integer ones are errors (eu-oaz72.88)"
+integral-index-checks: {
+  ` :suppress
+  a: arr.from-flat([2, 2], [1, 2, 3, 4])
+  trues: [
+    (a arr.get([1.0, 0])) = 3,
+    (a arr.slice(0, 1.0) arr.to-list) = [3, 4]
+  ]
+}
+
 ` "Shapes and offsets at the edges: whole-number floats are dimensions, a zero dimension gives an empty array, and an offset too large for any coordinate is out of bounds (eu-oaz72.96)"
 edge-checks: {
   trues: [
@@ -228,6 +238,7 @@ pass: [
   map-checks.trues all-true?,
   fold-checks.trues all-true?,
   neighbours-checks.trues all-true?,
+  integral-index-checks.trues all-true?,
   edge-checks.trues all-true?
 ] all-true?
 

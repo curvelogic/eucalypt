@@ -1,0 +1,57 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/277_vec_nth_out_of_range
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/277_vec_nth_out_of_range.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/277_vec_nth_out_of_range.eu:2:19
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: vec.nth index 5 out of range for vec of length 2
+  ┌─ tests/harness/errors/277_vec_nth_out_of_range.eu:2:19
+  │
+2 │ r: vec.of[10, 20] vec.nth(5)
+  │    -------------- ^^^^^^^^^^
+  │    │
+  │    called from here
+  │
+  = while evaluating (outermost first):
+    - r at 277_vec_nth_out_of_range.eu:2:19
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/277_vec_nth_out_of_range.eu:2:19
+help-lines: 0
+note-lines: 0
+secondary-labels: 2
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: vec.nth index 5 out of range for vec of length 2
+  ┌─ tests/harness/errors/277_vec_nth_out_of_range.eu:2:19
+  │
+2 │ r: vec.of[10, 20] vec.nth(5)
+  │    ---            ^^^^^^^^^^
+  │    │              │
+  │    │              called from here
+  │    called from here
+  │
+  = while evaluating (outermost first):
+    - r at 277_vec_nth_out_of_range.eu:2:19

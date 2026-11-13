@@ -67,7 +67,14 @@ test: {
   computed-nums-len: computed-nums vec.len //= 3
   computed-nums-trip: computed-nums vec.to-list //= [11, 12, 13]
 
+  # Integral indices given as floats are accepted; slice clamps past
+  # the end. Negative and non-integer indices are errors (eu-oaz72.88)
+  float-index: data vec.nth(2.0) //= 3
+  float-slice: data vec.slice(1.0, 3.0) vec.to-list //= [2, 3]
+  slice-clamp: data vec.slice(3, 9) vec.to-list //= [4, 5]
+
   RESULT: [ len, first, last, middle, mid-first
+           , float-index, float-slice, slice-clamp
            , round-trip, round-trip-eq
            , name-count, name-first
            , sample-len, shuffle-len
