@@ -155,11 +155,11 @@ Associativity can be `:left`, `:right`, or omitted (defaults to
 
 ## Integer Overflow
 
-Integers are 64-bit. When `+`, `-`, `*` or `^` on integers gives a result
-outside that range, evaluation stops with a `numeric overflow` error
+Integers are signed 64-bit. When `+`, `-`, `*` or `^` on two such integers
+gives a result outside that range, evaluation stops with a `numeric overflow` error
 pointing at the operator, rather than losing precision:
 
-```eu
+```eu,notest
 a: 2 ^ 62    # 4611686018427387904, an integer
 b: 2.0 ^ 63  # a float, as an operand is a float
 c: 2 ^ 63    # error: numeric overflow
