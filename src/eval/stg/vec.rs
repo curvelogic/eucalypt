@@ -41,7 +41,8 @@ fn vec_index(func: &str, what: &str, native: &Native, smid: Smid) -> Result<usiz
         ));
     };
     if let Some(n) = num.as_u64() {
-        return Ok(n as usize);
+        // Beyond `usize` (only on 32-bit targets) it is out of range anyway.
+        return Ok(usize::try_from(n).unwrap_or(usize::MAX));
     }
     if num.as_i64().is_some() {
         return Err(ExecutionError::Panic(
@@ -63,6 +64,15 @@ fn vec_index(func: &str, what: &str, native: &Native, smid: Smid) -> Result<usiz
         ));
     }
     Ok(f as usize)
+}
+
+/// The index as the user wrote it, rather than as converted to `usize`
+/// (which saturates a huge value such as `1e20`).
+fn num_display(native: &Native) -> String {
+    match native {
+        Native::Num(num) => num.to_string(),
+        _ => String::new(),
+    }
 }
 
 /// VEC.OF — convert a list of primitives to a vec.
@@ -164,7 +174,7 @@ impl StgIntrinsic for VecNth {
                 smid,
                 format!(
                     "vec.nth index {} out of range for vec of length {}",
-                    n,
+                    num_display(&native_n),
                     v.len()
                 ),
             )

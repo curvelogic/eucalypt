@@ -219,7 +219,7 @@ impl StgIntrinsic for ArrayGet {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let coords = num_list_to_usize_vec(machine, view, &args[0])?;
+        let coords = num_list_to_coords("arr.get", machine, view, &args[0])?;
         let smid = machine.annotation();
         let arr = ndarray_arg(machine, view, &args[1])?;
         match arr.get(&coords) {
@@ -281,7 +281,7 @@ impl StgIntrinsic for ArraySet {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let coords = num_list_to_usize_vec(machine, view, &args[0])?;
+        let coords = num_list_to_coords("arr.set", machine, view, &args[0])?;
         let smid = machine.annotation();
         let value = num_arg(machine, view, &args[1])?.as_f64().unwrap_or(0.0);
         let arr = ndarray_arg(machine, view, &args[2])?;
@@ -512,8 +512,18 @@ impl StgIntrinsic for ArraySlice {
     ) -> Result<(), ExecutionError> {
         let smid = machine.annotation();
         let arr = ndarray_arg(machine, view, &args[0])?;
-        let axis = array_index(num_arg(machine, view, &args[1])?.as_f64(), smid)?;
-        let index = array_index(num_arg(machine, view, &args[2])?.as_f64(), smid)?;
+        let axis = array_index(
+            "arr.slice",
+            "axis",
+            num_arg(machine, view, &args[1])?.as_f64(),
+            smid,
+        )?;
+        let index = array_index(
+            "arr.slice",
+            "index",
+            num_arg(machine, view, &args[2])?.as_f64(),
+            smid,
+        )?;
         match arr.slice_along(axis, index) {
             Some(sliced) => machine_return_ndarray(machine, view, sliced),
             None => Err(ExecutionError::ArrayShapeMismatch(
@@ -705,7 +715,7 @@ impl StgIntrinsic for ArrayNeighbours {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let coords = num_list_to_usize_vec(machine, view, &args[0])?;
+        let coords = num_list_to_coords("arr.neighbours", machine, view, &args[0])?;
         let offsets_flat = num_list_to_i64_vec(machine, view, &args[1])?;
         let rank = num_arg(machine, view, &args[2])?.as_f64().unwrap_or(0.0) as usize;
         let arr = ndarray_arg(machine, view, &args[3])?;
@@ -738,8 +748,8 @@ fn num_list_to_i64_vec(
 
 /// Extract a list of numbers from a cons-list, converting to usize.
 ///
-/// Returns an error if any value is negative or not an integer, since
-/// such indices have no meaning for array dimensions or coordinates.
+/// Returns an error if any value is negative, since negative indices
+/// have no meaning for array dimensions or coordinates.
 fn num_list_to_usize_vec(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
@@ -749,9 +759,7 @@ fn num_list_to_usize_vec(
     let nums = super::support::collect_num_list(machine, view, arg.clone())?;
     nums.into_iter()
         .map(|n| {
-            if n.fract() != 0.0 || !n.is_finite() {
-                Err(ExecutionError::ArrayNonIntegerIndex(smid, n))
-            } else if n < 0.0 {
+            if n < 0.0 {
                 Err(ExecutionError::ArrayNegativeIndex(smid, n))
             } else {
                 Ok(n as usize)
@@ -760,12 +768,36 @@ fn num_list_to_usize_vec(
         .collect()
 }
 
-/// Convert a single array axis or index to a `usize`, rejecting a
-/// negative or non-integer value as `num_list_to_usize_vec` does.
-fn array_index(n: Option<f64>, smid: Smid) -> Result<usize, ExecutionError> {
+/// Extract a list of array coordinates from a cons-list, rejecting a
+/// negative or non-integer coordinate rather than truncating it.
+fn num_list_to_coords(
+    func: &str,
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+) -> Result<Vec<usize>, ExecutionError> {
+    let smid = machine.annotation();
+    let nums = super::support::collect_num_list(machine, view, arg.clone())?;
+    nums.into_iter()
+        .map(|n| array_index(func, "coordinate", Some(n), smid))
+        .collect()
+}
+
+/// Convert a single array coordinate, axis or index to a `usize`,
+/// rejecting a negative or non-integer value.
+fn array_index(
+    func: &str,
+    what: &str,
+    n: Option<f64>,
+    smid: Smid,
+) -> Result<usize, ExecutionError> {
     let n = n.unwrap_or(f64::NAN);
     if n.fract() != 0.0 || !n.is_finite() {
-        Err(ExecutionError::ArrayNonIntegerIndex(smid, n))
+        Err(ExecutionError::ArrayNonIntegerIndex(
+            smid,
+            format!("{func} {what}"),
+            n,
+        ))
     } else if n < 0.0 {
         Err(ExecutionError::ArrayNegativeIndex(smid, n))
     } else {

@@ -1167,10 +1167,8 @@ pub enum ExecutionError {
     ArrayShapeMismatch(Smid, String),
     #[error("negative array index or dimension: {1} — array indices and dimensions must be non-negative")]
     ArrayNegativeIndex(Smid, f64),
-    #[error(
-        "non-integer array index or dimension: {1} — array indices and dimensions must be integers"
-    )]
-    ArrayNonIntegerIndex(Smid, f64),
+    #[error("{1} {2} must be an integer")]
+    ArrayNonIntegerIndex(Smid, String, f64),
     #[error("list index out of bounds: index {1} is beyond the end of the list")]
     ListIndexOutOfBounds(Smid, usize),
     /// `dict.get` of a key the dict does not hold; `.1` renders the key.
@@ -1268,7 +1266,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::ArrayNdIndexOutOfBounds(s, _) => *s,
             ExecutionError::ArrayShapeMismatch(s, _) => *s,
             ExecutionError::ArrayNegativeIndex(s, _) => *s,
-            ExecutionError::ArrayNonIntegerIndex(s, _) => *s,
+            ExecutionError::ArrayNonIntegerIndex(s, _, _) => *s,
             ExecutionError::IoNotAllowed(s) => *s,
             ExecutionError::IoFail(s, _) => *s,
             ExecutionError::IoTimeout(s, _) => *s,

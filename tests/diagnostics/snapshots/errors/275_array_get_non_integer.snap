@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: non-integer array index or dimension: 0.5 — array indices and dimensions must be integers
+error: arr.get coordinate 0.5 must be an integer
   ┌─ tests/harness/errors/275_array_get_non_integer.eu:2:4
   │
 2 │ r: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([0, 0.5])
@@ -42,7 +42,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: non-integer array index or dimension: 0.5 — array indices and dimensions must be integers
+error: arr.get coordinate 0.5 must be an integer
   ┌─ tests/harness/errors/275_array_get_non_integer.eu:2:4
   │
 2 │ r: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([0, 0.5])

@@ -1,2 +1,2 @@
 exit: 1
-stderr: "non-integer array index or dimension: 0.5"
+stderr: "arr.slice index 0.5 must be an integer"
