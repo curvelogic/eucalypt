@@ -4908,3 +4908,9 @@ pub fn test_tester_fails_unrun_checked_target() {
     let exit_code = tester::test(&opts("testdata/unrun_checked_target.eu")).unwrap();
     assert_eq!(exit_code, 1);
 }
+
+/// The divides operator `∣` inherits `%`'s zero-divisor error.
+#[test]
+pub fn test_error_273_divides_zero_divisor() {
+    run_error_test(&error_opts("273_divides_zero_divisor.eu"));
+}

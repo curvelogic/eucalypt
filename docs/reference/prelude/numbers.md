@@ -4,6 +4,8 @@
 
 | Function | Description |
 |----------|-------------|
+| `(l ∣ r)` | `true` if `l` divides `r`, i.e. `r % l = 0`; `3 ∣ 12` is `true`. Note `∣` is U+2223 (divides), not `\|` |
+| `(l ∤ r)` | `true` if `l` does not divide `r`, i.e. `not(l ∣ r)`; `5 ∤ 12` is `true` |
 | `(∸ x)` | Unary minus; negate |
 
 ## Numeric Functions

@@ -704,6 +704,18 @@ or: __OR
     precedence: :prod }
 (l % r): __MOD(l, r)
 
+` { doc: "`l ∣ r` - `true` if `l` divides `r`, i.e. `r % l = 0`; `3 ∣ 12` is `true`. Note `∣` is U+2223 (divides), not `|`."
+    type: s"number → number → bool"
+    associates: :left
+    precedence: :eq }
+(l ∣ r): (r % l) = 0
+
+` { doc: "`l ∤ r` - `true` if `l` does not divide `r`, i.e. `not(l ∣ r)`; `5 ∤ 12` is `true`."
+    type: s"number → number → bool"
+    associates: :left
+    precedence: :eq }
+(l ∤ r): not(l ∣ r)
+
 ` { doc: "`l < r` - `true` if `l` is less than `r`. Works on numbers, strings, symbols, and datetimes."
     type: s"number → number → bool | string → string → bool | symbol → symbol → bool | datetime → datetime → bool"
     export: :suppress
