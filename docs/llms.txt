@@ -49,7 +49,7 @@ evaluation and purely functional semantics.
 - [Language Syntax Reference](https://curvelogic.github.io/eucalypt/reference/syntax.html): Complete syntax reference for the block DSL and expression DSL, including primitives, declarations, operators, and anaphora
 - [Operators and Identifiers](https://curvelogic.github.io/eucalypt/reference/operators-and-identifiers.html): Normal and operator identifiers, scope rules, single-quote identifiers, and prefix operators
 - [Prelude Reference](https://curvelogic.github.io/eucalypt/reference/prelude/index.html): Index of all 370 prelude functions across 11 categories
-- [Lists](https://curvelogic.github.io/eucalypt/reference/prelude/lists.html): 94 list functions including construction, transformation, combining, splitting, folding, predicates, and sorting
+- [Lists](https://curvelogic.github.io/eucalypt/reference/prelude/lists.html): 91 list functions including construction, transformation, combining, splitting, folding, predicates, and sorting
 - [Blocks](https://curvelogic.github.io/eucalypt/reference/prelude/blocks.html): 66 block functions including construction, merging, lookup, transformation, alteration, and deep find/query
 - [Strings](https://curvelogic.github.io/eucalypt/reference/prelude/strings.html): 36 string functions including splitting, joining, regex, case conversion, base64, and SHA-256
 - [Numbers and Arithmetic](https://curvelogic.github.io/eucalypt/reference/prelude/numbers.html): 30 numeric functions including inc/dec, predicates, parsing, rounding, and min/max

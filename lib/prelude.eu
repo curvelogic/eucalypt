@@ -1392,14 +1392,16 @@ __dbg-after(f, x): ▶(f(x))
 ## List library functions, maps and folds
 #
 
-` "`__require-int(what, n, v)` - internal: `v`, or an error naming `what` and `n` when `n` is a number that is not an integer."
+` { doc: "`__require-int(what, n, v)` - internal: `v`, or an error naming `what` and `n` when `n` is a number that is not an integer."
+    export: :suppress }
 __require-int(what, n, v): ((n number?) ∧ (floor(n) != n)) then(panic("{what} {n} must be an integer"), v)
 
 ` { doc: "`take(n, l)` - return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is an error."
     type: s"number → [a] → [a]" }
 take(n, l): __require-int("take count", n, __take(n, l))
 
-` "`__take(n, l)` - internal: `take` without its integer check."
+` { doc: "`__take(n, l)` - internal: `take` without its integer check."
+    export: :suppress }
 __take(n, l): __IF((n <= 0) ∨ (l nil?), [], cons(l head, __take(n dec, l tail)))
  
 ` { doc: "`drop(n, l)` - return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0, `[]` when `n` exceeds the length of `l`. A non-integer `n` is an error."
@@ -1407,7 +1409,8 @@ __take(n, l): __IF((n <= 0) ∨ (l nil?), [], cons(l head, __take(n dec, l tail)
     blame: :transparent }
 drop(n, l): __require-int("drop count", n, __drop(n, l))
 
-` "`__drop(n, l)` - internal: `drop` without its integer check."
+` { doc: "`__drop(n, l)` - internal: `drop` without its integer check."
+    export: :suppress }
 __drop(n, l): __IF((n <= 0), l, __IF(l nil?, [], __drop(n dec, l tail)))
 
 ` { doc: "`rotate(n, l)` - rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error."
@@ -1647,7 +1650,7 @@ any(p?, l): l map(p?) any-true?
     type: s"number → number → [a] → [[a]]"
     blame: :boundary }
 window(n, step, l): {
-  aux(xs): { chunk: xs take(n) }.((count(chunk) >= n) then(cons(chunk, xs drop(step) aux), []))
+  aux(xs): { chunk: xs __take(n) }.((count(chunk) >= n) then(cons(chunk, xs __drop(step) aux), []))
 }.(__require-int("window size", n, __require-int("window step", step,
    if((n number?) ∧ (n <= 0), panic("window size {n} must be positive"),
    if((step number?) ∧ (step <= 0), panic("window step {step} must be positive"), aux(l))))))
@@ -1660,7 +1663,7 @@ partition(n): window(n, n)
     type: s"number → number → [a] → [[a]]"
     blame: :boundary }
 window-all(n, step, l): {
-  aux(xs): { chunk: xs take(n) }.((chunk nil?) then([], cons(chunk, xs drop(step) aux)))
+  aux(xs): { chunk: xs __take(n) }.((chunk nil?) then([], cons(chunk, xs __drop(step) aux)))
 }.(__require-int("window-all size", n, __require-int("window-all step", step,
    if((n number?) ∧ (n <= 0), [],
    if((step number?) ∧ (step <= 0), panic("window step {step} must be positive"), aux(l))))))

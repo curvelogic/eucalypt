@@ -22,8 +22,11 @@ A single private helper `__require-int(what, n, v)` returns `v`, or panics
 itself. It guards non-numbers through — a symbol passed to `nth` keeps its
 existing type-mismatch diagnostic. The check runs once per call, before the
 existing negative/zero checks, never per recursion step: `take` and `drop`
-delegate their recursion to private `__take`/`__drop`. An integral float
-such as `2.0` is accepted.
+delegate their recursion to private `__take`/`__drop`, which `window` and
+`window-all` also use in their loops once `n` and `step` are validated. The
+three helpers carry `export: :suppress`, so they stay out of the generated
+prelude reference and its counts. An integral float such as `2.0` is
+accepted.
 
 ## Incidental bug fix: `number?` on arithmetic results
 

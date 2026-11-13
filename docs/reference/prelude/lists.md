@@ -130,9 +130,6 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `__require-int(what, n, v)` | Internal: `v`, or an error naming `what` and `n` when `n` is a number that is not an integer |
-| `__take(n, l)` | Internal: `take` without its integer check |
-| `__drop(n, l)` | Internal: `drop` without its integer check |
 | `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`.
