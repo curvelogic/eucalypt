@@ -220,7 +220,7 @@ impl StgIntrinsic for ArrayGet {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let coords = num_list_to_usize_vec(machine, view, &args[0])?;
+        let coords = num_list_to_coords("arr.get", machine, view, &args[0])?;
         let smid = machine.annotation();
         let arr = ndarray_arg(machine, view, &args[1])?;
         match arr.get(&coords) {
@@ -282,7 +282,7 @@ impl StgIntrinsic for ArraySet {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let coords = num_list_to_usize_vec(machine, view, &args[0])?;
+        let coords = num_list_to_coords("arr.set", machine, view, &args[0])?;
         let smid = machine.annotation();
         let value = num_arg(machine, view, &args[1])?.as_f64().unwrap_or(0.0);
         let arr = ndarray_arg(machine, view, &args[2])?;
@@ -513,8 +513,18 @@ impl StgIntrinsic for ArraySlice {
     ) -> Result<(), ExecutionError> {
         let smid = machine.annotation();
         let arr = ndarray_arg(machine, view, &args[0])?;
-        let axis = num_arg(machine, view, &args[1])?.as_f64().unwrap_or(0.0) as usize;
-        let index = num_arg(machine, view, &args[2])?.as_f64().unwrap_or(0.0) as usize;
+        let axis = array_index(
+            "arr.slice",
+            "axis",
+            num_arg(machine, view, &args[1])?.as_f64(),
+            smid,
+        )?;
+        let index = array_index(
+            "arr.slice",
+            "index",
+            num_arg(machine, view, &args[2])?.as_f64(),
+            smid,
+        )?;
         match arr.slice_along(axis, index) {
             Some(sliced) => machine_return_ndarray(machine, view, sliced),
             None => Err(ExecutionError::ArrayShapeMismatch(
@@ -706,7 +716,7 @@ impl StgIntrinsic for ArrayNeighbours {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let coords = num_list_to_usize_vec(machine, view, &args[0])?;
+        let coords = num_list_to_coords("arr.neighbours", machine, view, &args[0])?;
         let offsets_flat = num_list_to_i64_vec(machine, view, &args[1])?;
         let rank = num_arg(machine, view, &args[2])?.as_f64().unwrap_or(0.0) as usize;
         let arr = ndarray_arg(machine, view, &args[3])?;
@@ -737,11 +747,10 @@ fn num_list_to_i64_vec(
     Ok(nums.into_iter().map(|n| n as i64).collect())
 }
 
-/// Extract a list of numbers from a cons-list, converting to usize.
-///
-/// Returns an error if any value is negative, since negative indices
-/// have no meaning for array dimensions or coordinates.
-fn num_list_to_usize_vec(
+/// Extract a list of array coordinates from a cons-list, rejecting a
+/// negative or non-integer coordinate rather than truncating it.
+fn num_list_to_coords(
+    func: &str,
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     arg: &Ref,
@@ -749,20 +758,49 @@ fn num_list_to_usize_vec(
     let smid = machine.annotation();
     let nums = super::support::collect_num_list(machine, view, arg.clone())?;
     nums.into_iter()
-        .map(|n| {
-            if n < 0.0 {
-                Err(ExecutionError::ArrayNegativeIndex(smid, n))
-            } else {
-                Ok(n as usize)
-            }
-        })
+        .map(|n| array_index(func, "coordinate", Some(n), smid))
         .collect()
+}
+
+/// Convert a single array coordinate, axis or index to a `usize`,
+/// rejecting a negative or non-integer value.
+fn array_index(
+    func: &str,
+    what: &str,
+    n: Option<f64>,
+    smid: Smid,
+) -> Result<usize, ExecutionError> {
+    let n = n.unwrap_or(f64::NAN);
+    if n.fract() != 0.0 || !n.is_finite() {
+        Err(ExecutionError::ArrayNonIntegerIndex(
+            smid,
+            format!("{func} {what}"),
+            n,
+        ))
+    } else if n < 0.0 {
+        Err(ExecutionError::ArrayNegativeIndex(smid, n))
+    } else {
+        Ok(n as usize)
+    }
 }
 
 /// The most elements one array can hold: its values are a single heap
 /// object of `f64`s, and the heap allocates no object larger than
-/// [`MAX_ALLOC_SIZE`] bytes.
-const MAX_ARRAY_ELEMENTS: usize = MAX_ALLOC_SIZE / std::mem::size_of::<f64>();
+/// [`MAX_ALLOC_SIZE`] bytes; nor can Rust allocate more than
+/// `isize::MAX` bytes, the tighter of the two on 32-bit targets such as
+/// wasm32.
+const MAX_ARRAY_ELEMENTS: usize = element_limit(MAX_ALLOC_SIZE, isize::MAX as usize);
+
+/// The most `f64` elements that fit in one allocation, given the heap's
+/// largest object (`max_alloc` bytes) and the target's `isize::MAX`.
+const fn element_limit(max_alloc: usize, isize_max: usize) -> usize {
+    let bytes = if max_alloc < isize_max {
+        max_alloc
+    } else {
+        isize_max
+    };
+    bytes / std::mem::size_of::<f64>()
+}
 
 /// Extract an array shape from a cons-list of numbers, for the array
 /// function `function` (named in any error).
@@ -805,20 +843,10 @@ fn validate_shape(smid: Smid, function: &str, dims: &[f64]) -> Result<Vec<usize>
     let mut shape = Vec::with_capacity(dims.len());
     let mut count: usize = 1;
     for &d in dims {
-        if !d.is_finite() || d.fract() != 0.0 {
-            return Err(ExecutionError::ArrayNonIntegerIndex(
-                smid,
-                format!("{function} dimension"),
-                d,
-            ));
-        }
-        if d < 0.0 {
-            return Err(ExecutionError::ArrayNegativeIndex(smid, d));
-        }
+        let n = array_index(function, "dimension", Some(d), smid)?;
         if d > limit as f64 {
             return Err(too_large());
         }
-        let n = d as usize;
         if n != 0 {
             count = count
                 .checked_mul(n)
@@ -945,6 +973,23 @@ mod tests {
             shape_of(&[3.0, -1.0]),
             Err(ExecutionError::ArrayNegativeIndex(_, _))
         ));
+    }
+
+    #[test]
+    fn element_limit_respects_the_allocation_limit_of_the_target() {
+        // 64-bit: the heap's largest object is the binding limit.
+        assert_eq!(
+            element_limit(u32::MAX as usize, i64::MAX as usize),
+            536_870_911
+        );
+        // wasm32: `isize::MAX` (2^31 - 1 bytes) is, so a shape that fits
+        // the heap but not a `Vec` is rejected rather than panicking with
+        // "capacity overflow" when ndarray allocates it.
+        assert_eq!(
+            element_limit(u32::MAX as usize, i32::MAX as usize),
+            268_435_455
+        );
+        assert!(MAX_ARRAY_ELEMENTS * std::mem::size_of::<f64>() <= isize::MAX as usize);
     }
 
     #[test]

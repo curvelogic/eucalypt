@@ -28,6 +28,53 @@ use super::{
     },
 };
 
+/// Convert the index argument `what` of vec function `func` to a `usize`.
+///
+/// A non-number, a non-integer (`0.5`) and a negative number are errors
+/// naming the function and the value, never clamped or truncated. An
+/// integral float such as `2.0` is accepted.
+fn vec_index(func: &str, what: &str, native: &Native, smid: Smid) -> Result<usize, ExecutionError> {
+    let Native::Num(num) = native else {
+        return Err(ExecutionError::Panic(
+            smid,
+            format!("{func}: {what} must be a number"),
+        ));
+    };
+    if let Some(n) = num.as_u64() {
+        // Beyond `usize` (only on 32-bit targets) it is out of range anyway.
+        return Ok(usize::try_from(n).unwrap_or(usize::MAX));
+    }
+    if num.as_i64().is_some() {
+        return Err(ExecutionError::Panic(
+            smid,
+            format!("{func} {what} {num} out of range: vec indices start at 0"),
+        ));
+    }
+    let f = num.as_f64().unwrap_or(f64::NAN);
+    if f.fract() != 0.0 || !f.is_finite() {
+        return Err(ExecutionError::Panic(
+            smid,
+            format!("{func} {what} {num} must be an integer"),
+        ));
+    }
+    if f < 0.0 {
+        return Err(ExecutionError::Panic(
+            smid,
+            format!("{func} {what} {num} out of range: vec indices start at 0"),
+        ));
+    }
+    Ok(f as usize)
+}
+
+/// The index as the user wrote it, rather than as converted to `usize`
+/// (which saturates a huge value such as `1e20`).
+fn num_display(native: &Native) -> String {
+    match native {
+        Native::Num(num) => num.to_string(),
+        _ => String::new(),
+    }
+}
+
 /// VEC.OF — convert a list of primitives to a vec.
 pub struct VecOf;
 
@@ -99,7 +146,8 @@ impl CallGlobal1 for VecLen {}
 
 /// VEC.NTH — return the element at index n (0-based).
 ///
-/// Returns an error if the index is out of bounds.
+/// Returns an error if the index is negative, not an integer, or out of
+/// bounds.
 pub struct VecNth;
 
 impl StgIntrinsic for VecNth {
@@ -114,25 +162,21 @@ impl StgIntrinsic for VecNth {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
+        // `Smid::default()` lets the error take its location from the call
+        // site on the stack (`vec.nth(…)`); the intrinsic's annotation
+        // would point at the vec argument instead.
+        let smid = Smid::default();
         let native_n = resolve_native_unboxing(machine, view, &args[0])?;
-        let n = match &native_n {
-            Native::Num(num) => num
-                .as_u64()
-                .map(|v| v as usize)
-                .or_else(|| num.as_f64().map(|v| v as usize))
-                .unwrap_or(0),
-            _ => {
-                return Err(ExecutionError::Panic(
-                    Smid::default(),
-                    "vec.nth: index must be a number".to_string(),
-                ))
-            }
-        };
+        let n = vec_index("vec.nth", "index", &native_n, smid)?;
         let v = vec_arg(machine, view, &args[1])?;
         let prim = v.get(n).ok_or_else(|| {
             ExecutionError::Panic(
-                Smid::default(),
-                format!("vec.nth: index {} out of bounds (len {})", n, v.len()),
+                smid,
+                format!(
+                    "vec.nth index {} out of range for vec of length {}",
+                    num_display(&native_n),
+                    v.len()
+                ),
             )
         })?;
         let native = set_primitive_to_native(&prim);
@@ -145,7 +189,7 @@ impl StgIntrinsic for VecNth {
             Native::Sym(_) => DataConstructor::BoxedSymbol.tag(),
             _ => {
                 return Err(ExecutionError::Panic(
-                    Smid::default(),
+                    smid,
                     "vec.nth: unexpected native type in vec element".to_string(),
                 ))
             }
@@ -160,7 +204,8 @@ impl CallGlobal2 for VecNth {}
 
 /// VEC.SLICE — return a sub-vec `[from, to)`.
 ///
-/// Indices are clamped to the vec length.
+/// Indices past the end are clamped to the vec length; a negative or
+/// non-integer index is an error.
 pub struct VecSlice;
 
 impl StgIntrinsic for VecSlice {
@@ -175,34 +220,12 @@ impl StgIntrinsic for VecSlice {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
+        // As for VEC.NTH: locate the error at the call site.
+        let smid = Smid::default();
         let native_from = resolve_native_unboxing(machine, view, &args[0])?;
         let native_to = resolve_native_unboxing(machine, view, &args[1])?;
-        let from = match &native_from {
-            Native::Num(n) => n
-                .as_u64()
-                .map(|v| v as usize)
-                .or_else(|| n.as_f64().map(|v| v as usize))
-                .unwrap_or(0),
-            _ => {
-                return Err(ExecutionError::Panic(
-                    Smid::default(),
-                    "vec.slice: from must be a number".to_string(),
-                ))
-            }
-        };
-        let to = match &native_to {
-            Native::Num(n) => n
-                .as_u64()
-                .map(|v| v as usize)
-                .or_else(|| n.as_f64().map(|v| v as usize))
-                .unwrap_or(0),
-            _ => {
-                return Err(ExecutionError::Panic(
-                    Smid::default(),
-                    "vec.slice: to must be a number".to_string(),
-                ))
-            }
-        };
+        let from = vec_index("vec.slice", "from", &native_from, smid)?;
+        let to = vec_index("vec.slice", "to", &native_to, smid)?;
         let v = vec_arg(machine, view, &args[2])?;
         let elements = v.slice(from, to).to_vec();
         machine_return_vec(machine, view, &elements)
