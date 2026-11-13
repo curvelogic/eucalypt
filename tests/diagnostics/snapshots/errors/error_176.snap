@@ -11,7 +11,7 @@ code: -
 primary: user tests/harness/errors/error_176.eu:19:32
 help-lines: 0
 note-lines: 0
-secondary-labels: 1
+secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
 trace-prelude-frames: 0
@@ -22,9 +22,6 @@ EXPECT FAILED: expected "goodbye world", got "hello world"
 error: assertion failed: expected "goodbye world", got "hello world"
    ┌─ tests/harness/errors/error_176.eu:19:32
    │
-16 │ make-greeting(name): "hello {name}"
-   │                      -------------- called from here
-   ·
 19 │ result: make-greeting("world") //= "goodbye world"
    │                                ^^^
    │

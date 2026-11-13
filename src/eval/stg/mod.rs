@@ -351,6 +351,10 @@ pub struct StgSettings {
     /// Maps binding name → per-argument demand vector. Used by the STG
     /// compiler to apply per-argument demands at user function call sites.
     pub user_demand_sigs: crate::core::analyse_demand::NamedSignatureTable,
+    /// Demand signatures of the prelude globals, by prelude slot, from
+    /// `PreludeBlob::demand_signatures` (eu-oaz72.77). Used with
+    /// `prelude_globals` for calls whose callee resolves to a prelude global.
+    pub prelude_demand_sigs: compiler::PreludeDemandSignatures,
 }
 
 /// Compile core syntax to STG ready for execution
@@ -370,7 +374,8 @@ pub fn compile(
         runtime.intrinsics(),
         settings.prelude_globals.clone(),
     )
-    .with_user_demand_sigs(settings.user_demand_sigs.clone());
+    .with_user_demand_sigs(settings.user_demand_sigs.clone())
+    .with_prelude_demand_sigs(settings.prelude_demand_sigs.clone());
     compiler.compile(expr)
 }
 
@@ -400,6 +405,7 @@ pub fn compile_named(
         runtime.intrinsics(),
         settings.prelude_globals.clone(),
     )
-    .with_user_demand_sigs(settings.user_demand_sigs.clone());
+    .with_user_demand_sigs(settings.user_demand_sigs.clone())
+    .with_prelude_demand_sigs(settings.prelude_demand_sigs.clone());
     compiler.compile_with_self_recurse(expr, self_recurse)
 }

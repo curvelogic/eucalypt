@@ -1,0 +1,3 @@
+exit: 1
+stderr: "index -1 out of range: list indices start at 0"
+stderr-absent: "panic: list forced"
