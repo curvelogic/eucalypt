@@ -1396,10 +1396,10 @@ __dbg-after(f, x): ▶(f(x))
     type: s"number → [a] → [a]" }
 take(n, l): __IF((n <= 0) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
  
-` { doc: "`drop(n, l)` - return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0. A non-integer `n` is not rejected."
+` { doc: "`drop(n, l)` - return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0, `[]` when `n` exceeds the length of `l`. A non-integer `n` is not rejected."
     type: s"number → [a] → [a]"
     blame: :transparent }
-drop(n, l): __IF((n <= 0), l, drop(n dec, l tail))
+drop(n, l): __IF((n <= 0), l, __IF(l nil?, [], drop(n dec, l tail)))
 
 ` { doc: "`rotate(n, l)` - rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0."
     type: s"number → [a] → [a]" }
@@ -1638,8 +1638,7 @@ any(p?, l): l map(p?) any-true?
     type: s"number → number → [a] → [[a]]"
     blame: :boundary }
 window(n, step, l): {
-  skip(k, ys): ((k <= 0) ∨ (ys nil?)) then(ys, skip(k dec, ys tail))
-  aux(xs): { chunk: xs take(n) }.((count(chunk) >= n) then(cons(chunk, xs skip(step) aux), []))
+  aux(xs): { chunk: xs take(n) }.((count(chunk) >= n) then(cons(chunk, xs drop(step) aux), []))
 }.(if((n number?) ∧ (n <= 0), panic("window size {n} must be positive"),
    if((step number?) ∧ (step <= 0), panic("window step {step} must be positive"), aux(l))))
 
@@ -1651,8 +1650,7 @@ partition(n): window(n, n)
     type: s"number → number → [a] → [[a]]"
     blame: :boundary }
 window-all(n, step, l): {
-  skip(k, ys): ((k <= 0) ∨ (ys nil?)) then(ys, skip(k dec, ys tail))
-  aux(xs): { chunk: xs take(n) }.((chunk nil?) then([], cons(chunk, xs skip(step) aux)))
+  aux(xs): { chunk: xs take(n) }.((chunk nil?) then([], cons(chunk, xs drop(step) aux)))
 }.(if((n number?) ∧ (n <= 0), [],
    if((step number?) ∧ (step <= 0), panic("window step {step} must be positive"), aux(l))))
 
