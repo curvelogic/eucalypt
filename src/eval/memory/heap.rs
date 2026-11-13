@@ -1628,15 +1628,19 @@ pub fn footprint_trigger_blocks(limit: usize, held: usize) -> usize {
 /// before [`Heap::enforce_footprint_limit`] counts it over the limit
 /// (eu-oaz72.73).
 ///
-/// The tolerance, 1/8 of the limit but at least 1 MiB, is for
-/// fragmentation: live data spread thinly across blocks cannot be
-/// released, and a medium object may need a fresh block for want of a
-/// large enough hole. The 1 MiB covers the program's and prelude's own
-/// data, which hold a heap of a few MiB over its limit by itself
-/// (75 blocks against a 2 MiB, 64-block limit, measured).
+/// The tolerance, half the limit but at least 1 MiB, is for
+/// fragmentation, which this collector cannot compact away: live data
+/// spread thinly across blocks cannot be released, and a medium object may
+/// need a fresh block for want of a large enough hole. Programs whose live
+/// data is about 60% of a 16 MiB limit hold over 18 MiB that way
+/// (measured), and the prelude's own data holds a 2 MiB heap at about
+/// 2.3 MiB. The collection trigger and the release of free blocks keep
+/// the footprint under the limit otherwise; the tolerance only bounds how
+/// far fragmentation may carry it, so that the heap cannot grow without
+/// bound past the limit.
 pub fn footprint_limit_tolerated(limit: usize) -> usize {
     const MIN_TOLERANCE_BLOCKS: usize = 1_048_576 / BLOCK_SIZE_BYTES;
-    limit.saturating_add((limit / 8).max(MIN_TOLERANCE_BLOCKS))
+    limit.saturating_add((limit / 2).max(MIN_TOLERANCE_BLOCKS))
 }
 
 /// Whether `live_blocks` surviving a collection exhausts a heap of `limit`
@@ -2013,7 +2017,7 @@ mod oom_tests {
         let limit = 1024;
         assert_eq!(footprint_trigger_blocks(limit, 0), 896);
         assert_eq!(footprint_trigger_blocks(limit, 896), 896);
-        for held in [900, 1024, 1100, 1151] {
+        for held in [900, 1024, 1100, 1535] {
             assert!(
                 footprint_trigger_blocks(limit, held) > held,
                 "no headroom at {held} blocks held"
