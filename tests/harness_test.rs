@@ -1501,6 +1501,19 @@ pub fn test_error_088() {
     run_error_test(&error_opts("088_numeric_range.eu"));
 }
 
+/// Integer `^` out of the i64 range is a numeric overflow, with the
+/// caret on the `^`, not a silently imprecise float.
+#[test]
+pub fn test_error_088_numeric_range_pow() {
+    run_error_test(&error_opts("088_numeric_range_pow.eu"));
+}
+
+/// Overflow of a sum of in-range powers carets the `+`.
+#[test]
+pub fn test_error_088_numeric_range_pow_sum() {
+    run_error_test(&error_opts("088_numeric_range_pow_sum.eu"));
+}
+
 #[test]
 pub fn test_error_089() {
     run_error_test(&error_opts("089_numeric_domain.eu"));
