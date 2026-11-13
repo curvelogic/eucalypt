@@ -2646,14 +2646,8 @@ impl Heap {
         let heap_state = unsafe { &*self.state.get() };
         let mut analysis = FragmentationAnalysis::default();
 
-        // Analyze all blocks and collect statistics
-        let blocks: Vec<&BumpBlock> = std::iter::empty()
-            .chain(heap_state.head.iter())
-            .chain(heap_state.overflow.iter())
-            .chain(heap_state.rest.iter())
-            .collect();
-
-        for block in blocks {
+        // Analyse every bump block, as `analyze_collection_strategy` does
+        for (_, block) in heap_state.indexed_bump_blocks() {
             let density = block.analyze_density();
             let score = block.fragmentation_score();
 
@@ -3347,8 +3341,9 @@ impl Heap {
         candidate_bases.contains(&bump::block_base_of(ptr))
     }
 
-    /// Base addresses of the candidate blocks (indices as in
-    /// [`CollectionStrategy`]: 0 head, 1 overflow, n ≥ 2 `rest[n - 2]`).
+    /// Base addresses of the candidate blocks, indexed as by
+    /// [`HeapState::indexed_bump_blocks`]: 0 head, 1 overflow, then
+    /// `rest`, `unswept` and `recycled` from 2.
     ///
     /// Resolved once per collection so the per-object candidate test is a
     /// set lookup rather than a scan of the candidate list (eu-oaz72.4).

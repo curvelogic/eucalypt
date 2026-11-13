@@ -518,7 +518,9 @@ pub fn collect_mark_in_place_for_test(
 /// 1. Mark phase: trace live objects as normal
 /// 2. Evacuate phase: copy marked objects from candidate blocks to target blocks
 /// 3. Update phase: rewrite all pointers to forwarded objects
-/// 4. Sweep phase: defer sweep; candidate blocks are fully dead after evacuation
+/// 4. Sweep phase: defer sweep. The old copies' lines stay marked from the
+///    mark phase, so a candidate block's evacuated space is reclaimed by the
+///    next collection, not this one
 ///
 /// Objects are evacuated via `CollectorHeapView::evacuate()` which does a
 /// byte-level copy (header + payload) and sets a forwarding pointer in the

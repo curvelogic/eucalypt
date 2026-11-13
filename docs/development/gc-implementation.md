@@ -162,7 +162,9 @@ after a collection.
 2. 30% or more: mark in place unless the footprint passes 3/4 of the heap
    limit (`footprint_under_pressure`). An evacuating collection updates every
    live object however few blocks it moves, so it is worth paying only when
-   the blocks it frees can be released.
+   the blocks it empties can be given back to the system. They are released
+   after the *next* collection: the mark phase line-marks an object's old
+   copy before evacuating it, so its lines stay marked until then.
 3. Otherwise evacuate the unpinned sparse and fragmented blocks, sparsest
    first, while their marked lines fit `evacuation_budget_lines` (an eighth
    of the heap's lines).
