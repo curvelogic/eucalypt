@@ -483,18 +483,25 @@ Recorded as built; none changes an agreed choice.
   fresh frame, since the box also closes over its binding frame); an
   unevaluated one is stored as a cell around the original alias, so it
   memoises in the slot it names and the cell drops the alias once evaluated.
-- **Limit of that fix.** Only an evaluated scalar (number, string,
-  symbol, datetime) is detached from the caller's frame. Any other
-  evaluated value (a list such as `[i, i]`, a block, a function) and any
-  unevaluated value (`i + 1`, an interpolated string) still closes over
-  the frame it was built in, so a loop that threads a dict and stores such
-  values retains earlier versions until those values are replaced
-  (measured: 4,616 / 11,161 / 27,039 peak heap blocks at 25k / 100k /
-  200k chained updates storing `[i, i]`; measured-single). An
-  unevaluated value must keep its environment — that is laziness, as for
-  any lazy list — but an evaluated constructor could be rebuilt over a
-  fresh frame field by field. That is left to a later dict PR; until
-  then, long update loops should store scalar values where they can.
+- **Evaluated constructors (eu-oaz72.70).** `memo_cell` rebuilds any
+  evaluated data constructor over fresh frames, field by field and
+  recursively, looking through `OP_ATOM` aliases and updatable `Atom`
+  thunks (`thunk ✳i`, a list element naming a variable) whose target is
+  evaluated. It is all or nothing: a field that is not evaluated (a thunk,
+  a function, a cell) pins its frame anyway, so the value is then stored as
+  it is, as is one of more than 64 constructors (a large evaluated value is
+  not copied on every update). A loop storing `[i, [i, :x], "s"]` now peaks
+  at 1,255 blocks over 50,000 updates (`assoc-chain-lists`), and at 1,341
+  over 1,000,000 updates storing `[i, i]` (measured-single).
+- **Remaining limit.** An unevaluated value still closes over the frame it
+  was built in, and so does an evaluated one with an unevaluated field: a
+  block literal (compiled as a thunk), `[i + 1, i]`, or a list whose
+  elements are non-updatable arithmetic thunks (`[i % 7, i]`, even after
+  the same list was deep-forced as a key, since such thunks do not
+  memoise). A loop that threads a dict and stores such values retains
+  earlier versions until those values are replaced or evaluated in place.
+  Detaching them needs flat closures (a thunk capturing only its free
+  variables), a compiler change beyond the dict.
 - **Key forcing** happens in the wrappers: `seqKey` deep-forces a key and
   `seqDictPairs` prepares `dict.of`'s list, rebuilding each well-formed pair
   as `BlockPair(forced key, value)`. List keys may nest at most 32 deep
