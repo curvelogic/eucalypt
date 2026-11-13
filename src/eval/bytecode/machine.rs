@@ -909,11 +909,9 @@ fn env_from_data_args_copy(
 
     // An unevaluated update thunk is bound as an alias over its atom so that
     // forcing it updates the slot it lives in, not a copy.
-    let share = |v: BcValue, j: usize| match (&v, atoms.get(j)) {
-        (BcValue::Closure(c), Some(atom)) if c.update() => {
-            BcValue::Closure(BcClosure::new(*atom, cons_env))
-        }
-        _ => v,
+    let share = |v: BcValue, j: usize| match atoms.get(j) {
+        Some(atom) => share_unevaluated(v, *atom, cons_env),
+        None => v,
     };
 
     let mut array = Array::with_capacity(&view, args.len());
@@ -1033,6 +1031,22 @@ fn pair_key_symbol(
     value_symbol(prog, decoded, state, view, key)
 }
 
+/// A constructor field's value as it may be handed out of the constructor:
+/// an unevaluated update thunk becomes a lazy alias closure over the field's
+/// `OP_ATOM` node (`atom`, a closure code ref) in the constructor's env
+/// `env`; anything else is returned as it is. Forcing a copy of the thunk
+/// would update the copy and leave the constructor's slot unevaluated, so
+/// every later read would recompute it; forcing the alias enters,
+/// black-holes and updates the original slot. Used when a constructor is
+/// taken apart (`env_from_data_args_copy`, eu-oaz72.36) and when a block
+/// field is read with `.` (`bc_lookup_in_block`, eu-oaz72.87).
+fn share_unevaluated(value: BcValue, atom: CodeRef, env: RefPtr<BcEnvFrame>) -> BcValue {
+    match &value {
+        BcValue::Closure(c) if c.update() => BcValue::Closure(BcClosure::new(atom, env)),
+        _ => value,
+    }
+}
+
 /// Literal-key lookup on a forced block (`DataConstructor::Block`). Linear
 /// scan of the entry list of `BlockPair`s (the perf index is skipped — a
 /// linear scan yields the identical result). `None` on miss / non-block.
@@ -1066,12 +1080,28 @@ fn bc_lookup_in_block(
         let head_ref = arg_ref(prog.code.as_slice(), *loffs.first()?).ok()?;
         let pair = resolve_ref(view, &state.constants, c.env(), state.globals, head_ref).ok()?;
         if pair_key_symbol(prog, decoded, state, view, &pair) == Some(target) {
-            let BcValue::Closure(pc) = &pair else {
+            let BcValue::Closure(pair_closure) = &pair else {
                 return None;
             };
-            let (_, poffs) = decode_cons(prog, decoded, pc)?;
-            let val_ref = arg_ref(prog.code.as_slice(), *poffs.get(1)?).ok()?;
-            return resolve_ref(view, &state.constants, pc.env(), state.globals, val_ref).ok();
+            let (_, poffs) = decode_cons(prog, decoded, pair_closure)?;
+            let val_off = *poffs.get(1)?;
+            let val_ref = arg_ref(prog.code.as_slice(), val_off).ok()?;
+            let value = resolve_ref(
+                view,
+                &state.constants,
+                pair_closure.env(),
+                state.globals,
+                val_ref,
+            )
+            .ok()?;
+            // Returning a copy of an unevaluated field would leave the
+            // pair's slot unevaluated, so every `.key` lookup on the block
+            // would recompute the field (eu-oaz72.87).
+            return Some(share_unevaluated(
+                value,
+                peek_code_ref(decoded, val_off),
+                pair_closure.env(),
+            ));
         }
         let tail_ref = arg_ref(prog.code.as_slice(), *loffs.get(1)?).ok()?;
         current = resolve_ref(view, &state.constants, c.env(), state.globals, tail_ref).ok()?;
