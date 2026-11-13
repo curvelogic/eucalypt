@@ -1,3 +1,18 @@
+` { doc: "`num` parses decimal number strings. Leading zeros in the
+         integer part are read as decimal, never octal (eu-oaz72.11)." }
+
 pass: __NUMPARSE("1234") + __NUMPARSE("3.4") //= 1237.4
 
-RESULT: if(pass, :PASS, :FAIL)
+leading-zeros: {
+  int: ("07" num) = 7
+  negative: ("-07" num) = -7
+  zeros: ("00" num) = 0
+  not-octal: ("010" num) = 10
+  wide: ("000123" num) = 123
+  float: ("007.5" num) = 7.5
+  negative-float: ("-00.25" num) = -0.25
+  exponent: ("01e3" num) = 1000
+  zero-float: ("0.5" num) = 0.5
+}
+
+RESULT: (pass ∧ (leading-zeros values all-true?)) then(:PASS, :FAIL)
