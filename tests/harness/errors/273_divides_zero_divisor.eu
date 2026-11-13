@@ -1,0 +1,2 @@
+# The divides operator inherits the zero-divisor error of %
+bomb: 0 ∣ 0
