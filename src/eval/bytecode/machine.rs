@@ -2453,13 +2453,13 @@ pub fn handle_op(
             // Resolve the object (a local or global) to a closure.
             let (obj_slot, obj_value) = match obj {
                 DecodedRef::Local(i) => (
-                    Some(i as usize),
+                    (env, i as usize),
                     view.scoped(env)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
                 ),
                 DecodedRef::Global(i) => (
-                    None,
+                    (state.globals, i as usize),
                     view.scoped(state.globals)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadGlobalIndex(i as usize))?,
@@ -2479,6 +2479,13 @@ pub fn handle_op(
             };
 
             // Fast path: the object is already a WHNF block — look up now.
+            // An unevaluated field is shared by `share_unevaluated`, as on
+            // the forced path. No gating test reaches this with one
+            // (eu-oaz72.94): the compiler binds each local `.key` object to
+            // a per-use alias thunk, so a local arrives unforced and takes
+            // the slow path; a WHNF object here is in practice an
+            // already-forced prelude namespace global (blob mode), whose
+            // thunk members are cheap CAFs such as `cal.epoch`.
             let is_block = decode_cons(prog, decoded, &obj_closure)
                 .is_some_and(|(t, _)| t == DataConstructor::Block.tag());
             if is_block {
@@ -2493,17 +2500,24 @@ pub fn handle_op(
                     smid,
                     default_closure,
                 });
-                // Black-hole + Update if the object is a local thunk.
-                if let (Some(i), true) = (obj_slot, obj_closure.update()) {
-                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
-                    view.scoped(env).update(&view, i, hole)?;
+                // Black-hole + Update if the object is a thunk, in the frame
+                // it lives in: the local env, or the shared globals frame. A
+                // prelude namespace (`set`, `str`, ...) is a global arity-0
+                // thunk in blob mode; without the Update, every `set.size`
+                // that reached it unforced rebuilt the namespace block
+                // (eu-oaz72.94), as `enter_global` (eu-fhoo) prevents for a
+                // plain reference.
+                if obj_closure.update() {
+                    let (frame, i) = obj_slot;
+                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, frame));
+                    view.scoped(frame).update(&view, i, hole)?;
                     let annotation = if state.annotation.is_valid() {
                         state.annotation
                     } else {
                         target_annotation(prog, decoded, &obj_closure)
                     };
                     state.stack.push(BcContinuation::Update {
-                        environment: env,
+                        environment: frame,
                         index: i,
                         annotation,
                     });
@@ -2923,13 +2937,13 @@ pub fn handle_op_predecoded(
 
             let (obj_slot, obj_value) = match instr.second_ref() {
                 DecodedRef::Local(i) => (
-                    Some(i as usize),
+                    (env, i as usize),
                     view.scoped(env)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
                 ),
                 DecodedRef::Global(i) => (
-                    None,
+                    (state.globals, i as usize),
                     view.scoped(state.globals)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadGlobalIndex(i as usize))?,
@@ -2950,6 +2964,7 @@ pub fn handle_op_predecoded(
 
             let is_block = decode_cons(prog, decoded, &obj_closure)
                 .is_some_and(|(t, _)| t == DataConstructor::Block.tag());
+            // Fast path: see the comment in `handle_op`.
             if is_block {
                 state.current =
                     bc_lookup_in_block(prog, decoded, state, view, &obj_closure, sym_id)
@@ -2960,16 +2975,17 @@ pub fn handle_op_predecoded(
                     smid,
                     default_closure,
                 });
-                if let (Some(i), true) = (obj_slot, obj_closure.update()) {
-                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
-                    view.scoped(env).update(&view, i, hole)?;
+                if obj_closure.update() {
+                    let (frame, i) = obj_slot;
+                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, frame));
+                    view.scoped(frame).update(&view, i, hole)?;
                     let annotation = if state.annotation.is_valid() {
                         state.annotation
                     } else {
                         target_annotation(prog, decoded, &obj_closure)
                     };
                     state.stack.push(BcContinuation::Update {
-                        environment: env,
+                        environment: frame,
                         index: i,
                         annotation,
                     });
