@@ -61,9 +61,11 @@ fn peel_meta(expr: &RcExpr) -> &RcExpr {
 /// let binding whose right-hand side is not a lambda (an alias such as
 /// `step: f` may refer to a lazy function), and names bound to lambdas of
 /// different arities. A parameter counts even when it is the name's only
-/// binding: in blob mode the prelude is not in the tree, and a call to a
-/// parameter named like a prelude function must not take its signature. Let-bound lambdas of one arity remain merged by
-/// `record_named_signature`, whose lub is sound for each of them.
+/// binding, which costs nothing (a parameter has no signature of its own).
+/// Prelude globals in blob mode are not looked up here: the compiler keys
+/// their signatures by slot (eu-oaz72.77). Let-bound lambdas of one arity
+/// remain merged by `record_named_signature`, whose lub is sound for each
+/// of them.
 fn ambiguous_names(expr: &RcExpr) -> HashSet<String> {
     #[derive(Default)]
     struct Uses {
@@ -204,140 +206,58 @@ pub fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
     sigs
 }
 
-/// Build demand signatures for common prelude functions.
+/// Derive the demand signature of each top-level binding of a prelude,
+/// for the pre-compiled blob (eu-oaz72.77).
 ///
-/// In blob-prelude mode, the prelude is pre-compiled and its functions
-/// appear as globals (`Ref::G`) with no demand analysis.  This table
-/// provides conservative strictness information for the most common
-/// prelude functions so that the STG compiler can apply strict-arg
-/// optimisation (Seq wrapping) to complex arguments at call sites.
+/// Runs the same demand analysis source mode runs over the prelude (after
+/// the SCC splitting source mode also applies first) and reads, for each
+/// binding of the top-level `Let`/`Meta` chain — the chain `xtask
+/// prelude-compile` peels into global slots — the signature of the lambda
+/// it binds. The signature is the one recorded for that binder's own
+/// lambda, not the name-merged [`NamedSignatureTable`] entry, so a local
+/// helper of the same name elsewhere in the prelude cannot weaken or
+/// strengthen it.
 ///
-/// We use `sm()` (Strict + Multi) for strict arguments
-/// because we do not know the exact cardinality within the prelude
-/// function body.  Multi ensures the binding becomes a Thunk (with
-/// Update/memoisation) and Strict triggers Seq wrapping for eager
-/// evaluation.
-pub fn build_prelude_signatures() -> HashMap<String, DemandSignature> {
-    let mut sigs = HashMap::new();
-    let sm = Demand::strict_multi;
-    let lm = Demand::lazy_multi;
+/// The result maps each top-level name to `Some(signature)` for a lambda
+/// binding, or `None` for a binding that is not a lambda (an alias, a
+/// partial application, a block). A name bound more than once along the
+/// chain maps to `None`: a slot keyed by that name could hold either.
+///
+/// Every signature is sound by construction, being the analysis' own
+/// result: the hand-written table this replaces claimed more strictness
+/// than the prelude has for 31 of its 64 entries
+/// (`docs/superpowers/reports/2026-11-13-prelude-demand-signatures-design.md`).
+pub fn derive_top_level_signatures(expr: &RcExpr) -> HashMap<String, Option<DemandSignature>> {
+    let split = crate::core::dependency::split_letrecs(expr);
+    let (annotated, signatures, _) = analyse_demands(&split);
 
-    // List operations — strict in all arguments
-    // map(f, l): f applied to each element, l traversed
-    sigs.insert("map".into(), vec![sm(), sm()]);
-    // map2(f, l, m): zip-with
-    sigs.insert("map2".into(), vec![sm(), sm(), sm()]);
-    // filter(p?, l): predicate applied, list traversed
-    sigs.insert("filter".into(), vec![sm(), sm()]);
-    // foldl(op, i, l): all args needed
-    sigs.insert("foldl".into(), vec![sm(), sm(), sm()]);
-    // foldr(op, i, l): all args needed
-    sigs.insert("foldr".into(), vec![sm(), sm(), sm()]);
-    // take(n, l): count and list both needed
-    sigs.insert("take".into(), vec![sm(), sm()]);
-    // drop(n, l): count and list both needed
-    sigs.insert("drop".into(), vec![sm(), sm()]);
-    // nth(n, l): index and list both needed
-    sigs.insert("nth".into(), vec![sm(), sm()]);
-    // reverse(l): list needed
-    sigs.insert("reverse".into(), vec![sm()]);
-    // append(l1, l2): both lists needed
-    sigs.insert("append".into(), vec![sm(), sm()]);
-    // zip-with(f, a, b): all needed
-    sigs.insert("zip-with".into(), vec![sm(), sm(), sm()]);
-    // zip(a, b): both needed (zip = zip-with(pair))
-    sigs.insert("zip".into(), vec![sm(), sm()]);
-    // count(l): list traversed
-    sigs.insert("count".into(), vec![sm()]);
-    // sum(l): list traversed
-    sigs.insert("sum".into(), vec![sm()]);
-    // product(l): list traversed
-    sigs.insert("product".into(), vec![sm()]);
-    // cons(h, t): lazy in both — wraps __CONS which does not force args.
-    // Strictness here would cause infinite forcing for recursive list
-    // construction (iterate, map, scanl, etc.) over infinite lists.
-    sigs.insert("cons".into(), vec![lm(), lm()]);
-    // snoc(x, l): both needed
-    sigs.insert("snoc".into(), vec![sm(), sm()]);
-    // mapcat(f, l): catenation applied via compose, but f is strict
-    sigs.insert("mapcat".into(), vec![sm()]);
-    // cross(f, xs, ys): all needed
-    sigs.insert("cross".into(), vec![sm(), sm(), sm()]);
-    // interleave(a, b): both needed
-    sigs.insert("interleave".into(), vec![sm(), sm()]);
-
-    // take-while / drop-while: predicate and list both strict
-    sigs.insert("take-while".into(), vec![sm(), sm()]);
-    sigs.insert("drop-while".into(), vec![sm(), sm()]);
-
-    // Sorting
-    sigs.insert("sort-by".into(), vec![sm(), sm(), sm()]);
-    sigs.insert("sort-by-num".into(), vec![sm()]);
-    sigs.insert("sort-by-str".into(), vec![sm()]);
-    sigs.insert("sort-nums".into(), vec![sm()]);
-    sigs.insert("sort-strs".into(), vec![sm()]);
-
-    // Grouping
-    sigs.insert("group-by".into(), vec![sm(), sm()]);
-    sigs.insert("discriminate".into(), vec![sm(), sm()]);
-    sigs.insert("group-consecutive-by".into(), vec![sm(), sm()]);
-
-    // Numeric — strict in all args
-    sigs.insert("abs".into(), vec![sm()]);
-    sigs.insert("negate".into(), vec![sm()]);
-    sigs.insert("max".into(), vec![sm(), sm()]);
-    sigs.insert("min".into(), vec![sm(), sm()]);
-    sigs.insert("max-of".into(), vec![sm()]);
-    sigs.insert("min-of".into(), vec![sm()]);
-    sigs.insert("pow".into(), vec![sm(), sm()]);
-    sigs.insert("div".into(), vec![sm(), sm()]);
-    sigs.insert("mod".into(), vec![sm(), sm()]);
-    sigs.insert("quot".into(), vec![sm(), sm()]);
-    sigs.insert("rem".into(), vec![sm(), sm()]);
-
-    // Combinators — strict in function arg, lazy in data args
-    sigs.insert("compose".into(), vec![sm(), sm(), sm()]);
-    sigs.insert("flip".into(), vec![sm(), sm(), sm()]);
-    sigs.insert("identity".into(), vec![sm()]);
-    sigs.insert("apply".into(), vec![sm(), sm()]);
-
-    // Conditionals — condition strict, branches lazy
-    sigs.insert("then".into(), vec![lm(), lm(), sm()]);
-    sigs.insert("when".into(), vec![sm(), sm(), sm()]);
-
-    // Lookup functions — strict in key/object args
-    sigs.insert("has".into(), vec![sm(), sm()]);
-    sigs.insert("lookup".into(), vec![sm(), sm()]);
-    sigs.insert("lookup-in".into(), vec![sm(), sm()]);
-    sigs.insert("lookup-or".into(), vec![sm(), lm(), sm()]);
-
-    // Deep operations — strict in key/pattern and block
-    sigs.insert("deep-find".into(), vec![sm(), sm()]);
-    sigs.insert("deep-transform".into(), vec![sm(), sm()]);
-    sigs.insert("deep-query".into(), vec![sm(), sm()]);
-
-    // Head/tail — strict in list
-    sigs.insert("head-or".into(), vec![sm(), sm()]);
-    sigs.insert("tail-or".into(), vec![sm(), sm()]);
-
-    // Rendering
-    sigs.insert("render".into(), vec![sm()]);
-    sigs.insert("render-as".into(), vec![sm(), sm()]);
-    sigs.insert("parse-as".into(), vec![sm(), sm()]);
-
-    // Iterate — strict in initial value, function
-    sigs.insert("iterate".into(), vec![sm(), sm()]);
-    // range(b, e)
-    sigs.insert("range".into(), vec![sm(), sm()]);
-    // iota(n)
-    sigs.insert("iota".into(), vec![sm()]);
-    // repeat(i)
-    sigs.insert("repeat".into(), vec![sm()]);
-
-    // Sliding / windowing
-    sigs.insert("over-sliding-pairs".into(), vec![sm(), sm()]);
-
-    sigs
+    let mut result: HashMap<String, Option<DemandSignature>> = HashMap::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut current = annotated;
+    loop {
+        let next = match &*current.inner {
+            Expr::Let(_, scope, _) => {
+                for binding in &scope.pattern {
+                    let sig = match &*peel_meta(&binding.expr).inner {
+                        Expr::Lam(_, _, lam) => signatures
+                            .get(&(Rc::as_ptr(&lam.body.inner) as usize))
+                            .cloned(),
+                        _ => None,
+                    };
+                    if seen.insert(binding.name.clone()) {
+                        result.insert(binding.name.clone(), sig);
+                    } else {
+                        result.insert(binding.name.clone(), None);
+                    }
+                }
+                scope.body.clone()
+            }
+            Expr::Meta(_, inner, _) => inner.clone(),
+            _ => break,
+        };
+        current = next;
+    }
+    result
 }
 
 /// Return the indices of strict arguments for the named intrinsic,
@@ -536,9 +456,7 @@ impl DemandAnalyser {
             .collect();
         // The compiler finds a call's signature by the callee's name, so a
         // name that does not refer to let-bound lambdas of one arity alone
-        // gets an empty signature: no argument is strict, and the empty
-        // entry stops the compiler falling back to a prelude signature of
-        // the same name.
+        // gets an empty signature: no argument is strict.
         for name in ambiguous_names(expr) {
             named.insert(name, Vec::new());
         }
@@ -1892,6 +1810,52 @@ mod tests {
         let sig = named.get("f").expect("f signature");
         assert_eq!(sig[1].strictness, Strictness::Lazy);
         assert_eq!(sig[2].strictness, Strictness::Strict);
+    }
+
+    /// The blob's per-slot signatures (eu-oaz72.77): a top-level lambda
+    /// gets its own binder's signature, unaffected by a strict local helper
+    /// of the same name; a non-lambda gets none; a name bound twice along
+    /// the top-level chain gets none.
+    #[test]
+    fn top_level_signatures_are_per_binder() {
+        let take = free("take");
+        let n = free("n");
+        let l = free("l");
+        let k = free("k");
+        let x = free("x");
+        let inner_take = free("take");
+        // take(n, l): IF(n, [], l) — strict in n only.
+        let take_body = app(bif("IF"), vec![var(n), list(vec![]), var(l)]);
+        // other(x): { take(k): k }.(take(x)) — a local `take` strict in k.
+        let other_body = let_(
+            vec![(inner_take.clone(), lam(vec!["k".into()], var(k)))],
+            app(var(inner_take), vec![var(x)]),
+        );
+        let dup = free("dup");
+        let expr = let_(
+            vec![
+                (take.clone(), lam(vec!["n".into(), "l".into()], take_body)),
+                (free("other"), lam(vec!["x".into()], other_body)),
+                (free("alias"), var(take)),
+                (dup.clone(), lam(vec!["x".into()], num(1))),
+            ],
+            let_(
+                vec![(dup.clone(), lam(vec!["y".into()], var(free("y"))))],
+                var(dup),
+            ),
+        );
+        let sigs = derive_top_level_signatures(&expr);
+
+        let take_sig = sigs["take"].as_ref().expect("take is a lambda");
+        assert_eq!(take_sig.len(), 2);
+        assert_eq!(take_sig[0].strictness, Strictness::Strict);
+        assert_eq!(take_sig[1].strictness, Strictness::Lazy);
+        assert_eq!(
+            sigs["other"].as_ref().expect("other is a lambda")[0].strictness,
+            Strictness::Strict
+        );
+        assert_eq!(sigs["alias"], None, "an alias has no signature of its own");
+        assert_eq!(sigs["dup"], None, "a name bound twice has no signature");
     }
 
     #[test]

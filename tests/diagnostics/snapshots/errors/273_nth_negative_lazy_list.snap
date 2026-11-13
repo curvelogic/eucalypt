@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/273_nth_negative_lazy_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/273_nth_negative_lazy_list.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/273_nth_negative_lazy_list.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: index -1 out of range: list indices start at 0
+  ┌─ tests/harness/errors/273_nth_negative_lazy_list.eu:2:4
+  │
+2 │ r: nth(-1, panic("list forced"))
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - r at 273_nth_negative_lazy_list.eu:2:4
+    - in 'nth' (prelude)

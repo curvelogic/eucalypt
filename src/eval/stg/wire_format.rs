@@ -77,7 +77,12 @@ use sha2::{Digest, Sha256};
 ///   template, eu-oaz72.21). Postcard is positional, so a v8 image would
 ///   decode as a shifted field sequence; the bump makes that staleness
 ///   detected rather than a decode accident.
-pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 9;
+/// - v10: `PreludeBlob::demand_signatures` field added (per-slot demand
+///   signatures derived by the demand analysis at blob build, replacing the
+///   hand-written prelude table; eu-oaz72.77). The freshness recipe also
+///   absorbs the demand analysis sources ([`DEMAND_ANALYSIS_PATHS`]), so a
+///   blob whose signatures came from an older analysis is stale.
+pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 10;
 
 /// Path, relative to the workspace root, of the prelude source baked into the
 /// blob.
@@ -104,6 +109,19 @@ pub const BLOB_PATH: &str = "lib/prelude.blob";
 /// drift out of step with the file it parses.
 pub const INTRINSIC_TABLE_PATH: &str = "src/eval/intrinsics.rs";
 
+/// Paths, relative to the workspace root, of the demand analysis that derives
+/// the blob's per-slot demand signatures (`PreludeBlob::demand_signatures`,
+/// eu-oaz72.77).
+///
+/// A signature is a claim about which arguments a prelude function forces,
+/// and the STG compiler acts on it by evaluating those arguments early. A
+/// blob carrying signatures from an older analysis would keep them after
+/// the analysis changed, so these files are hashed into
+/// [`blob_source_hash`]. As with [`INTRINSIC_TABLE_PATH`], hashing whole
+/// files over-invalidates (a comment edit forces a regeneration), which is
+/// the safe direction.
+pub const DEMAND_ANALYSIS_PATHS: &[&str] = &["src/core/analyse_demand.rs", "src/core/demand.rs"];
+
 /// Path, relative to the workspace root, of this very file — which `build.rs`
 /// `include!`s, and which cargo therefore does not track for it.
 pub const WIRE_FORMAT_MODULE_PATH: &str = "src/eval/stg/wire_format.rs";
@@ -126,6 +144,8 @@ pub const BUILD_RERUN_PATHS: &[&str] = &[
     BLOB_PATH,
     INTRINSIC_TABLE_PATH,
     WIRE_FORMAT_MODULE_PATH,
+    "src/core/analyse_demand.rs",
+    "src/core/demand.rs",
     // Embedded via `include_bytes!` in `src/driver/resources.rs`; cargo does
     // not track non-Rust files referenced that way.
     "lib/test.eu",
@@ -149,11 +169,17 @@ fn absorb(hasher: &mut Sha256, tag: &[u8], bytes: &[u8]) {
 /// - the wire-format version ([`BYTECODE_WIRE_FORMAT_VERSION`]) — the
 ///   serialised code-stream layout, which nothing on disk reveals;
 /// - `lib/prelude.eu` — the bindings themselves;
-/// - `src/eval/intrinsics.rs` — the global slot numbering the blob bakes in.
+/// - `src/eval/intrinsics.rs` — the global slot numbering the blob bakes in;
+/// - the demand analysis sources ([`DEMAND_ANALYSIS_PATHS`], in that order)
+///   — the analysis that derived the blob's demand signatures.
 ///
 /// `xtask prelude-compile` stamps the result into `PreludeBlob::source_hash`;
 /// `build.rs` recomputes it and compares.
-pub fn blob_source_hash(prelude_source: &[u8], intrinsic_table_source: &[u8]) -> [u8; 32] {
+pub fn blob_source_hash(
+    prelude_source: &[u8],
+    intrinsic_table_source: &[u8],
+    demand_analysis_sources: &[Vec<u8>],
+) -> [u8; 32] {
     let mut hasher = Sha256::new();
     absorb(
         &mut hasher,
@@ -162,6 +188,9 @@ pub fn blob_source_hash(prelude_source: &[u8], intrinsic_table_source: &[u8]) ->
     );
     absorb(&mut hasher, b"prelude-source", prelude_source);
     absorb(&mut hasher, b"intrinsic-table", intrinsic_table_source);
+    for source in demand_analysis_sources {
+        absorb(&mut hasher, b"demand-analysis", source);
+    }
     hasher.finalize().into()
 }
 
@@ -207,7 +236,7 @@ impl BlobFreshness {
                  run `cargo xtask prelude-compile` to regenerate.",
             ),
             BlobFreshness::Stale => Some(
-                "prelude blob is stale (prelude source, intrinsic table or bytecode \
+                "prelude blob is stale (prelude source, intrinsic table, demand analysis or bytecode \
                  wire format has changed) — run `cargo xtask prelude-compile` to regenerate.",
             ),
         }
@@ -241,8 +270,8 @@ mod tests {
     /// `blob_source_hash` and this fails.
     #[test]
     fn intrinsic_table_changes_change_the_hash() {
-        let before = blob_source_hash(PRELUDE, TABLE);
-        let after = blob_source_hash(PRELUDE, b"INTRINSICS: [LOOKUP, RENDER, CONTRACT_FAIL]");
+        let before = blob_source_hash(PRELUDE, TABLE, &[]);
+        let after = blob_source_hash(PRELUDE, b"INTRINSICS: [LOOKUP, RENDER, CONTRACT_FAIL]", &[]);
         assert_ne!(
             before, after,
             "adding an intrinsic must invalidate the prelude blob"
@@ -251,24 +280,39 @@ mod tests {
 
     #[test]
     fn prelude_source_changes_change_the_hash() {
-        let before = blob_source_hash(PRELUDE, TABLE);
-        let after = blob_source_hash(b"map(f, xs): different", TABLE);
+        let before = blob_source_hash(PRELUDE, TABLE, &[]);
+        let after = blob_source_hash(b"map(f, xs): different", TABLE, &[]);
         assert_ne!(before, after);
     }
 
     #[test]
     fn the_hash_is_deterministic() {
         assert_eq!(
-            blob_source_hash(PRELUDE, TABLE),
-            blob_source_hash(PRELUDE, TABLE)
+            blob_source_hash(PRELUDE, TABLE, &[]),
+            blob_source_hash(PRELUDE, TABLE, &[])
         );
+    }
+
+    /// A change to the demand analysis must change the hash, so a blob whose
+    /// signatures an older analysis derived is stale (eu-oaz72.77).
+    ///
+    /// Fault injection: drop the `demand-analysis` term from
+    /// `blob_source_hash` and this fails.
+    #[test]
+    fn demand_analysis_changes_change_the_hash() {
+        let before = blob_source_hash(PRELUDE, TABLE, &[b"analyse v1".to_vec()]);
+        let after = blob_source_hash(PRELUDE, TABLE, &[b"analyse v2".to_vec()]);
+        assert_ne!(before, after);
     }
 
     /// Tag- and length-prefixing must stop a byte moving across the boundary
     /// between two inputs from going unnoticed.
     #[test]
     fn inputs_are_unambiguously_separated() {
-        assert_ne!(blob_source_hash(b"ab", b"c"), blob_source_hash(b"a", b"bc"));
+        assert_ne!(
+            blob_source_hash(b"ab", b"c", &[]),
+            blob_source_hash(b"a", b"bc", &[])
+        );
     }
 
     /// End-to-end shape of the decision `build.rs` makes: a blob generated
@@ -279,17 +323,17 @@ mod tests {
     #[test]
     fn a_blob_predating_a_new_intrinsic_is_stale() {
         // A blob stamped before the new intrinsic landed.
-        let mut blob = blob_source_hash(PRELUDE, TABLE).to_vec();
+        let mut blob = blob_source_hash(PRELUDE, TABLE, &[]).to_vec();
         blob.extend_from_slice(b"...rest of the postcard payload...");
 
-        let expected_after = blob_source_hash(PRELUDE, b"INTRINSICS: [LOOKUP, RENDER, NEW]");
+        let expected_after = blob_source_hash(PRELUDE, b"INTRINSICS: [LOOKUP, RENDER, NEW]", &[]);
         assert_eq!(
             classify_blob(Some(&blob), &expected_after),
             BlobFreshness::Stale
         );
 
         // Sanity: against the table it was built from, the same blob is fresh.
-        let expected_before = blob_source_hash(PRELUDE, TABLE);
+        let expected_before = blob_source_hash(PRELUDE, TABLE, &[]);
         assert_eq!(
             classify_blob(Some(&blob), &expected_before),
             BlobFreshness::Fresh
@@ -298,7 +342,7 @@ mod tests {
 
     #[test]
     fn a_missing_or_truncated_blob_is_never_fresh() {
-        let expected = blob_source_hash(PRELUDE, TABLE);
+        let expected = blob_source_hash(PRELUDE, TABLE, &[]);
         assert_eq!(classify_blob(None, &expected), BlobFreshness::Missing);
         assert_eq!(
             classify_blob(Some(&[0u8; 31]), &expected),

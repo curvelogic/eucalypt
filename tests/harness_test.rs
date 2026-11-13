@@ -3714,6 +3714,13 @@ pub fn test_error_272_logical_word_inside_string() {
     run_error_test(&error_opts("272_logical_word_inside_string.eu"));
 }
 
+/// `nth` is not strict in its list: a negative index is reported before
+/// the list is forced, in blob mode as in source mode (eu-oaz72.77).
+#[test]
+pub fn test_error_273_nth_negative_lazy_list() {
+    run_error_test(&error_opts("273_nth_negative_lazy_list.eu"));
+}
+
 #[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.

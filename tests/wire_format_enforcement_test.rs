@@ -19,8 +19,8 @@
 use std::path::{Path, PathBuf};
 
 use eucalypt::eval::stg::wire_format::{
-    blob_source_hash, BLOB_PATH, BUILD_RERUN_PATHS, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH,
-    WIRE_FORMAT_MODULE_PATH,
+    blob_source_hash, BLOB_PATH, BUILD_RERUN_PATHS, DEMAND_ANALYSIS_PATHS, INTRINSIC_TABLE_PATH,
+    PRELUDE_SOURCE_PATH, WIRE_FORMAT_MODULE_PATH,
 };
 
 /// Workspace root — `CARGO_MANIFEST_DIR` for the `eucalypt` package.
@@ -146,7 +146,10 @@ fn the_build_script_reruns_on_the_inputs_it_hashes() {
         WIRE_FORMAT_MODULE_PATH,
         PRELUDE_SOURCE_PATH,
         BLOB_PATH,
-    ] {
+    ]
+    .into_iter()
+    .chain(DEMAND_ANALYSIS_PATHS.iter().copied())
+    {
         assert!(
             BUILD_RERUN_PATHS.contains(&required),
             "build.rs must declare rerun-if-changed for {required}, \
@@ -209,7 +212,11 @@ fn the_embedded_blob_matches_the_inputs_on_disk() {
 
     let prelude = std::fs::read(root().join(PRELUDE_SOURCE_PATH)).expect("prelude source");
     let table = std::fs::read(root().join(INTRINSIC_TABLE_PATH)).expect("intrinsic catalogue");
-    let expected = blob_source_hash(&prelude, &table);
+    let analysis: Vec<Vec<u8>> = DEMAND_ANALYSIS_PATHS
+        .iter()
+        .map(|p| std::fs::read(root().join(p)).expect("demand analysis source"))
+        .collect();
+    let expected = blob_source_hash(&prelude, &table, &analysis);
 
     let embedded = read_blob_source_hash(eucalypt::driver::resources::PRELUDE_BLOB_BYTES)
         .expect("embedded blob carries a source hash");
@@ -233,8 +240,8 @@ fn the_freshness_hash_covers_the_real_inputs() {
         .extend_from_slice(b"\n// Intrinsic { name: \"CONTRACT_FAIL\", .. }: an added intrinsic\n");
 
     assert_ne!(
-        blob_source_hash(&prelude, &table),
-        blob_source_hash(&prelude, &table_with_new_intrinsic),
+        blob_source_hash(&prelude, &table, &[]),
+        blob_source_hash(&prelude, &table_with_new_intrinsic, &[]),
         "editing the intrinsic catalogue must invalidate the prelude blob without \
          anyone hand-bumping BYTECODE_WIRE_FORMAT_VERSION (eu-3skeg)"
     );
