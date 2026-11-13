@@ -496,6 +496,9 @@ impl<'a> Executor<'a> {
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(ref b) = self.prelude_blob {
                 stg_settings.prelude_globals = Some(b.name_to_slot.clone());
+                // The demand signatures derived for each prelude global when
+                // the blob was built, by slot (eu-oaz72.77).
+                stg_settings.prelude_demand_sigs = std::sync::Arc::new(b.demand_signatures.clone());
             }
 
             // Run demand analysis on the core expression before STG compile
