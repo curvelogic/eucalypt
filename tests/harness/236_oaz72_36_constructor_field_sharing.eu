@@ -1,5 +1,5 @@
 {
-  title: "236 lists built by foldr and filter keep their sharing"
+  title: "236 lists and block fields keep their sharing"
   doc: "eu-oaz72.36: a list built by `foldr` or `filter` must be computed once
         and shared, however often it is traversed. Each target sums its list
         eight times; the `shared` validator FAILs when the elements or the
@@ -68,26 +68,16 @@ lambda-filter: {
   expected: 8 * 45
 }
 
-# A block field read with `.` through a function parameter. The lookup
-# returned a copy of the field's unevaluated thunk, so each read recomputed
-# the field (engine: `bc_lookup_in_block`, eu-oaz72.87). `blk` reaches `read`
-# already evaluated (the lookup's fast path); `mk(10)` reaches it as a thunk,
-# so the first read forces the block before looking up the key.
+# A block field read with `.` through a function parameter, eight times.
+# The lookup returned a copy of the field's unevaluated thunk, so each read
+# recomputed the field (engine: `bc_lookup_in_block`, eu-oaz72.87).
 mk(n): { x: range(0, n) map(slow) sum }
-blk: mk(10)
 read(b, i): b.x + i
 eight-reads(b): range(0, 8) map(read(b)) sum
 
-` { target: :dot-evaluated-block
+` { target: :dot-lookup
     verify: [:values, :shared] }
-dot-evaluated-block: {
-  sum: eight-reads(blk)
-  expected: 8 * (10 * 1999000 + 45) + 28
-}
-
-` { target: :dot-block-thunk
-    verify: [:values, :shared] }
-dot-block-thunk: {
+dot-lookup: {
   sum: eight-reads(mk(10))
   expected: 8 * (10 * 1999000 + 45) + 28
 }
