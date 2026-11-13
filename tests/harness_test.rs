@@ -2008,6 +2008,12 @@ pub fn test_harness_164() {
     run_test(&opts("164_s_string.eu"));
 }
 
+/// Demand annotation. The `strict-accumulators` target (eu-oaz72.27) runs
+/// self-recursive and mutually recursive accumulator loops: its
+/// `constant-stack` validator FAILs on master, where loop A
+/// (`(n = 0) then(a, loop(a + 1, n - 1))`) grew the stack two frames per
+/// step. `test-laziness` checks that accumulators not needed on every path,
+/// values captured by a returned closure and `foldl`'s accumulator stay lazy.
 #[test]
 pub fn test_harness_165() {
     run_test(&opts("165_demand_annotation.eu"));
