@@ -666,9 +666,20 @@ pub struct LetBinder<'a> {
     size: Option<usize>,
     /// Next
     context: Option<&'a Context<'a>>,
-    /// Indices of bindings that are strict and non-recursive, eligible
-    /// for eager evaluation via Seq in non-recursive lets.
-    strict_indices: Vec<usize>,
+    /// Strict evaluation steps, in argument order: each either forces a
+    /// strict non-recursive binding (Seq) or evaluates a strict argument
+    /// in place (call-by-value), before the body runs.
+    strict_steps: Vec<StrictStep>,
+}
+
+/// A strict evaluation performed before a let body runs.
+enum StrictStep {
+    /// Force the binding at this index (Seq) if it is a thunk.
+    Force(usize),
+    /// Evaluate this syntax in place and bind its value in a one-slot
+    /// case frame (`case e of _ -> ...`): call-by-value, with no thunk
+    /// allocated and no Update pushed (eu-oaz72.67).
+    Evaluate(Box<dyn ProtoSyntax>),
 }
 
 impl<'a> LetBinder<'a> {
@@ -682,7 +693,7 @@ impl<'a> LetBinder<'a> {
             body: None,
             size: None,
             context: None,
-            strict_indices: vec![],
+            strict_steps: vec![],
         }
     }
 
@@ -697,7 +708,7 @@ impl<'a> LetBinder<'a> {
             body: None,
             size: None,
             context: Some(context),
-            strict_indices: vec![],
+            strict_steps: vec![],
         }
     }
 
@@ -712,7 +723,7 @@ impl<'a> LetBinder<'a> {
             body: None,
             size: None,
             context: Some(context),
-            strict_indices: vec![],
+            strict_steps: vec![],
         }
     }
 
@@ -726,7 +737,7 @@ impl<'a> LetBinder<'a> {
             body: None,
             size: None,
             context: Some(context),
-            strict_indices: vec![],
+            strict_steps: vec![],
         }
     }
 
@@ -795,49 +806,32 @@ impl<'a> LetBinder<'a> {
             .body
             .take()
             .expect("LetBinder must have body before realisation");
-        let body = proto_body.take_syntax(compiler, &body_context)?;
+
+        // Strict steps wrap the body in argument order (eu-oaz72.67).  A
+        // `Force` step is a Seq on a strict thunk binding: Seq is
+        // force-and-discard, evaluating the scrutinee to WHNF (triggering
+        // the thunk's Update continuation for memoisation) then entering
+        // the body in the SAME environment.  An `Evaluate` step is a case
+        // whose fallback binds the value in a one-slot frame, so the body
+        // (and every later step) is realised in a context one frame deeper.
+        //
+        //   LET/LETREC([bindings...],
+        //     SEQ(ATOM(L(i0)),             -- force thunk i0
+        //       CASE(e1, _ ->              -- evaluate e1 in place
+        //         ... body ...)))
+        let strict_steps = std::mem::take(&mut self.strict_steps);
+        let body = realise_strict_steps(
+            compiler,
+            &body_context,
+            strict_steps,
+            0,
+            &bindings,
+            &mut *proto_body,
+        )?;
 
         if bindings.is_empty() {
             Ok(body)
         } else {
-            // For strict non-recursive Thunk bindings, wrap the body
-            // with Seq forms that force each thunk eagerly at definition
-            // time.  Seq is force-and-discard: it evaluates the scrutinee
-            // to WHNF (triggering the thunk's Update continuation for
-            // memoisation) then enters the body in the SAME environment.
-            // No new scope is created, so no de Bruijn index shifting is
-            // needed.
-            //
-            // Structure:
-            //   LET/LETREC([bindings...],
-            //     SEQ(ATOM(L(i0)),          -- force thunk i0
-            //       SEQ(ATOM(L(i1)),        -- force thunk i1
-            //         ... body ...)))
-            let strict_thunk_indices: Vec<usize> = self
-                .strict_indices
-                .iter()
-                .copied()
-                .filter(|&idx| {
-                    idx < bindings.len() && matches!(bindings[idx], LambdaForm::Thunk { .. })
-                })
-                .collect();
-
-            let body = if strict_thunk_indices.is_empty() {
-                body
-            } else {
-                // Wrap the body with Seq forms that force each strict thunk.
-                // Seq is force-and-discard: it evaluates the scrutinee to WHNF
-                // (triggering the thunk's Update continuation for memoisation)
-                // then enters the body in the SAME environment — no new scope.
-                let mut result = body;
-                // Wrap inside-out (last strict index is outermost)
-                for &idx in strict_thunk_indices.iter().rev() {
-                    let scrutinee = dsl::local(idx);
-                    result = dsl::seq(scrutinee, result);
-                }
-                result
-            };
-
             if recursive_let {
                 Ok(Rc::new(StgSyn::LetRec { bindings, body }))
             } else {
@@ -885,9 +879,21 @@ impl<'a> LetBinder<'a> {
     /// Mark the binding at the given index as strict for eager
     /// evaluation via Seq in non-recursive lets.
     pub fn mark_strict(&mut self, index: usize) {
-        if !self.strict_indices.contains(&index) {
-            self.strict_indices.push(index);
+        if !self
+            .strict_steps
+            .iter()
+            .any(|step| matches!(step, StrictStep::Force(i) if *i == index))
+        {
+            self.strict_steps.push(StrictStep::Force(index));
         }
+    }
+
+    /// Evaluate `syntax` in place before the body, binding its value in
+    /// a one-slot case frame (call-by-value, eu-oaz72.67).  Each such step
+    /// puts one frame between the body and this binder's bindings, so a
+    /// body referring to them by `Ref::L` must be bumped past it.
+    pub fn evaluate_strict(&mut self, syntax: Box<dyn ProtoSyntax>) {
+        self.strict_steps.push(StrictStep::Evaluate(syntax));
     }
 
     /// Add a ref as an equivalent to an underlying core let binding
@@ -899,6 +905,47 @@ impl<'a> LetBinder<'a> {
     pub fn set_body(&mut self, body: Box<dyn ProtoSyntax>) -> Result<(), CompileError> {
         self.body = Some(body);
         Ok(())
+    }
+}
+
+/// Realise a let body wrapped in its strict steps, in order.
+///
+/// `frames` counts the case frames already pushed by earlier `Evaluate`
+/// steps, by which a `Force` step's binding index is bumped.  Each
+/// `Evaluate` step's syntax is realised in `context`, and what follows it
+/// in a synthetic one-slot context for the case frame binding its value.
+fn realise_strict_steps(
+    compiler: &Compiler,
+    context: &Context,
+    mut steps: Vec<StrictStep>,
+    frames: usize,
+    bindings: &[LambdaForm],
+    body: &mut dyn ProtoSyntax,
+) -> Result<Rc<StgSyn>, CompileError> {
+    if steps.is_empty() {
+        return body.take_syntax(compiler, context);
+    }
+    match steps.remove(0) {
+        StrictStep::Force(idx) => {
+            let inner = realise_strict_steps(compiler, context, steps, frames, bindings, body)?;
+            if matches!(bindings.get(idx), Some(LambdaForm::Thunk { .. })) {
+                Ok(dsl::seq(dsl::local(idx + frames), inner))
+            } else {
+                Ok(inner)
+            }
+        }
+        StrictStep::Evaluate(mut syntax) => {
+            let scrutinee = syntax.take_syntax(compiler, context)?;
+            let case_frame = Context {
+                scope: None,
+                var_refs: vec![],
+                size: 1,
+                next: Some(context),
+            };
+            let inner =
+                realise_strict_steps(compiler, &case_frame, steps, frames + 1, bindings, body)?;
+            Ok(dsl::force(scrutinee, inner))
+        }
     }
 }
 
@@ -1086,6 +1133,29 @@ impl ProtoSyntax for ProtoRef {
     }
 }
 
+/// The parts of a proven-strict argument that may be evaluated in place
+/// (call-by-value) instead of being allocated as a thunk and forced
+/// (eu-oaz72.67), or `None` if it may not.
+///
+/// In place, the value is bound by a case fallback, and a case strips the
+/// metadata of a value returned to it, whereas forcing a thunk memoises a
+/// metadata-annotated value whole.  So only an argument whose value can
+/// never carry metadata qualifies: a saturated strict arithmetic or
+/// comparison primop, which always returns a bare native.
+fn in_place_primop(arg: &RcExpr) -> Option<(Smid, &RcExpr, &[RcExpr])> {
+    match &*arg.inner {
+        Expr::App(s, f, args) => match &*f.inner {
+            Expr::Intrinsic(_, name)
+                if args.len() == 2 && intrinsics::FUSIBLE_PRIMOP_NAMES.contains(&name.as_str()) =>
+            {
+                Some((*s, f, args.as_slice()))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Holder just wraps up the StgSyn that will be delivered later when
 /// the context is available
 pub struct Holder {
@@ -1172,6 +1242,7 @@ impl ProtoSyntax for ProtoAppGroup {
         let mut intrinsic_name: Option<&str> = None;
         let mut callee_name: Option<&str> = None;
         let mut prelude_slot: Option<usize> = None;
+        let mut f_binding: Option<Ref> = None;
         let mut local_binder = LetBinder::synthetic_let(context);
 
         // Find a reference for the function.
@@ -1196,13 +1267,19 @@ impl ProtoSyntax for ProtoAppGroup {
                 intrinsic_name = Some(intrinsics::intrinsic(n).name());
                 Box::new(ProtoRef::new(gref(n)))
             }
-            _ => Box::new(ProtoRef::new(compiler.compile_binding(
-                &mut local_binder,
-                self.f.clone(),
-                self.smid,
-                Demand::default(),
-                self.self_recurse_name.as_deref(),
-            )?)),
+            _ => {
+                // A callee bound in `local_binder` itself: its reference is
+                // fixed below, once the case frames are known.
+                let r = compiler.compile_binding(
+                    &mut local_binder,
+                    self.f.clone(),
+                    self.smid,
+                    Demand::default(),
+                    self.self_recurse_name.as_deref(),
+                )?;
+                f_binding = Some(r.clone());
+                Box::new(ProtoRef::new(r))
+            }
         };
 
         // Look up per-argument demands by what the callee is: an intrinsic
@@ -1240,8 +1317,60 @@ impl ProtoSyntax for ProtoAppGroup {
             .self_recurse_name
             .as_deref()
             .is_some_and(|name| callee_name == Some(name));
+
+        // The demand each argument is compiled under.  An argument proven
+        // strict whose value is a bare native is evaluated in place
+        // (call-by-value) rather than allocated as a thunk and then forced
+        // (eu-oaz72.67): see `in_place_primop`.
+        let arg_demand = |i: usize| -> Demand {
+            arg_demands
+                .and_then(|sigs| sigs.get(i))
+                .copied()
+                .unwrap_or_default()
+        };
+        let in_place: Vec<Option<(Smid, &RcExpr, &[RcExpr])>> = self
+            .args
+            .iter()
+            .enumerate()
+            .map(|(i, arg)| {
+                let demand = arg_demand(i);
+                if demand.strictness == Strictness::Strict && !demand.recursive {
+                    in_place_primop(arg)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // Each in-place argument's value lives in a case frame between the
+        // call and `local_binder`'s bindings, so a reference into those
+        // bindings is bumped past all of them.
+        let case_frames = in_place.iter().filter(|p| p.is_some()).count();
+        let f_index: Box<dyn ProtoReference> = match f_binding {
+            Some(r) => Box::new(ProtoRef::new(r.bump(case_frames))),
+            None => f_index,
+        };
+        let mut evaluated = 0;
+
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
         for (i, arg) in self.args.iter().enumerate() {
+            if let Some((s, f, args)) = in_place[i] {
+                let scrutinee = compiler.compile_application(
+                    &mut local_binder,
+                    s,
+                    f,
+                    args,
+                    Demand::at_most_once(),
+                    self.self_recurse_name.as_deref(),
+                )?;
+                local_binder.evaluate_strict(scrutinee);
+                // The k-th in-place argument's value is in the k-th of the
+                // `case_frames` case frames, counted from the outside in.
+                arg_indexes.push(Box::new(ProtoRef::new(dsl::lref(
+                    case_frames - 1 - evaluated,
+                ))));
+                evaluated += 1;
+                continue;
+            }
             match &*arg.inner {
                 Expr::Var(s, v) => match v {
                     Var::Bound(bv) => arg_indexes.push(Box::new(ProtoVar::new(bv.clone()))),
@@ -1258,10 +1387,7 @@ impl ProtoSyntax for ProtoAppGroup {
                     // Use the per-argument demand from the intrinsic signature table.
                     // Falls back to Demand::default() for unknown intrinsics or
                     // out-of-range argument indices.
-                    let arg_demand = arg_demands
-                        .and_then(|sigs| sigs.get(i))
-                        .copied()
-                        .unwrap_or_default();
+                    let arg_demand = arg_demand(i);
                     let index = compiler.compile_binding(
                         &mut local_binder,
                         arg.clone(),
@@ -1275,7 +1401,7 @@ impl ProtoSyntax for ProtoAppGroup {
                             local_binder.mark_strict(n);
                         }
                     }
-                    arg_indexes.push(Box::new(ProtoRef::new(index)));
+                    arg_indexes.push(Box::new(ProtoRef::new(index.bump(case_frames))));
                 }
             }
         }

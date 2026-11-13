@@ -13,7 +13,9 @@
         so a value or seed it may never need stays unevaluated. eu-oaz72.77:
         in blob mode the signature is derived by the same analysis when the
         blob is built, and found by the global the call refers to, not by
-        name."
+        name. eu-oaz72.67: a strict argument that is an arithmetic or
+        comparison primop is evaluated in place, with no thunk, so loop A
+        costs fewer ticks per step than thunk-then-force did."
 }
 
 ` { target: :test-annotation }
@@ -59,6 +61,38 @@ loop-values(context): {
 
 ` "no loop grows the stack with its iteration count"
 constant-stack(context): (context.stats.max-stack < 1000) then(:PASS, :FAIL)
+
+` "Seven accumulators, each strict and each passed back with a primop."
+spread(a, b, c, d, e, f, g, n):
+  (n = 0) then(a + b + c + d + e + f + g,
+               spread(a + 1, b + 2, c + 3, d + 4, e + 5, f + 6, g + 7, n - 1))
+
+` { target: :spread-ticks
+    verify: [:spread-value, :spread-budget] }
+spread-ticks: spread(0, 0, 0, 0, 0, 0, 0, steps)
+
+` "the spread loop sums every accumulator"
+spread-value(context): (context.result = 28 * steps) then(:PASS, :FAIL)
+
+` "The spread loop stays within 104 ticks a step. With its arguments evaluated in place it takes 89 (101 under byte dispatch); as thunks forced before the call it took 106 (118)."
+spread-budget(context): (context.stats.ticks < 104 * steps) then(:PASS, :FAIL)
+
+` "Strict in `a` and `n`, lazy in `xs`, which is a list built at each call: its reference must skip the frames of the arguments evaluated in place."
+mixed(a, xs, b, n): (n = 0) then([a, xs, b], mixed(a + n, [n, a], b, n - 1))
+
+` "Returns its argument with a doc string attached."
+with-doc(v): v // { doc: "kept" }
+
+` "Strict in `x`, which is not a primop call: it is still forced as a thunk, keeping its metadata."
+doc-of(x, n): (n = 0) then((x meta).doc, doc-of(x, n - 1))
+
+` { target: :test-in-place }
+test-in-place: {
+  mixed-args: mixed(0, [], 7, 3) = [6, [1, 5], 7]
+  metadata-kept: doc-of(with-doc(5), 2) = "kept"
+  nested-primops: loop-a((1 + 2) * 3, 4 - 2) = 11
+  RESULT: [mixed-args, metadata-kept, nested-primops] all-true? then(:PASS, :FAIL)
+}
 
 ` "The accumulator is passed back but never needed: it must not be forced."
 unused-acc(a, n): (n = 0) then(1, unused-acc(a + panic("accumulator forced"), n - 1))
