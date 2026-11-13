@@ -37,7 +37,7 @@
 | Function | Description |
 |----------|-------------|
 | `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is not rejected |
-| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0. A non-integer `n` is not rejected |
+| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0, `[]` when `n` exceeds the length of `l`. A non-integer `n` is not rejected |
 | `take-while(p?, l)` | Initial elements of list `l` while `p?` is true |
 | `take-until(p?)` | Initial elements of list `l` while `p?` is false |
 | `drop-while(p?, l)` | Skip initial elements of list `l` while `p?` is true |
