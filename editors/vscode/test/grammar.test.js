@@ -83,6 +83,9 @@ const CASES = {
   ],
   "calls-and-anaphora.eu": [
     ["paren-call", "max", "support.function.prelude"],
+    ["local-list-call", "add-pair", "entity.name.function.call"],
+    ["local-block-call", "point-x", "entity.name.function.call"],
+    ["local-block-call", "x", "variable.other.property.declaration"],
     ["list-call", "sum", "support.function.prelude"],
     ["block-call", "merge", "support.variable.prelude"],
     ["block-call", "a", "variable.other.property.declaration"],

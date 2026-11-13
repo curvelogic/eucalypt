@@ -1,10 +1,5 @@
-.vscode/**
-.vscode-test/**
 src/**
-node_modules/.package-lock.json
-node_modules/**/test/**
-node_modules/**/*.ts
-node_modules/**/*.map
+test/**
+scripts/**
 tsconfig.json
-**/*.ts
 **/*.map
