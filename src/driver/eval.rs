@@ -255,6 +255,12 @@ pub struct Executor<'a> {
     #[cfg(not(target_arch = "wasm32"))]
     prelude_blob: Option<crate::eval::stg::blob::PreludeBlob>,
 
+    /// The blob's per-slot demand signatures, moved out of it once by
+    /// `set_prelude_blob` and shared with each compile, rather than copied
+    /// for every run (eu-oaz72.92).
+    #[cfg(not(target_arch = "wasm32"))]
+    prelude_demand_sigs: crate::eval::stg::compiler::PreludeDemandSignatures,
+
     /// Command-line arguments passed after `--`.
     ///
     /// Used to override the stale `__args` global baked into the blob at
@@ -299,6 +305,8 @@ impl<'a> Executor<'a> {
             err: None,
             #[cfg(not(target_arch = "wasm32"))]
             prelude_blob: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            prelude_demand_sigs: Default::default(),
             args: Vec::new(),
             seed: None,
             type_findings: TypeWarningLinks::default(),
@@ -316,8 +324,10 @@ impl<'a> Executor<'a> {
     /// can classify blob-mode global-slot Smids (eu-1tkk.7.12) the same way
     /// it classifies source-compiled-prelude Smids.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn set_prelude_blob(&mut self, blob: Option<crate::eval::stg::blob::PreludeBlob>) {
-        if let Some(ref blob) = blob {
+    pub fn set_prelude_blob(&mut self, mut blob: Option<crate::eval::stg::blob::PreludeBlob>) {
+        if let Some(ref mut blob) = blob {
+            self.prelude_demand_sigs =
+                std::sync::Arc::new(std::mem::take(&mut blob.demand_signatures));
             self.source_map.extend_blame_table(blob.blame.clone());
             let slot_to_name: std::collections::HashMap<u32, String> = blob
                 .name_to_slot
@@ -498,14 +508,29 @@ impl<'a> Executor<'a> {
                 stg_settings.prelude_globals = Some(b.name_to_slot.clone());
                 // The demand signatures derived for each prelude global when
                 // the blob was built, by slot (eu-oaz72.77).
-                stg_settings.prelude_demand_sigs = std::sync::Arc::new(b.demand_signatures.clone());
+                stg_settings.prelude_demand_sigs = self.prelude_demand_sigs.clone();
             }
 
-            // Run demand analysis on the core expression before STG compile
+            // Run demand analysis on the core expression before STG compile.
+            // In blob mode the program's calls of prelude globals take the
+            // signatures derived for them, as source mode's analysis of
+            // prelude and program together sees them (eu-oaz72.92).
             if !stg_settings.suppress_demand_analysis {
                 let t = Instant::now();
+                #[cfg(not(target_arch = "wasm32"))]
+                let prelude = self.prelude_blob.as_ref().map(|b| {
+                    crate::core::analyse_demand::PreludeSignatures {
+                        name_to_slot: &b.name_to_slot,
+                        sigs: &self.prelude_demand_sigs,
+                    }
+                });
+                #[cfg(target_arch = "wasm32")]
+                let prelude = None;
                 let (annotated, _signatures, named_signatures) =
-                    crate::core::analyse_demand::analyse_demands(&self.evaluand);
+                    crate::core::analyse_demand::analyse_demands_with_prelude(
+                        &self.evaluand,
+                        prelude,
+                    );
                 self.evaluand = annotated;
                 stg_settings.user_demand_sigs = named_signatures;
                 stats.timings_mut().record("demand-analysis", t.elapsed());
