@@ -1,2 +1,2 @@
-# The divides operator inherits the zero-divisor error of %
+` "A zero divisor in the divides operator inherits the division-by-zero error of % (eu-oaz72.68)"
 bomb: 0 ∣ 0

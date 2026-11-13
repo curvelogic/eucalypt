@@ -145,6 +145,7 @@ divisibility: {
     sum-and-product: 1 + 2 ∣ 3 * 4
     with-and: 2 ∣ 4 ∧ 3 ∤ 4
     with-or: 5 ∣ 4 ∨ 2 ∣ 4
+    left-assoc-with-eq: 2 ∣ 4 = true
   }
 
   pipelines: {
