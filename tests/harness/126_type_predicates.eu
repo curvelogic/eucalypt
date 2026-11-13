@@ -35,5 +35,7 @@ test-type-predicates: {
   lb: {} list? //= false
   bn: false number? //= false
   bs: true string? //= false
-  RESULT: [n, s, y, b, nn, ns, nb, ny, bl, lb, bn, bs] all-true? then(:PASS, :FAIL)
+  ca: (2.5 - 0) number? //= true
+  ci: (1 + 2) number? //= true
+  RESULT: [n, s, y, b, nn, ns, nb, ny, bl, lb, bn, bs, ca, ci] all-true? then(:PASS, :FAIL)
 }

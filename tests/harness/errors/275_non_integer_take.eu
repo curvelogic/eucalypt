@@ -1,0 +1,2 @@
+` "A non-integer count to `take` is an error (eu-oaz72.58). It used to round up. The count is computed, so this also gates `number?` on an unboxed arithmetic result."
+x: [1, 2, 3, 4] take(1 + 0.5)

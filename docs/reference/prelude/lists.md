@@ -36,8 +36,8 @@
 
 | Function | Description |
 |----------|-------------|
-| `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is not rejected |
-| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0, `[]` when `n` exceeds the length of `l`. A non-integer `n` is not rejected |
+| `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is an error |
+| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0, `[]` when `n` exceeds the length of `l`. A non-integer `n` is an error |
 | `take-while(p?, l)` | Initial elements of list `l` while `p?` is true |
 | `take-until(p?)` | Initial elements of list `l` while `p?` is false |
 | `drop-while(p?, l)` | Skip initial elements of list `l` while `p?` is true |
@@ -65,11 +65,11 @@
 
 | Function | Description |
 |----------|-------------|
-| `split-at(n, l)` | Split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0 |
+| `split-at(n, l)` | Split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0; a non-integer `n` is an error |
 | `split-after(p?, l)` | Split list where `p?` becomes false and return pair |
 | `split-when(p?, l)` | Split list where `p?` becomes true and return pair |
-| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step`; a size or step that is not positive is an error |
-| `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n`; a size that is not positive is an error |
+| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step`; a size or step that is not a positive integer is an error |
+| `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n`; a size that is not a positive integer is an error |
 | `discriminate(pred, xs)` | Return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false |
 
 ## Folds and Scans
@@ -119,7 +119,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `nth(n, l)` | Return `n`th item (from 0) of list if it exists, otherwise error; a negative `n` is an error |
+| `nth(n, l)` | Return `n`th item (from 0) of list if it exists, otherwise error; a negative or non-integer `n` is an error |
 | `(l !! r)` | Return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get` |
 | `count(l)` | Return count of items in list `l` |
 | `last` | Return last element of list `l` |
@@ -130,10 +130,10 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0 |
+| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`.
-Panics if `n` is out of range, including a negative `n` |
+An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`.
 Returns `l` unchanged if no element matches |
 | `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
@@ -143,8 +143,8 @@ Returns `l` unchanged if no element matches |
 | `butlast(l)` | Return all elements of list `l` except the last |
 | `unzip(pairs)` | List of pairs to pair of lists. Inverse of zip |
 | `interleave(a, b)` | Alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended |
-| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n`; a size that is not positive gives `[]`, otherwise a step that is not positive is an error |
-| `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk; a size that is not positive gives `[]` |
+| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n`; a size that is not positive gives `[]`, otherwise a step that is not positive is an error; a non-integer size or step is an error |
+| `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk; a size that is not positive gives `[]`; a non-integer size is an error |
 | `group-consecutive-by(f, xs)` | Group consecutive elements where `f` returns equal values into sublists |
 | `group-consecutive` | Group consecutive equal elements into sublists |
 | `uniq(xs)` | Remove consecutive duplicates from a list |
