@@ -10,7 +10,7 @@ warnings: 0
 code: EU-EVAL-TYPE
 primary: user tests/diagnostics/corpus/catenation_arith.eu:2:7
 help-lines: 0
-note-lines: 2
+note-lines: 1
 secondary-labels: 1
 trace-frames: 1
 trace-user-frames: 1
@@ -25,6 +25,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
   │       ^^^^^^^^^^^ - called from here
   │
   = a function value cannot be used directly here; it must first be called with all of its remaining arguments
-  = note: catenation (juxtaposition) binds more loosely than '+', so 'x f(y) + z' is read as 'x (f(y) + z)' — write '(x f(y)) + z'
   = while evaluating (outermost first):
     - n at catenation_arith.eu:2:19

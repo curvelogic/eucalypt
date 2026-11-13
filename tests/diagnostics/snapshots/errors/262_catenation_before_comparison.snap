@@ -10,7 +10,7 @@ warnings: 0
 code: -
 primary: user tests/harness/errors/262_catenation_before_comparison.eu:5:21
 help-lines: 1
-note-lines: 2
+note-lines: 1
 secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
@@ -26,6 +26,5 @@ error: tried to call a false as a function
   │                     ^
   │
   = note: the value called here is the result of '='
-  = note: catenation (juxtaposition) binds more loosely than '=', so 'x f(y) = z' is read as 'x (f(y) = z)' — write '(x f(y)) = z'
   = while evaluating (outermost first):
     - r at 262_catenation_before_comparison.eu:5:21
