@@ -8,7 +8,9 @@
         conditional force is strict, so an accumulator passed back to its
         loop is evaluated on each step (constant stack); an accumulator not
         needed on every path, a value a closure captures and `foldl`'s
-        accumulator stay lazy."
+        accumulator stay lazy. eu-oaz72.72: a prelude function's
+        signature claims only the arguments its definition always forces,
+        so a value or seed it may never need stays unevaluated."
 }
 
 ` { target: :test-annotation }
@@ -79,7 +81,7 @@ via-alias(f): { step: f }.(step(panic("alias forced"), 1))
 ` "Calls a parameter named `hop`, like `strict-hop`'s loop: the parameter may be lazy."
 via-param(hop): hop(panic("parameter forced"), 1)
 
-` "A strict accumulator loop called `hop`, a name bound nowhere else except as `via-param`'s parameter."
+` "An accumulator loop called `hop`. `via-param` binds `hop` as a parameter, so calls of `hop` take no signature and this loop is not made strict."
 strict-hop(n): { hop(a, i): (i = n) then(a, hop(a + 1, i + 1)) }.(hop(0, 0))
 
 ` "A strict accumulator loop called `step`."
@@ -104,5 +106,46 @@ test-laziness: {
   arities: [first-max(3), next-max(3)] = [10, 10]
   partial: (loop-a(panic("partial application forced")) block?) = false
   RESULT: [unused, untaken, closure, closure-applied, lazy-foldl, same-name, alias, parameter, arities, partial]
+          all-true? then(:PASS, :FAIL)
+}
+
+` "Steps 0 to 1, but forces a panic on the step from 1."
+step-once(x): (x = 1) then(panic("iterate step forced"), x + 1)
+
+` "A local `head-or`, strict in its first argument; calls of the prelude's `head-or` must not take its signature."
+local-head-or(xs): { head-or(d, l): ((l count) = d) then(d, head-or(d + 1, l)) }.(head-or(0, xs))
+
+` { doc: "Saturated calls, not pipelines: `xs f(a)` compiles as a partial application, which takes no signature."
+    target: :test-prelude-laziness }
+test-prelude-laziness: {
+  repeat-value: (repeat(panic("repeat value forced")) nil?) = false
+  iterate-seed: (iterate(panic("iterate function forced"), panic("iterate seed forced")) nil?) = false
+  iterate-step: (iterate(step-once, 0) take(3) count) = 3
+  zip-with-function: zip-with(panic("zip-with function forced"), [], panic("zip-with list forced")) = []
+  zip-second: zip([], panic("zip second list forced")) = []
+  filter-predicate: filter(panic("filter predicate forced"), []) = []
+  append-tail: (append([1], panic("append tail forced")) head) = 1
+  snoc-element: (snoc(panic("snoc element forced"), [1]) head) = 1
+  mapcat-function: mapcat(panic("mapcat function forced"), []) = []
+  cross-function: cross(panic("cross function forced"), [], panic("cross list forced")) = []
+  interleave-second: (interleave([1], panic("interleave second forced")) head) = 1
+  take-while-predicate: take-while(panic("take-while predicate forced"), []) = []
+  sort-by-key: sort-by(panic("sort-by key forced"), panic("sort-by comparator forced"), []) = []
+  sort-by-num-key: sort-by-num(panic("sort-by-num key forced"), []) = []
+  group-by-key: group-by(panic("group-by key forced"), []) = {}
+  discriminate-lazy: (discriminate(panic("discriminate predicate forced"), panic("discriminate list forced")) count) = 2
+  group-consecutive-key: group-consecutive-by(panic("group-consecutive-by key forced"), []) = []
+  deep-find-key: deep-find(panic("deep-find key forced"), []) = []
+  deep-transform-data: deep-transform(const(1), panic("deep-transform data forced")) = 1
+  head-or-default: head-or(panic("head-or default forced"), [1]) = 1
+  tail-or-default: tail-or(panic("tail-or default forced"), [1]) = []
+  sliding-function: over-sliding-pairs(panic("over-sliding-pairs function forced"), []) = []
+  shared-name: [local-head-or[1, 2], head-or(panic("prelude head-or default forced"), [1])] = [2, 1]
+  RESULT: [repeat-value, iterate-seed, iterate-step, zip-with-function,
+           zip-second, filter-predicate, append-tail, snoc-element, mapcat-function,
+           cross-function, interleave-second, take-while-predicate, sort-by-key,
+           sort-by-num-key, group-by-key, discriminate-lazy, group-consecutive-key,
+           deep-find-key, deep-transform-data, head-or-default, tail-or-default,
+           sliding-function, shared-name]
           all-true? then(:PASS, :FAIL)
 }
