@@ -1392,9 +1392,9 @@ __dbg-after(f, x): ▶(f(x))
 ## List library functions, maps and folds
 #
 
-` { doc: "`__require-int(what, n, v)` - internal: `v`, or an error naming `what` and `n` when `n` is a number that is not an integer."
+` { doc: "`__require-int(what, n, v)` - internal: `v`, or an error naming `what` and `n` when `n` is a number that is not an integer. Written with `__IF`, not `then`, so demand analysis still derives `n` as strict for its callers."
     export: :suppress }
-__require-int(what, n, v): ((n number?) ∧ (floor(n) != n)) then(panic("{what} {n} must be an integer"), v)
+__require-int(what, n, v): __IF((n number?) ∧ (floor(n) != n), panic("{what} {n} must be an integer"), v)
 
 ` { doc: "`take(n, l)` - return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is an error."
     type: s"number → [a] → [a]" }
