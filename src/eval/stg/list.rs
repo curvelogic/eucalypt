@@ -236,7 +236,9 @@ impl CallGlobal1 for IsList {}
 
 /// ISNUMBER(value)
 ///
-/// Return true if the value is a number, false otherwise
+/// Return true if the value is a number, false otherwise. A number is
+/// either boxed (a literal) or a bare native (the result of arithmetic),
+/// so both representations count.
 pub struct IsNumber;
 
 impl StgIntrinsic for IsNumber {
@@ -252,10 +254,10 @@ impl StgIntrinsic for IsNumber {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let closure = machine.resolve_closure(view, &args[0])?;
-        let result = matches!(
-            machine.data_tag(view, &closure),
-            Some(tag) if tag == DataConstructor::BoxedNumber.tag()
-        );
+        let result = match machine.data_tag(view, &closure) {
+            Some(tag) => tag == DataConstructor::BoxedNumber.tag(),
+            None => matches!(machine.value_native(view, &closure), Some(Native::Num(_))),
+        };
         machine_return_bool(machine, view, result)
     }
 }
@@ -592,6 +594,7 @@ pub mod tests {
 
     fn runtime() -> Box<dyn Runtime> {
         testing::runtime(vec![
+            Box::new(IsNumber),
             Box::new(IsString),
             Box::new(IsSymbol),
             Box::new(IsZdt),
@@ -624,6 +627,20 @@ pub mod tests {
 
     // eu-oaz72.93: each scalar type predicate recognises both the boxed
     // form and the bare native form of its type.
+
+    #[test]
+    fn is_number_recognises_boxed_and_bare_numbers() {
+        assert_eq!(
+            eval_bool(boxed(|r| IsNumber.global(r), box_num(1))),
+            Some(true)
+        );
+        assert_eq!(eval_bool(IsNumber.global(num(1))), Some(true));
+        assert_eq!(eval_bool(IsNumber.global(str("1"))), Some(false));
+        assert_eq!(
+            eval_bool(boxed(|r| IsNumber.global(r), box_str("1"))),
+            Some(false)
+        );
+    }
 
     #[test]
     fn is_string_recognises_boxed_and_bare_strings() {

@@ -21,8 +21,8 @@ rust-panic: no
 error: arr.zeros: array shape [100000000000000000000] has too many elements — an array holds at most 536870911 elements
   ┌─ tests/harness/errors/276_array_shape_too_large.eu:2:4
   │
-2 │ a: arr.zeros([100000000000000000000.0])
-  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2 │ a: arr.zeros[100000000000000000000.0]
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
     - a at 276_array_shape_too_large.eu:2:4
@@ -45,7 +45,7 @@ rust-panic: no
 error: arr.zeros: array shape [100000000000000000000] has too many elements — an array holds at most 536870911 elements
   ┌─ tests/harness/errors/276_array_shape_too_large.eu:2:4
   │
-2 │ a: arr.zeros([100000000000000000000.0])
+2 │ a: arr.zeros[100000000000000000000.0]
   │    ^^^
   │
   = while evaluating (outermost first):

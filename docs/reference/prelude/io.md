@@ -68,7 +68,7 @@
 | `vec.len` | Return the number of elements in vec `v` |
 | `vec.nth` | Return the element at index `n` (0-based) in vec `v` |
 | `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v` |
-| `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement |
+| `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement; a non-integer `n` is an error |
 | `vec.shuffle(v, stream)` | Random monad action: return vec `v` in random order |
 | `vec.to-list` | Convert vec `v` back to a cons-list |
 | `arr.zeros` | Create an array of zeros with the given shape list |

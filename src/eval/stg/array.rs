@@ -782,8 +782,10 @@ fn num_list_to_shape(
 }
 
 /// Check a shape given as numbers: each dimension a non-negative whole
-/// number, and the product of the non-zero dimensions (what `ndarray`
-/// checks against `isize::MAX`) no more than [`MAX_ARRAY_ELEMENTS`].
+/// number, and the shape no larger than any array can be. An array with
+/// elements holds at most [`MAX_ARRAY_ELEMENTS`]; an empty one (some
+/// dimension zero) allocates nothing, but `ndarray` still requires the
+/// product of its non-zero dimensions to fit in an `isize`.
 fn validate_shape(smid: Smid, function: &str, dims: &[f64]) -> Result<Vec<usize>, ExecutionError> {
     let too_large = || {
         let rendered: Vec<String> = dims.iter().map(|d| d.to_string()).collect();
@@ -793,6 +795,12 @@ fn validate_shape(smid: Smid, function: &str, dims: &[f64]) -> Result<Vec<usize>
             format!("[{}]", rendered.join(", ")),
             MAX_ARRAY_ELEMENTS,
         )
+    };
+    let empty = dims.contains(&0.0);
+    let limit = if empty {
+        isize::MAX as usize
+    } else {
+        MAX_ARRAY_ELEMENTS
     };
     let mut shape = Vec::with_capacity(dims.len());
     let mut count: usize = 1;
@@ -807,14 +815,14 @@ fn validate_shape(smid: Smid, function: &str, dims: &[f64]) -> Result<Vec<usize>
         if d < 0.0 {
             return Err(ExecutionError::ArrayNegativeIndex(smid, d));
         }
-        if d > MAX_ARRAY_ELEMENTS as f64 {
+        if d > limit as f64 {
             return Err(too_large());
         }
         let n = d as usize;
         if n != 0 {
             count = count
                 .checked_mul(n)
-                .filter(|&c| c <= MAX_ARRAY_ELEMENTS)
+                .filter(|&c| c <= limit)
                 .ok_or_else(too_large)?;
         }
         shape.push(n);
@@ -909,9 +917,13 @@ mod tests {
         assert_eq!(shape_of(&[-0.0]).unwrap(), vec![0]);
         let max = MAX_ARRAY_ELEMENTS as f64;
         assert_eq!(shape_of(&[max]).unwrap(), vec![MAX_ARRAY_ELEMENTS]);
-        // A zero dimension leaves the others to ndarray's own check,
-        // which counts only the non-zero axes.
+        // An empty array allocates nothing: its other dimensions are held
+        // only to ndarray's own check, on the product of non-zero axes.
         assert_eq!(shape_of(&[0.0, max]).unwrap(), vec![0, MAX_ARRAY_ELEMENTS]);
+        assert_eq!(
+            shape_of(&[0.0, 1e5, 1e5]).unwrap(),
+            vec![0, 100_000, 100_000]
+        );
     }
 
     #[test]
@@ -943,7 +955,8 @@ mod tests {
             vec![max + 1.0],
             vec![1e5, 1e5],
             vec![1e5, 1e5, 1e5, 1e5],
-            vec![0.0, 1e5, 1e5],
+            vec![0.0, 1e10, 1e10],
+            vec![0.0, 1e20],
         ] {
             assert!(
                 matches!(

@@ -205,10 +205,11 @@ neighbours-checks: {
 ` "Shapes and offsets at the edges: whole-number floats are dimensions, a zero dimension gives an empty array, and an offset too large for any coordinate is out of bounds (eu-oaz72.96)"
 edge-checks: {
   trues: [
-    (arr.zeros([2.0, 3]) arr.shape) = [2, 3],
-    (arr.zeros([0, 3]) arr.length) = 0,
+    (arr.zeros[2.0, 3] arr.shape) = [2, 3],
+    (arr.zeros[0, 3] arr.length) = 0,
+    (arr.zeros[0, 100000, 100000] arr.length) = 0,
     (arr.fill([0], 7) arr.to-list) = [],
-    (arr.from-flat([2, 2], [1, 2, 3, 4]) arr.reshape([4.0]) arr.shape) = [4],
+    (arr.from-flat([2, 2], [1, 2, 3, 4]) arr.reshape[4.0] arr.shape) = [4],
     (arr.from-flat([3], [10, 20, 30]) arr.neighbours([1], [[100000000000000000000], [1]])) = [30]
   ]
 }

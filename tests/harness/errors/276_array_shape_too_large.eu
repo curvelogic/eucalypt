@@ -1,2 +1,2 @@
 ` "A dimension too large for any array is a named error before anything is allocated, not a panic inside ndarray (eu-oaz72.96)"
-a: arr.zeros([100000000000000000000.0])
+a: arr.zeros[100000000000000000000.0]

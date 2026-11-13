@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**48 of 253 fixtures diverge.**
+**53 of 266 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -55,6 +55,11 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/250_dict_not_a_dict` | user tests/harness/errors/250_dict_not_a_dict.eu:2:16 | user tests/harness/errors/250_dict_not_a_dict.eu:2:16 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_render` | user tests/harness/errors/250_dict_render.eu:2:9 | user tests/harness/errors/250_dict_render.eu:2:9 | 0 (0 user) | 0 (0 user) |
 | `errors/250_dict_value_cycle` | user tests/harness/errors/250_dict_value_cycle.eu:3:19 | user tests/harness/errors/250_dict_value_cycle.eu:3:19 | 3 (3 user) | 3 (3 user) |
+| `errors/275_non_integer_nth` | user tests/harness/errors/275_non_integer_nth.eu:2:14 | user tests/harness/errors/275_non_integer_nth.eu:2:14 | 2 (1 user) | 1 (1 user) |
+| `errors/275_non_integer_window_all_size` | user tests/harness/errors/275_non_integer_window_all_size.eu:2:14 | user tests/harness/errors/275_non_integer_window_all_size.eu:2:14 | 2 (1 user) | 1 (1 user) |
+| `errors/275_non_integer_window_all_step` | user tests/harness/errors/275_non_integer_window_all_step.eu:2:14 | user tests/harness/errors/275_non_integer_window_all_step.eu:2:14 | 2 (1 user) | 1 (1 user) |
+| `errors/275_non_integer_window_size` | user tests/harness/errors/275_non_integer_window_size.eu:2:14 | user tests/harness/errors/275_non_integer_window_size.eu:2:14 | 2 (1 user) | 1 (1 user) |
+| `errors/275_non_integer_window_step` | user tests/harness/errors/275_non_integer_window_step.eu:2:14 | user tests/harness/errors/275_non_integer_window_step.eu:2:14 | 2 (1 user) | 1 (1 user) |
 | `errors/276_array_shape_not_integer` | user tests/harness/errors/276_array_shape_not_integer.eu:2:4 | user tests/harness/errors/276_array_shape_not_integer.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/276_array_shape_overflow` | user tests/harness/errors/276_array_shape_overflow.eu:2:4 | user tests/harness/errors/276_array_shape_overflow.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/276_array_shape_reshape_overflow` | user tests/harness/errors/276_array_shape_reshape_overflow.eu:2:4 | user tests/harness/errors/276_array_shape_reshape_overflow.eu:2:4 | 1 (1 user) | 1 (1 user) |
