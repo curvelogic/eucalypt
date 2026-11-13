@@ -223,7 +223,13 @@ fn fragmented_heap_is_compacted_under_heap_limit() {
         .arg("--heap-limit-mib")
         .arg("10")
         .arg("tests/harness/gc/gc_004_fragmentation.eu")
-        .env("EU_PP_THRESHOLD", "999999999");
+        .env("EU_PP_THRESHOLD", "999999999")
+        // Stress mode evacuates every block on every collection. An
+        // evacuated block frees only at the next collection (its old
+        // copies' lines stay marked), so stress holds about twice the live
+        // data and cannot meet a limit this tight; it is not the policy
+        // under test.
+        .env_remove("EU_GC_STRESS");
     let out = run_with_deadline(cmd, Duration::from_secs(600))
         .expect("eu did not finish within 600s under a 10 MiB heap limit");
     assert!(
