@@ -30,6 +30,28 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  tooling-tests:
+    # `cargo test` in the test jobs runs only the root package. Clippy
+    # compiles the xtask crate and the tree-sitter grammar's Rust binding,
+    # but their tests never ran in CI (found by eu-oaz72.18, PR #1162).
+    name: xtask and grammar tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run xtask tests
+        run: cargo test -p xtask
+      - name: Run tree-sitter grammar binding tests
+        run: cargo test --manifest-path editors/tree-sitter-eucalypt/Cargo.toml
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
