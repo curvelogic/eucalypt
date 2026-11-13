@@ -1,5 +1,5 @@
 ` "Two consecutive integers as a vec: annotated user code that an element is computed by."
 pair(n): [n, n + 1] vec.of
 
-` "vec.of rejects the function element: the error points at this vec.of call, not at pair's body."
+` "vec.of rejects the vec element pair(1) yields: the error points at this vec.of call, not at pair's body."
 result: [pair(1), (_ + 1)] vec.of

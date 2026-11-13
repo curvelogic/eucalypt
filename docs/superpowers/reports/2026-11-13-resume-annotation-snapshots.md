@@ -45,8 +45,8 @@ marked.
 | errors/082_array_reshape_mismatch | 2:4 | 2:40 | was `arr.from-flat`; now `arr.reshape` | better |
 | errors/276_array_shape_reshape_overflow | 2:4 | 2:17 | was `arr.zeros`; now `arr.reshape` | better |
 | errors/277_array_get_non_integer | 2:4 | 2:40 | was `arr.from-flat`; now `arr.get`; spurious trace frame gone | better |
-| errors/277_array_slice_negative | 2:4 | 2:40 | as above, for `arr.slice` | better |
-| errors/277_array_slice_non_integer | 2:4 | 2:40 | as above, for `arr.slice` | better |
+| errors/277_array_slice_negative | 2:4 | 2:40 | was `arr.from-flat`; now the failing `arr.slice` | better |
+| errors/277_array_slice_non_integer | 2:4 | 2:40 | was `arr.from-flat`; now the failing `arr.slice` | better |
 | errors/277_vec_nth_{negative,non_integer,out_of_range} | 2:19 | 2:19 | primary unchanged; the "called from here" label on the `vec.of[…]` receiver is gone | neutral |
 | errors/277_vec_slice_{negative,non_integer} | 2:23 | 2:23 | as above | neutral |
 | errors/108_secondary_labels | 4:1 | 4:31 | was the start of `transform`'s declaration; now the failing `+` in `_ + 1`; trace frame folded into labels | better |
@@ -55,7 +55,7 @@ marked.
 | errors/263_catenation_before_sum | 5:11 | 5:11 | trace frame was `f`'s declaration (1:1); now `r` at 5:11 | better |
 | errors/271_namespace_call_beside_merge | 4:17 | 4:17 | trace frame moves from 4:7 (`str.of`) to 4:17 (`x {a: 1}`, the failing merge) | better |
 | errors/250_dict_value_cycle | 3:19 | 3:19 | a duplicated `d` trace frame is gone (both modes) | neutral |
-| errors/011_assert_pred | 1:14 | 1:8 | was the predicate's `>`; now the `//=?` assertion; trace frame folded away | arguable — see below |
+| errors/011_assert_pred | 1:14 | 1:8 | was the predicate's `>`; now the `//=?` assertion; the source-mode secondary label is gone | arguable — see below |
 | errors/192_1tkk_7_9_function_not_block | 2:9 | 2:16 | was the under-applied `add(1)`; now the `+` it is passed to | **worse** — see below |
 | errors/229_1tkk_7_38_underapplied_call_span | 10:7 (11 cols) | 11:19 (1 col) | as 192, for `foldl(+, 0) + 1` (fixture gained a comment line) | **worse** — see below |
 | provocations/catenation_arith | 2:7 | 2:19 | same program as 229 | **worse** — see below |
