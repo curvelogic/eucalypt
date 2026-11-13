@@ -71,26 +71,18 @@ pub enum CollectionStrategy {
     /// Selective evacuation of specific fragmented blocks
     /// Contains list of block indices to evacuate during collection
     SelectiveEvacuation(Vec<usize>),
-
-    /// Comprehensive defragmentation sweep
-    /// Evacuates all fragmented blocks to achieve maximum compaction
-    DefragmentationSweep,
 }
 
 impl CollectionStrategy {
     /// Whether this strategy involves object evacuation
     pub fn is_evacuating(&self) -> bool {
-        matches!(
-            self,
-            CollectionStrategy::SelectiveEvacuation(_) | CollectionStrategy::DefragmentationSweep
-        )
+        matches!(self, CollectionStrategy::SelectiveEvacuation(_))
     }
 
     /// Return the candidate block indices for evacuation (empty if mark-in-place)
     pub fn candidates(&self) -> Vec<usize> {
         match self {
             CollectionStrategy::SelectiveEvacuation(blocks) => blocks.clone(),
-            CollectionStrategy::DefragmentationSweep => Vec::new(), // TODO: all blocks
             CollectionStrategy::MarkInPlace => Vec::new(),
         }
     }
@@ -490,6 +482,43 @@ impl HeapState {
             lines_since_gc: 0,
             line_map_index: HashMap::default(),
             mark_misses: 0,
+        }
+    }
+
+    /// Every bump block the heap holds, with the index evacuation
+    /// candidates use for it: `head` is 0 and `overflow` 1 (each whether
+    /// or not present), then `rest`, `unswept` and `recycled` in that
+    /// order from 2 (eu-oaz72.90). [`HeapState::bump_block_at`] is its
+    /// inverse; both are valid only while the lists are unchanged.
+    pub fn indexed_bump_blocks(&self) -> impl Iterator<Item = (usize, &BumpBlock)> {
+        let fixed = [(0, self.head.as_ref()), (1, self.overflow.as_ref())]
+            .into_iter()
+            .filter_map(|(idx, block)| block.map(|b| (idx, b)));
+        let listed = self
+            .rest
+            .iter()
+            .chain(self.unswept.iter())
+            .chain(self.recycled.iter())
+            .enumerate()
+            .map(|(n, block)| (n + 2, block));
+        fixed.chain(listed)
+    }
+
+    /// The bump block at `index` in [`HeapState::indexed_bump_blocks`].
+    pub fn bump_block_at(&self, index: usize) -> Option<&BumpBlock> {
+        match index {
+            0 => self.head.as_ref(),
+            1 => self.overflow.as_ref(),
+            n => {
+                let mut n = n - 2;
+                for list in [&self.rest, &self.unswept, &self.recycled] {
+                    if n < list.len() {
+                        return list.get(n);
+                    }
+                    n -= list.len();
+                }
+                None
+            }
         }
     }
 
@@ -1643,6 +1672,22 @@ pub fn footprint_limit_tolerated(limit: usize) -> usize {
     limit.saturating_add((limit / 2).max(MIN_TOLERANCE_BLOCKS))
 }
 
+/// Marked lines one collection may evacuate from a heap of
+/// `total_blocks` bump blocks (eu-oaz72.90): an eighth of the heap's lines,
+/// but at least a few blocks' worth, so small heaps can still compact.
+pub fn evacuation_budget_lines(total_blocks: usize) -> usize {
+    const MIN_BUDGET_BLOCKS: usize = 4;
+    (total_blocks / 8).max(MIN_BUDGET_BLOCKS) * LINE_COUNT
+}
+
+/// Whether `held` blocks press on a heap limit of `limit` blocks: past
+/// the 3/4 that [`Heap::enforce_footprint_limit`] releases free blocks
+/// down to, so compacting fragmented blocks lets it give more back
+/// (eu-oaz72.90).
+pub fn footprint_under_pressure(limit: Option<usize>, held: usize) -> bool {
+    limit.is_some_and(|limit| held.saturating_mul(4) > limit.saturating_mul(3))
+}
+
 /// Whether `live_blocks` surviving a collection exhausts a heap of `limit`
 /// blocks: more than 7/8 of the limit is live, so the headroom left would
 /// make the collector run on almost every allocation (eu-oaz72.4).
@@ -2505,141 +2550,93 @@ impl Heap {
         })
     }
 
-    /// Analyze fragmentation across all blocks and determine optimal collection strategy
+    /// Analyse fragmentation across every bump block and choose the
+    /// collection strategy.
+    ///
+    /// Candidates are drawn from every bump block the heap holds —
+    /// `head`, `overflow`, `rest`, `unswept` and `recycled`, indexed by
+    /// [`HeapState::indexed_bump_blocks`] — not only those in `rest`
+    /// (eu-oaz72.90). After a collection every block goes to `unswept`, so
+    /// by the next one most of a fragmented heap sits in `unswept` or
+    /// `recycled`, whose line maps are exactly the last mark's.
+    ///
+    /// Below 10% of blocks sparse or fragmented, mark in place; from 30%,
+    /// mark in place too unless [`footprint_under_pressure`] (before
+    /// eu-oaz72.90 that case never evacuated). Otherwise evacuate the
+    /// sparse and fragmented unpinned blocks, sparsest first, while their
+    /// marked lines fit [`evacuation_budget_lines`], so the copying each
+    /// collection does is bounded and goes where it frees the most per
+    /// line copied.
     pub fn analyze_collection_strategy(&self) -> CollectionStrategy {
-        // GC stress mode: force SelectiveEvacuation on every collection so
-        // that evacuation pointer-update bugs surface on any platform, not
-        // just the aarch64 CI runner.  Enable with EU_GC_STRESS=1.
-        if self.gc_stress {
-            // SAFETY: Read-only borrow to enumerate block indices.
-            // Single-threaded; no mutation during analysis.
-            let heap_state = unsafe { &*self.state.get() };
-            let mut candidates: Vec<usize> = Vec::new();
-            if heap_state.head.is_some() {
-                candidates.push(0);
-            }
-            if heap_state.overflow.is_some() {
-                candidates.push(1);
-            }
-            for i in 0..heap_state.rest.len() {
-                candidates.push(i + 2);
-            }
-            // Exclude pinned blocks — evacuating a pinned block would corrupt
-            // live objects held by the mutator.
-            let unpinned: Vec<usize> = candidates
-                .into_iter()
-                .filter(|&idx| {
-                    let hs = unsafe { &*self.state.get() };
-                    let base = match idx {
-                        0 => hs.head.as_ref().map(|b| b.base_address()),
-                        1 => hs.overflow.as_ref().map(|b| b.base_address()),
-                        n => hs.rest.get(n - 2).map(|b| b.base_address()),
-                    };
-                    base.is_none_or(|addr| !self.is_block_pinned(addr))
-                })
-                .collect();
-            if !unpinned.is_empty() {
-                return CollectionStrategy::SelectiveEvacuation(unpinned);
-            }
-        }
-
         // SAFETY: Read-only borrow of heap state for analysis.
         // Single-threaded access, no mutation occurs during analysis.
         let heap_state = unsafe { &*self.state.get() };
-        let mut fragmented_blocks = Vec::new();
+        let unpinned = |block: &BumpBlock| !self.is_block_pinned(block.base_address());
+
+        // GC stress mode: force SelectiveEvacuation on every collection so
+        // that evacuation pointer-update bugs surface on any platform, not
+        // just the aarch64 CI runner.  Enable with EU_GC_STRESS=1.
+        // Pinned blocks are excluded — evacuating a pinned block would
+        // corrupt live objects held by the mutator.
+        if self.gc_stress {
+            let all: Vec<usize> = heap_state
+                .indexed_bump_blocks()
+                .filter(|(_, block)| unpinned(block))
+                .map(|(idx, _)| idx)
+                .collect();
+            if !all.is_empty() {
+                return CollectionStrategy::SelectiveEvacuation(all);
+            }
+        }
+
         let mut total_blocks = 0;
-        let mut sparse_blocks = 0;
-        let mut fragmented_count = 0;
-
-        // Analyze head block
-        if let Some(ref head) = heap_state.head {
+        let mut fragmented_blocks = 0;
+        // (marked lines, index) of each unpinned sparse or fragmented block
+        let mut movable: Vec<(usize, usize)> = Vec::new();
+        for (idx, block) in heap_state.indexed_bump_blocks() {
             total_blocks += 1;
-            match head.analyze_density() {
-                BlockDensity::Sparse => {
-                    sparse_blocks += 1;
-                    fragmented_blocks.push(0); // Head block index
+            if matches!(
+                block.analyze_density(),
+                BlockDensity::Sparse | BlockDensity::Fragmented
+            ) {
+                fragmented_blocks += 1;
+                if unpinned(block) {
+                    movable.push((LINE_COUNT - block.free_lines(), idx));
                 }
-                BlockDensity::Fragmented => {
-                    fragmented_count += 1;
-                    fragmented_blocks.push(0);
-                }
-                _ => {} // Dense or Empty blocks don't need evacuation
             }
         }
 
-        // Analyze overflow block
-        if let Some(ref overflow) = heap_state.overflow {
-            total_blocks += 1;
-            match overflow.analyze_density() {
-                BlockDensity::Sparse => {
-                    sparse_blocks += 1;
-                    fragmented_blocks.push(1); // Overflow block index
-                }
-                BlockDensity::Fragmented => {
-                    fragmented_count += 1;
-                    fragmented_blocks.push(1);
-                }
-                _ => {}
-            }
+        // Low fragmentation (< 10%): standard mark-in-place. High
+        // fragmentation (30%+): evacuate only when the footprint presses on
+        // the heap limit. An evacuating collection updates every live
+        // object, however few blocks it evacuates, and without that
+        // pressure the holes are reused in place.
+        let ratio_at_least = |tenths: usize| fragmented_blocks * 10 >= total_blocks * tenths;
+        if total_blocks == 0
+            || !ratio_at_least(1)
+            || (ratio_at_least(3)
+                && !footprint_under_pressure(self.limit, heap_state.blocks_held()))
+        {
+            return CollectionStrategy::MarkInPlace;
         }
 
-        // Analyze rest blocks
-        for (idx, block) in heap_state.rest.iter().enumerate() {
-            total_blocks += 1;
-            let block_index = idx + 2; // After head (0) and overflow (1)
-            match block.analyze_density() {
-                BlockDensity::Sparse => {
-                    sparse_blocks += 1;
-                    fragmented_blocks.push(block_index);
-                }
-                BlockDensity::Fragmented => {
-                    fragmented_count += 1;
-                    fragmented_blocks.push(block_index);
-                }
-                _ => {}
+        let budget = evacuation_budget_lines(total_blocks);
+        // Sparsest first; ties keep block order, so the choice is stable.
+        movable.sort_by_key(|&(marked, _)| marked);
+        let mut copied = 0;
+        let mut candidates = Vec::new();
+        for (marked, idx) in movable {
+            if copied + marked > budget {
+                break;
             }
+            copied += marked;
+            candidates.push(idx);
         }
 
-        // Calculate fragmentation ratios
-        let total_fragmented = sparse_blocks + fragmented_count;
-        let fragmentation_ratio = if total_blocks > 0 {
-            total_fragmented as f64 / total_blocks as f64
+        if candidates.is_empty() {
+            CollectionStrategy::MarkInPlace
         } else {
-            0.0
-        };
-
-        // Decide collection strategy based on fragmentation level
-        match fragmentation_ratio {
-            // Low fragmentation (< 10%) - use standard mark-in-place
-            x if x < 0.1 => CollectionStrategy::MarkInPlace,
-
-            // Moderate fragmentation (10-30%) - selective evacuation
-            x if x < 0.3 => {
-                if fragmented_blocks.is_empty() {
-                    CollectionStrategy::MarkInPlace
-                } else {
-                    // Exclude pinned blocks from evacuation candidates
-                    let unpinned_candidates: Vec<usize> = fragmented_blocks
-                        .into_iter()
-                        .filter(|&idx| {
-                            let base = match idx {
-                                0 => heap_state.head.as_ref().map(|b| b.base_address()),
-                                1 => heap_state.overflow.as_ref().map(|b| b.base_address()),
-                                n => heap_state.rest.get(n - 2).map(|b| b.base_address()),
-                            };
-                            base.is_none_or(|addr| !self.is_block_pinned(addr))
-                        })
-                        .collect();
-                    if unpinned_candidates.is_empty() {
-                        CollectionStrategy::MarkInPlace
-                    } else {
-                        CollectionStrategy::SelectiveEvacuation(unpinned_candidates)
-                    }
-                }
-            }
-
-            // High fragmentation (30%+) - comprehensive defragmentation
-            _ => CollectionStrategy::DefragmentationSweep,
+            CollectionStrategy::SelectiveEvacuation(candidates)
         }
     }
 
@@ -3360,11 +3357,7 @@ impl Heap {
         let heap_state = unsafe { &*self.state.get() };
         candidates
             .iter()
-            .filter_map(|&idx| match idx {
-                0 => heap_state.head.as_ref().map(|b| b.base_address()),
-                1 => heap_state.overflow.as_ref().map(|b| b.base_address()),
-                n => heap_state.rest.get(n - 2).map(|b| b.base_address()),
-            })
+            .filter_map(|&idx| heap_state.bump_block_at(idx).map(BumpBlock::base_address))
             .collect()
     }
 
@@ -3813,28 +3806,20 @@ pub mod tests {
         let strategy = heap.analyze_collection_strategy();
         let analysis = heap.analyze_fragmentation();
 
-        // Should get SelectiveEvacuation with moderate fragmentation or DefragmentationSweep with high fragmentation
+        // Should get SelectiveEvacuation once 10% or more of blocks are fragmented
         match strategy {
             CollectionStrategy::SelectiveEvacuation(blocks) => {
                 assert!(!blocks.is_empty(), "Should identify blocks for evacuation");
                 assert!(
-                    analysis.fragmentation_ratio >= 0.15,
-                    "Should have moderate fragmentation for SelectiveEvacuation"
+                    analysis.fragmentation_ratio >= 0.10,
+                    "Should have fragmentation for SelectiveEvacuation"
                 );
             }
             CollectionStrategy::MarkInPlace => {
                 // If fragmentation is very low, MarkInPlace is acceptable
                 assert!(
-                    analysis.fragmentation_ratio < 0.15,
+                    analysis.fragmentation_ratio < 0.10,
                     "MarkInPlace should only be used for low fragmentation"
-                );
-            }
-            CollectionStrategy::DefragmentationSweep => {
-                // DefragmentationSweep is acceptable for high fragmentation (30%+)
-                // With double-word alignment, fragmentation can be higher than expected
-                assert!(
-                    analysis.fragmentation_ratio >= 0.30,
-                    "DefragmentationSweep should be used for high fragmentation"
                 );
             }
         }
@@ -4022,53 +4007,109 @@ pub mod tests {
         assert!(analysis.average_fragmentation_score <= 1.0);
     }
 
+    /// A bump block with its first `lines` lines marked, as the last mark
+    /// would leave a block holding that much live data.
+    fn block_with_marked_lines(lines: usize) -> BumpBlock {
+        let mut block = BumpBlock::new();
+        for line in 0..lines {
+            block.mark_line_for_test(line);
+        }
+        block
+    }
+
+    /// The base addresses `strategy` would evacuate in `heap`.
+    fn candidate_bases_of(heap: &Heap, strategy: &CollectionStrategy) -> BlockBaseSet {
+        heap.candidate_block_bases(&strategy.candidates())
+    }
+
+    /// Sparse blocks waiting in `unswept` and `recycled` — where every
+    /// block is between collections — are evacuation candidates
+    /// (eu-oaz72.90). Before, only `head`, `overflow` and `rest` were.
     #[test]
-    pub fn test_collection_strategy_defragmentation_sweep() {
-        let heap = Heap::new();
-
-        // Create heavily fragmented heap with many blocks
-        let mut ptrs = Vec::new();
-        for i in 0..15000 {
-            // Create more blocks to ensure high fragmentation ratio
-            let ptr = heap.alloc(Ref::num(i)).unwrap();
-            ptrs.push(ptr);
-        }
-
-        // Make ALL blocks sparse to force very high fragmentation
+    pub fn test_evacuation_candidates_include_unswept_and_recycled() {
+        // 1 MiB limit: 32 blocks; 26 held is past 3/4 of it.
+        let heap = Heap::with_limit(1);
         let state = unsafe { &mut *heap.state.get() };
-
-        // Make head block sparse (5% utilisation)
-        if let Some(ref mut head) = state.head {
-            for (_idx, ptr) in ptrs.iter().enumerate().step_by(20).take(13) {
-                head.mark_line(std::ptr::NonNull::new(ptr.as_ptr() as *mut u8).unwrap());
-            }
+        for _ in 0..13 {
+            state.unswept.push_back(block_with_marked_lines(32));
+            state.recycled.push_back(block_with_marked_lines(32));
         }
-
-        // Make ALL rest blocks sparse too
-        let mut ptr_idx = 260;
-        for block in state.rest.iter_mut() {
-            for _ in 0..13 {
-                // 5% utilisation
-                if ptr_idx < ptrs.len() {
-                    block.mark_line(
-                        std::ptr::NonNull::new(ptrs[ptr_idx].as_ptr() as *mut u8).unwrap(),
-                    );
-                    ptr_idx += 20;
-                }
-            }
-            ptr_idx += 100; // Skip ahead for next block
-        }
+        let expected: BlockBaseSet = state
+            .unswept
+            .iter()
+            .chain(state.recycled.iter())
+            .map(BumpBlock::base_address)
+            .collect();
 
         let strategy = heap.analyze_collection_strategy();
-        let analysis = heap.analyze_fragmentation();
+        assert_eq!(
+            candidate_bases_of(&heap, &strategy),
+            expected,
+            "every sparse unswept and recycled block should be a candidate, got {strategy:?}"
+        );
+    }
 
-        // Verify the strategy analysis runs without error and the
-        // fragmentation analysis produces valid results.  The specific
-        // strategy chosen depends on allocation patterns which changed
-        // after the alloc_size_of double-header fix.
-        let _ = strategy;
-        assert!(analysis.average_fragmentation_score >= 0.0);
-        assert!(analysis.average_fragmentation_score <= 1.0);
+    /// Heavy fragmentation (30%+ of blocks) once yielded a strategy with
+    /// no candidates, so it never evacuated (eu-oaz72.90). It now
+    /// evacuates when the footprint presses on the heap limit, and marks
+    /// in place when it does not.
+    #[test]
+    pub fn test_heavy_fragmentation_evacuates_under_footprint_pressure() {
+        let fill = |heap: &Heap| {
+            let state = unsafe { &mut *heap.state.get() };
+            for _ in 0..30 {
+                state.unswept.push_back(block_with_marked_lines(32));
+            }
+        };
+
+        let pressed = Heap::with_limit(1); // 32 blocks; 30 held
+        fill(&pressed);
+        let strategy = pressed.analyze_collection_strategy();
+        assert_eq!(
+            candidate_bases_of(&pressed, &strategy).len(),
+            30,
+            "a fully fragmented heap past 3/4 of its limit should evacuate, got {strategy:?}"
+        );
+
+        if !pressed.gc_stress() {
+            let roomy = Heap::with_limit(2); // 64 blocks; 30 held
+            fill(&roomy);
+            assert_eq!(
+                roomy.analyze_collection_strategy(),
+                CollectionStrategy::MarkInPlace,
+                "a fragmented heap well under its limit should mark in place"
+            );
+        }
+    }
+
+    /// Candidates go sparsest first and stop at the evacuation budget, so
+    /// each collection copies a bounded amount (eu-oaz72.90).
+    #[test]
+    pub fn test_evacuation_takes_sparsest_blocks_within_budget() {
+        let heap = Heap::with_limit(1); // 32 blocks; 40 held
+        if heap.gc_stress() {
+            return; // stress mode evacuates every block regardless
+        }
+        let state = unsafe { &mut *heap.state.get() };
+        // Fragmented blocks in `unswept`, which is indexed before
+        // `recycled`, so block order alone would pick them.
+        for _ in 0..20 {
+            state.unswept.push_back(block_with_marked_lines(150));
+        }
+        for _ in 0..20 {
+            state.recycled.push_back(block_with_marked_lines(60));
+        }
+        let sparse: BlockBaseSet = state.recycled.iter().map(BumpBlock::base_address).collect();
+
+        // The budget (5 blocks' lines, 1,280) holds the 20 sparse blocks
+        // (1,200 lines) and not one fragmented block more.
+        assert_eq!(evacuation_budget_lines(40), 5 * LINE_COUNT);
+        let strategy = heap.analyze_collection_strategy();
+        assert_eq!(
+            candidate_bases_of(&heap, &strategy),
+            sparse,
+            "expected exactly the sparse blocks, got {strategy:?}"
+        );
     }
 
     #[test]
@@ -4097,9 +4138,8 @@ pub mod tests {
 
         // At boundary conditions, should prefer SelectiveEvacuation over MarkInPlace
         match strategy {
-            CollectionStrategy::SelectiveEvacuation(_)
-            | CollectionStrategy::DefragmentationSweep => {
-                // Both are acceptable at boundary conditions
+            CollectionStrategy::SelectiveEvacuation(_) => {
+                // Acceptable at boundary conditions
             }
             CollectionStrategy::MarkInPlace => {
                 // This might happen if fragmentation is calculated as just under threshold
