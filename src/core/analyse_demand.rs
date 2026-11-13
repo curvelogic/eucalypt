@@ -897,13 +897,31 @@ impl DemandAnalyser {
                 _ => None,
             })
             .collect();
+        // A binding that is a bare intrinsic (`if: __IF`) is an alias: a
+        // call through it is a call of the intrinsic, and takes the
+        // intrinsic's signature. Without this, every function written
+        // through such an alias was analysed as lazy in all its arguments
+        // wherever the alias is still a binding, as in the prelude analysed
+        // at blob build (eu-oaz72.77).
+        let aliases: Vec<Option<DemandSignature>> = scope
+            .pattern
+            .iter()
+            .map(|b| match &*peel_meta(&b.expr).inner {
+                Expr::Intrinsic(_, name) => self.intrinsic_sigs.get(name).cloned(),
+                _ => None,
+            })
+            .collect();
         let seed_key = scope as *const LetScope<RcExpr> as usize;
         let frame = self.frames.len() - 1;
         self.frames[frame].sigs = match self.seeds.get(&seed_key) {
             Some(seed) => seed.clone(),
             None => arities
                 .iter()
-                .map(|a| a.map(|k| vec![Demand::strict_once(); k]))
+                .zip(&aliases)
+                .map(|(a, alias)| {
+                    a.map(|k| vec![Demand::strict_once(); k])
+                        .or_else(|| alias.clone())
+                })
                 .collect(),
         };
 
@@ -923,9 +941,11 @@ impl DemandAnalyser {
 
             let derived: Vec<Option<DemandSignature>> = new_rhs_exprs
                 .iter()
-                .zip(&arities)
-                .map(|(rhs, arity)| {
-                    (*arity)?;
+                .zip(arities.iter().zip(&aliases))
+                .map(|(rhs, (arity, alias))| {
+                    if arity.is_none() {
+                        return alias.clone();
+                    }
                     match &*peel_meta(rhs).inner {
                         Expr::Lam(_, _, lam) => self
                             .signatures
@@ -961,7 +981,11 @@ impl DemandAnalyser {
             self.frames[frame].sigs = if rounds == MAX_SIGNATURE_ITERATIONS {
                 arities
                     .iter()
-                    .map(|a| a.map(|k| vec![Demand::lazy_multi(); k]))
+                    .zip(&aliases)
+                    .map(|(a, alias)| {
+                        a.map(|k| vec![Demand::lazy_multi(); k])
+                            .or_else(|| alias.clone())
+                    })
                     .collect()
             } else {
                 derived

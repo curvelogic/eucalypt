@@ -124,6 +124,7 @@ pub const INTRINSIC_TABLE_PATH: &str = "src/eval/intrinsics.rs";
 pub const DEMAND_ANALYSIS_PATHS: &[&str] = &[
     "src/core/analyse_demand.rs",
     "src/core/demand.rs",
+    "src/core/dependency.rs",
     "src/eval/stg/compiler.rs",
 ];
 
@@ -151,6 +152,7 @@ pub const BUILD_RERUN_PATHS: &[&str] = &[
     WIRE_FORMAT_MODULE_PATH,
     "src/core/analyse_demand.rs",
     "src/core/demand.rs",
+    "src/core/dependency.rs",
     "src/eval/stg/compiler.rs",
     // Embedded via `include_bytes!` in `src/driver/resources.rs`; cargo does
     // not track non-Rust files referenced that way.
