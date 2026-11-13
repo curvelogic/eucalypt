@@ -264,9 +264,10 @@ impl CallGlobal1 for IsNumber {}
 
 /// ISSTRING(value)
 ///
-/// Return true if the value is a string, false otherwise. A string is
-/// either boxed (a literal) or a bare native (the result of a string
-/// intrinsic such as `++`), so both representations count.
+/// Return true if the value is a string, false otherwise. Strings are
+/// normally boxed by their intrinsic's wrapper; the bare `Native::Str`
+/// form is accepted too, for any intrinsic that returns through
+/// `machine_return_str` without a boxing wrapper.
 pub struct IsString;
 
 impl StgIntrinsic for IsString {
@@ -662,5 +663,9 @@ pub mod tests {
         assert_eq!(eval_bool(IsZdt.global(zdt(a_datetime()))), Some(true));
         assert_eq!(eval_bool(IsZdt.global(str("a"))), Some(false));
         assert_eq!(eval_bool(IsZdt.global(num(1))), Some(false));
+        assert_eq!(
+            eval_bool(boxed(|r| IsZdt.global(r), box_str("a"))),
+            Some(false)
+        );
     }
 }
