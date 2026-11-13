@@ -213,9 +213,11 @@ Set via file-local variables, e.g.:
    '(;; Simple parameters
      (parameter_list (identifier) @font-lock-variable-name-face)
      (operator_declaration (identifier) @font-lock-variable-name-face)
-     ;; Block destructuring pattern: {x y} or {x: a  y: b}
-     (block_pattern
-      (declaration (declaration_head (identifier) @font-lock-variable-name-face)))
+     ;; Block destructuring pattern, shorthand fields: {x y}
+     (block_pattern (identifier) @font-lock-variable-name-face)
+     ;; Renamed or nested fields: {x: a} or {x: [a, b]} (the nested
+     ;; patterns' own identifiers are matched by the rules below)
+     (block_pattern_field (identifier) @font-lock-variable-name-face)
      ;; Fixed-length list destructuring pattern: [a, b, c]
      (list_pattern (identifier) @font-lock-variable-name-face)
      ;; Cons pattern: [h : t]
@@ -685,6 +687,65 @@ region is active.  Skips replacements inside strings and comments."
       (put-text-property (match-beginning 2) (match-end 2)
                          'face 'italic))))
 
+(defconst eucalypt--docstring-doc-queries
+  '(((metadata
+     (block
+      (declaration
+       (declaration_head (identifier) @_key)
+       (soup (literal (string) @ds)))))
+    (:equal @_key "doc"))
+   ((metadata
+     (block
+      (declaration
+       (declaration_head (identifier) @_key)
+       (soup (literal (c_string) @ds)))))
+    (:equal @_key "doc"))
+   ((metadata
+     (block
+      (declaration
+       (declaration_head (identifier) @_key)
+       (soup (literal (r_string) @ds)))))
+    (:equal @_key "doc"))
+   ((unit_metadata
+     (block
+      (declaration
+       (declaration_head (identifier) @_key)
+       (soup (literal (string) @ds)))))
+    (:equal @_key "doc"))
+   ((unit_metadata
+     (block
+      (declaration
+       (declaration_head (identifier) @_key)
+       (soup (literal (c_string) @ds)))))
+    (:equal @_key "doc"))
+   ((unit_metadata
+     (block
+      (declaration
+       (declaration_head (identifier) @_key)
+       (soup (literal (r_string) @ds)))))
+    (:equal @_key "doc"))
+   ((block_metadata
+     (block
+      (declaration
+       (declaration_head (identifier) @_key)
+       (soup (literal (string) @ds)))))
+    (:equal @_key "doc"))
+   ((block_metadata
+     (block
+      (declaration
+       (declaration_head (identifier) @_key)
+       (soup (literal (c_string) @ds)))))
+    (:equal @_key "doc"))
+   ((block_metadata
+     (block
+      (declaration
+       (declaration_head (identifier) @_key)
+       (soup (literal (r_string) @ds)))))
+    (:equal @_key "doc")))
+  "Queries capturing (as @ds) `doc' string values inside block-valued metadata.
+Matches ` {doc: \"...\"}, { {doc: \"...\"} x: 1 } and { doc: \"...\" } at
+file level, for plain, c- and raw strings.")
+
 (defun eucalypt--fontify-markdown-in-docstrings (beg end)
   "Apply markdown highlighting within docstring regions between BEG and END."
   (when (and (treesit-ready-p 'eucalypt t)
@@ -698,62 +759,11 @@ region is active.  Skips replacements inside strings and comments."
            (treesit-node-end (cdr cap)))))
       ;; Doc values inside block-valued metadata (declaration, unit, block)
       ;; Matches: ` {doc: "..."}, { {doc: "..."} x: 1 }, and { doc: "..." } at file level
-      (dolist (query
-               '(((metadata
-                   (block
-                    (declaration
-                     (declaration_head (identifier) @_key)
-                     (soup (literal (string) @ds)))))
-                  (:equal @_key "doc"))
-                 ((metadata
-                   (block
-                    (declaration
-                     (declaration_head (identifier) @_key)
-                     (soup (literal (c_string) @ds)))))
-                  (:equal @_key "doc"))
-                 ((metadata
-                   (block
-                    (declaration
-                     (declaration_head (identifier) @_key)
-                     (soup (literal (r_string) @ds)))))
-                  (:equal @_key "doc"))
-                 ((unit_metadata
-                   (block
-                    (declaration
-                     (declaration_head (identifier) @_key)
-                     (soup (literal (string) @ds)))))
-                  (:equal @_key "doc"))
-                 ((unit_metadata
-                   (block
-                    (declaration
-                     (declaration_head (identifier) @_key)
-                     (soup (literal (c_string) @ds)))))
-                  (:equal @_key "doc"))
-                 ((unit_metadata
-                   (block
-                    (declaration
-                     (declaration_head (identifier) @_key)
-                     (soup (literal (r_string) @ds)))))
-                  (:equal @_key "doc"))
-                 ((block_metadata
-                   (block
-                    (declaration
-                     (declaration_head (identifier) @_key)
-                     (soup (literal (string) @ds)))))
-                  (:equal @_key "doc"))
-                 ((block_metadata
-                   (block
-                    (declaration
-                     (declaration_head (identifier) @_key)
-                     (soup (literal (c_string) @ds)))))
-                  (:equal @_key "doc"))
-                 ((block_metadata
-                   (block
-                    (declaration
-                     (declaration_head (identifier) @_key)
-                     (soup (literal (r_string) @ds)))))
-                  (:equal @_key "doc"))))
-        (dolist (cap (treesit-query-capture root query beg end))
+      (dolist (query eucalypt--docstring-doc-queries)
+        ;; Each element is one pattern with its predicate, so wrap it: a
+        ;; bare list is read as a sequence of patterns, which would make
+        ;; the predicate a pattern of its own.
+        (dolist (cap (treesit-query-capture root (list query) beg end))
           (when (eq (car cap) 'ds)
             (eucalypt--apply-markdown-faces
              (treesit-node-start (cdr cap))
