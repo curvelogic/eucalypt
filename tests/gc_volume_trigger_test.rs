@@ -208,3 +208,36 @@ fn heap_limit_exhaustion_is_an_error() {
         "expected a heap-limit-exceeded diagnostic, got: {stderr}"
     );
 }
+
+/// A heap fragmented by deep recursions is compacted rather than held
+/// past the limit (eu-oaz72.90). `test-compaction` in
+/// `gc/gc_004_fragmentation.eu` leaves hundreds of thinly occupied blocks
+/// in the unswept and recycled lists, which evacuation once never
+/// considered: at 10 MiB the footprint stayed over the tolerated 15 MiB
+/// (16 MiB reported) and the run failed with a heap-limit error. With
+/// those blocks evacuated it passes down to 9 MiB (measured).
+#[test]
+fn fragmented_heap_is_compacted_under_heap_limit() {
+    let mut cmd = Command::new(eu_binary());
+    cmd.arg("test")
+        .arg("--heap-limit-mib")
+        .arg("10")
+        .arg("tests/harness/gc/gc_004_fragmentation.eu")
+        .env("EU_PP_THRESHOLD", "999999999")
+        // Stress mode evacuates every block on every collection. An
+        // evacuated block frees only at the next collection (its old
+        // copies' lines stay marked), so stress holds about twice the live
+        // data and cannot meet a limit this tight; it is not the policy
+        // under test.
+        .env_remove("EU_GC_STRESS");
+    let out = run_with_deadline(cmd, Duration::from_secs(600))
+        .expect("eu did not finish within 600s under a 10 MiB heap limit");
+    assert!(
+        out.status.success(),
+        "gc_004_fragmentation.eu failed under a 10 MiB heap limit: fragmented \
+         blocks are not being evacuated (Heap::analyze_collection_strategy)\n\
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
