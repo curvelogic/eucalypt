@@ -166,7 +166,7 @@ impl DictKey {
 
 /// Exact comparison of an integer (within ±2^64) with a float. NaN is
 /// greater than every integer.
-fn cmp_int_float(i: i128, f: f64) -> Ordering {
+pub(crate) fn cmp_int_float(i: i128, f: f64) -> Ordering {
     const TWO_64: f64 = 18_446_744_073_709_551_616.0;
     if f.is_nan() || f >= TWO_64 {
         return Ordering::Less;
