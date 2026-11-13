@@ -622,8 +622,7 @@ impl StgIntrinsic for DictValues {
 
 impl CallGlobal1 for DictValues {}
 
-/// Which end of the dict an extremum intrinsic reads, and whether it also
-/// returns the rest of the dict.
+/// Which end of the dict an extremum intrinsic reads.
 #[derive(Clone, Copy)]
 enum End {
     Min,

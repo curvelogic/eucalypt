@@ -2174,13 +2174,12 @@ dict: {
       type: s"(any → any → any) → any → any → any" }
   merge-with: '__DICT.MERGE_WITH'
 
-  # merge-with-strict's step: merge the entry [k, v] of b into acc
-  ` :suppress
-  merge-strict-step(f, acc, [k, v]): (acc contains?(k)) then(acc update-strict(k, flip(f, v), null), acc assoc(k, v))
-
   ` { doc: "`dict.merge-with-strict(f, a, b)` - as `dict.merge-with`, but each combined value `f(va, vb)` is evaluated before it is stored."
       type: s"(any → any → any) → any → any → any" }
-  merge-with-strict(f, a, b): b to-list foldl(merge-strict-step(f), a)
+  merge-with-strict(f, a, b): {
+    ` "merge the entry `[k, v]` of `b` into `acc`"
+    step(acc, [k, v]): (acc contains?(k)) then(acc update-strict(k, flip(f, v), null), acc assoc(k, v))
+  }.(b to-list foldl(step, a))
 
   ` { doc: "`dict.from-block(b)` - create a dict from block `b`, keyed by its symbol keys. Values stay lazy."
       type: s"{..} → any" }
