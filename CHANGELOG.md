@@ -10,7 +10,7 @@ All notable changes to eucalypt are documented here.
 
 ### Changed
 
-- **A non-integer count or index is an error in list functions (eu-oaz72.58)** — `take`, `drop`, `split-at`, `rotate`, `nth`, `update-nth`, `window` and `window-all` (and so `partition` and `partition-all`) now stop with an error naming the function and the value, such as `take count 1.5 must be an integer`, when given a count, index, size or step that is not a whole number. Before, `take`, `drop`, `split-at`, `rotate` and `update-nth` behaved as if the count were rounded up (`[1, 2, 3] take(0.5)` was `[1]`), and `nth` and `window` gave an unrelated error. A whole-number float such as `2.0` is still accepted. `range` and the `sample` functions are unchanged.
+- **A non-integer count or index is an error in list functions (eu-oaz72.58)** — `take`, `drop`, `split-at`, `rotate`, `nth`, `update-nth`, `window`, `window-all` (and so `partition` and `partition-all`), `random.sample`, `set.sample` and `vec.sample` now stop with an error naming the function and the value, such as `take count 1.5 must be an integer`, when given a count, index, size or step that is not a whole number. Before, `take`, `drop`, `split-at`, `rotate` and `update-nth` behaved as if the count were rounded up (`[1, 2, 3] take(0.5)` was `[1]`), and `nth` and `window` gave an unrelated error. A whole-number float such as `2.0` is still accepted. `range` is unchanged: its arguments are bounds, not a count, so `range(0, 2.5)` is still `[0, 1, 2]`.
 
 ### Fixed
 

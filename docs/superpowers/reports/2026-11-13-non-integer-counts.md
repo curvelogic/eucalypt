@@ -54,15 +54,15 @@ existing intrinsic, not a new API.
   `cargo test` all clean. Prelude blob regenerated; prelude reference and
   cheat sheet / agent reference updated.
 
-## Left unchanged: `range` and the `sample` functions
+## `range` and the `sample` functions
 
-`range(b, e)` takes bounds, not a count, and `random.sample`, `set.sample`
-and `vec.sample` take a count the bead does not name. They now call the
-unchecked `__take`, so they behave exactly as before (`range(0, 2.5)` is
-`[0, 1, 2]`, `range(0.5, 3)` is `[0.5, 1.5, 2.5]`) rather than failing with
-an error that names `take`. Whether they should reject non-integers too is
-left to the owner. A harness check in `036_takes_and_drops.eu` pins
-`range(0, 2.5)`; it fails if `range` goes back through `take`.
+Coordinator ruling under the owner decision ("all prelude count/index
+parameters"): the `n` of `random.sample`, `set.sample` and `vec.sample` is
+a count, so a non-integer `n` is an error (`random.sample count 1.5 must be
+an integer`, and likewise `set.sample count`, `vec.sample count`), with an
+error fixture each. `range(b, e)` takes bounds, not a count, so it keeps
+master's behaviour via the unchecked `__take` (`range(0, 2.5)` is
+`[0, 1, 2]`); a harness check in `036_takes_and_drops.eu` pins it.
 
 ## Also in this PR (coordinator follow-ups from eu-oaz72.71)
 

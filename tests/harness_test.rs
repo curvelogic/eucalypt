@@ -4974,3 +4974,21 @@ pub fn test_error_274_non_integer_window_all_size() {
 pub fn test_error_274_non_integer_window_all_step() {
     run_error_test(&error_opts("274_non_integer_window_all_step.eu"));
 }
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_random_sample() {
+    run_error_test(&error_opts("274_non_integer_random_sample.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_set_sample() {
+    run_error_test(&error_opts("274_non_integer_set_sample.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_vec_sample() {
+    run_error_test(&error_opts("274_non_integer_vec_sample.eu"));
+}

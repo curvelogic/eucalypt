@@ -220,13 +220,13 @@ random: monad{bind: random-bind, return: random-ret} {
     }
   }.(shuffle-impl(lst, lst count, []))
 
-  ` { doc: "random.sample(n, list) - state-monad action returning n elements sampled without replacement."
+  ` { doc: "random.sample(n, list) - state-monad action returning n elements sampled without replacement; a non-integer n is an error."
       type: s"number → [a] → any → {..}" }
-  sample(n, lst, stream): {
+  sample(n, lst, stream): __require-int("random.sample count", n, {
     shuffled: shuffle(lst, stream)
     value: shuffled.value __take(n)
     rest: shuffled.rest
-  }
+  })
 
   ` { doc: "random.run(action, stream) - run a random action on a stream; returns a value/rest block."
       type: s"(any → {..}) → any → {..}" }
@@ -2051,13 +2051,13 @@ set: {
   ` :suppress
   sample-raw: '__SET.SAMPLE'
 
-  ` { doc: "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`. Returns value/rest block."
+  ` { doc: "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`. Returns value/rest block; a non-integer `n` is an error."
       type: s"number → any → any → {..}" }
-  sample(k, s, stream): {
+  sample(k, s, stream): __require-int("set.sample count", k, {
     floats: (stream random.as-list) __take(k)
     value: s sample-raw(floats)
     rest: stream-advance(k, stream)
-  }
+  })
 }
 
 ` "`∅` - the empty set."
@@ -2161,13 +2161,13 @@ vec: {
   ` :suppress
   sample-raw: '__VEC.SAMPLE'
 
-  ` { doc: "`vec.sample(n, v)` - random monad action: pick `n` random elements from vec `v` without replacement."
+  ` { doc: "`vec.sample(n, v)` - random monad action: pick `n` random elements from vec `v` without replacement; a non-integer `n` is an error."
       type: s"number → vec → any → {..}" }
-  sample(n, v, stream): {
+  sample(n, v, stream): __require-int("vec.sample count", n, {
     floats: (stream random.as-list) __take(n)
     value: v sample-raw(floats)
     rest: stream-advance(n, stream)
-  }
+  })
 
   ` :suppress
   shuffle-raw: '__VEC.SHUFFLE'

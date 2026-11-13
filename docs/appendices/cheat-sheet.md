@@ -371,7 +371,8 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `nub-by(f)` | Deduplicate by key function (no `unique` in prelude) |
 
 A non-integer count or index is an error in `take`, `drop`, `split-at`,
-`rotate`, `nth`, `update-nth`, `window` and `window-all`; an integral
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions; an integral
 float such as `2.0` is accepted.
 
 ### Blocks
