@@ -263,8 +263,14 @@ pub struct BcMachineState {
     ///
     /// This is a **scope-accurate** register: it tracks the source location of
     /// the code currently being evaluated. `Op::Ann` and closure entry set it;
-    /// popping a `SeqBind`/`ApplyTo` continuation restores the annotation that
-    /// was live where that continuation was pushed — *including* when that is
+    /// popping a `SeqBind`/`ApplyTo` continuation, and resuming a case
+    /// continuation (`Branch`/`BranchPredecoded`, `FusedPrimopLeft`/`Right`)
+    /// into a branch body, fallback, next operand or fused intrinsic, restores
+    /// the annotation that was live where that continuation was pushed. A
+    /// value scrutinised by a `case` therefore no longer leaks the location
+    /// of whatever annotated code computed it into the code that continues —
+    /// an intrinsic forcing its arguments reports its own call site
+    /// (eu-oaz72.63). The restore applies *including* when the annotation is
     /// `Smid::default()`, which is what a synthetic (library-generated) frame
     /// such as the render loop's per-item `force` carries. Restoring the
     /// default is essential: without it a valid annotation established while
@@ -1138,6 +1144,7 @@ pub fn return_data(
                 None
             };
             if let Some(body) = body {
+                state.set_annotation(annotation);
                 let env = if args.is_empty() {
                     environment
                 } else {
@@ -1145,6 +1152,7 @@ pub fn return_data(
                 };
                 state.current = BcValue::Closure(BcClosure::new(body, env));
             } else if let Some(fb) = fallback {
+                state.set_annotation(annotation);
                 let cur = state.current.clone();
                 let env = view.from_value(cur, environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fb, env));
@@ -1173,6 +1181,7 @@ pub fn return_data(
             // off-heap `branches` pool instead of a GC `Array`.
             let body = branch_pool_match(decoded, branch_start, branch_len, min_tag, tag);
             if let Some(body) = body {
+                state.set_annotation(annotation);
                 let env = if args.is_empty() {
                     environment
                 } else {
@@ -1180,6 +1189,7 @@ pub fn return_data(
                 };
                 state.current = BcValue::Closure(BcClosure::new(body, env));
             } else if fallback != NO_BRANCH {
+                state.set_annotation(annotation);
                 let cur = state.current.clone();
                 let env = view.from_value(cur, environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fallback, env));
@@ -1324,6 +1334,7 @@ pub fn return_data(
                 // Non-boxed data operand (bool/list/block/…): bind the whole
                 // value; `execute()`'s `num_arg`/`ordered_cmp` classify and
                 // error on it exactly as the unfused path does.
+                state.set_annotation(annotation);
                 let resolved = state.current.clone();
                 state.stack.push(BcContinuation::FusedPrimopRight {
                     primop_id,
@@ -1351,6 +1362,7 @@ pub fn return_data(
                 });
                 state.current = field;
             } else {
+                state.set_annotation(annotation);
                 let resolved = state.current.clone();
                 finish_fused_primop(state, view, primop_id, left, resolved, environment)?;
             }
@@ -1466,10 +1478,12 @@ pub fn return_native(
         BcContinuation::Branch {
             fallback,
             environment,
+            annotation,
             ..
         } => {
             // Case fallbacks handle natives; the native is bound as slot 0.
             if let Some(fb) = fallback {
+                state.set_annotation(annotation);
                 let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fb, env));
             } else {
@@ -1482,11 +1496,13 @@ pub fn return_native(
         BcContinuation::BranchPredecoded {
             fallback,
             environment,
+            annotation,
             ..
         } => {
             // A native only ever takes the fallback (it matches no data tag), so
             // the branch pool is not consulted here.
             if fallback != NO_BRANCH {
+                state.set_annotation(annotation);
                 let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fallback, env));
             } else {
@@ -1557,6 +1573,7 @@ pub fn return_native(
             environment,
             annotation,
         } => {
+            state.set_annotation(annotation);
             state.stack.push(BcContinuation::FusedPrimopRight {
                 primop_id,
                 left: BcValue::Native(value),
@@ -1569,8 +1586,9 @@ pub fn return_native(
             primop_id,
             left,
             environment,
-            ..
+            annotation,
         } => {
+            state.set_annotation(annotation);
             finish_fused_primop(
                 state,
                 view,
@@ -1636,6 +1654,7 @@ pub fn return_fun(
         } => {
             // Dynamic typing: code may `case` a value and find it is a lambda.
             if let Some(body) = fallback {
+                state.set_annotation(annotation);
                 let env = view.from_value(BcValue::Closure(fun), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(body, env));
             } else {
@@ -1662,6 +1681,7 @@ pub fn return_fun(
             // Dynamic typing: a `case` scrutinee may resolve to a lambda; it
             // takes the fallback, or errors listing the branched tags.
             if fallback != NO_BRANCH {
+                state.set_annotation(annotation);
                 let env = view.from_value(BcValue::Closure(fun), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fallback, env));
             } else {
@@ -1735,6 +1755,7 @@ pub fn return_fun(
             // `return_data`'s non-boxed-native fallback, and let `execute()`'s
             // `resolve_native`/`num_arg`/`ordered_cmp` raise the identical
             // type error the unfused path raises today.
+            state.set_annotation(annotation);
             state.stack.push(BcContinuation::FusedPrimopRight {
                 primop_id,
                 left: BcValue::Closure(fun),
@@ -1747,8 +1768,9 @@ pub fn return_fun(
             primop_id,
             left,
             environment,
-            ..
+            annotation,
         } => {
+            state.set_annotation(annotation);
             finish_fused_primop(
                 state,
                 view,

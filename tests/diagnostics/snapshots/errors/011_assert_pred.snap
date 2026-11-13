@@ -1,14 +1,14 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/011_assert_pred
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/011_assert_pred.eu
-prelude-modes: divergent
+prelude-modes: identical
 
-=== blob prelude ===
+=== both prelude modes ===
 exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/011_assert_pred.eu:1:14
+primary: user tests/harness/errors/011_assert_pred.eu:1:8
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -20,37 +20,10 @@ rust-panic: no
 --- stderr ---
 EXPECT FAILED: expected to satisfy predicate, got -10
 error: assertion failed: expected to satisfy predicate, got -10
-  ┌─ tests/harness/errors/011_assert_pred.eu:1:14
+  ┌─ tests/harness/errors/011_assert_pred.eu:1:8
   │
 1 │ x: -10 //=? (> 0)
-  │              ^
-  │
-  = while evaluating (outermost first):
-    - x at 011_assert_pred.eu:1:8
-
-=== --source-prelude ===
-exit: 1
-errors: 1
-warnings: 0
-code: -
-primary: user tests/harness/errors/011_assert_pred.eu:1:14
-help-lines: 0
-note-lines: 0
-secondary-labels: 1
-trace-frames: 1
-trace-user-frames: 1
-trace-prelude-frames: 0
-prelude-excerpt-lines: 0
-rust-panic: no
---- stderr ---
-EXPECT FAILED: expected to satisfy predicate, got -10
-error: assertion failed: expected to satisfy predicate, got -10
-  ┌─ tests/harness/errors/011_assert_pred.eu:1:14
-  │
-1 │ x: -10 //=? (> 0)
-  │        ----  ^
-  │        │
-  │        called from here
+  │        ^^^^
   │
   = while evaluating (outermost first):
     - x at 011_assert_pred.eu:1:8

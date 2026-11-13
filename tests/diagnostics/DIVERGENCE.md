@@ -10,20 +10,19 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**61 of 274 fixtures diverge.**
+**59 of 278 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
-| `errors/011_assert_pred` | user tests/harness/errors/011_assert_pred.eu:1:14 | user tests/harness/errors/011_assert_pred.eu:1:14 | 1 (1 user) | 1 (1 user) |
 | `errors/023_arg_types` | user tests/harness/errors/023_arg_types.eu:1:4 | user tests/harness/errors/023_arg_types.eu:1:4 | 1 (1 user) | 1 (1 user) |
 | `errors/029_type_mismatch_num` | user tests/harness/errors/029_type_mismatch_num.eu:2:4 | user tests/harness/errors/029_type_mismatch_num.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/032_type_mismatch_num_as_str` | user tests/harness/errors/032_type_mismatch_num_as_str.eu:2:4 | user tests/harness/errors/032_type_mismatch_num_as_str.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/035_nested_fn_trace` | user tests/harness/errors/035_nested_fn_trace.eu:2:12 | user tests/harness/errors/035_nested_fn_trace.eu:1:11 | 1 (1 user) | 1 (1 user) |
 | `errors/047_str_plus_plus` | user tests/harness/errors/047_str_plus_plus.eu:2:21 | none | 0 (0 user) | 0 (0 user) |
 | `errors/072_io_fail` | user tests/harness/errors/072_io_fail.eu:3:7 | none | 0 (0 user) | 0 (0 user) |
-| `errors/080_array_oob` | user tests/harness/errors/080_array_oob.eu:2:4 | user tests/harness/errors/080_array_oob.eu:2:4 | 0 (0 user) | 0 (0 user) |
+| `errors/080_array_oob` | user tests/harness/errors/080_array_oob.eu:2:40 | user tests/harness/errors/080_array_oob.eu:2:40 | 0 (0 user) | 0 (0 user) |
 | `errors/081_array_shape_mismatch` | user tests/harness/errors/081_array_shape_mismatch.eu:2:4 | user tests/harness/errors/081_array_shape_mismatch.eu:2:4 | 1 (1 user) | 1 (1 user) |
-| `errors/082_array_reshape_mismatch` | user tests/harness/errors/082_array_reshape_mismatch.eu:2:4 | user tests/harness/errors/082_array_reshape_mismatch.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/082_array_reshape_mismatch` | user tests/harness/errors/082_array_reshape_mismatch.eu:2:40 | user tests/harness/errors/082_array_reshape_mismatch.eu:2:40 | 1 (1 user) | 1 (1 user) |
 | `errors/083_array_arith_mismatch` | user tests/harness/errors/083_array_arith_mismatch.eu:4:4 | user tests/harness/errors/083_array_arith_mismatch.eu:4:4 | 1 (1 user) | 1 (1 user) |
 | `errors/090_bad_format_string` | user tests/harness/errors/090_bad_format_string.eu:2:4 | user tests/harness/errors/090_bad_format_string.eu:2:4 | 0 (0 user) | 0 (0 user) |
 | `errors/094_io_no_flag` | user tests/harness/errors/094_io_no_flag.eu:4:9 | none | 0 (0 user) | 0 (0 user) |
@@ -35,7 +34,7 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/141_calzdt_year_overflow` | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | 0 (0 user) | 0 (0 user) |
 | `errors/150_bad_timezone_source_loc` | user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9 | user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9 | 0 (0 user) | 0 (0 user) |
 | `errors/151_set_add_non_set` | user tests/harness/errors/151_set_add_non_set.eu:1:17 | user tests/harness/errors/151_set_add_non_set.eu:1:17 | 1 (1 user) | 1 (1 user) |
-| `errors/152_set_element_type_mismatch` | user tests/harness/errors/152_set_element_type_mismatch.eu:1:29 | user tests/harness/errors/152_set_element_type_mismatch.eu:1:29 | 1 (1 user) | 1 (1 user) |
+| `errors/152_set_element_type_mismatch` | user tests/harness/errors/152_set_element_type_mismatch.eu:1:11 | user tests/harness/errors/152_set_element_type_mismatch.eu:1:11 | 1 (1 user) | 1 (1 user) |
 | `errors/168_io_shell_missing_cmd` | user tests/harness/errors/168_io_shell_missing_cmd.eu:3:7 | none | 0 (0 user) | 0 (0 user) |
 | `errors/181_direct_app_call_site` | user tests/harness/errors/181_direct_app_call_site.eu:15:9 | user tests/harness/errors/181_direct_app_call_site.eu:15:9 | 2 (1 user) | 2 (1 user) |
 | `errors/218_json_block_key` | user tests/harness/errors/218_json_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
@@ -46,15 +45,14 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/235_oaz72_49_window_size_zero` | user tests/harness/errors/235_oaz72_49_window_size_zero.eu:4:27 | user tests/harness/errors/235_oaz72_49_window_size_zero.eu:4:27 | 2 (1 user) | 2 (1 user) |
 | `errors/235_oaz72_49_window_step_negative` | user tests/harness/errors/235_oaz72_49_window_step_negative.eu:3:28 | user tests/harness/errors/235_oaz72_49_window_step_negative.eu:3:28 | 2 (1 user) | 2 (1 user) |
 | `errors/235_oaz72_49_window_step_zero` | user tests/harness/errors/235_oaz72_49_window_step_zero.eu:3:27 | user tests/harness/errors/235_oaz72_49_window_step_zero.eu:3:27 | 2 (1 user) | 2 (1 user) |
-| `errors/241_oaz72_32_set_of_datetime` | user tests/harness/errors/241_oaz72_32_set_of_datetime.eu:2:10 | user tests/harness/errors/241_oaz72_32_set_of_datetime.eu:2:10 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_bad_key` | user tests/harness/errors/250_dict_bad_key.eu:2:9 | user tests/harness/errors/250_dict_bad_key.eu:2:9 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_bad_pair` | user tests/harness/errors/250_dict_bad_pair.eu:2:9 | user tests/harness/errors/250_dict_bad_pair.eu:2:9 | 1 (1 user) | 1 (1 user) |
-| `errors/250_dict_bad_pair_computed` | user tests/harness/errors/250_dict_bad_pair_computed.eu:2:30 | user tests/harness/errors/250_dict_bad_pair_computed.eu:2:30 | 1 (1 user) | 1 (1 user) |
-| `errors/250_dict_get_missing` | user tests/harness/errors/250_dict_get_missing.eu:2:9 | user tests/harness/errors/250_dict_get_missing.eu:2:9 | 1 (1 user) | 1 (1 user) |
-| `errors/250_dict_key_depth` | user tests/harness/errors/250_dict_key_depth.eu:5:9 | user tests/harness/errors/250_dict_key_depth.eu:5:48 | 2 (2 user) | 2 (2 user) |
+| `errors/250_dict_bad_pair_computed` | user tests/harness/errors/250_dict_bad_pair_computed.eu:2:9 | user tests/harness/errors/250_dict_bad_pair_computed.eu:2:9 | 1 (1 user) | 1 (1 user) |
+| `errors/250_dict_get_missing` | user tests/harness/errors/250_dict_get_missing.eu:2:31 | user tests/harness/errors/250_dict_get_missing.eu:2:31 | 1 (1 user) | 1 (1 user) |
+| `errors/250_dict_key_depth` | user tests/harness/errors/250_dict_key_depth.eu:5:20 | user tests/harness/errors/250_dict_key_depth.eu:5:20 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_not_a_dict` | user tests/harness/errors/250_dict_not_a_dict.eu:2:16 | user tests/harness/errors/250_dict_not_a_dict.eu:2:16 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_render` | user tests/harness/errors/250_dict_render.eu:2:9 | user tests/harness/errors/250_dict_render.eu:2:9 | 0 (0 user) | 0 (0 user) |
-| `errors/250_dict_value_cycle` | user tests/harness/errors/250_dict_value_cycle.eu:3:19 | user tests/harness/errors/250_dict_value_cycle.eu:3:19 | 3 (3 user) | 3 (3 user) |
+| `errors/250_dict_value_cycle` | user tests/harness/errors/250_dict_value_cycle.eu:3:19 | user tests/harness/errors/250_dict_value_cycle.eu:3:19 | 2 (2 user) | 2 (2 user) |
 | `errors/275_non_integer_nth` | user tests/harness/errors/275_non_integer_nth.eu:2:14 | user tests/harness/errors/275_non_integer_nth.eu:2:14 | 2 (1 user) | 1 (1 user) |
 | `errors/275_non_integer_window_all_size` | user tests/harness/errors/275_non_integer_window_all_size.eu:2:14 | user tests/harness/errors/275_non_integer_window_all_size.eu:2:14 | 2 (1 user) | 1 (1 user) |
 | `errors/275_non_integer_window_all_step` | user tests/harness/errors/275_non_integer_window_all_step.eu:2:14 | user tests/harness/errors/275_non_integer_window_all_step.eu:2:14 | 2 (1 user) | 1 (1 user) |
@@ -62,16 +60,16 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/275_non_integer_window_step` | user tests/harness/errors/275_non_integer_window_step.eu:2:14 | user tests/harness/errors/275_non_integer_window_step.eu:2:14 | 2 (1 user) | 1 (1 user) |
 | `errors/276_array_shape_not_integer` | user tests/harness/errors/276_array_shape_not_integer.eu:2:4 | user tests/harness/errors/276_array_shape_not_integer.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/276_array_shape_overflow` | user tests/harness/errors/276_array_shape_overflow.eu:2:4 | user tests/harness/errors/276_array_shape_overflow.eu:2:4 | 1 (1 user) | 1 (1 user) |
-| `errors/276_array_shape_reshape_overflow` | user tests/harness/errors/276_array_shape_reshape_overflow.eu:2:4 | user tests/harness/errors/276_array_shape_reshape_overflow.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/276_array_shape_reshape_overflow` | user tests/harness/errors/276_array_shape_reshape_overflow.eu:2:17 | user tests/harness/errors/276_array_shape_reshape_overflow.eu:2:17 | 1 (1 user) | 1 (1 user) |
 | `errors/276_array_shape_too_large` | user tests/harness/errors/276_array_shape_too_large.eu:2:4 | user tests/harness/errors/276_array_shape_too_large.eu:2:4 | 1 (1 user) | 1 (1 user) |
-| `errors/277_array_get_non_integer` | user tests/harness/errors/277_array_get_non_integer.eu:2:4 | user tests/harness/errors/277_array_get_non_integer.eu:2:4 | 1 (1 user) | 1 (1 user) |
-| `errors/277_array_slice_negative` | user tests/harness/errors/277_array_slice_negative.eu:2:4 | user tests/harness/errors/277_array_slice_negative.eu:2:4 | 1 (1 user) | 1 (1 user) |
-| `errors/277_array_slice_non_integer` | user tests/harness/errors/277_array_slice_non_integer.eu:2:4 | user tests/harness/errors/277_array_slice_non_integer.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/277_array_get_non_integer` | user tests/harness/errors/277_array_get_non_integer.eu:2:40 | user tests/harness/errors/277_array_get_non_integer.eu:2:40 | 0 (0 user) | 0 (0 user) |
 | `errors/277_vec_nth_negative` | user tests/harness/errors/277_vec_nth_negative.eu:2:19 | user tests/harness/errors/277_vec_nth_negative.eu:2:19 | 1 (1 user) | 1 (1 user) |
 | `errors/277_vec_nth_non_integer` | user tests/harness/errors/277_vec_nth_non_integer.eu:2:19 | user tests/harness/errors/277_vec_nth_non_integer.eu:2:19 | 1 (1 user) | 1 (1 user) |
 | `errors/277_vec_nth_out_of_range` | user tests/harness/errors/277_vec_nth_out_of_range.eu:2:19 | user tests/harness/errors/277_vec_nth_out_of_range.eu:2:19 | 1 (1 user) | 1 (1 user) |
 | `errors/277_vec_slice_negative` | user tests/harness/errors/277_vec_slice_negative.eu:2:23 | user tests/harness/errors/277_vec_slice_negative.eu:2:23 | 1 (1 user) | 1 (1 user) |
 | `errors/277_vec_slice_non_integer` | user tests/harness/errors/277_vec_slice_non_integer.eu:2:23 | user tests/harness/errors/277_vec_slice_non_integer.eu:2:23 | 1 (1 user) | 1 (1 user) |
+| `errors/278_intrinsic_call_site_set_add` | user tests/harness/errors/278_intrinsic_call_site_set_add.eu:5:11 | user tests/harness/errors/278_intrinsic_call_site_set_add.eu:5:11 | 1 (1 user) | 1 (1 user) |
+| `errors/278_intrinsic_call_site_set_remove` | user tests/harness/errors/278_intrinsic_call_site_set_remove.eu:5:30 | user tests/harness/errors/278_intrinsic_call_site_set_remove.eu:5:30 | 1 (1 user) | 1 (1 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
 | `many-decls/huge_decls_type_warning` | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | 1 (1 user) | 1 (1 user) |
 | `many-decls/many_decls_nested_user_fn` | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | 2 (1 user) | 2 (1 user) |
