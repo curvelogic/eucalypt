@@ -786,8 +786,21 @@ fn array_index(
 
 /// The most elements one array can hold: its values are a single heap
 /// object of `f64`s, and the heap allocates no object larger than
-/// [`MAX_ALLOC_SIZE`] bytes.
-const MAX_ARRAY_ELEMENTS: usize = MAX_ALLOC_SIZE / std::mem::size_of::<f64>();
+/// [`MAX_ALLOC_SIZE`] bytes; nor can Rust allocate more than
+/// `isize::MAX` bytes, the tighter of the two on 32-bit targets such as
+/// wasm32.
+const MAX_ARRAY_ELEMENTS: usize = element_limit(MAX_ALLOC_SIZE, isize::MAX as usize);
+
+/// The most `f64` elements that fit in one allocation, given the heap's
+/// largest object (`max_alloc` bytes) and the target's `isize::MAX`.
+const fn element_limit(max_alloc: usize, isize_max: usize) -> usize {
+    let bytes = if max_alloc < isize_max {
+        max_alloc
+    } else {
+        isize_max
+    };
+    bytes / std::mem::size_of::<f64>()
+}
 
 /// Extract an array shape from a cons-list of numbers, for the array
 /// function `function` (named in any error).
@@ -960,6 +973,23 @@ mod tests {
             shape_of(&[3.0, -1.0]),
             Err(ExecutionError::ArrayNegativeIndex(_, _))
         ));
+    }
+
+    #[test]
+    fn element_limit_respects_the_allocation_limit_of_the_target() {
+        // 64-bit: the heap's largest object is the binding limit.
+        assert_eq!(
+            element_limit(u32::MAX as usize, i64::MAX as usize),
+            536_870_911
+        );
+        // wasm32: `isize::MAX` (2^31 - 1 bytes) is, so a shape that fits
+        // the heap but not a `Vec` is rejected rather than panicking with
+        // "capacity overflow" when ndarray allocates it.
+        assert_eq!(
+            element_limit(u32::MAX as usize, i32::MAX as usize),
+            268_435_455
+        );
+        assert!(MAX_ARRAY_ELEMENTS * std::mem::size_of::<f64>() <= isize::MAX as usize);
     }
 
     #[test]
