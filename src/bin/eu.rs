@@ -55,7 +55,7 @@ fn run() -> i32 {
     // LSP mode runs the language server and exits
     if opt.lsp() {
         match lsp::run() {
-            Ok(()) => return 0,
+            Ok(code) => return code,
             Err(e) => {
                 eprintln!("LSP server error: {e}");
                 return 2;
