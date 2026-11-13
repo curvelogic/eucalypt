@@ -1,5 +1,26 @@
 { title: "126 type predicates" }
 
+` { target: :test-representations
+    doc: "eu-oaz72.93: each predicate holds for every runtime representation of its type — literal, computed by an intrinsic, and imported."
+    import: ["edn=050_edn.edn", "toml=028_toml.toml", "rows=testdata/aux_import.csv"] }
+test-representations: {
+  k: 7
+  sc: [["a", "b"] str.join-on("-"), "a" str.to-upper, 42 str.of, "x{k}",
+       "a,b" str.split-on(",") head, set.of["a"] set.to-list head,
+       vec.of["a"] vec.nth(0), edn.k, toml.header.x.y str.of,
+       rows head values head] all(string?) //= true
+  yc: ["a" sym, {a: 1} keys head, set.of[:a] set.to-list head,
+       edn.α, edn.quux head] all(symbol?) //= true
+  dc: [t"2024-03-15", "2024-03-15" cal.parse, cal.datetime{y: 2024},
+       cal.zdt(2024, 1, 1, 0, 0, 0, "+0100"), toml.header.date] all(datetime?) //= true
+  bc: [1 < 2, 1 = 1, !true, [] nil?, "a" str.matches?("a")] all(bool?) //= true
+  lc: [[1] map(inc), range(0, 3), [1, 2] tail, {a: 1} elements, edn.quux,
+       set.of[1] set.to-list] all(list?) //= true
+  kc: [{a: 1} << {b: 2}, {a: 1} map-values(inc), [[:a, 1]] block, toml.foo,
+       rows head] all(block?) //= true
+  RESULT: [sc, yc, dc, bc, lc, kc] all-true? then(:PASS, :FAIL)
+}
+
 ` { target: :test-type-predicates }
 test-type-predicates: {
   n: 42 number? //= true
