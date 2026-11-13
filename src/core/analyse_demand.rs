@@ -60,10 +60,13 @@ fn peel_meta(expr: &RcExpr) -> &RcExpr {
 /// that uses the name: names bound anywhere as a lambda parameter or as a
 /// let binding whose right-hand side is not a lambda (an alias such as
 /// `step: f` may refer to a lazy function), and names bound to lambdas of
-/// different arities. A parameter counts even when it is the name's only
-/// binding: in blob mode the prelude is not in the tree, and a call to a
-/// parameter named like a prelude function must not take its signature. Let-bound lambdas of one arity remain merged by
+/// different arities. Let-bound lambdas of one arity remain merged by
 /// `record_named_signature`, whose lub is sound for each of them.
+///
+/// The names are whole-program, but they cover only bindings in the
+/// analysed tree: the STG compiler takes a free callee's signature (a
+/// blob-mode prelude global) from the prelude table alone, so a block key
+/// or parameter named `map` does not hide the prelude `map`'s signature.
 fn ambiguous_names(expr: &RcExpr) -> HashSet<String> {
     #[derive(Default)]
     struct Uses {
@@ -208,79 +211,96 @@ pub fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
 ///
 /// In blob-prelude mode, the prelude is pre-compiled and its functions
 /// appear as globals (`Ref::G`) with no demand analysis.  This table
-/// provides conservative strictness information for the most common
-/// prelude functions so that the STG compiler can apply strict-arg
-/// optimisation (Seq wrapping) to complex arguments at call sites.
+/// gives their strictness so that the STG compiler can apply strict-arg
+/// optimisation (Seq wrapping) to complex arguments at call sites, both
+/// in user code and in the prelude itself, which `xtask prelude-compile`
+/// compiles against this table.
 ///
-/// We use `sm()` (Strict + Multi) for strict arguments
-/// because we do not know the exact cardinality within the prelude
-/// function body.  Multi ensures the binding becomes a Thunk (with
-/// Update/memoisation) and Strict triggers Seq wrapping for eager
-/// evaluation.
+/// An argument is strict (`sm()`) only if a saturated call, evaluated to
+/// weak head normal form, always evaluates that argument too. Anything
+/// weaker is `lm()`: an argument returned inside a constructor (`cons`,
+/// a list literal), not reached when a list is empty, or behind a
+/// short-circuit or a branch. Claiming too much forces a value a lazy
+/// program never needs: `repeat(panic("x")) nil?` panicked, as did
+/// `head-or(panic("x"), [1])` (eu-oaz72.72). The exceptions, `foldl` and
+/// `iota`, are marked where they are made. Each signature has one entry
+/// per parameter of the binding as written, so a binding such as
+/// `mapcat(f)` that returns a function has one entry, not one per
+/// argument a call passes.
+///
+/// We use `sm()` (Strict + Multi) for strict arguments because we do not
+/// know the exact cardinality within the prelude function body.  Multi
+/// ensures the binding becomes a Thunk (with Update/memoisation) and
+/// Strict triggers Seq wrapping for eager evaluation.
 pub fn build_prelude_signatures() -> HashMap<String, DemandSignature> {
     let mut sigs = HashMap::new();
     let sm = Demand::strict_multi;
     let lm = Demand::lazy_multi;
 
-    // List operations — strict in all arguments
-    // map(f, l): f applied to each element, l traversed
-    sigs.insert("map".into(), vec![sm(), sm()]);
-    // map2(f, l, m): zip-with
-    sigs.insert("map2".into(), vec![sm(), sm(), sm()]);
-    // filter(p?, l): predicate applied, list traversed
-    sigs.insert("filter".into(), vec![sm(), sm()]);
-    // foldl(op, i, l): all args needed
-    sigs.insert("foldl".into(), vec![sm(), sm(), sm()]);
-    // foldr(op, i, l): all args needed
-    sigs.insert("foldr".into(), vec![sm(), sm(), sm()]);
-    // take(n, l): count and list both needed
-    sigs.insert("take".into(), vec![sm(), sm()]);
-    // drop(n, l): count and list both needed
+    // List operations. A function argument is lazy wherever the list may
+    // be empty; a list returned as a tail (append's second) is lazy.
+    // map(f, l): if(l nil?, l, cons(l head f, ...))
+    sigs.insert("map".into(), vec![lm(), sm()]);
+    // map2(f, l1, l2): `nil?(l1) || nil?(l2)` short-circuits
+    sigs.insert("map2".into(), vec![lm(), sm(), lm()]);
+    // filter(p?, l): foldr(..., [], l)
+    sigs.insert("filter".into(), vec![lm(), sm()]);
+    // foldr(op, i, l): `i` is returned only when `l` is empty, and `op`
+    // need not force it.
+    sigs.insert("foldr".into(), vec![lm(), lm(), sm()]);
+    // foldl(op, i, l): a deliberate exception. `i` is lazy by the same
+    // reasoning, but the prelude's own `foldl(op, op(i, l head), l tail)`
+    // takes this signature, so a strict `i` evaluates the accumulator at
+    // each step, as `foldl'` would; a lazy one changes where the steps run
+    // and so the error traces a fold gives.
+    sigs.insert("foldl".into(), vec![lm(), sm(), sm()]);
+    // take(n, l): `(n <= 0) ∨ (l nil?)` short-circuits
+    sigs.insert("take".into(), vec![sm(), lm()]);
+    // drop(n, l): returns `l` or recurses on `l tail`
     sigs.insert("drop".into(), vec![sm(), sm()]);
-    // nth(n, l): index and list both needed
+    // nth(n, l): `n number?`, then `aux` tests `l nil?`
     sigs.insert("nth".into(), vec![sm(), sm()]);
-    // reverse(l): list needed
+    // reverse(l): foldl over l
     sigs.insert("reverse".into(), vec![sm()]);
-    // append(l1, l2): both lists needed
-    sigs.insert("append".into(), vec![sm(), sm()]);
-    // zip-with(f, a, b): all needed
-    sigs.insert("zip-with".into(), vec![sm(), sm(), sm()]);
-    // zip(a, b): both needed (zip = zip-with(pair))
-    sigs.insert("zip".into(), vec![sm(), sm()]);
-    // count(l): list traversed
+    // append(l1, l2): foldr(cons, l2, l1)
+    sigs.insert("append".into(), vec![sm(), lm()]);
+    // zip-with = map2; zip = zip-with(pair)
+    sigs.insert("zip-with".into(), vec![lm(), sm(), lm()]);
+    sigs.insert("zip".into(), vec![sm(), lm()]);
+    // count(l), sum(l), product(l): foldl over l
     sigs.insert("count".into(), vec![sm()]);
-    // sum(l): list traversed
     sigs.insert("sum".into(), vec![sm()]);
-    // product(l): list traversed
     sigs.insert("product".into(), vec![sm()]);
     // cons(h, t): lazy in both — wraps __CONS which does not force args.
     // Strictness here would cause infinite forcing for recursive list
     // construction (iterate, map, scanl, etc.) over infinite lists.
     sigs.insert("cons".into(), vec![lm(), lm()]);
-    // snoc(x, l): both needed
-    sigs.insert("snoc".into(), vec![sm(), sm()]);
-    // mapcat(f, l): catenation applied via compose, but f is strict
-    sigs.insert("mapcat".into(), vec![sm()]);
-    // cross(f, xs, ys): all needed
-    sigs.insert("cross".into(), vec![sm(), sm(), sm()]);
-    // interleave(a, b): both needed
-    sigs.insert("interleave".into(), vec![sm(), sm()]);
+    // snoc(x, l): l ++ [x]
+    sigs.insert("snoc".into(), vec![lm(), sm()]);
+    // mapcat(f): concat ∘ map(f), a function value that forces nothing
+    sigs.insert("mapcat".into(), vec![lm()]);
+    // cross(f, xs, ys): xs mapcat(...), which traverses xs only
+    sigs.insert("cross".into(), vec![lm(), sm(), lm()]);
+    // interleave(a, b): returns `b` only when `a` is empty
+    sigs.insert("interleave".into(), vec![sm(), lm()]);
 
-    // take-while / drop-while: predicate and list both strict
-    sigs.insert("take-while".into(), vec![sm(), sm()]);
-    sigs.insert("drop-while".into(), vec![sm(), sm()]);
+    // take-while / drop-while: list strict, predicate not used on []
+    sigs.insert("take-while".into(), vec![lm(), sm()]);
+    sigs.insert("drop-while".into(), vec![lm(), sm()]);
 
-    // Sorting
-    sigs.insert("sort-by".into(), vec![sm(), sm(), sm()]);
-    sigs.insert("sort-by-num".into(), vec![sm()]);
-    sigs.insert("sort-by-str".into(), vec![sm()]);
+    // Sorting. sort-by(key-fn, cmp, xs): xs qsort(lt); sort-by-num and
+    // sort-by-str take only the key function and return a function.
+    sigs.insert("sort-by".into(), vec![lm(), lm(), sm()]);
+    sigs.insert("sort-by-num".into(), vec![lm()]);
+    sigs.insert("sort-by-str".into(), vec![lm()]);
     sigs.insert("sort-nums".into(), vec![sm()]);
     sigs.insert("sort-strs".into(), vec![sm()]);
 
-    // Grouping
-    sigs.insert("group-by".into(), vec![sm(), sm()]);
-    sigs.insert("discriminate".into(), vec![sm(), sm()]);
-    sigs.insert("group-consecutive-by".into(), vec![sm(), sm()]);
+    // Grouping. discriminate builds its result pair as a list literal;
+    // group-by's result passes through `block`, which is lazy in its list.
+    sigs.insert("group-by".into(), vec![lm(), lm()]);
+    sigs.insert("discriminate".into(), vec![lm(), lm()]);
+    sigs.insert("group-consecutive-by".into(), vec![lm(), sm()]);
 
     // Numeric — strict in all args
     sigs.insert("abs".into(), vec![sm()]);
@@ -295,47 +315,63 @@ pub fn build_prelude_signatures() -> HashMap<String, DemandSignature> {
     sigs.insert("quot".into(), vec![sm(), sm()]);
     sigs.insert("rem".into(), vec![sm(), sm()]);
 
-    // Combinators — strict in function arg, lazy in data args
-    sigs.insert("compose".into(), vec![sm(), sm(), sm()]);
-    sigs.insert("flip".into(), vec![sm(), sm(), sm()]);
+    // Combinators — strict in the function applied, lazy in data args.
+    // compose(f, g, x): f(g(x)); flip(f, x, y): f(y, x)
+    sigs.insert("compose".into(), vec![sm(), lm(), lm()]);
+    sigs.insert("flip".into(), vec![sm(), lm(), lm()]);
     sigs.insert("identity".into(), vec![sm()]);
+    // apply(f, xs): foldl(_0(_1), f, xs) returns or applies `f`
     sigs.insert("apply".into(), vec![sm(), sm()]);
 
-    // Conditionals — condition strict, branches lazy
+    // Conditionals. then(t, f, c): if(c, t, f);
+    // when(p?, f, x): if(x p?, x f, x), where `p?` need not force `x`
     sigs.insert("then".into(), vec![lm(), lm(), sm()]);
-    sigs.insert("when".into(), vec![sm(), sm(), sm()]);
+    sigs.insert("when".into(), vec![sm(), lm(), lm()]);
 
-    // Lookup functions — strict in key/object args
-    sigs.insert("has".into(), vec![sm(), sm()]);
+    // Lookup functions. has(s, b) reaches `b` only through
+    // `map-values`, which rebuilds it with `block`; the intrinsic
+    // catalogue does not mark `block` strict, so `b` is not claimed.
+    sigs.insert("has".into(), vec![sm(), lm()]);
     sigs.insert("lookup".into(), vec![sm(), sm()]);
     sigs.insert("lookup-in".into(), vec![sm(), sm()]);
     sigs.insert("lookup-or".into(), vec![sm(), lm(), sm()]);
 
-    // Deep operations — strict in key/pattern and block
-    sigs.insert("deep-find".into(), vec![sm(), sm()]);
-    sigs.insert("deep-transform".into(), vec![sm(), sm()]);
+    // Deep operations. deep-find's key is used only at blocks, so a list
+    // holding none never needs it; deep-transform(rule, data) applies
+    // `rule`, which need not force `data`; deep-query splits its pattern
+    // and walks from `b`.
+    sigs.insert("deep-find".into(), vec![lm(), sm()]);
+    sigs.insert("deep-transform".into(), vec![sm(), lm()]);
     sigs.insert("deep-query".into(), vec![sm(), sm()]);
 
-    // Head/tail — strict in list
-    sigs.insert("head-or".into(), vec![sm(), sm()]);
-    sigs.insert("tail-or".into(), vec![sm(), sm()]);
+    // head-or(d, xs) / tail-or(d, xs): the default only for []
+    sigs.insert("head-or".into(), vec![lm(), sm()]);
+    sigs.insert("tail-or".into(), vec![lm(), sm()]);
 
     // Rendering
     sigs.insert("render".into(), vec![sm()]);
     sigs.insert("render-as".into(), vec![sm(), sm()]);
     sigs.insert("parse-as".into(), vec![sm(), sm()]);
 
-    // Iterate — strict in initial value, function
-    sigs.insert("iterate".into(), vec![sm(), sm()]);
-    // range(b, e)
-    sigs.insert("range".into(), vec![sm(), sm()]);
-    // iota(n)
+    // Infinite lists: each wraps its arguments in `cons`.
+    // iterate(f, i): cons(i, iterate(f, f(i)))
+    sigs.insert("iterate".into(), vec![lm(), lm()]);
+    // iota(n): cons(n, iota(n + 1)). A deliberate exception: `n` is
+    // lazy, but the prelude's own recursive call takes this signature,
+    // so a strict `n` evaluates `n + 1` as each cell is reached. Lazy, a
+    // walk down the list builds a chain of additions as deep as the walk,
+    // and forcing an element far down it needs a stack as deep.
+    // Only a program that uses the spine of `iota` on a non-number sees
+    // the difference.
     sigs.insert("iota".into(), vec![sm()]);
-    // repeat(i)
-    sigs.insert("repeat".into(), vec![sm()]);
+    // repeat(i): __CONS(i, repeat(i))
+    sigs.insert("repeat".into(), vec![lm()]);
+    // range(b, e): ints-from(b) take(e - b), and take is strict in its count
+    sigs.insert("range".into(), vec![sm(), sm()]);
 
-    // Sliding / windowing
-    sigs.insert("over-sliding-pairs".into(), vec![sm(), sm()]);
+    // over-sliding-pairs(f, l): l window(2, 1) map(...); window's first
+    // chunk takes from l
+    sigs.insert("over-sliding-pairs".into(), vec![lm(), sm()]);
 
     sigs
 }
@@ -534,11 +570,9 @@ impl DemandAnalyser {
             .into_iter()
             .filter_map(|(name, sig)| sig.map(|sig| (name, sig)))
             .collect();
-        // The compiler finds a call's signature by the callee's name, so a
+        // The compiler finds a bound callee's signature by its name, so a
         // name that does not refer to let-bound lambdas of one arity alone
-        // gets an empty signature: no argument is strict, and the empty
-        // entry stops the compiler falling back to a prelude signature of
-        // the same name.
+        // gets an empty signature: no argument is strict.
         for name in ambiguous_names(expr) {
             named.insert(name, Vec::new());
         }
