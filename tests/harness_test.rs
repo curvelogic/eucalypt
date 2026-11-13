@@ -3161,7 +3161,10 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
 /// shared across traversals. Each target sums its list eight times; its
 /// `shared` validator checks the tick count and FAILs on master, where a
 /// constructor field copied out of a deeper frame, or a parameter reached
-/// through an alias binding, was recomputed on every traversal.
+/// through an alias binding, was recomputed on every traversal. The
+/// `namespace-lookup` target's `built-once` validator counts allocations and
+/// FAILs in blob mode on master, where `.` on an unforced prelude global
+/// rebuilt the namespace block on every read (eu-oaz72.94).
 #[test]
 pub fn test_236_oaz72_36_constructor_field_sharing() {
     run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
@@ -3198,6 +3201,20 @@ pub fn test_250_dict() {
         peak < 2500,
         "assoc-chain peaked at {peak} heap blocks: earlier dict versions are being \
          retained by stored values (eu-oaz72.21)"
+    );
+    // The same for evaluated list values: `memo_cell` rebuilds them over fresh
+    // frames, so they do not pin the frame holding the previous version
+    // (eu-oaz72.70). Unfixed, the run outgrows the heap limit.
+    let peak = stat(
+        file,
+        "assoc-chain-lists",
+        &["--heap-limit-mib", "64"],
+        "Peak Blocks",
+    );
+    assert!(
+        peak < 2500,
+        "assoc-chain-lists peaked at {peak} heap blocks: earlier dict versions are \
+         being retained by stored list values (eu-oaz72.70)"
     );
     run_test(&opts(file));
 }
