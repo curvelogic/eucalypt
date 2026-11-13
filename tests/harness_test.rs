@@ -3199,6 +3199,20 @@ pub fn test_250_dict() {
         "assoc-chain peaked at {peak} heap blocks: earlier dict versions are being \
          retained by stored values (eu-oaz72.21)"
     );
+    // The same for evaluated list values: `memo_cell` rebuilds them over fresh
+    // frames, so they do not pin the frame holding the previous version
+    // (eu-oaz72.70). Unfixed, the run outgrows the heap limit.
+    let peak = stat(
+        file,
+        "assoc-chain-lists",
+        &["--heap-limit-mib", "64"],
+        "Peak Blocks",
+    );
+    assert!(
+        peak < 2500,
+        "assoc-chain-lists peaked at {peak} heap blocks: earlier dict versions are \
+         being retained by stored list values (eu-oaz72.70)"
+    );
     run_test(&opts(file));
 }
 
@@ -4964,6 +4978,54 @@ pub fn test_tester_fails_unrun_checked_target() {
 #[test]
 pub fn test_error_273_divides_zero_divisor() {
     run_error_test(&error_opts("273_divides_zero_divisor.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_nth_negative() {
+    run_error_test(&error_opts("277_vec_nth_negative.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_nth_non_integer() {
+    run_error_test(&error_opts("277_vec_nth_non_integer.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_nth_out_of_range() {
+    run_error_test(&error_opts("277_vec_nth_out_of_range.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_slice_negative() {
+    run_error_test(&error_opts("277_vec_slice_negative.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_slice_non_integer() {
+    run_error_test(&error_opts("277_vec_slice_non_integer.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_array_get_non_integer() {
+    run_error_test(&error_opts("277_array_get_non_integer.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_array_slice_negative() {
+    run_error_test(&error_opts("277_array_slice_negative.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_array_slice_non_integer() {
+    run_error_test(&error_opts("277_array_slice_non_integer.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
