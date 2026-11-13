@@ -54,16 +54,14 @@ fn run_with_deadline(mut cmd: Command, deadline: Duration) -> Option<std::proces
     }
 }
 
-/// With no heap limit, a program allocating far more than the minimum
-/// trigger collects, and its heap stays near that trigger rather than
-/// growing with total allocation.
-#[test]
-fn unbounded_heap_collects_on_allocation_volume() {
+/// Run the volume-trigger loop fixture under `--heap-limit-mib limit_mib`
+/// and return its `(collections, peak heap blocks)` statistics.
+fn loop_fixture_stats(limit_mib: &str) -> (u64, u64) {
     let dir = tempfile::tempdir().unwrap();
     let stats = dir.path().join("stats.json");
     let mut cmd = Command::new(eu_binary());
     cmd.arg("--heap-limit-mib")
-        .arg("0")
+        .arg(limit_mib)
         .arg("--statistics-file")
         .arg(&stats)
         .arg("tests/fixtures/gc_volume_trigger_loop.eu")
@@ -71,7 +69,7 @@ fn unbounded_heap_collects_on_allocation_volume() {
     let out = run_with_deadline(cmd, Duration::from_secs(300)).expect("eu timed out");
     assert!(
         out.status.success(),
-        "eu failed: {}",
+        "eu failed under --heap-limit-mib {limit_mib}: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(String::from_utf8_lossy(&out.stdout).contains("r: 300000"));
@@ -91,8 +89,15 @@ fn unbounded_heap_collects_on_allocation_volume() {
         }
         walk(&json, key).unwrap_or_else(|| panic!("no {key} in statistics"))
     };
-    let collections = find("collections_count");
-    let peak = find("peak_heap_blocks");
+    (find("collections_count"), find("peak_heap_blocks"))
+}
+
+/// With no heap limit, a program allocating far more than the minimum
+/// trigger collects, and its heap stays near that trigger rather than
+/// growing with total allocation.
+#[test]
+fn unbounded_heap_collects_on_allocation_volume() {
+    let (collections, peak) = loop_fixture_stats("0");
     assert!(
         collections > 0,
         "no collection ran without a heap limit (peak {peak} blocks)"
@@ -103,6 +108,21 @@ fn unbounded_heap_collects_on_allocation_volume() {
         peak <= 4096,
         "heap grew to {peak} blocks over {collections} collections; \
          collection is not keeping pace with allocation"
+    );
+}
+
+/// A heap limit well above the live data does not make the collector run
+/// more often: a capped run collects about as often as an unbounded one,
+/// rather than on nearly every poll (the thrashing eu-oaz72.4 reported:
+/// 39,326 collections under `--heap-limit-mib 1024` against 0 unbounded).
+#[test]
+fn heap_limit_above_live_data_does_not_thrash() {
+    let (unbounded, _) = loop_fixture_stats("0");
+    let (capped, peak) = loop_fixture_stats("1024");
+    assert!(
+        capped <= unbounded * 2,
+        "{capped} collections under --heap-limit-mib 1024 against {unbounded} \
+         unbounded (peak {peak} blocks): the limit makes the collector thrash"
     );
 }
 
