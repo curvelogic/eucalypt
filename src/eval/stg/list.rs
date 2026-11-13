@@ -594,6 +594,7 @@ pub mod tests {
 
     fn runtime() -> Box<dyn Runtime> {
         testing::runtime(vec![
+            Box::new(IsNumber),
             Box::new(IsString),
             Box::new(IsSymbol),
             Box::new(IsZdt),
@@ -626,6 +627,20 @@ pub mod tests {
 
     // eu-oaz72.93: each scalar type predicate recognises both the boxed
     // form and the bare native form of its type.
+
+    #[test]
+    fn is_number_recognises_boxed_and_bare_numbers() {
+        assert_eq!(
+            eval_bool(boxed(|r| IsNumber.global(r), box_num(1))),
+            Some(true)
+        );
+        assert_eq!(eval_bool(IsNumber.global(num(1))), Some(true));
+        assert_eq!(eval_bool(IsNumber.global(str("1"))), Some(false));
+        assert_eq!(
+            eval_bool(boxed(|r| IsNumber.global(r), box_str("1"))),
+            Some(false)
+        );
+    }
 
     #[test]
     fn is_string_recognises_boxed_and_bare_strings() {
