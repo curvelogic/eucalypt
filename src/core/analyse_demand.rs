@@ -379,9 +379,15 @@ struct SigFrame {
     consulted: bool,
 }
 
-/// Argument positions of a conditional's condition, then-branch and
-/// else-branch. `__IF` is `[0, 1, 2]`.
-type IfShape = [usize; 3];
+/// A conditional's arity and the argument positions of its condition,
+/// then-branch and else-branch. `__IF` has arity 3 and positions
+/// `[0, 1, 2]`. Only a call that supplies `arity` arguments runs the
+/// conditional, so only such a call joins the branches.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct IfShape {
+    arity: usize,
+    pos: [usize; 3],
+}
 
 /// The demand signatures of the prelude globals a blob-mode program's free
 /// variables resolve to: `sigs[name_to_slot[name]]`, as in the STG
@@ -1100,8 +1106,11 @@ impl<'p> DemandAnalyser<'p> {
     }
 
     /// The `IfShape` of a let binding's RHS: `__IF`, a bound alias of a
-    /// conditional, or a lambda whose body is a saturated call of a
-    /// conditional passing its own parameters as condition and branches.
+    /// conditional, or a lambda whose body is a call of a conditional with
+    /// exactly its arity, passing the lambda's own parameters as condition
+    /// and branches. A body that supplies fewer arguments only builds a
+    /// partial application, and one that supplies more applies the
+    /// conditional's result: neither is a conditional.
     fn binding_shape(&self, rhs: &RcExpr) -> Option<IfShape> {
         match &*peel_meta(rhs).inner {
             Expr::Lam(_, _, lam) => {
@@ -1112,11 +1121,11 @@ impl<'p> DemandAnalyser<'p> {
                 let args: Vec<&RcExpr> = levels.iter().flat_map(|(_, a)| a.iter()).collect();
                 // The head is outside the lambda: one scope further out.
                 let shape = self.shape_of(head, 1)?;
-                if args.len() != 3 {
+                if args.len() != shape.arity {
                     return None;
                 }
                 let mut out = [0; 3];
-                for (k, &pos) in shape.iter().enumerate() {
+                for (k, &pos) in shape.pos.iter().enumerate() {
                     match &*args.get(pos)?.inner {
                         Expr::Var(_, Var::Bound(bv)) if bv.scope == 0 => {
                             out[k] = bv.binder as usize;
@@ -1124,7 +1133,10 @@ impl<'p> DemandAnalyser<'p> {
                         _ => return None,
                     }
                 }
-                Some(out)
+                Some(IfShape {
+                    arity: lam.pattern.len(),
+                    pos: out,
+                })
             }
             _ => self.shape_of(rhs, 0),
         }
@@ -1133,7 +1145,10 @@ impl<'p> DemandAnalyser<'p> {
     /// The `IfShape` of a callee, `depth` scopes inside the innermost frame.
     fn shape_of(&self, f: &RcExpr, depth: usize) -> Option<IfShape> {
         match &*peel_meta(f).inner {
-            Expr::Intrinsic(_, name) if name == "IF" => Some([0, 1, 2]),
+            Expr::Intrinsic(_, name) if name == "IF" => Some(IfShape {
+                arity: 3,
+                pos: [0, 1, 2],
+            }),
             Expr::Var(_, Var::Bound(bv)) => {
                 let scope = (bv.scope as usize).checked_sub(depth)?;
                 let index = self.frames.len().checked_sub(1 + scope)?;
@@ -1245,7 +1260,8 @@ impl<'p> DemandAnalyser<'p> {
         // A saturated call of a conditional evaluates exactly one branch.
         let shape = self
             .shape_of(head, 0)
-            .filter(|_| sig.as_ref().is_some_and(|s| total >= s.len()));
+            .filter(|shape| total >= shape.arity)
+            .map(|shape| shape.pos);
         let mut then_env = DemandEnv::new();
         let mut else_env = DemandEnv::new();
 
@@ -2205,6 +2221,58 @@ mod tests {
         assert_eq!(sigs["otherwise"], sigs["then"]);
         assert_eq!(strictness(&sigs["default-to"]), vec![Lazy, Strict]);
         assert_eq!(strictness(&sigs["inc"]), vec![Strict]);
+    }
+
+    /// A wrapper whose body only partially applies a conditional is not a
+    /// conditional: `w(c, t, f): cond4(c, t, f)` builds a closure, so a call
+    /// of `w` evaluates neither branch and must not join them.
+    #[test]
+    fn partial_application_of_a_conditional_is_not_one() {
+        use Strictness::{Lazy, Strict};
+        let (c, t, f, x) = (free("c"), free("t"), free("f"), free("x"));
+        let (a, w, cond4) = (free("a"), free("w"), free("cond4"));
+        let expr = let_(
+            vec![
+                // cond4(c, t, f, x): __IF(c, t, f)
+                (
+                    cond4.clone(),
+                    lam(
+                        vec![c.clone(), t.clone(), f.clone(), x],
+                        app(
+                            bif("IF"),
+                            vec![var(c.clone()), var(t.clone()), var(f.clone())],
+                        ),
+                    ),
+                ),
+                // w(c, t, f): cond4(c, t, f)
+                (
+                    w.clone(),
+                    lam(
+                        vec![c.clone(), t.clone(), f.clone()],
+                        app(var(cond4), vec![var(c.clone()), var(t), var(f)]),
+                    ),
+                ),
+                // g(a, c): w(c, a + 1, a + 2)
+                (
+                    free("g"),
+                    lam(
+                        vec![a.clone(), c.clone()],
+                        app(
+                            var(w),
+                            vec![
+                                var(c),
+                                app(bif("ADD"), vec![var(a.clone()), num(1)]),
+                                app(bif("ADD"), vec![var(a), num(2)]),
+                            ],
+                        ),
+                    ),
+                ),
+            ],
+            num(0),
+        );
+        let sigs = derive_top_level_signatures(&expr);
+        assert_eq!(strictness(&sigs["g"]), vec![Lazy, Lazy]);
+        assert_eq!(strictness(&sigs["cond4"])[0], Strict);
     }
 
     /// In blob mode a call of a prelude global (a free variable) takes the

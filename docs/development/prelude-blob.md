@@ -85,12 +85,15 @@ The analysis reads an application spine as one call, so a pipeline step
 such as `xs nil? then(d, xs head)` saturates `then` and `head-or` is
 strict in its list, and a call of a conditional written through an alias
 or a wrapper (`if: __IF`, `then(t, f, c): if(c, t, f)`) joins its branches
-as a call of `__IF` does.
+as a call of `__IF` does, where the analysis can see the wrapper: in the
+prelude analysed at blob build, and in a user program's own definitions.
 
 In blob mode the demand analysis of the user program also takes these
 signatures, for calls whose callee is a free variable naming a prelude
 global, as source mode's analysis of prelude and program together sees
-them.
+them. It takes only their signatures: a user call of the blob's `if` or
+`then` does not join its branches, which is sound but less precise than
+source mode, where the call has been inlined to `__IF`.
 
 The STG compiler uses these signatures for a call whose callee is a free
 variable resolving to a prelude global, both in user code at run time and

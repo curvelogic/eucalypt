@@ -58,3 +58,16 @@ So #1173's gains against its true parent are smaller than its report's
 (which measured against `b8bfb43`, before #1169). This branch changes no
 bench: the signatures it adds are for functions the benches do not call in
 a strict position with a complex argument.
+
+## Review round 1
+
+- Blocking, fixed: a lambda whose body only partially applied a
+  conditional (`w(c, t, f): cond4(c, t, f)` with `cond4` of arity 4) was
+  given a conditional shape, so a call of it joined branches nothing
+  evaluates. `IfShape` now carries the conditional's arity; a lambda takes a
+  shape only when its body call supplies exactly that many arguments, and a
+  call site joins only when it supplies at least the arity. Unit test
+  `partial_application_of_a_conditional_is_not_one` fails without the fix.
+- The `zip-with` pin is explicit (`[lazy, strict, lazy]`); the docs say a
+  blob-mode user call of `if`/`then` gets their signatures but no branch
+  join.

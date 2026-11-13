@@ -282,10 +282,7 @@ fn the_embedded_blob_carries_derived_demand_signatures() {
         ("then", vec![l, l, s]),
         ("head-or", vec![l, s]),
         ("tail-or", vec![l, s]),
-        (
-            "zip-with",
-            strictness("map2").into_iter().map(Some).collect(),
-        ),
+        ("zip-with", vec![l, s, l]),
         ("zip", vec![s, l]),
         ("foldl", vec![l, l, s]),
         ("append", vec![s, l]),
