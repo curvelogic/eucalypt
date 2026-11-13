@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/275_vec_slice_negative
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/275_vec_slice_negative.eu
+fixture: errors/277_vec_slice_negative
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/277_vec_slice_negative.eu
 prelude-modes: divergent
 
 === blob prelude ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/275_vec_slice_negative.eu:2:23
+primary: user tests/harness/errors/277_vec_slice_negative.eu:2:23
 help-lines: 0
 note-lines: 0
 secondary-labels: 1
@@ -19,7 +19,7 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: vec.slice from -1 out of range: vec indices start at 0
-  ┌─ tests/harness/errors/275_vec_slice_negative.eu:2:23
+  ┌─ tests/harness/errors/277_vec_slice_negative.eu:2:23
   │
 2 │ r: vec.of[10, 20, 30] vec.slice(-1, 2)
   │    ------------------ ^^^^^^^^^^^^^^^^
@@ -27,14 +27,14 @@ error: vec.slice from -1 out of range: vec indices start at 0
   │    called from here
   │
   = while evaluating (outermost first):
-    - r at 275_vec_slice_negative.eu:2:23
+    - r at 277_vec_slice_negative.eu:2:23
 
 === --source-prelude ===
 exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/275_vec_slice_negative.eu:2:23
+primary: user tests/harness/errors/277_vec_slice_negative.eu:2:23
 help-lines: 0
 note-lines: 0
 secondary-labels: 2
@@ -45,7 +45,7 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: vec.slice from -1 out of range: vec indices start at 0
-  ┌─ tests/harness/errors/275_vec_slice_negative.eu:2:23
+  ┌─ tests/harness/errors/277_vec_slice_negative.eu:2:23
   │
 2 │ r: vec.of[10, 20, 30] vec.slice(-1, 2)
   │    ---                ^^^^^^^^^^^^^^^^
@@ -54,4 +54,4 @@ error: vec.slice from -1 out of range: vec indices start at 0
   │    called from here
   │
   = while evaluating (outermost first):
-    - r at 275_vec_slice_negative.eu:2:23
+    - r at 277_vec_slice_negative.eu:2:23

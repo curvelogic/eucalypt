@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**52 of 257 fixtures diverge.**
+**61 of 274 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -55,14 +55,23 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/250_dict_not_a_dict` | user tests/harness/errors/250_dict_not_a_dict.eu:2:16 | user tests/harness/errors/250_dict_not_a_dict.eu:2:16 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_render` | user tests/harness/errors/250_dict_render.eu:2:9 | user tests/harness/errors/250_dict_render.eu:2:9 | 0 (0 user) | 0 (0 user) |
 | `errors/250_dict_value_cycle` | user tests/harness/errors/250_dict_value_cycle.eu:3:19 | user tests/harness/errors/250_dict_value_cycle.eu:3:19 | 3 (3 user) | 3 (3 user) |
-| `errors/275_array_get_non_integer` | user tests/harness/errors/275_array_get_non_integer.eu:2:4 | user tests/harness/errors/275_array_get_non_integer.eu:2:4 | 1 (1 user) | 1 (1 user) |
-| `errors/275_array_slice_negative` | user tests/harness/errors/275_array_slice_negative.eu:2:4 | user tests/harness/errors/275_array_slice_negative.eu:2:4 | 1 (1 user) | 1 (1 user) |
-| `errors/275_array_slice_non_integer` | user tests/harness/errors/275_array_slice_non_integer.eu:2:4 | user tests/harness/errors/275_array_slice_non_integer.eu:2:4 | 1 (1 user) | 1 (1 user) |
-| `errors/275_vec_nth_negative` | user tests/harness/errors/275_vec_nth_negative.eu:2:19 | user tests/harness/errors/275_vec_nth_negative.eu:2:19 | 1 (1 user) | 1 (1 user) |
-| `errors/275_vec_nth_non_integer` | user tests/harness/errors/275_vec_nth_non_integer.eu:2:19 | user tests/harness/errors/275_vec_nth_non_integer.eu:2:19 | 1 (1 user) | 1 (1 user) |
-| `errors/275_vec_nth_out_of_range` | user tests/harness/errors/275_vec_nth_out_of_range.eu:2:19 | user tests/harness/errors/275_vec_nth_out_of_range.eu:2:19 | 1 (1 user) | 1 (1 user) |
-| `errors/275_vec_slice_negative` | user tests/harness/errors/275_vec_slice_negative.eu:2:23 | user tests/harness/errors/275_vec_slice_negative.eu:2:23 | 1 (1 user) | 1 (1 user) |
-| `errors/275_vec_slice_non_integer` | user tests/harness/errors/275_vec_slice_non_integer.eu:2:23 | user tests/harness/errors/275_vec_slice_non_integer.eu:2:23 | 1 (1 user) | 1 (1 user) |
+| `errors/275_non_integer_nth` | user tests/harness/errors/275_non_integer_nth.eu:2:14 | user tests/harness/errors/275_non_integer_nth.eu:2:14 | 2 (1 user) | 1 (1 user) |
+| `errors/275_non_integer_window_all_size` | user tests/harness/errors/275_non_integer_window_all_size.eu:2:14 | user tests/harness/errors/275_non_integer_window_all_size.eu:2:14 | 2 (1 user) | 1 (1 user) |
+| `errors/275_non_integer_window_all_step` | user tests/harness/errors/275_non_integer_window_all_step.eu:2:14 | user tests/harness/errors/275_non_integer_window_all_step.eu:2:14 | 2 (1 user) | 1 (1 user) |
+| `errors/275_non_integer_window_size` | user tests/harness/errors/275_non_integer_window_size.eu:2:14 | user tests/harness/errors/275_non_integer_window_size.eu:2:14 | 2 (1 user) | 1 (1 user) |
+| `errors/275_non_integer_window_step` | user tests/harness/errors/275_non_integer_window_step.eu:2:14 | user tests/harness/errors/275_non_integer_window_step.eu:2:14 | 2 (1 user) | 1 (1 user) |
+| `errors/276_array_shape_not_integer` | user tests/harness/errors/276_array_shape_not_integer.eu:2:4 | user tests/harness/errors/276_array_shape_not_integer.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/276_array_shape_overflow` | user tests/harness/errors/276_array_shape_overflow.eu:2:4 | user tests/harness/errors/276_array_shape_overflow.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/276_array_shape_reshape_overflow` | user tests/harness/errors/276_array_shape_reshape_overflow.eu:2:4 | user tests/harness/errors/276_array_shape_reshape_overflow.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/276_array_shape_too_large` | user tests/harness/errors/276_array_shape_too_large.eu:2:4 | user tests/harness/errors/276_array_shape_too_large.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/277_array_get_non_integer` | user tests/harness/errors/277_array_get_non_integer.eu:2:4 | user tests/harness/errors/277_array_get_non_integer.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/277_array_slice_negative` | user tests/harness/errors/277_array_slice_negative.eu:2:4 | user tests/harness/errors/277_array_slice_negative.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/277_array_slice_non_integer` | user tests/harness/errors/277_array_slice_non_integer.eu:2:4 | user tests/harness/errors/277_array_slice_non_integer.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/277_vec_nth_negative` | user tests/harness/errors/277_vec_nth_negative.eu:2:19 | user tests/harness/errors/277_vec_nth_negative.eu:2:19 | 1 (1 user) | 1 (1 user) |
+| `errors/277_vec_nth_non_integer` | user tests/harness/errors/277_vec_nth_non_integer.eu:2:19 | user tests/harness/errors/277_vec_nth_non_integer.eu:2:19 | 1 (1 user) | 1 (1 user) |
+| `errors/277_vec_nth_out_of_range` | user tests/harness/errors/277_vec_nth_out_of_range.eu:2:19 | user tests/harness/errors/277_vec_nth_out_of_range.eu:2:19 | 1 (1 user) | 1 (1 user) |
+| `errors/277_vec_slice_negative` | user tests/harness/errors/277_vec_slice_negative.eu:2:23 | user tests/harness/errors/277_vec_slice_negative.eu:2:23 | 1 (1 user) | 1 (1 user) |
+| `errors/277_vec_slice_non_integer` | user tests/harness/errors/277_vec_slice_non_integer.eu:2:23 | user tests/harness/errors/277_vec_slice_non_integer.eu:2:23 | 1 (1 user) | 1 (1 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
 | `many-decls/huge_decls_type_warning` | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | 1 (1 user) | 1 (1 user) |
 | `many-decls/many_decls_nested_user_fn` | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | 2 (1 user) | 2 (1 user) |

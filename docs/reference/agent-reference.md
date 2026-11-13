@@ -717,7 +717,12 @@ concat([[1,2], [3], [4,5]])   # [1, 2, 3, 4, 5]
 
 ```
 [1,2,3,4,5] take(3)          # [1, 2, 3]
+[1,2,3] take(1.5)            # error: take count 1.5 must be an integer
 ```
+
+A non-integer count or index is an error in `take`, `drop`, `split-at`,
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions. `range` takes bounds, not a count, and accepts non-integers.
 
 #### `drop(n, l)` — remove first n elements
 

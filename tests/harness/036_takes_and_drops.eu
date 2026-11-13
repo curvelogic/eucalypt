@@ -23,6 +23,19 @@ tests: {
   χ: [1, 2, 3] split-at(5) //= [[1, 2, 3], []]
   ψ: [1, 2, 3, 4, 5] window(2, 10) //= [[1, 2]]
   ω: [1, 2, 3, 4, 5] window-all(2, 4) //= [[1, 2], [5]]
+  take-integral-float: [1, 2, 3] take(2.0) //= [1, 2]
+  drop-integral-float: [1, 2, 3] drop(1.0) //= [2, 3]
+  split-at-integral-float: [1, 2, 3] split-at(1.0) //= [[1], [2, 3]]
+  rotate-integral-float: [1, 2, 3] rotate(1.0) //= [2, 3, 1]
+  nth-integral-float: [1, 2, 3] nth(2.0) //= 3
+  update-nth-integral-float: [1, 2, 3] update-nth(1.0, inc) //= [1, 3, 3]
+  window-integral-float: [1, 2, 3] window(2.0, 1.0) //= [[1, 2], [2, 3]]
+  window-all-integral-float: [1, 2, 3] window-all(2.0, 2.0) //= [[1, 2], [3]]
+  take-computed-count: [1, 2, 3] take(3 - 1) //= [1, 2]
+  range-fractional-bound: range(0, 2.5) //= [0, 1, 2]
+  rotate-zero: [1, 2, 3] rotate(0) //= [1, 2, 3]
+  update-nth-last: [1, 2, 3] update-nth(2, inc) //= [1, 2, 4]
+  split-at-zero: [1, 2, 3] split-at(0) //= [[], [1, 2, 3]]
 }
 
 RESULT: tests values all-true? then(:PASS, :FAIL)
