@@ -5108,3 +5108,31 @@ pub fn test_error_275_non_integer_set_sample() {
 pub fn test_error_275_non_integer_vec_sample() {
     run_error_test(&error_opts("275_non_integer_vec_sample.eu"));
 }
+
+/// An intrinsic reports its own call site, not the code that computed its
+/// argument (eu-oaz72.63).
+#[test]
+pub fn test_error_278_intrinsic_call_site_set_add() {
+    run_error_test(&error_opts("278_intrinsic_call_site_set_add.eu"));
+}
+
+/// An intrinsic reports its own call site, not the code that computed its
+/// argument (eu-oaz72.63).
+#[test]
+pub fn test_error_278_intrinsic_call_site_set_remove() {
+    run_error_test(&error_opts("278_intrinsic_call_site_set_remove.eu"));
+}
+
+/// An intrinsic reports its own call site, not the code that computed its
+/// argument (eu-oaz72.63).
+#[test]
+pub fn test_error_278_intrinsic_call_site_set_of() {
+    run_error_test(&error_opts("278_intrinsic_call_site_set_of.eu"));
+}
+
+/// An intrinsic reports its own call site, not the code that computed its
+/// argument (eu-oaz72.63).
+#[test]
+pub fn test_error_278_intrinsic_call_site_vec_of() {
+    run_error_test(&error_opts("278_intrinsic_call_site_vec_of.eu"));
+}
