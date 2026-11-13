@@ -1070,8 +1070,23 @@ fn bc_lookup_in_block(
                 return None;
             };
             let (_, poffs) = decode_cons(prog, decoded, pc)?;
-            let val_ref = arg_ref(prog.code.as_slice(), *poffs.get(1)?).ok()?;
-            return resolve_ref(view, &state.constants, pc.env(), state.globals, val_ref).ok();
+            let val_off = *poffs.get(1)?;
+            let val_ref = arg_ref(prog.code.as_slice(), val_off).ok()?;
+            let value =
+                resolve_ref(view, &state.constants, pc.env(), state.globals, val_ref).ok()?;
+            // An unevaluated update thunk is not returned as a copy: forcing
+            // the copy would update nothing, leaving the pair's slot
+            // unevaluated, so every `.key` lookup on the block would recompute
+            // the field (eu-oaz72.87). Return instead a lazy alias over the
+            // value's `OP_ATOM` node in the pair's env, as
+            // `env_from_data_args_copy` does for constructor fields, so that
+            // forcing it enters, black-holes and updates the original slot.
+            return Some(match &value {
+                BcValue::Closure(c) if c.update() => {
+                    BcValue::Closure(BcClosure::new(peek_code_ref(decoded, val_off), pc.env()))
+                }
+                _ => value,
+            });
         }
         let tail_ref = arg_ref(prog.code.as_slice(), *loffs.get(1)?).ok()?;
         current = resolve_ref(view, &state.constants, c.env(), state.globals, tail_ref).ok()?;
