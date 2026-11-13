@@ -44,9 +44,9 @@ existing intrinsic, not a new API.
 - Harness checks: integer counts and integral floats still work, and a
   computed count (`take(3 - 1)`) works, in `tests/harness/036_takes_and_drops.eu`;
   `number?` on arithmetic results in `tests/harness/126_type_predicates.eu`.
-- Ten error fixtures `tests/harness/errors/274_non_integer_*`, one per
+- Thirteen error fixtures `tests/harness/errors/275_non_integer_*`, one per
   function/parameter, each fault-injection verified: removing the
-  `__require-int` guard makes all ten FAIL; restoring it makes them PASS.
+  `__require-int` guard makes all thirteen FAIL; restoring it makes them PASS.
   The `number?` fix was fault-injection verified against `126`.
 - Blessed diagnostics snapshots for the ten fixtures (new fixtures only; no
   existing diagnostic changed). `DIVERGENCE.md` updated.

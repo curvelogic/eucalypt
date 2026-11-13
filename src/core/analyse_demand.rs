@@ -65,8 +65,9 @@ fn peel_meta(expr: &RcExpr) -> &RcExpr {
 ///
 /// The names are whole-program, but they cover only bindings in the
 /// analysed tree: the STG compiler takes a free callee's signature (a
-/// blob-mode prelude global) from the prelude table alone, so a block key
-/// or parameter named `map` does not hide the prelude `map`'s signature.
+/// blob-mode prelude global) from the slot it resolves to (eu-oaz72.77), so
+/// a block key or parameter named `map` does not hide the prelude `map`'s
+/// signature.
 fn ambiguous_names(expr: &RcExpr) -> HashSet<String> {
     #[derive(Default)]
     struct Uses {
@@ -207,173 +208,58 @@ pub fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
     sigs
 }
 
-/// Build demand signatures for common prelude functions.
+/// Derive the demand signature of each top-level binding of a prelude,
+/// for the pre-compiled blob (eu-oaz72.77).
 ///
-/// In blob-prelude mode, the prelude is pre-compiled and its functions
-/// appear as globals (`Ref::G`) with no demand analysis.  This table
-/// gives their strictness so that the STG compiler can apply strict-arg
-/// optimisation (Seq wrapping) to complex arguments at call sites, both
-/// in user code and in the prelude itself, which `xtask prelude-compile`
-/// compiles against this table.
+/// Runs the same demand analysis source mode runs over the prelude (after
+/// the SCC splitting source mode also applies first) and reads, for each
+/// binding of the top-level `Let`/`Meta` chain — the chain `xtask
+/// prelude-compile` peels into global slots — the signature of the lambda
+/// it binds. The signature is the one recorded for that binder's own
+/// lambda, not the name-merged [`NamedSignatureTable`] entry, so a local
+/// helper of the same name elsewhere in the prelude cannot weaken or
+/// strengthen it.
 ///
-/// An argument is strict (`sm()`) only if a saturated call, evaluated to
-/// weak head normal form, always evaluates that argument too. Anything
-/// weaker is `lm()`: an argument returned inside a constructor (`cons`,
-/// a list literal), not reached when a list is empty, or behind a
-/// short-circuit or a branch. Claiming too much forces a value a lazy
-/// program never needs: `repeat(panic("x")) nil?` panicked, as did
-/// `head-or(panic("x"), [1])` (eu-oaz72.72). The exceptions, `foldl` and
-/// `iota`, are marked where they are made. Each signature has one entry
-/// per parameter of the binding as written, so a binding such as
-/// `mapcat(f)` that returns a function has one entry, not one per
-/// argument a call passes.
+/// The result maps each top-level name to `Some(signature)` for a lambda
+/// binding, or `None` for a binding that is not a lambda (an alias, a
+/// partial application, a block). A name bound more than once along the
+/// chain maps to `None`: a slot keyed by that name could hold either.
 ///
-/// We use `sm()` (Strict + Multi) for strict arguments because we do not
-/// know the exact cardinality within the prelude function body.  Multi
-/// ensures the binding becomes a Thunk (with Update/memoisation) and
-/// Strict triggers Seq wrapping for eager evaluation.
-pub fn build_prelude_signatures() -> HashMap<String, DemandSignature> {
-    let mut sigs = HashMap::new();
-    let sm = Demand::strict_multi;
-    let lm = Demand::lazy_multi;
+/// Every signature is sound by construction, being the analysis' own
+/// result: the hand-written table this replaces claimed more strictness
+/// than the prelude has for 31 of its 64 entries
+/// (`docs/superpowers/reports/2026-11-13-prelude-demand-signatures-design.md`).
+pub fn derive_top_level_signatures(expr: &RcExpr) -> HashMap<String, Option<DemandSignature>> {
+    let split = crate::core::dependency::split_letrecs(expr);
+    let (annotated, signatures, _) = analyse_demands(&split);
 
-    // List operations. A function argument is lazy wherever the list may
-    // be empty; a list returned as a tail (append's second) is lazy.
-    // map(f, l): if(l nil?, l, cons(l head f, ...))
-    sigs.insert("map".into(), vec![lm(), sm()]);
-    // map2(f, l1, l2): `nil?(l1) || nil?(l2)` short-circuits
-    sigs.insert("map2".into(), vec![lm(), sm(), lm()]);
-    // filter(p?, l): foldr(..., [], l)
-    sigs.insert("filter".into(), vec![lm(), sm()]);
-    // foldr(op, i, l): `i` is returned only when `l` is empty, and `op`
-    // need not force it.
-    sigs.insert("foldr".into(), vec![lm(), lm(), sm()]);
-    // foldl(op, i, l): a deliberate exception. `i` is lazy by the same
-    // reasoning, but the prelude's own `foldl(op, op(i, l head), l tail)`
-    // takes this signature, so a strict `i` evaluates the accumulator at
-    // each step, as `foldl'` would; a lazy one changes where the steps run
-    // and so the error traces a fold gives.
-    sigs.insert("foldl".into(), vec![lm(), sm(), sm()]);
-    // take(n, l): `(n <= 0) ∨ (l nil?)` short-circuits
-    sigs.insert("take".into(), vec![sm(), lm()]);
-    // drop(n, l): returns `l` or recurses on `l tail`
-    sigs.insert("drop".into(), vec![sm(), sm()]);
-    // nth(n, l): `n number?`, then `aux` tests `l nil?`
-    sigs.insert("nth".into(), vec![sm(), sm()]);
-    // reverse(l): foldl over l
-    sigs.insert("reverse".into(), vec![sm()]);
-    // append(l1, l2): foldr(cons, l2, l1)
-    sigs.insert("append".into(), vec![sm(), lm()]);
-    // zip-with = map2; zip = zip-with(pair)
-    sigs.insert("zip-with".into(), vec![lm(), sm(), lm()]);
-    sigs.insert("zip".into(), vec![sm(), lm()]);
-    // count(l), sum(l), product(l): foldl over l
-    sigs.insert("count".into(), vec![sm()]);
-    sigs.insert("sum".into(), vec![sm()]);
-    sigs.insert("product".into(), vec![sm()]);
-    // cons(h, t): lazy in both — wraps __CONS which does not force args.
-    // Strictness here would cause infinite forcing for recursive list
-    // construction (iterate, map, scanl, etc.) over infinite lists.
-    sigs.insert("cons".into(), vec![lm(), lm()]);
-    // snoc(x, l): l ++ [x]
-    sigs.insert("snoc".into(), vec![lm(), sm()]);
-    // mapcat(f): concat ∘ map(f), a function value that forces nothing
-    sigs.insert("mapcat".into(), vec![lm()]);
-    // cross(f, xs, ys): xs mapcat(...), which traverses xs only
-    sigs.insert("cross".into(), vec![lm(), sm(), lm()]);
-    // interleave(a, b): returns `b` only when `a` is empty
-    sigs.insert("interleave".into(), vec![sm(), lm()]);
-
-    // take-while / drop-while: list strict, predicate not used on []
-    sigs.insert("take-while".into(), vec![lm(), sm()]);
-    sigs.insert("drop-while".into(), vec![lm(), sm()]);
-
-    // Sorting. sort-by(key-fn, cmp, xs): xs qsort(lt); sort-by-num and
-    // sort-by-str take only the key function and return a function.
-    sigs.insert("sort-by".into(), vec![lm(), lm(), sm()]);
-    sigs.insert("sort-by-num".into(), vec![lm()]);
-    sigs.insert("sort-by-str".into(), vec![lm()]);
-    sigs.insert("sort-nums".into(), vec![sm()]);
-    sigs.insert("sort-strs".into(), vec![sm()]);
-
-    // Grouping. discriminate builds its result pair as a list literal;
-    // group-by's result passes through `block`, which is lazy in its list.
-    sigs.insert("group-by".into(), vec![lm(), lm()]);
-    sigs.insert("discriminate".into(), vec![lm(), lm()]);
-    sigs.insert("group-consecutive-by".into(), vec![lm(), sm()]);
-
-    // Numeric — strict in all args
-    sigs.insert("abs".into(), vec![sm()]);
-    sigs.insert("negate".into(), vec![sm()]);
-    sigs.insert("max".into(), vec![sm(), sm()]);
-    sigs.insert("min".into(), vec![sm(), sm()]);
-    sigs.insert("max-of".into(), vec![sm()]);
-    sigs.insert("min-of".into(), vec![sm()]);
-    sigs.insert("pow".into(), vec![sm(), sm()]);
-    sigs.insert("div".into(), vec![sm(), sm()]);
-    sigs.insert("mod".into(), vec![sm(), sm()]);
-    sigs.insert("quot".into(), vec![sm(), sm()]);
-    sigs.insert("rem".into(), vec![sm(), sm()]);
-
-    // Combinators — strict in the function applied, lazy in data args.
-    // compose(f, g, x): f(g(x)); flip(f, x, y): f(y, x)
-    sigs.insert("compose".into(), vec![sm(), lm(), lm()]);
-    sigs.insert("flip".into(), vec![sm(), lm(), lm()]);
-    sigs.insert("identity".into(), vec![sm()]);
-    // apply(f, xs): foldl(_0(_1), f, xs) returns or applies `f`
-    sigs.insert("apply".into(), vec![sm(), sm()]);
-
-    // Conditionals. then(t, f, c): if(c, t, f);
-    // when(p?, f, x): if(x p?, x f, x), where `p?` need not force `x`
-    sigs.insert("then".into(), vec![lm(), lm(), sm()]);
-    sigs.insert("when".into(), vec![sm(), lm(), lm()]);
-
-    // Lookup functions. has(s, b) reaches `b` only through
-    // `map-values`, which rebuilds it with `block`; the intrinsic
-    // catalogue does not mark `block` strict, so `b` is not claimed.
-    sigs.insert("has".into(), vec![sm(), lm()]);
-    sigs.insert("lookup".into(), vec![sm(), sm()]);
-    sigs.insert("lookup-in".into(), vec![sm(), sm()]);
-    sigs.insert("lookup-or".into(), vec![sm(), lm(), sm()]);
-
-    // Deep operations. deep-find's key is used only at blocks, so a list
-    // holding none never needs it; deep-transform(rule, data) applies
-    // `rule`, which need not force `data`; deep-query splits its pattern
-    // and walks from `b`.
-    sigs.insert("deep-find".into(), vec![lm(), sm()]);
-    sigs.insert("deep-transform".into(), vec![sm(), lm()]);
-    sigs.insert("deep-query".into(), vec![sm(), sm()]);
-
-    // head-or(d, xs) / tail-or(d, xs): the default only for []
-    sigs.insert("head-or".into(), vec![lm(), sm()]);
-    sigs.insert("tail-or".into(), vec![lm(), sm()]);
-
-    // Rendering
-    sigs.insert("render".into(), vec![sm()]);
-    sigs.insert("render-as".into(), vec![sm(), sm()]);
-    sigs.insert("parse-as".into(), vec![sm(), sm()]);
-
-    // Infinite lists: each wraps its arguments in `cons`.
-    // iterate(f, i): cons(i, iterate(f, f(i)))
-    sigs.insert("iterate".into(), vec![lm(), lm()]);
-    // iota(n): cons(n, iota(n + 1)). A deliberate exception: `n` is
-    // lazy, but the prelude's own recursive call takes this signature,
-    // so a strict `n` evaluates `n + 1` as each cell is reached. Lazy, a
-    // walk down the list builds a chain of additions as deep as the walk,
-    // and forcing an element far down it needs a stack as deep.
-    // Only a program that uses the spine of `iota` on a non-number sees
-    // the difference.
-    sigs.insert("iota".into(), vec![sm()]);
-    // repeat(i): __CONS(i, repeat(i))
-    sigs.insert("repeat".into(), vec![lm()]);
-    // range(b, e): ints-from(b) take(e - b), and take is strict in its count
-    sigs.insert("range".into(), vec![sm(), sm()]);
-
-    // over-sliding-pairs(f, l): l window(2, 1) map(...); window's first
-    // chunk takes from l
-    sigs.insert("over-sliding-pairs".into(), vec![lm(), sm()]);
-
-    sigs
+    let mut result: HashMap<String, Option<DemandSignature>> = HashMap::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut current = annotated;
+    loop {
+        let next = match &*current.inner {
+            Expr::Let(_, scope, _) => {
+                for binding in &scope.pattern {
+                    let sig = match &*peel_meta(&binding.expr).inner {
+                        Expr::Lam(_, _, lam) => signatures
+                            .get(&(Rc::as_ptr(&lam.body.inner) as usize))
+                            .cloned(),
+                        _ => None,
+                    };
+                    if seen.insert(binding.name.clone()) {
+                        result.insert(binding.name.clone(), sig);
+                    } else {
+                        result.insert(binding.name.clone(), None);
+                    }
+                }
+                scope.body.clone()
+            }
+            Expr::Meta(_, inner, _) => inner.clone(),
+            _ => break,
+        };
+        current = next;
+    }
+    result
 }
 
 /// Return the indices of strict arguments for the named intrinsic,
@@ -570,7 +456,7 @@ impl DemandAnalyser {
             .into_iter()
             .filter_map(|(name, sig)| sig.map(|sig| (name, sig)))
             .collect();
-        // The compiler finds a bound callee's signature by its name, so a
+        // The compiler finds a call's signature by the callee's name, so a
         // name that does not refer to let-bound lambdas of one arity alone
         // gets an empty signature: no argument is strict.
         for name in ambiguous_names(expr) {
@@ -1011,13 +897,31 @@ impl DemandAnalyser {
                 _ => None,
             })
             .collect();
+        // A binding that is a bare intrinsic (`if: __IF`) is an alias: a
+        // call through it is a call of the intrinsic, and takes the
+        // intrinsic's signature. Without this, every function written
+        // through such an alias was analysed as lazy in all its arguments
+        // wherever the alias is still a binding, as in the prelude analysed
+        // at blob build (eu-oaz72.77).
+        let aliases: Vec<Option<DemandSignature>> = scope
+            .pattern
+            .iter()
+            .map(|b| match &*peel_meta(&b.expr).inner {
+                Expr::Intrinsic(_, name) => self.intrinsic_sigs.get(name).cloned(),
+                _ => None,
+            })
+            .collect();
         let seed_key = scope as *const LetScope<RcExpr> as usize;
         let frame = self.frames.len() - 1;
         self.frames[frame].sigs = match self.seeds.get(&seed_key) {
             Some(seed) => seed.clone(),
             None => arities
                 .iter()
-                .map(|a| a.map(|k| vec![Demand::strict_once(); k]))
+                .zip(&aliases)
+                .map(|(a, alias)| {
+                    a.map(|k| vec![Demand::strict_once(); k])
+                        .or_else(|| alias.clone())
+                })
                 .collect(),
         };
 
@@ -1037,9 +941,11 @@ impl DemandAnalyser {
 
             let derived: Vec<Option<DemandSignature>> = new_rhs_exprs
                 .iter()
-                .zip(&arities)
-                .map(|(rhs, arity)| {
-                    (*arity)?;
+                .zip(arities.iter().zip(&aliases))
+                .map(|(rhs, (arity, alias))| {
+                    if arity.is_none() {
+                        return alias.clone();
+                    }
                     match &*peel_meta(rhs).inner {
                         Expr::Lam(_, _, lam) => self
                             .signatures
@@ -1075,7 +981,11 @@ impl DemandAnalyser {
             self.frames[frame].sigs = if rounds == MAX_SIGNATURE_ITERATIONS {
                 arities
                     .iter()
-                    .map(|a| a.map(|k| vec![Demand::lazy_multi(); k]))
+                    .zip(&aliases)
+                    .map(|(a, alias)| {
+                        a.map(|k| vec![Demand::lazy_multi(); k])
+                            .or_else(|| alias.clone())
+                    })
                     .collect()
             } else {
                 derived
@@ -1926,6 +1836,52 @@ mod tests {
         let sig = named.get("f").expect("f signature");
         assert_eq!(sig[1].strictness, Strictness::Lazy);
         assert_eq!(sig[2].strictness, Strictness::Strict);
+    }
+
+    /// The blob's per-slot signatures (eu-oaz72.77): a top-level lambda
+    /// gets its own binder's signature, unaffected by a strict local helper
+    /// of the same name; a non-lambda gets none; a name bound twice along
+    /// the top-level chain gets none.
+    #[test]
+    fn top_level_signatures_are_per_binder() {
+        let take = free("take");
+        let n = free("n");
+        let l = free("l");
+        let k = free("k");
+        let x = free("x");
+        let inner_take = free("take");
+        // take(n, l): IF(n, [], l) — strict in n only.
+        let take_body = app(bif("IF"), vec![var(n), list(vec![]), var(l)]);
+        // other(x): { take(k): k }.(take(x)) — a local `take` strict in k.
+        let other_body = let_(
+            vec![(inner_take.clone(), lam(vec!["k".into()], var(k)))],
+            app(var(inner_take), vec![var(x)]),
+        );
+        let dup = free("dup");
+        let expr = let_(
+            vec![
+                (take.clone(), lam(vec!["n".into(), "l".into()], take_body)),
+                (free("other"), lam(vec!["x".into()], other_body)),
+                (free("alias"), var(take)),
+                (dup.clone(), lam(vec!["x".into()], num(1))),
+            ],
+            let_(
+                vec![(dup.clone(), lam(vec!["y".into()], var(free("y"))))],
+                var(dup),
+            ),
+        );
+        let sigs = derive_top_level_signatures(&expr);
+
+        let take_sig = sigs["take"].as_ref().expect("take is a lambda");
+        assert_eq!(take_sig.len(), 2);
+        assert_eq!(take_sig[0].strictness, Strictness::Strict);
+        assert_eq!(take_sig[1].strictness, Strictness::Lazy);
+        assert_eq!(
+            sigs["other"].as_ref().expect("other is a lambda")[0].strictness,
+            Strictness::Strict
+        );
+        assert_eq!(sigs["alias"], None, "an alias has no signature of its own");
+        assert_eq!(sigs["dup"], None, "a name bound twice has no signature");
     }
 
     #[test]

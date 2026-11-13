@@ -19,8 +19,8 @@
 use std::path::{Path, PathBuf};
 
 use eucalypt::eval::stg::wire_format::{
-    blob_source_hash, BLOB_PATH, BUILD_RERUN_PATHS, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH,
-    WIRE_FORMAT_MODULE_PATH,
+    blob_source_hash, BLOB_PATH, BUILD_RERUN_PATHS, DEMAND_ANALYSIS_PATHS, INTRINSIC_TABLE_PATH,
+    PRELUDE_SOURCE_PATH, WIRE_FORMAT_MODULE_PATH,
 };
 
 /// Workspace root — `CARGO_MANIFEST_DIR` for the `eucalypt` package.
@@ -146,7 +146,10 @@ fn the_build_script_reruns_on_the_inputs_it_hashes() {
         WIRE_FORMAT_MODULE_PATH,
         PRELUDE_SOURCE_PATH,
         BLOB_PATH,
-    ] {
+    ]
+    .into_iter()
+    .chain(DEMAND_ANALYSIS_PATHS.iter().copied())
+    {
         assert!(
             BUILD_RERUN_PATHS.contains(&required),
             "build.rs must declare rerun-if-changed for {required}, \
@@ -209,7 +212,11 @@ fn the_embedded_blob_matches_the_inputs_on_disk() {
 
     let prelude = std::fs::read(root().join(PRELUDE_SOURCE_PATH)).expect("prelude source");
     let table = std::fs::read(root().join(INTRINSIC_TABLE_PATH)).expect("intrinsic catalogue");
-    let expected = blob_source_hash(&prelude, &table);
+    let analysis: Vec<Vec<u8>> = DEMAND_ANALYSIS_PATHS
+        .iter()
+        .map(|p| std::fs::read(root().join(p)).expect("demand analysis source"))
+        .collect();
+    let expected = blob_source_hash(&prelude, &table, &analysis);
 
     let embedded = read_blob_source_hash(eucalypt::driver::resources::PRELUDE_BLOB_BYTES)
         .expect("embedded blob carries a source hash");
@@ -233,9 +240,55 @@ fn the_freshness_hash_covers_the_real_inputs() {
         .extend_from_slice(b"\n// Intrinsic { name: \"CONTRACT_FAIL\", .. }: an added intrinsic\n");
 
     assert_ne!(
-        blob_source_hash(&prelude, &table),
-        blob_source_hash(&prelude, &table_with_new_intrinsic),
+        blob_source_hash(&prelude, &table, &[]),
+        blob_source_hash(&prelude, &table_with_new_intrinsic, &[]),
         "editing the intrinsic catalogue must invalidate the prelude blob without \
          anyone hand-bumping BYTECODE_WIRE_FORMAT_VERSION (eu-3skeg)"
     );
+}
+
+/// The embedded blob carries the demand signatures the analysis derived for
+/// the prelude (eu-oaz72.77): strict where the definition forces an argument
+/// on every path, lazy where it may not. A blob carrying no signatures, or
+/// signatures stricter than the definitions, fails here.
+#[test]
+#[cfg(prelude_blob_ok)]
+fn the_embedded_blob_carries_derived_demand_signatures() {
+    use eucalypt::core::demand::Strictness;
+    use eucalypt::eval::stg::blob::PreludeBlob;
+
+    let blob = PreludeBlob::from_bytes(eucalypt::driver::resources::PRELUDE_BLOB_BYTES)
+        .expect("embedded blob decodes");
+    let strictness = |name: &str| -> Vec<bool> {
+        let slot = blob.name_to_slot[name];
+        blob.demand_signatures[slot]
+            .as_ref()
+            .unwrap_or_else(|| panic!("`{name}` has a demand signature"))
+            .iter()
+            .map(|d| d.strictness == Strictness::Strict)
+            .collect()
+    };
+
+    // `Some(true)`: the definition forces the argument on every path, and
+    // the analysis must find it. `Some(false)`: some path never forces it,
+    // so a strict claim would be unsound. `None`: lazy is sound but strict
+    // would be too; the analysis does not see through a pipeline step
+    // (`xs nil? then(d, …)` is a partial application), so it is not pinned.
+    let (s, l) = (Some(true), Some(false));
+    for (name, expected) in [
+        ("max", vec![s, s]),
+        ("take", vec![s, l]),
+        ("head-or", vec![l, None]),
+        ("foldl", vec![l, l, s]),
+        ("append", vec![s, l]),
+        ("nth", vec![None, l]),
+    ] {
+        let actual = strictness(name);
+        assert_eq!(actual.len(), expected.len(), "arity of `{name}`");
+        for (i, (a, e)) in actual.iter().zip(&expected).enumerate() {
+            if let Some(e) = e {
+                assert_eq!(a, e, "derived strictness of `{name}` argument {i}");
+            }
+        }
+    }
 }

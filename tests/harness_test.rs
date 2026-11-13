@@ -3714,6 +3714,13 @@ pub fn test_error_272_logical_word_inside_string() {
     run_error_test(&error_opts("272_logical_word_inside_string.eu"));
 }
 
+/// `nth` is not strict in its list: a negative index is reported before
+/// the list is forced, in blob mode as in source mode (eu-oaz72.77).
+#[test]
+pub fn test_error_274_nth_negative_lazy_list() {
+    run_error_test(&error_opts("274_nth_negative_lazy_list.eu"));
+}
+
 #[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
@@ -4917,78 +4924,78 @@ pub fn test_error_273_divides_zero_divisor() {
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_take() {
-    run_error_test(&error_opts("274_non_integer_take.eu"));
+pub fn test_error_275_non_integer_take() {
+    run_error_test(&error_opts("275_non_integer_take.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_drop() {
-    run_error_test(&error_opts("274_non_integer_drop.eu"));
+pub fn test_error_275_non_integer_drop() {
+    run_error_test(&error_opts("275_non_integer_drop.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_split_at() {
-    run_error_test(&error_opts("274_non_integer_split_at.eu"));
+pub fn test_error_275_non_integer_split_at() {
+    run_error_test(&error_opts("275_non_integer_split_at.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_rotate() {
-    run_error_test(&error_opts("274_non_integer_rotate.eu"));
+pub fn test_error_275_non_integer_rotate() {
+    run_error_test(&error_opts("275_non_integer_rotate.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_nth() {
-    run_error_test(&error_opts("274_non_integer_nth.eu"));
+pub fn test_error_275_non_integer_nth() {
+    run_error_test(&error_opts("275_non_integer_nth.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_update_nth() {
-    run_error_test(&error_opts("274_non_integer_update_nth.eu"));
+pub fn test_error_275_non_integer_update_nth() {
+    run_error_test(&error_opts("275_non_integer_update_nth.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_window_size() {
-    run_error_test(&error_opts("274_non_integer_window_size.eu"));
+pub fn test_error_275_non_integer_window_size() {
+    run_error_test(&error_opts("275_non_integer_window_size.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_window_step() {
-    run_error_test(&error_opts("274_non_integer_window_step.eu"));
+pub fn test_error_275_non_integer_window_step() {
+    run_error_test(&error_opts("275_non_integer_window_step.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_window_all_size() {
-    run_error_test(&error_opts("274_non_integer_window_all_size.eu"));
+pub fn test_error_275_non_integer_window_all_size() {
+    run_error_test(&error_opts("275_non_integer_window_all_size.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_window_all_step() {
-    run_error_test(&error_opts("274_non_integer_window_all_step.eu"));
+pub fn test_error_275_non_integer_window_all_step() {
+    run_error_test(&error_opts("275_non_integer_window_all_step.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_random_sample() {
-    run_error_test(&error_opts("274_non_integer_random_sample.eu"));
+pub fn test_error_275_non_integer_random_sample() {
+    run_error_test(&error_opts("275_non_integer_random_sample.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_set_sample() {
-    run_error_test(&error_opts("274_non_integer_set_sample.eu"));
+pub fn test_error_275_non_integer_set_sample() {
+    run_error_test(&error_opts("275_non_integer_set_sample.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
-pub fn test_error_274_non_integer_vec_sample() {
-    run_error_test(&error_opts("274_non_integer_vec_sample.eu"));
+pub fn test_error_275_non_integer_vec_sample() {
+    run_error_test(&error_opts("275_non_integer_vec_sample.eu"));
 }

@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/274_non_integer_update_nth
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/274_non_integer_update_nth.eu
+fixture: errors/275_non_integer_update_nth
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/275_non_integer_update_nth.eu
 prelude-modes: identical
 
 === both prelude modes ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/274_non_integer_update_nth.eu:2:14
+primary: user tests/harness/errors/275_non_integer_update_nth.eu:2:14
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -19,10 +19,10 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: update-nth index 0.5 must be an integer
-  ┌─ tests/harness/errors/274_non_integer_update_nth.eu:2:14
+  ┌─ tests/harness/errors/275_non_integer_update_nth.eu:2:14
   │
 2 │ x: [1, 2, 3] update-nth(0.5, inc)
   │              ^^^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
-    - x at 274_non_integer_update_nth.eu:2:14
+    - x at 275_non_integer_update_nth.eu:2:14

@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/274_non_integer_window_all_size
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/274_non_integer_window_all_size.eu
+fixture: errors/275_non_integer_window_all_step
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/275_non_integer_window_all_step.eu
 prelude-modes: divergent
 
 === blob prelude ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/274_non_integer_window_all_size.eu:2:14
+primary: user tests/harness/errors/275_non_integer_window_all_step.eu:2:14
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -18,14 +18,14 @@ trace-prelude-frames: 1
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: window-all size 1.5 must be an integer
-  ┌─ tests/harness/errors/274_non_integer_window_all_size.eu:2:14
+error: window-all step 0.5 must be an integer
+  ┌─ tests/harness/errors/275_non_integer_window_all_step.eu:2:14
   │
-2 │ x: [1, 2, 3] window-all(1.5, 1)
+2 │ x: [1, 2, 3] window-all(2, 0.5)
   │              ^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
-    - x at 274_non_integer_window_all_size.eu:2:14
+    - x at 275_non_integer_window_all_step.eu:2:14
     - in 'window-all' (prelude)
 
 === --source-prelude ===
@@ -33,7 +33,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/274_non_integer_window_all_size.eu:2:14
+primary: user tests/harness/errors/275_non_integer_window_all_step.eu:2:14
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -43,11 +43,11 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: window-all size 1.5 must be an integer
-  ┌─ tests/harness/errors/274_non_integer_window_all_size.eu:2:14
+error: window-all step 0.5 must be an integer
+  ┌─ tests/harness/errors/275_non_integer_window_all_step.eu:2:14
   │
-2 │ x: [1, 2, 3] window-all(1.5, 1)
+2 │ x: [1, 2, 3] window-all(2, 0.5)
   │              ^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
-    - x at 274_non_integer_window_all_size.eu:2:14
+    - x at 275_non_integer_window_all_step.eu:2:14
