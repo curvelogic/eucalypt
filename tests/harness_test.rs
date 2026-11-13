@@ -3173,7 +3173,10 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
 /// shared across traversals. Each target sums its list eight times; its
 /// `shared` validator checks the tick count and FAILs on master, where a
 /// constructor field copied out of a deeper frame, or a parameter reached
-/// through an alias binding, was recomputed on every traversal.
+/// through an alias binding, was recomputed on every traversal. The
+/// `namespace-lookup` target's `built-once` validator counts allocations and
+/// FAILs in blob mode on master, where `.` on an unforced prelude global
+/// rebuilt the namespace block on every read (eu-oaz72.94).
 #[test]
 pub fn test_236_oaz72_36_constructor_field_sharing() {
     run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));

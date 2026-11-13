@@ -13,7 +13,11 @@
         so a value or seed it may never need stays unevaluated. eu-oaz72.77:
         in blob mode the signature is derived by the same analysis when the
         blob is built, and found by the global the call refers to, not by
-        name."
+        name. eu-oaz72.92: a pipeline step is analysed as one call, aliases
+        and partial applications take the signature of the function they
+        denote, and in blob mode a program's calls of prelude functions
+        take their signatures; none of it may force a value a call does not
+        need."
 }
 
 ` { target: :test-annotation }
@@ -174,4 +178,23 @@ test-prelude-names: {
   helper-strict: (deep-helpers.deep-find-first(:a, 1, {}) = 2) ∧ (deep-find-first(:a, panic("argument forced"), {a: 1}) = 1)
   helper-lazy: (head-helpers.head-or(1, []) = 0) ∧ (head-or(panic("default forced"), [1]) = 1)
   RESULT: [helper-strict, helper-lazy] all-true? then(:PASS, :FAIL)
+}
+
+` "Strict in `i`, never forces `a`; recursive so it is not inlined away."
+keep(i, a): (i > 0) then(keep(i - 1, a), 0)
+
+` { doc: "Each check binds a value the call does not need: a signature that claimed it strict would force it."
+    target: :test-signature-propagation }
+test-signature-propagation: {
+  pipeline-default: { d: panic("head-or default forced")  result: [1] head-or(d) }.result = 1
+  pipeline-empty: { xs: []  result: xs head-or(5) }.result = 5
+  pipeline-branch: { x: panic("untaken branch forced")  result: (1 = 1) then(2, x) }.result = 2
+  alias: { x: panic("alias argument forced")  hold: keep  result: hold(2, x) }.result = 0
+  partial: { x: panic("partial argument forced")  k: keep(2)  result: k(x) }.result = 0
+  partial-pipeline: { x: panic("pipeline argument forced")  result: x keep(2) }.result = 0
+  prelude-partial: { l: panic("zip second list forced")  result: zip([], l) }.result = []
+  prelude-alias: { f: panic("zip-with function forced")  result: zip-with(f, [], [1]) }.result = []
+  RESULT: [pipeline-default, pipeline-empty, pipeline-branch, alias, partial,
+           partial-pipeline, prelude-partial, prelude-alias]
+          all-true? then(:PASS, :FAIL)
 }
