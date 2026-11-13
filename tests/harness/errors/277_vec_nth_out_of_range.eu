@@ -1,0 +1,2 @@
+` "An index past the end of a vec names the function, the index and the length (eu-oaz72.88)"
+r: vec.of[10, 20] vec.nth(5)

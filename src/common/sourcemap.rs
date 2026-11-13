@@ -1029,7 +1029,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
 
         // Set operations
         "SET.EMPTY" => Some("set.empty"),
-        "SET.FROM_LIST" => Some("set.from-list"),
+        "SET.OF" => Some("set.of"),
         "SET.TO_LIST" => Some("set.to-list"),
         "SET.ADD" => Some("set.add"),
         "SET.REMOVE" => Some("set.remove"),
@@ -1038,6 +1038,16 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "SET.UNION" => Some("set.union"),
         "SET.INTERSECT" => Some("set.intersect"),
         "SET.DIFF" => Some("set.diff"),
+
+        // Dict operations
+        "DICT.OF" => Some("dict.of"),
+        "DICT.TO_LIST" => Some("dict.to-list"),
+        "DICT.GET" => Some("dict.get"),
+        "DICT.GET_OR" => Some("dict.get-or"),
+        "DICT.ASSOC" => Some("dict.assoc"),
+        "DICT.DISSOC" => Some("dict.dissoc"),
+        "DICT.CONTAINS" => Some("dict.contains?"),
+        "DICT.SIZE" => Some("dict.size"),
 
         // Lookup error path
         "LOOKUP_FAIL" => Some("lookup"),
@@ -1056,7 +1066,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "AND" | "OR" | "SATURATED" => None,
         // Internal block/list helpers
         "LOOKUPOR#" | "MATCHES_KEY" | "EXTRACT_VALUE" | "EXTRACT_KEY" | "PACK_PAIR"
-        | "BLOCK_PAIR" | "seqStrList" | "NV.ALL[*]" => None,
+        | "BLOCK_PAIR" | "seqStrList" | "seqKey" | "seqDictPairs" | "NV.ALL[*]" => None,
         // Internal constants and data constructors
         "KNIL" | "K[]" | "K{}" | "DQ" | "IFIELDS" | "SUPPRESSES" | "REQUIRES" => None,
 

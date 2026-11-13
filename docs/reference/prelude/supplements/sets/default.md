@@ -1,5 +1,5 @@
 ```eu
-s: set.from-list([1, 2, 3, 2, 1])
+s: set.of([1, 2, 3, 2, 1])
 # s contains {1, 2, 3} (duplicates removed)
 ```
 

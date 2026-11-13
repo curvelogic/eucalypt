@@ -1,0 +1,54 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/250_dict_bad_pair_computed
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_bad_pair_computed.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_bad_pair_computed.eu:2:30
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid dict entry: expected a [key, value] pair, found a list of at least 3 elements
+  ┌─ tests/harness/errors/250_dict_bad_pair_computed.eu:2:30
+  │
+2 │ result: dict.of[range(0, 4)] dict.size
+  │         -------------------- ^^^^
+  │         │
+  │         called from here
+  │
+  = while evaluating (outermost first):
+    - result at 250_dict_bad_pair_computed.eu:2:30
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_bad_pair_computed.eu:2:30
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid dict entry: expected a [key, value] pair, found a list of at least 3 elements
+  ┌─ tests/harness/errors/250_dict_bad_pair_computed.eu:2:30
+  │
+2 │ result: dict.of[range(0, 4)] dict.size
+  │                              ^^^^
+  │
+  = while evaluating (outermost first):
+    - result at 250_dict_bad_pair_computed.eu:2:30

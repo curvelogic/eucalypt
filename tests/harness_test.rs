@@ -83,28 +83,37 @@ fn run_with_deadline(
         .spawn()
         .expect("failed to spawn eu");
 
-    match child.wait_timeout(deadline).expect("wait_timeout failed") {
-        Some(status) => {
-            let mut stdout = Vec::new();
-            let mut stderr = Vec::new();
-            if let Some(mut s) = child.stdout.take() {
-                let _ = s.read_to_end(&mut stdout);
+    // Drain both pipes while waiting: a child that writes more than a
+    // pipe buffer's worth would otherwise block on write and never exit,
+    // turning a chatty run into a spurious timeout.
+    fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> std::thread::JoinHandle<Vec<u8>> {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut p) = pipe {
+                let _ = p.read_to_end(&mut buf);
             }
-            if let Some(mut s) = child.stderr.take() {
-                let _ = s.read_to_end(&mut stderr);
-            }
-            Some(std::process::Output {
-                status,
-                stdout,
-                stderr,
-            })
-        }
+            buf
+        })
+    }
+    let stdout = drain(child.stdout.take());
+    let stderr = drain(child.stderr.take());
+
+    let status = match child.wait_timeout(deadline).expect("wait_timeout failed") {
+        Some(status) => Some(status),
         None => {
             let _ = child.kill();
             let _ = child.wait();
             None
         }
-    }
+    };
+    // The child has exited (or been killed), so both pipes reach EOF.
+    let stdout = stdout.join().expect("stdout reader panicked");
+    let stderr = stderr.join().expect("stderr reader panicked");
+    status.map(|status| std::process::Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 /// Run an error test — validates against `.expect` sidecar if present,
@@ -451,6 +460,11 @@ pub fn test_harness_044() {
 }
 
 #[test]
+pub fn test_harness_045() {
+    run_test(&opts("045_csv_import.eu"));
+}
+
+#[test]
 pub fn test_harness_046() {
     run_test(&opts("046_commas.eu"));
 }
@@ -700,6 +714,11 @@ pub fn test_harness_084() {
 }
 
 #[test]
+pub fn test_harness_085() {
+    run_test(&opts("085_deep_merge_dynamic.eu"));
+}
+
+#[test]
 pub fn test_harness_086() {
     run_test(&opts("086_expr_anaphora_parens.eu"));
 }
@@ -915,7 +934,28 @@ pub fn test_harness_129() {
 }
 
 #[test]
+/// 130_vec.eu includes negative sample counts and an empty-vec shuffle,
+/// which once recursed forever in `stream-advance` (eu-oaz72.95). A
+/// regression there hangs rather than fails, so a bounded run of the
+/// `test` target gates first and `run_test` then applies the verdict.
 pub fn test_harness_130() {
+    let mut cmd = std::process::Command::new(eu_binary());
+    cmd.args([
+        "--heap-limit-mib",
+        "2048",
+        "-t",
+        "test",
+        "tests/harness/130_vec.eu",
+    ]);
+    let deadline = std::time::Duration::from_secs(30);
+    run_with_deadline(cmd, deadline).unwrap_or_else(|| {
+        panic!(
+            "130_vec.eu did not complete within {}s — a negative sample count \
+             or an empty-vec shuffle no longer returns (`stream-advance` in \
+             lib/prelude.eu)",
+            deadline.as_secs()
+        )
+    });
     run_test(&opts("130_vec.eu"));
 }
 
@@ -975,6 +1015,10 @@ pub fn test_harness_137() {
     run_test(&opts("137_diamond_import.eu"));
 }
 
+/// window, window-all, partition and partition-all, including eu-oaz72.49
+/// (positive arguments unchanged once non-positive ones became errors) and
+/// eu-oaz72.56 (`window-all` linear and lazy, gated by the `lazy` and `cost`
+/// targets' tick budgets; `window` with a step past the end of the list).
 #[test]
 pub fn test_harness_138() {
     run_test(&opts("138_partition_window_all.eu"));
@@ -1985,6 +2029,12 @@ pub fn test_harness_164() {
     run_test(&opts("164_s_string.eu"));
 }
 
+/// Demand annotation. The `strict-accumulators` target (eu-oaz72.27) runs
+/// self-recursive and mutually recursive accumulator loops: its
+/// `constant-stack` validator FAILs on master, where loop A
+/// (`(n = 0) then(a, loop(a + 1, n - 1))`) grew the stack two frames per
+/// step. `test-laziness` checks that accumulators not needed on every path,
+/// values captured by a returned closure and `foldl`'s accumulator stay lazy.
 #[test]
 pub fn test_harness_165() {
     run_test(&opts("165_demand_annotation.eu"));
@@ -3082,6 +3132,14 @@ pub fn test_234_oaz72_5_native_storage_gc() {
     run_test(&opts("234_oaz72_5_native_storage_gc.eu"));
 }
 
+/// eu-oaz72.55 — large-object churn computes correctly and a large object
+/// live across the churn survives; `tests/large_object_churn_test.rs`
+/// gates that the dead ones are freed.
+#[test]
+pub fn test_238_oaz72_55_large_object_churn() {
+    run_test(&opts("238_oaz72_55_large_object_churn.eu"));
+}
+
 /// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
 /// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
 #[test]
@@ -3103,24 +3161,93 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
 /// shared across traversals. Each target sums its list eight times; its
 /// `shared` validator checks the tick count and FAILs on master, where a
 /// constructor field copied out of a deeper frame, or a parameter reached
-/// through an alias binding, was recomputed on every traversal.
+/// through an alias binding, was recomputed on every traversal. The
+/// `namespace-lookup` target's `built-once` validator counts allocations and
+/// FAILs in blob mode on master, where `.` on an unforced prelude global
+/// rebuilt the namespace block on every read (eu-oaz72.94).
 #[test]
 pub fn test_236_oaz72_36_constructor_field_sharing() {
     run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
 }
 
+/// Dicts (eu-oaz72.21). Every target must pass; in addition a lazy dict
+/// value lives in a memoising cell, so three reads of it — through `get`,
+/// `get-or` and `to-list`, from several dict versions sharing the cell — must
+/// cost about one fold, not three, and a dict threaded through a loop must
+/// not retain its earlier versions.
+#[test]
+pub fn test_250_dict() {
+    let file = "250_dict.eu";
+    let fold = ticks_with_demand_analysis(file, "fold");
+    for target in ["of-shared", "assoc-shared", "to-list-shared"] {
+        let shared = ticks_with_demand_analysis(file, target);
+        assert!(
+            shared * 2 < fold * 3,
+            "target {target}: three reads cost {shared} ticks against {fold} for one \
+             fold: the dict value is recomputed on each read (eu-oaz72.21)"
+        );
+    }
+    // A non-updatable thunk value: only the dict's value cell memoises it.
+    let once = ticks_with_demand_analysis(file, "merged-once");
+    let shared = ticks_with_demand_analysis(file, "merged-shared");
+    assert!(
+        shared * 10 < once * 12,
+        "three dict reads of a non-updatable thunk cost {shared} ticks against {once} \
+         for one read: the value cell does not memoise it (eu-oaz72.21)"
+    );
+    // Threading a dict through a loop must not retain earlier versions.
+    let peak = stat(file, "assoc-chain", &[], "Peak Blocks");
+    assert!(
+        peak < 2500,
+        "assoc-chain peaked at {peak} heap blocks: earlier dict versions are being \
+         retained by stored values (eu-oaz72.21)"
+    );
+    // The same for evaluated list values: `memo_cell` rebuilds them over fresh
+    // frames, so they do not pin the frame holding the previous version
+    // (eu-oaz72.70). Unfixed, the run outgrows the heap limit.
+    let peak = stat(
+        file,
+        "assoc-chain-lists",
+        &["--heap-limit-mib", "64"],
+        "Peak Blocks",
+    );
+    assert!(
+        peak < 2500,
+        "assoc-chain-lists peaked at {peak} heap blocks: earlier dict versions are \
+         being retained by stored list values (eu-oaz72.70)"
+    );
+    run_test(&opts(file));
+}
+
+#[test]
+pub fn test_241_oaz72_32_set_vec_of() {
+    run_test(&opts("241_oaz72_32_set_vec_of.eu"));
+}
+
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
+    ticks(file, target, &["--suppress-demand-analysis"])
+}
+
+/// Tick count for one target of a harness file, run with demand analysis.
+fn ticks_with_demand_analysis(file: &str, target: &str) -> u64 {
+    ticks(file, target, &[])
+}
+
+fn ticks(file: &str, target: &str, flags: &[&str]) -> u64 {
+    stat(file, target, flags, "Ticks")
+}
+
+/// One numeric `-S` statistic (e.g. `Ticks`, `Peak Blocks`) for one target
+/// of a harness file.
+fn stat(file: &str, target: &str, flags: &[&str], name: &str) -> u64 {
+    let path = format!("tests/harness/{file}");
+    let mut args = vec!["run"];
+    args.extend_from_slice(flags);
+    args.extend_from_slice(&["-S", "-t", target, &path]);
     let output = std::process::Command::new(eu_binary())
-        .args([
-            "run",
-            "--suppress-demand-analysis",
-            "-S",
-            "-t",
-            target,
-            &format!("tests/harness/{file}"),
-        ])
+        .args(&args)
         .output()
         .expect("eu runs");
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -3131,10 +3258,10 @@ fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
     stderr
         .lines()
         .find_map(|l| {
-            let (name, value) = l.split_once(':')?;
-            (name.trim() == "Ticks").then(|| value.trim().replace(',', "").parse().ok())?
+            let (key, value) = l.split_once(':')?;
+            (key.trim() == name).then(|| value.trim().replace(',', "").parse().ok())?
         })
-        .unwrap_or_else(|| panic!("no tick count in -S output:\n{stderr}"))
+        .unwrap_or_else(|| panic!("no {name} in -S output:\n{stderr}"))
 }
 
 /// eu-oaz72.48 — a list element referring to a let-bound thunk outside the
@@ -3169,6 +3296,79 @@ pub fn test_233_oaz72_43_negative_counts() {
     run_test(&opts("233_oaz72_43_negative_counts.eu"));
 }
 
+/// eu-oaz72.47: the pre-compiled prelude resolves intrinsic aliases in each
+/// binding body, so `foldl` and the loops built on it branch on an inlined
+/// case rather than calling the global `if`. The per-element tick budgets
+/// FAIL against a blob compiled without it (blob mode only; source mode
+/// inlined these already).
+#[test]
+pub fn test_235_oaz72_47_prelude_loops_inline_if() {
+    run_test(&opts("235_oaz72_47_prelude_loops_inline_if.eu"));
+}
+
+/// Reformat `source` as `eu fmt --reformat` does and check the result
+/// parses and is a fixed point. Returns the reformatted text.
+fn reformat_round_trip(label: &str, source: &str) -> String {
+    use eucalypt::syntax::export::format::{format_source, FormatterConfig};
+    use eucalypt::syntax::rowan::parse_unit;
+
+    let config = FormatterConfig::new(80, 2, true);
+    let once =
+        format_source(source, &config).unwrap_or_else(|e| panic!("{label}: reformat failed: {e}"));
+    let errors = parse_unit(&once).errors().clone();
+    assert!(
+        errors.is_empty(),
+        "{label}: reformatted output does not parse: {errors:?}\n{once}"
+    );
+    let twice = format_source(&once, &config)
+        .unwrap_or_else(|e| panic!("{label}: second reformat failed: {e}"));
+    assert_eq!(once, twice, "{label}: reformat is not idempotent");
+    once
+}
+
+#[test]
+/// eu-oaz72.6: reformatting a file that opens with a unit docstring keeps it
+/// unit metadata (no backtick), and keeps block and declaration metadata.
+/// The file passes, its reformat parses and is a fixed point, and the
+/// reformatted copy passes too. LSP formatting shares this path; see
+/// `src/driver/lsp/formatting.rs` for its test on the same file.
+pub fn test_235_oaz72_6_fmt_leading_docstring() {
+    let name = "235_oaz72_6_fmt_leading_docstring.eu";
+    run_test(&opts(name));
+
+    let source = std::fs::read_to_string(format!("tests/harness/{name}")).unwrap();
+    let formatted = reformat_round_trip(name, &source);
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join(name);
+    std::fs::write(&path, formatted).unwrap();
+    let reformatted_opts = EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str(path.to_str().unwrap()).unwrap()])
+        .build();
+    run_test(&reformatted_opts);
+}
+
+#[test]
+/// eu-oaz72.6: every shipped library and AoC 2025 example reformats to
+/// source that parses and reformats to itself.
+pub fn test_235_oaz72_6_reformat_corpus_round_trip() {
+    let mut files: Vec<PathBuf> = ["lib", "examples/aoc25"]
+        .iter()
+        .flat_map(|dir| std::fs::read_dir(dir).unwrap())
+        .map(|entry| entry.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "eu"))
+        .collect();
+    files.sort();
+    assert!(
+        files.len() >= 20,
+        "expected the lib and aoc25 corpus, got {files:?}"
+    );
+    for file in files {
+        let source = std::fs::read_to_string(&file).unwrap();
+        reformat_round_trip(&file.display().to_string(), &source);
+    }
+}
+
 /// eu-oaz72.4: collection runs on allocation volume, not only at the heap
 /// limit. The fixture allocates far past the 32 MiB minimum trigger with
 /// little live data and checks that data live across the collections
@@ -3178,11 +3378,49 @@ pub fn test_234_oaz72_4_gc_volume_trigger() {
     run_test(&opts("234_oaz72_4_gc_volume_trigger.eu"));
 }
 
+/// eu-oaz72.40: demand analysis treated block field values and list
+/// elements as strict, forcing a binding used only by an unselected
+/// field. Each case is in RESULT.
 #[test]
-/// eu-oaz72.49: window and window-all with positive arguments are unchanged
-/// once a non-positive step (and window size) became errors.
-pub fn test_235_oaz72_49_window_step() {
-    run_test(&opts("235_oaz72_49_window_step.eu"));
+pub fn test_238_oaz72_40_block_body_demand() {
+    run_test(&opts("238_oaz72_40_block_body_demand.eu"));
+}
+
+/// eu-oaz72.40: a binding referred to once inside a block field or list
+/// element was marked AtMostOnce, so it skipped its update frame and each
+/// read through the structure recomputed it. With demand analysis on, three
+/// reads must cost about one fold, not three.
+#[test]
+pub fn test_239_oaz72_40_constructor_sharing() {
+    let file = "239_oaz72_40_constructor_sharing.eu";
+    let fold = ticks_with_demand_analysis(file, "fold");
+    for target in ["list-body", "list-field"] {
+        let shared = ticks_with_demand_analysis(file, target);
+        assert!(
+            shared * 2 < fold * 3,
+            "target {target}: three reads cost {shared} ticks against {fold} for one \
+             fold: the binding is recomputed on each read (eu-oaz72.40)"
+        );
+    }
+    run_test(&opts(file));
+}
+
+/// eu-oaz72.41 — a binding captured by a lambda was left AtMostOnce, so its
+/// update was elided and every call of the lambda recomputed it. With
+/// demand analysis on, six calls must cost about one fold.
+#[test]
+pub fn test_240_oaz72_41_lambda_capture_sharing() {
+    let file = "240_oaz72_41_lambda_capture_sharing.eu";
+    let fold = ticks_with_demand_analysis(file, "fold");
+    for target in ["let-bound", "returned", "partial-app"] {
+        let shared = ticks_with_demand_analysis(file, target);
+        assert!(
+            shared * 2 < fold * 3,
+            "target {target}: six calls cost {shared} ticks against {fold} for one \
+             fold: the captured binding is recomputed on each call (eu-oaz72.41)"
+        );
+    }
+    run_test(&opts(file));
 }
 
 #[test]
@@ -3362,6 +3600,74 @@ pub fn test_error_235_oaz72_49_window_step_zero() {
 }
 
 #[test]
+/// eu-oaz72.21: `dict.get` of an absent key is an error naming the key.
+pub fn test_error_250_dict_get_missing() {
+    run_error_test(&error_opts("250_dict_get_missing.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: a block cannot be a dict key.
+pub fn test_error_250_dict_bad_key() {
+    run_error_test(&error_opts("250_dict_bad_key.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: list keys nested more than 32 deep are an error, not unbounded recursion.
+pub fn test_error_250_dict_key_depth() {
+    run_error_test(&error_opts("250_dict_key_depth.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: a `dict.of` element must be a two-element `[key, value]` list.
+pub fn test_error_250_dict_bad_pair() {
+    run_error_test(&error_opts("250_dict_bad_pair.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: a computed bad `dict.of` element is described evaluated, not as an alias.
+pub fn test_error_250_dict_bad_pair_computed() {
+    run_error_test(&error_opts("250_dict_bad_pair_computed.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: a dict reaching output is a clear error until dict rendering lands.
+pub fn test_error_250_dict_render() {
+    run_error_test(&error_opts("250_dict_render.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: a dict value that depends on itself is reported as a cycle.
+pub fn test_error_250_dict_value_cycle() {
+    run_error_test(&error_opts("250_dict_value_cycle.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: dict operations reject a value that is not a dict.
+pub fn test_error_250_dict_not_a_dict() {
+    run_error_test(&error_opts("250_dict_not_a_dict.eu"));
+}
+
+#[test]
+/// eu-oaz72.32: a non-primitive element in set.of / set.from-list raises the
+/// typed "expected a primitive value" error with help, as set.add does.
+pub fn test_error_241_oaz72_32_set_of_non_primitive() {
+    run_error_test(&error_opts("241_oaz72_32_set_of_non_primitive.eu"));
+}
+
+#[test]
+/// eu-oaz72.32: a datetime element in set.of raises set.add's type mismatch,
+/// not "empty boxed value" from its unforced inner value.
+pub fn test_error_241_oaz72_32_set_of_datetime() {
+    run_error_test(&error_opts("241_oaz72_32_set_of_datetime.eu"));
+}
+
+#[test]
+/// eu-oaz72.32: a function element in set.from-list raises set.add's error.
+pub fn test_error_241_oaz72_32_set_of_function() {
+    run_error_test(&error_opts("241_oaz72_32_set_of_function.eu"));
+}
+
+#[test]
 /// eu-oaz72.49: a negative step to window is an error rather than a hang.
 pub fn test_error_235_oaz72_49_window_step_negative() {
     run_error_test(&error_opts("235_oaz72_49_window_step_negative.eu"));
@@ -3378,6 +3684,102 @@ pub fn test_error_235_oaz72_49_window_size_zero() {
 /// eu-oaz72.49: a zero step to window-all is an error rather than a hang.
 pub fn test_error_235_oaz72_49_window_all_step_zero() {
     run_error_test(&error_opts("235_oaz72_49_window_all_step_zero.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_261_and_or_between_booleans() {
+    run_error_test(&error_opts("261_and_or_between_booleans.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_262_catenation_before_comparison() {
+    run_error_test(&error_opts("262_catenation_before_comparison.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_263_catenation_before_sum() {
+    run_error_test(&error_opts("263_catenation_before_sum.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_264_literal_after_value() {
+    run_error_test(&error_opts("264_literal_after_value.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_266_const_operator_unresolved_name() {
+    run_error_test(&error_opts("266_const_operator_unresolved_name.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_267_str_looked_up_on_number() {
+    run_error_test(&error_opts("267_str_looked_up_on_number.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_268_arrow_lambda_in_call_argument() {
+    run_error_test(&error_opts("268_arrow_lambda_in_call_argument.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_269_lookup_on_string_literal() {
+    run_error_test(&error_opts("269_lookup_on_string_literal.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_270_lookup_on_continuation_line() {
+    run_error_test(&error_opts("270_lookup_on_continuation_line.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_271_namespace_call_beside_merge() {
+    run_error_test(&error_opts("271_namespace_call_beside_merge.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_272_logical_word_inside_string() {
+    run_error_test(&error_opts("272_logical_word_inside_string.eu"));
+}
+
+/// `nth` is not strict in its list: a negative index is reported before
+/// the list is forced, in blob mode as in source mode (eu-oaz72.77).
+#[test]
+pub fn test_error_274_nth_negative_lazy_list() {
+    run_error_test(&error_opts("274_nth_negative_lazy_list.eu"));
+}
+
+/// Array shapes are validated before ndarray sees them: an oversized,
+/// overflowing or fractional dimension is a named error, not a panic
+/// (eu-oaz72.96).
+#[test]
+pub fn test_error_276_array_shape_too_large() {
+    run_error_test(&error_opts("276_array_shape_too_large.eu"));
+}
+
+#[test]
+pub fn test_error_276_array_shape_overflow() {
+    run_error_test(&error_opts("276_array_shape_overflow.eu"));
+}
+
+#[test]
+pub fn test_error_276_array_shape_not_integer() {
+    run_error_test(&error_opts("276_array_shape_not_integer.eu"));
+}
+
+#[test]
+pub fn test_error_276_array_shape_reshape_overflow() {
+    run_error_test(&error_opts("276_array_shape_reshape_overflow.eu"));
 }
 
 #[test]
@@ -4513,4 +4915,196 @@ pub fn test_blob_core_vs_source_prelude_byte_equal_on_a_large_file() {
         blob_err, source_err,
         "stderr differs between blob-core and source-prelude eval-path checks on a large file"
     );
+}
+
+/// eu-oaz72.51: under `EU_GC_POISON` at a small heap limit, list churn
+/// must collect many times without any GC hole diagnostic. The former
+/// hole check treated every stale (dead) header in a reclaimed hole as
+/// a live object and printed hundreds of thousands of false
+/// `GC HOLE WARNING` lines; the check now verifies that each poisoned
+/// hole is untouched, so any `GC HOLE` output is a genuine defect.
+#[test]
+fn gc_poison_small_heap_churn_reports_no_hole() {
+    let mut cmd = std::process::Command::new(eu_binary());
+    cmd.env("EU_GC_POISON", "1").args([
+        "--heap-limit-mib",
+        "2",
+        "-S",
+        "tests/fixtures/gc_hole_churn.eu",
+        "-e",
+        "result",
+    ]);
+    let out = run_with_deadline(cmd, std::time::Duration::from_secs(300))
+        .expect("eu did not finish within the deadline");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "eu failed: {}",
+        stderr.chars().take(4000).collect::<String>()
+    );
+    assert!(
+        stdout.lines().any(|l| l.trim() == "18393300"),
+        "wrong result: {stdout}"
+    );
+    // Precondition: the run must actually collect, or it proves nothing.
+    let collections: usize = stderr
+        .lines()
+        .find(|l| l.trim_start().starts_with("Collections"))
+        .and_then(|l| l.split(':').nth(1))
+        .map(|n| n.trim().replace(',', ""))
+        .and_then(|n| n.parse().ok())
+        .expect("no Collections line in -S statistics");
+    assert!(
+        collections >= 100,
+        "expected many collections, got {collections}"
+    );
+    let holes = stderr.lines().filter(|l| l.contains("GC HOLE")).count();
+    assert_eq!(
+        holes,
+        0,
+        "GC hole diagnostics under EU_GC_POISON, first: {}",
+        stderr.lines().find(|l| l.contains("GC HOLE")).unwrap_or("")
+    );
+}
+
+/// A target that carries checks but is not run by the tester (not named
+/// `test-…`, no `verify`) must fail the file, so its checks cannot be
+/// silently skipped.
+#[test]
+pub fn test_tester_fails_unrun_checked_target() {
+    let exit_code = tester::test(&opts("testdata/unrun_checked_target.eu")).unwrap();
+    assert_eq!(exit_code, 1);
+}
+
+/// The divides operator `∣` inherits `%`'s zero-divisor error.
+#[test]
+pub fn test_error_273_divides_zero_divisor() {
+    run_error_test(&error_opts("273_divides_zero_divisor.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_nth_negative() {
+    run_error_test(&error_opts("277_vec_nth_negative.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_nth_non_integer() {
+    run_error_test(&error_opts("277_vec_nth_non_integer.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_nth_out_of_range() {
+    run_error_test(&error_opts("277_vec_nth_out_of_range.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_slice_negative() {
+    run_error_test(&error_opts("277_vec_slice_negative.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_slice_non_integer() {
+    run_error_test(&error_opts("277_vec_slice_non_integer.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_array_get_non_integer() {
+    run_error_test(&error_opts("277_array_get_non_integer.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_array_slice_negative() {
+    run_error_test(&error_opts("277_array_slice_negative.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_array_slice_non_integer() {
+    run_error_test(&error_opts("277_array_slice_non_integer.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_take() {
+    run_error_test(&error_opts("275_non_integer_take.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_drop() {
+    run_error_test(&error_opts("275_non_integer_drop.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_split_at() {
+    run_error_test(&error_opts("275_non_integer_split_at.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_rotate() {
+    run_error_test(&error_opts("275_non_integer_rotate.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_nth() {
+    run_error_test(&error_opts("275_non_integer_nth.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_update_nth() {
+    run_error_test(&error_opts("275_non_integer_update_nth.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_window_size() {
+    run_error_test(&error_opts("275_non_integer_window_size.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_window_step() {
+    run_error_test(&error_opts("275_non_integer_window_step.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_window_all_size() {
+    run_error_test(&error_opts("275_non_integer_window_all_size.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_window_all_step() {
+    run_error_test(&error_opts("275_non_integer_window_all_step.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_random_sample() {
+    run_error_test(&error_opts("275_non_integer_random_sample.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_set_sample() {
+    run_error_test(&error_opts("275_non_integer_set_sample.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_vec_sample() {
+    run_error_test(&error_opts("275_non_integer_vec_sample.eu"));
 }

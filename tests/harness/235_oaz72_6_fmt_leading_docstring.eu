@@ -1,0 +1,33 @@
+#!/usr/bin/env eu
+# eu-oaz72.6: `eu fmt --reformat` (and LSP formatting, which shares it)
+# wrote unit metadata with a leading backtick, so a file opening with a
+# docstring became declaration metadata on the first declaration and no
+# longer parsed. It also dropped block metadata and the metadata of
+# declarations inside single-line blocks.
+#
+# tests/harness_test.rs runs this file, reformats it, checks the result
+# parses and reformats to itself, and runs the reformatted copy too, so
+# each metadata check below must survive formatting.
+
+"Unit docstring: the construct the bug corrupted."
+
+` "A documented function."
+double(x): x * 2
+
+tagged: { :tagged a: 1 b: 2 }
+
+` { tag: :decl-meta }
+annotated: 1
+
+nested: { ` { tag: :inner } a: 1 }
+
+checks: {
+  function-works: double(2) = 4
+  block-meta-kept: (tagged meta) = :tagged
+  block-content-kept: (tagged.a + tagged.b) = 3
+  decl-meta-kept: (meta(annotated).tag) = :decl-meta
+  nested-decl-value-kept: nested.a = 1
+  nested-decl-meta-kept: (meta(nested.a).tag) = :inner
+}
+
+RESULT: checks values all-true? then(:PASS, :FAIL)

@@ -123,4 +123,40 @@ mixed-arithmetic: {
         (vals values all-true?)
 }
 
-RESULT: if(integer-arithmetic.pass ∧ floating-point-arithmetic.pass ∧ mixed-arithmetic.pass, :PASS, :FAIL)
+divisibility: {
+  trues: {
+    divides: 3 ∣ 12
+    divides-self: 7 ∣ 7
+    zero-dividend: 4 ∣ 0
+    negative-divisor: -3 ∣ 12
+    negative-dividend: 3 ∣ -12
+    not-divides: 5 ∤ 12
+    not-divides-negative: -5 ∤ 12
+  }
+
+  falses: {
+    reversed: 12 ∣ 3
+    non-multiple: 5 ∣ 12
+    not-divides-multiple: 3 ∤ 12
+    not-divides-zero-dividend: 4 ∤ 0
+  }
+
+  precedence: {
+    sum-and-product: 1 + 2 ∣ 3 * 4
+    with-and: 2 ∣ 4 ∧ 3 ∤ 4
+    with-or: 5 ∣ 4 ∨ 2 ∣ 4
+    left-assoc-with-eq: 2 ∣ 4 = true
+  }
+
+  pipelines: {
+    multiples: [1, 2, 3, 4, 5, 6, 7, 8, 9] filter(3 ∣ _) //= [3, 6, 9]
+    odds: [1, 2, 3, 4, 5] filter(2 ∤ _) //= [1, 3, 5]
+  }
+
+  pass: (trues values all-true?) ∧
+        (falses values map(not) all-true?) ∧
+        (precedence values all-true?) ∧
+        (pipelines values all-true?)
+}
+
+RESULT: (integer-arithmetic.pass ∧ floating-point-arithmetic.pass ∧ mixed-arithmetic.pass ∧ divisibility.pass) then(:PASS, :FAIL)

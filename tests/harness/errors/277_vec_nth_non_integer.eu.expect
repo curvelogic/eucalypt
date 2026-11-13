@@ -1,0 +1,2 @@
+exit: 1
+stderr: "vec.nth index 0.5 must be an integer"

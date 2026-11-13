@@ -253,6 +253,25 @@ pub trait IntrinsicMachine {
         handle: u64,
     ) -> Result<AbiClosure, ExecutionError>;
 
+    /// Wrap a value for storage in a dict (eu-oaz72.21, design note §5).
+    ///
+    /// A value already in WHNF — a native, a data constructor, or a closure
+    /// of non-zero arity — is returned unchanged, except that a data
+    /// constructor whose fields are all evaluated (natives or, recursively,
+    /// such constructors, up to a small size budget) is rebuilt over fresh
+    /// frames so it does not keep alive the frame it was built in
+    /// (eu-oaz72.70). Any other closure (a thunk,
+    /// updatable or not) is placed, with its update flag set, in slot 0 of a
+    /// fresh one-slot env frame, and a closure of the fixed `Atom(L0)` cell
+    /// template over that frame is returned. Entering the cell black-holes
+    /// the slot and pushes `Update`, so the value is computed at most once
+    /// for every dict that shares the cell. Never forces anything.
+    fn memo_cell(
+        &self,
+        view: MutatorHeapView<'_>,
+        value: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError>;
+
     /// Request an emitter capture for the given format.
     ///
     /// Sets a pending flag that `step()` reads to push a format-specific

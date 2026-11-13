@@ -243,6 +243,26 @@ pub struct PreludeBlob {
     /// degrades gracefully to encode-from-STG.
     #[serde(default)]
     pub bytecode: Option<PreludeBytecodeImage>,
+
+    /// Demand signature of each prelude binding, in slot order (parallel to
+    /// `binding_entries`), derived by the demand analysis when the blob is
+    /// built (eu-oaz72.77).
+    ///
+    /// `demand_signatures[i]` is the per-argument demand of the lambda bound
+    /// at prelude slot `i`, or `None` when that binding is not a lambda (an
+    /// alias, a partial application, a block) or its signature is unknown.
+    /// The STG compiler looks a call to a prelude global up here by the slot
+    /// the callee resolves to — never by name — and evaluates the arguments
+    /// a signature marks strict before the call. The signatures come from
+    /// the same analysis source mode runs over the prelude, so a blob never
+    /// claims more strictness than the definition has.
+    ///
+    /// Empty (every slot unknown, so every argument lazy) on a blob that
+    /// carries no signatures. Postcard is positional, so a blob from before
+    /// this field does not decode at all; the wire-format version bump (v10)
+    /// makes it stale instead.
+    #[serde(default)]
+    pub demand_signatures: Vec<Option<crate::core::analyse_demand::DemandSignature>>,
 }
 
 impl PreludeBlob {
@@ -335,7 +355,23 @@ mod tests {
             inlinable_bindings: vec![],
             desugared_unit_cores: vec![],
             bytecode: None,
+            demand_signatures: vec![],
         }
+    }
+
+    /// The per-slot demand signatures survive a round trip, unknown slots
+    /// included (eu-oaz72.77).
+    #[test]
+    fn demand_signatures_round_trip() {
+        use crate::core::demand::Demand;
+        let mut blob = minimal_blob();
+        blob.demand_signatures = vec![
+            Some(vec![Demand::strict_once(), Demand::lazy_multi()]),
+            None,
+            Some(vec![]),
+        ];
+        let decoded = PreludeBlob::from_bytes(&blob.to_bytes().unwrap()).unwrap();
+        assert_eq!(decoded.demand_signatures, blob.demand_signatures);
     }
 
     #[test]
@@ -505,6 +541,7 @@ mod tests {
         program.apply1_template = 1;
         program.apply2_template = 2;
         program.producer_tail_template = 3;
+        program.cell_template = 5;
 
         blob.bytecode = Some(PreludeBytecodeImage {
             program,
@@ -536,6 +573,7 @@ mod tests {
         assert_eq!(img.program.blackhole, 4);
         assert_eq!(img.program.pap, vec![13, 14]);
         assert_eq!(img.program.producer_tail_template, 3);
+        assert_eq!(img.program.cell_template, 5);
         assert_eq!(img.global_forms.len(), 2);
         assert_eq!(img.global_forms[1].arity, 2);
         assert_eq!(img.global_forms[1].entry, 3);
@@ -707,6 +745,10 @@ mod tests {
         assert_eq!(
             image.program.producer_tail_template, fresh.producer_tail_template,
             "producer tail"
+        );
+        assert_eq!(
+            image.program.cell_template, fresh.cell_template,
+            "dict cell"
         );
         assert_eq!(
             image.program.global_entries,

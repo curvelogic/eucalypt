@@ -1,0 +1,2 @@
+` "A non-integer count to `vec.sample` is an error (eu-oaz72.58)."
+x: vec.sample(1.5, vec.of([1, 2, 3]), random.stream(42)).value

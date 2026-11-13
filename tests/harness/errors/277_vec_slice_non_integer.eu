@@ -1,0 +1,2 @@
+` "A non-integer vec.slice bound is an error, not truncated (eu-oaz72.88)"
+r: vec.of[10, 20, 30] vec.slice(0, 2.5)

@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/272_logical_word_inside_string
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/272_logical_word_inside_string.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/272_logical_word_inside_string.eu:5:21
+help-lines: 1
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tried to call a false as a function
+  help: only functions and blocks can be called with arguments
+  ┌─ tests/harness/errors/272_logical_word_inside_string.eu:5:21
+  │
+5 │ r: cells vec.nth(i) = "S and T"
+  │                     ^
+  │
+  = note: the value called here is the result of '='
+  = while evaluating (outermost first):
+    - r at 272_logical_word_inside_string.eu:5:21

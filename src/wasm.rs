@@ -162,6 +162,22 @@ mod wasm_tests {
         }
     }
 
+    /// An array shape that fits the heap's largest object (u32::MAX bytes)
+    /// but not wasm32's `isize::MAX` is reported as too large, not a
+    /// "capacity overflow" panic when ndarray allocates it.
+    #[wasm_bindgen_test]
+    fn test_oversized_array_is_an_error_not_a_panic() {
+        let result = evaluate("x: arr.zeros[300000000]", "json");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result).expect("evaluate should return valid JSON");
+        assert_eq!(parsed["success"], false, "got: {parsed}");
+        let message = parsed["error"]["message"].as_str().unwrap_or("");
+        assert!(
+            message.contains("too many elements") && message.contains("268435455"),
+            "expected the array-too-large error; got: {parsed}"
+        );
+    }
+
     #[wasm_bindgen_test]
     fn test_formats() {
         let result = formats();

@@ -297,6 +297,7 @@ From highest to lowest binding:
 | 45 | append | right | `++`, `<<` | List append, deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -356,7 +357,8 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `foldr(f, init)` | Right fold |
 | `sort-by(f)` | Sort by key function |
 | `take(n)` | First n elements (`[]` if n <= 0) |
-| `drop(n)` | Remove first n (list unchanged if n <= 0) |
+| `drop(n)` | Remove first n (list unchanged if n <= 0; `[]` if n exceeds the length) |
+| `nth(n)` | Element at index `n` from 0 (error if out of range) |
 | `zip` | Pair elements from two lists |
 | `zip-with(f)` | Combine elements with function |
 | `concat` | Flatten nested lists one level (use `concat`, not `flatten` — does not exist) |
@@ -367,6 +369,11 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `any(p?)` | Does any element match? |
 | `all(p?)` | Do all elements match? |
 | `nub-by(f)` | Deduplicate by key function (no `unique` in prelude) |
+
+A non-integer count or index is an error in `take`, `drop`, `split-at`,
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions; an integral
+float such as `2.0` is accepted.
 
 ### Blocks
 
@@ -442,7 +449,7 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
-| `even?` / `odd?` | Do **not** exist — use `x % 2 = 0` / `x % 2 = 1` |
+| `even?` / `odd?` | Do **not** exist — use `2 ∣ x` / `2 ∤ x` (U+2223 divides, not `\|`) or `x % 2 = 0` |
 
 ### Lenses (`lens.eu`)
 
@@ -493,6 +500,25 @@ records over(each ∘ at(:score), * 2)          # scores doubled
 [3, 1, 2] over(parts-of(each), sort-nums)     # [1, 2, 3]
 ```
 
+### Dicts (`dict` namespace)
+
+Persistent dictionaries ordered by key. Keys are numbers, strings, symbols or
+lists of those (e.g. `[x, y]` coordinates); values are arbitrary and lazy,
+and each is computed at most once.
+
+| Expression | Description |
+|---|---|
+| `pairs dict.of` / `pairs dict.from-list` | Dict from `[key, value]` pairs (aliases); equal keys keep the first key and the last value |
+| `dict.empty` / `d dict.empty?` | The empty dict / has no entries? |
+| `d dict.get(k)` | Value at `k`; an error if absent |
+| `d dict.get-or(k, default)` | Value at `k`, or `default` |
+| `d dict.assoc(k, v)` / `d dict.dissoc(k)` | New dict with `k` set / removed (O(log n)) |
+| `d dict.contains?(k)` / `d dict.size` | Holds `k`? / number of entries |
+| `d dict.to-list` | `[key, value]` pairs in key order |
+
+Keys order numbers < strings < symbols < lists; `1` and `1.0` are the same
+key. A dict cannot be rendered yet: convert it with `dict.to-list` first.
+
 ### Arrays (`arr` namespace)
 
 | Function | Description |
@@ -520,6 +546,17 @@ records over(each ∘ at(:score), * 2)          # scores doubled
 
 The standard `+`, `-`, `*`, `/` operators are polymorphic and apply element-wise when
 either operand is an array. Scalar broadcasting is supported.
+
+### Sets and Vecs (`set` / `vec` namespaces)
+
+| Expression | Description |
+|---|---|
+| `xs set.of` / `xs set.from-list` | Set of primitives from a list (one pass; the names are aliases) |
+| `s set.to-list` | Sorted list of a set's elements |
+| `v ∈ s` / `v ∉ s` | Membership |
+| `∅` | The empty set |
+| `xs vec.of` / `xs vec.from-list` | Vec of primitives with O(1) indexed access (aliases) |
+| `v vec.nth(n)` / `vec.len(v)` | Element at index `n` (0-based; a negative or non-integer `n` is an error) / length |
 
 ### IO
 

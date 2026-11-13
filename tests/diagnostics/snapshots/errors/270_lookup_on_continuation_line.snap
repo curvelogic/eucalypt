@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/270_lookup_on_continuation_line
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/270_lookup_on_continuation_line.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/270_lookup_on_continuation_line.eu:2:4
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected block, found list
+  ┌─ tests/harness/errors/270_lookup_on_continuation_line.eu:2:4
+  │
+2 │ r: [1, 2]
+  │    ^^^^^^
+  │
+  = the '.' operator performs key lookup on blocks, not lists
+  = for lists, use pipeline functions: 'xs count' (length), 'xs head' (first element), 'xs tail' (rest), 'xs !! 0' (nth element, 0-indexed)
+  = while evaluating (outermost first):
+    - r at 270_lookup_on_continuation_line.eu:2:4

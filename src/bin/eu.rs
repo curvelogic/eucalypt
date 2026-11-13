@@ -55,7 +55,7 @@ fn run() -> i32 {
     // LSP mode runs the language server and exits
     if opt.lsp() {
         match lsp::run() {
-            Ok(()) => return 0,
+            Ok(code) => return code,
             Err(e) => {
                 eprintln!("LSP server error: {e}");
                 return 2;
@@ -169,7 +169,7 @@ fn run() -> i32 {
     match prepare::prepare(&opt, &mut loader, statistics.timings_mut()) {
         Err(e) if e.is_broken_pipe() => return exit_code(&opt, 0, &statistics),
         Err(e) => {
-            let diag = e.to_diagnostic(loader.source_map());
+            let diag = e.to_diagnostic_with_source(loader.source_map(), loader.files());
             loader.diagnose_to_stderr(&diag);
             return exit_code(&opt, 1, &statistics);
         }

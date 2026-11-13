@@ -1,0 +1,4 @@
+exit: 1
+stderr: "expected block, found number"
+# `str.of` is a namespace call, not a lookup on the number (eu-oaz72.28)
+stderr-absent: "operator performs key lookup"

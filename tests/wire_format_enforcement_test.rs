@@ -19,8 +19,8 @@
 use std::path::{Path, PathBuf};
 
 use eucalypt::eval::stg::wire_format::{
-    blob_source_hash, BLOB_PATH, BUILD_RERUN_PATHS, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH,
-    WIRE_FORMAT_MODULE_PATH,
+    blob_source_hash, BLOB_PATH, BUILD_RERUN_PATHS, DEMAND_ANALYSIS_PATHS, INTRINSIC_TABLE_PATH,
+    PRELUDE_SOURCE_PATH, WIRE_FORMAT_MODULE_PATH,
 };
 
 /// Workspace root — `CARGO_MANIFEST_DIR` for the `eucalypt` package.
@@ -146,7 +146,10 @@ fn the_build_script_reruns_on_the_inputs_it_hashes() {
         WIRE_FORMAT_MODULE_PATH,
         PRELUDE_SOURCE_PATH,
         BLOB_PATH,
-    ] {
+    ]
+    .into_iter()
+    .chain(DEMAND_ANALYSIS_PATHS.iter().copied())
+    {
         assert!(
             BUILD_RERUN_PATHS.contains(&required),
             "build.rs must declare rerun-if-changed for {required}, \
@@ -209,7 +212,11 @@ fn the_embedded_blob_matches_the_inputs_on_disk() {
 
     let prelude = std::fs::read(root().join(PRELUDE_SOURCE_PATH)).expect("prelude source");
     let table = std::fs::read(root().join(INTRINSIC_TABLE_PATH)).expect("intrinsic catalogue");
-    let expected = blob_source_hash(&prelude, &table);
+    let analysis: Vec<Vec<u8>> = DEMAND_ANALYSIS_PATHS
+        .iter()
+        .map(|p| std::fs::read(root().join(p)).expect("demand analysis source"))
+        .collect();
+    let expected = blob_source_hash(&prelude, &table, &analysis);
 
     let embedded = read_blob_source_hash(eucalypt::driver::resources::PRELUDE_BLOB_BYTES)
         .expect("embedded blob carries a source hash");
@@ -233,9 +240,131 @@ fn the_freshness_hash_covers_the_real_inputs() {
         .extend_from_slice(b"\n// Intrinsic { name: \"CONTRACT_FAIL\", .. }: an added intrinsic\n");
 
     assert_ne!(
-        blob_source_hash(&prelude, &table),
-        blob_source_hash(&prelude, &table_with_new_intrinsic),
+        blob_source_hash(&prelude, &table, &[]),
+        blob_source_hash(&prelude, &table_with_new_intrinsic, &[]),
         "editing the intrinsic catalogue must invalidate the prelude blob without \
          anyone hand-bumping BYTECODE_WIRE_FORMAT_VERSION (eu-3skeg)"
+    );
+}
+
+/// The embedded blob carries the demand signatures the analysis derived for
+/// the prelude (eu-oaz72.77): strict where the definition forces an argument
+/// on every path, lazy where it may not. A blob carrying no signatures, or
+/// signatures stricter than the definitions, fails here.
+#[test]
+#[cfg(prelude_blob_ok)]
+fn the_embedded_blob_carries_derived_demand_signatures() {
+    use eucalypt::core::demand::Strictness;
+    use eucalypt::eval::stg::blob::PreludeBlob;
+
+    let blob = PreludeBlob::from_bytes(eucalypt::driver::resources::PRELUDE_BLOB_BYTES)
+        .expect("embedded blob decodes");
+    let strictness = |name: &str| -> Vec<bool> {
+        let slot = blob.name_to_slot[name];
+        blob.demand_signatures[slot]
+            .as_ref()
+            .unwrap_or_else(|| panic!("`{name}` has a demand signature"))
+            .iter()
+            .map(|d| d.strictness == Strictness::Strict)
+            .collect()
+    };
+
+    // `Some(true)`: the definition forces the argument on every path, and
+    // the analysis must find it. `Some(false)`: some path never forces it,
+    // so a strict claim would be unsound. `None`: not pinned. A pipeline
+    // step (`xs nil? then(d, …)`) saturates `then`, an alias (`zip-with:
+    // map2`) and a partial application (`zip: zip-with(pair)`) take the
+    // signature of the function they denote (eu-oaz72.92).
+    let (s, l) = (Some(true), Some(false));
+    for (name, expected) in [
+        ("max", vec![s, s]),
+        ("take", vec![s, l]),
+        ("then", vec![l, l, s]),
+        ("head-or", vec![l, s]),
+        ("tail-or", vec![l, s]),
+        ("zip-with", vec![l, s, l]),
+        ("zip", vec![s, l]),
+        ("foldl", vec![l, l, s]),
+        ("append", vec![s, l]),
+        ("nth", vec![None, l]),
+    ] {
+        let actual = strictness(name);
+        assert_eq!(actual.len(), expected.len(), "arity of `{name}`");
+        for (i, (a, e)) in actual.iter().zip(&expected).enumerate() {
+            if let Some(e) = e {
+                assert_eq!(a, e, "derived strictness of `{name}` argument {i}");
+            }
+        }
+    }
+}
+
+/// Every signature the embedded blob carries is the one the analysis
+/// derives from the prelude source now, slot by slot, not just the
+/// positions pinned above (eu-oaz72.92). The front-end steps are those
+/// `cargo xtask prelude-compile` runs before step 5b; if they drift apart,
+/// this fails rather than passing silently.
+#[test]
+#[cfg(prelude_blob_ok)]
+fn every_blob_signature_matches_the_source_analysis() {
+    use eucalypt::core::analyse_demand::derive_top_level_signatures;
+    use eucalypt::driver::source::SourceLoader;
+    use eucalypt::eval::stg::blob::PreludeBlob;
+    use eucalypt::syntax::input::{Input, Locator};
+
+    let inputs = vec![
+        Input::new(
+            Locator::Fs(root().join("build-meta.yaml")),
+            Some("__build".to_string()),
+            "yaml",
+        ),
+        Input::new(
+            Locator::Pseudo("io".to_string()),
+            Some("__io".to_string()),
+            "core",
+        ),
+        Input::new(
+            Locator::Pseudo("args".to_string()),
+            Some("__args".to_string()),
+            "core",
+        ),
+        Input::new(Locator::Fs(root().join(PRELUDE_SOURCE_PATH)), None, "eu"),
+    ];
+    let mut loader = SourceLoader::new(vec![]).with_deterministic_io(true);
+    for input in &inputs {
+        loader.load(input).expect("load");
+    }
+    for input in &inputs {
+        loader.translate(input).expect("translate");
+    }
+    loader.merge_units(&inputs).expect("merge_units");
+    loader.extract_operators();
+    loader.extract_visibility();
+    loader.cook().expect("cook");
+    loader.hoist_namespaces().expect("hoist_namespaces");
+    loader.fuse_destructure().expect("fuse_destructure");
+    let derived = derive_top_level_signatures(&loader.core().expr);
+
+    let blob = PreludeBlob::from_bytes(eucalypt::driver::resources::PRELUDE_BLOB_BYTES)
+        .expect("embedded blob decodes");
+    assert_eq!(blob.demand_signatures.len(), blob.name_to_slot.len());
+    let mut mismatches = Vec::new();
+    for (name, &slot) in &blob.name_to_slot {
+        let expected = derived.get(name).cloned().flatten();
+        if blob.demand_signatures[slot] != expected {
+            mismatches.push(name.clone());
+        }
+    }
+    mismatches.sort();
+    assert!(
+        mismatches.is_empty(),
+        "blob signatures differ from the source analysis for: {mismatches:?}"
+    );
+    // The slots with no signature are the prelude's values, not functions
+    // the analysis failed to see.
+    let known = blob.demand_signatures.iter().flatten().count();
+    assert!(
+        known * 10 >= blob.demand_signatures.len() * 9,
+        "only {known} of {} slots carry a signature",
+        blob.demand_signatures.len()
     );
 }

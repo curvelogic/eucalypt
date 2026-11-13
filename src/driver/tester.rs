@@ -217,6 +217,17 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
         if !summary.starts_with("PASS") {
             exit = 1;
         }
+
+        // A target whose checks never run would pass silently: fail it.
+        for target in test.unrun_checked_targets() {
+            stdout_ok(writeln!(
+                stdout,
+                "{}...FAIL (target `{}` has checks but never runs: name it `test-…` or give it `verify`)",
+                test.title(),
+                target.name()
+            ))?;
+            exit = 1;
+        }
     }
 
     let report = tester.report(tests)?;

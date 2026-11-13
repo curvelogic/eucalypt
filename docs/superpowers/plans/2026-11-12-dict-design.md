@@ -1,6 +1,6 @@
 # dict — design note
 
-- **Status:** Draft for owner agreement (not yet agreed)
+- **Status:** Agreed 2026-11-12 (owner accepted every §11 recommendation)
 - **Date:** 2026-11-12
 - **Bead:** eu-oaz72.21 (eu-oaz72.22, priority queue, folded in)
 - **Plan:** `docs/superpowers/plans/2026-11-12-aoc-2026-preparation.md`
@@ -464,3 +464,48 @@ the new `dict.*` names.
 | 12 | `=` on dicts | reference identity, as sets today |
 | — | Exact numbers in sets change `set.to-list` for >2^53 (§6) | accept; closes eu-oaz72.10's set half |
 | — | Additions beyond the owner's list: `empty`, `empty?`, `update` default, result shapes (OPEN 4) | as §7 |
+
+## 12. Implementation notes (PR 2)
+
+Recorded as built; none changes an agreed choice.
+
+- **Value cells.** The cell template is a new fixed fixture,
+  `BytecodeProgram::cell_template` (`Atom(L0)`), beside the apply and
+  producer templates; the blob wire format moves to v9.
+  `IntrinsicMachine::memo_cell` prepares every stored value.
+- **Arguments arrive as aliases.** An intrinsic's lazy argument is an
+  `OP_ATOM` alias closure over the caller's frame. Storing it would keep
+  that frame alive, and in a loop that frame holds the previous version of
+  the dict being updated, so every version would be retained (measured:
+  5,414 peak heap blocks for 50,000 chained updates, against 1,113 with the
+  fix; measured-single). `memo_cell` therefore follows aliases: an
+  evaluated target is stored directly (a boxed scalar is rebuilt over a
+  fresh frame, since the box also closes over its binding frame); an
+  unevaluated one is stored as a cell around the original alias, so it
+  memoises in the slot it names and the cell drops the alias once evaluated.
+- **Evaluated constructors (eu-oaz72.70).** `memo_cell` rebuilds any
+  evaluated data constructor over fresh frames, field by field and
+  recursively, looking through `OP_ATOM` aliases and updatable `Atom`
+  thunks (`thunk ✳i`, a list element naming a variable) whose target is
+  evaluated. It is all or nothing: a field that is not evaluated (a thunk,
+  a function, a cell) pins its frame anyway, so the value is then stored as
+  it is, as is one of more than 64 constructors (a large evaluated value is
+  not copied on every update). A loop storing `[i, [i, :x], "s"]` now peaks
+  at 1,255 blocks over 50,000 updates (`assoc-chain-lists`), and at 1,341
+  over 1,000,000 updates storing `[i, i]` (measured-single).
+- **Remaining limit.** An unevaluated value still closes over the frame it
+  was built in, and so does an evaluated one with an unevaluated field: a
+  block literal (compiled as a thunk), `[i + 1, i]`, or a list whose
+  elements are non-updatable arithmetic thunks (`[i % 7, i]`, even after
+  the same list was deep-forced as a key, since such thunks do not
+  memoise). A loop that threads a dict and stores such values retains
+  earlier versions until those values are replaced or evaluated in place.
+  Detaching them needs flat closures (a thunk capturing only its free
+  variables), a compiler change beyond the dict.
+- **Key forcing** happens in the wrappers: `seqKey` deep-forces a key and
+  `seqDictPairs` prepares `dict.of`'s list, rebuilding each well-formed pair
+  as `BlockPair(forced key, value)`. List keys may nest at most 32 deep
+  (`BadDictKey` beyond).
+- **Rendering** is PR 4; until then a dict reaching output raises
+  `DictNotRenderable`, pointing at `dict.to-list`. Dict arguments are typed
+  `any` in prelude signatures until PR 4 adds `dict(k, v)`.

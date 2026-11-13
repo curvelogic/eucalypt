@@ -501,6 +501,10 @@ fn scan_const<'a>(
             // Push so the container scans (and evacuates) its heap storage.
             out.push(ScanPtr::from_non_null(scope, *ptr));
         }
+        Ref::V(Native::Dict(Some(ptr))) if marker.mark(*ptr) => {
+            // Push the root node so `DictNode::scan` traces the whole tree.
+            out.push(ScanPtr::from_non_null(scope, *ptr));
+        }
         Ref::V(Native::NdArray(ptr)) if marker.mark(*ptr) => {
             // Push so the container scans (and evacuates) its heap storage.
             out.push(ScanPtr::from_non_null(scope, *ptr));
@@ -523,6 +527,11 @@ fn update_const(r: &mut Ref, heap: &CollectorHeapView<'_>) {
             }
         }
         Ref::V(Native::Set(ptr)) => {
+            if let Some(new) = heap.forwarded_to(*ptr) {
+                *ptr = new;
+            }
+        }
+        Ref::V(Native::Dict(Some(ptr))) => {
             if let Some(new) = heap.forwarded_to(*ptr) {
                 *ptr = new;
             }
@@ -594,6 +603,10 @@ fn gc_poll(
         // collect on every poll or grow past the limit (eu-oaz72.4).
         if let Some((live_mib, limit_mib)) = heap.heap_limit_exceeded() {
             return Err(ExecutionError::HeapLimitExceeded(live_mib, limit_mib));
+        }
+        // Nor may the blocks held outgrow it (eu-oaz72.73).
+        if let Some((held_mib, limit_mib)) = heap.enforce_footprint_limit() {
+            return Err(ExecutionError::HeapLimitExceeded(held_mib, limit_mib));
         }
     }
     Ok(())
@@ -896,11 +909,9 @@ fn env_from_data_args_copy(
 
     // An unevaluated update thunk is bound as an alias over its atom so that
     // forcing it updates the slot it lives in, not a copy.
-    let share = |v: BcValue, j: usize| match (&v, atoms.get(j)) {
-        (BcValue::Closure(c), Some(atom)) if c.update() => {
-            BcValue::Closure(BcClosure::new(*atom, cons_env))
-        }
-        _ => v,
+    let share = |v: BcValue, j: usize| match atoms.get(j) {
+        Some(atom) => share_unevaluated(v, *atom, cons_env),
+        None => v,
     };
 
     let mut array = Array::with_capacity(&view, args.len());
@@ -1020,6 +1031,22 @@ fn pair_key_symbol(
     value_symbol(prog, decoded, state, view, key)
 }
 
+/// A constructor field's value as it may be handed out of the constructor:
+/// an unevaluated update thunk becomes a lazy alias closure over the field's
+/// `OP_ATOM` node (`atom`, a closure code ref) in the constructor's env
+/// `env`; anything else is returned as it is. Forcing a copy of the thunk
+/// would update the copy and leave the constructor's slot unevaluated, so
+/// every later read would recompute it; forcing the alias enters,
+/// black-holes and updates the original slot. Used when a constructor is
+/// taken apart (`env_from_data_args_copy`, eu-oaz72.36) and when a block
+/// field is read with `.` (`bc_lookup_in_block`, eu-oaz72.87).
+fn share_unevaluated(value: BcValue, atom: CodeRef, env: RefPtr<BcEnvFrame>) -> BcValue {
+    match &value {
+        BcValue::Closure(c) if c.update() => BcValue::Closure(BcClosure::new(atom, env)),
+        _ => value,
+    }
+}
+
 /// Literal-key lookup on a forced block (`DataConstructor::Block`). Linear
 /// scan of the entry list of `BlockPair`s (the perf index is skipped — a
 /// linear scan yields the identical result). `None` on miss / non-block.
@@ -1053,12 +1080,28 @@ fn bc_lookup_in_block(
         let head_ref = arg_ref(prog.code.as_slice(), *loffs.first()?).ok()?;
         let pair = resolve_ref(view, &state.constants, c.env(), state.globals, head_ref).ok()?;
         if pair_key_symbol(prog, decoded, state, view, &pair) == Some(target) {
-            let BcValue::Closure(pc) = &pair else {
+            let BcValue::Closure(pair_closure) = &pair else {
                 return None;
             };
-            let (_, poffs) = decode_cons(prog, decoded, pc)?;
-            let val_ref = arg_ref(prog.code.as_slice(), *poffs.get(1)?).ok()?;
-            return resolve_ref(view, &state.constants, pc.env(), state.globals, val_ref).ok();
+            let (_, poffs) = decode_cons(prog, decoded, pair_closure)?;
+            let val_off = *poffs.get(1)?;
+            let val_ref = arg_ref(prog.code.as_slice(), val_off).ok()?;
+            let value = resolve_ref(
+                view,
+                &state.constants,
+                pair_closure.env(),
+                state.globals,
+                val_ref,
+            )
+            .ok()?;
+            // Returning a copy of an unevaluated field would leave the
+            // pair's slot unevaluated, so every `.key` lookup on the block
+            // would recompute the field (eu-oaz72.87).
+            return Some(share_unevaluated(
+                value,
+                peek_code_ref(decoded, val_off),
+                pair_closure.env(),
+            ));
         }
         let tail_ref = arg_ref(prog.code.as_slice(), *loffs.get(1)?).ok()?;
         current = resolve_ref(view, &state.constants, c.env(), state.globals, tail_ref).ok()?;
@@ -2410,13 +2453,13 @@ pub fn handle_op(
             // Resolve the object (a local or global) to a closure.
             let (obj_slot, obj_value) = match obj {
                 DecodedRef::Local(i) => (
-                    Some(i as usize),
+                    (env, i as usize),
                     view.scoped(env)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
                 ),
                 DecodedRef::Global(i) => (
-                    None,
+                    (state.globals, i as usize),
                     view.scoped(state.globals)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadGlobalIndex(i as usize))?,
@@ -2436,6 +2479,13 @@ pub fn handle_op(
             };
 
             // Fast path: the object is already a WHNF block — look up now.
+            // An unevaluated field is shared by `share_unevaluated`, as on
+            // the forced path. No gating test reaches this with one
+            // (eu-oaz72.94): the compiler binds each local `.key` object to
+            // a per-use alias thunk, so a local arrives unforced and takes
+            // the slow path; a WHNF object here is in practice an
+            // already-forced prelude namespace global (blob mode), whose
+            // thunk members are cheap CAFs such as `cal.epoch`.
             let is_block = decode_cons(prog, decoded, &obj_closure)
                 .is_some_and(|(t, _)| t == DataConstructor::Block.tag());
             if is_block {
@@ -2450,17 +2500,24 @@ pub fn handle_op(
                     smid,
                     default_closure,
                 });
-                // Black-hole + Update if the object is a local thunk.
-                if let (Some(i), true) = (obj_slot, obj_closure.update()) {
-                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
-                    view.scoped(env).update(&view, i, hole)?;
+                // Black-hole + Update if the object is a thunk, in the frame
+                // it lives in: the local env, or the shared globals frame. A
+                // prelude namespace (`set`, `str`, ...) is a global arity-0
+                // thunk in blob mode; without the Update, every `set.size`
+                // that reached it unforced rebuilt the namespace block
+                // (eu-oaz72.94), as `enter_global` (eu-fhoo) prevents for a
+                // plain reference.
+                if obj_closure.update() {
+                    let (frame, i) = obj_slot;
+                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, frame));
+                    view.scoped(frame).update(&view, i, hole)?;
                     let annotation = if state.annotation.is_valid() {
                         state.annotation
                     } else {
                         target_annotation(prog, decoded, &obj_closure)
                     };
                     state.stack.push(BcContinuation::Update {
-                        environment: env,
+                        environment: frame,
                         index: i,
                         annotation,
                     });
@@ -2880,13 +2937,13 @@ pub fn handle_op_predecoded(
 
             let (obj_slot, obj_value) = match instr.second_ref() {
                 DecodedRef::Local(i) => (
-                    Some(i as usize),
+                    (env, i as usize),
                     view.scoped(env)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
                 ),
                 DecodedRef::Global(i) => (
-                    None,
+                    (state.globals, i as usize),
                     view.scoped(state.globals)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadGlobalIndex(i as usize))?,
@@ -2907,6 +2964,7 @@ pub fn handle_op_predecoded(
 
             let is_block = decode_cons(prog, decoded, &obj_closure)
                 .is_some_and(|(t, _)| t == DataConstructor::Block.tag());
+            // Fast path: see the comment in `handle_op`.
             if is_block {
                 state.current =
                     bc_lookup_in_block(prog, decoded, state, view, &obj_closure, sym_id)
@@ -2917,16 +2975,17 @@ pub fn handle_op_predecoded(
                     smid,
                     default_closure,
                 });
-                if let (Some(i), true) = (obj_slot, obj_closure.update()) {
-                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
-                    view.scoped(env).update(&view, i, hole)?;
+                if obj_closure.update() {
+                    let (frame, i) = obj_slot;
+                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, frame));
+                    view.scoped(frame).update(&view, i, hole)?;
                     let annotation = if state.annotation.is_valid() {
                         state.annotation
                     } else {
                         target_annotation(prog, decoded, &obj_closure)
                     };
                     state.stack.push(BcContinuation::Update {
-                        environment: env,
+                        environment: frame,
                         index: i,
                         annotation,
                     });
@@ -3202,6 +3261,7 @@ impl<'a> BytecodeMachine<'a> {
             program.apply1_template = d.apply1_template;
             program.apply2_template = d.apply2_template;
             program.producer_tail_template = d.producer_tail_template;
+            program.cell_template = d.cell_template;
             program.pap = d.pap.clone();
             d
         } else {
@@ -4615,6 +4675,12 @@ impl BcBifContext<'_, '_> {
     }
 }
 
+/// The most data constructors `memo_cell` rebuilds for one stored value
+/// (`BcBifContext::detach`): enough for a tuple or small record, while a
+/// large evaluated structure is stored as it is rather than copied on every
+/// update.
+const DETACH_BUDGET: usize = 64;
+
 impl IntrinsicMachine for BcBifContext<'_, '_> {
     fn rcache(&mut self) -> &mut LruCache<String, Regex> {
         self.rcache
@@ -4983,6 +5049,145 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
             &InfoTagged::thunk(self.program.producer_tail_template),
             env,
         ))))
+    }
+
+    fn memo_cell(
+        &self,
+        view: MutatorHeapView<'_>,
+        value: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError> {
+        let AbiClosure::Byte(original) = value;
+        // An argument usually arrives as an `OP_ATOM` alias over the caller's
+        // frame. Storing the alias would keep that frame alive — and the
+        // frame can hold the previous version of the very dict being updated
+        // (`acc dict.assoc(k, v)` in a loop), so every version would be
+        // retained. Look through aliases to the value they name.
+        let target = self.follow_aliases(view, original.clone(), false)?;
+        let c = match &target {
+            BcValue::Native(_) => return Ok(AbiClosure::Byte(target)),
+            BcValue::Closure(c) => *c,
+        };
+        let target = AbiClosure::Byte(target);
+        if self.data_tag(view, &target).is_some() {
+            // An evaluated data constructor closes over the frame it was
+            // built in — for a let-bound `[i, i]` or `{a: i}`, the caller's
+            // frame — so it is rebuilt over fresh frames where it can be
+            // (`detach`); otherwise it is stored as it is.
+            let AbiClosure::Byte(value) = &target;
+            let mut budget = DETACH_BUDGET;
+            return Ok(match self.detach(view, value.clone(), &mut budget)? {
+                Some(detached) => AbiClosure::Byte(detached),
+                None => target,
+            });
+        }
+        if (c.arity() > 0 && !c.update()) || c.code() == self.program.cell_template {
+            // A lambda or partial application, or an existing cell.
+            return Ok(target);
+        }
+        // Not yet evaluated. Cell the original value: entering an alias
+        // enters (and memoises) the slot it names, so the value is shared
+        // with any other reader of that slot; the cell then memoises the
+        // result itself, dropping the alias once evaluated. The update flag
+        // (keeping code, env and annotation) makes entering the cell's slot
+        // memoise even a non-updatable thunk.
+        let BcValue::Closure(oc) = original else {
+            return Ok(target);
+        };
+        let thunk = BcValue::Closure(BcClosure::close(
+            &InfoTagged::thunk_annotated(oc.code(), oc.annotation()),
+            oc.env(),
+        ));
+        let frame = view.from_value(thunk, self.state.root_env, self.state.annotation)?;
+        Ok(AbiClosure::Byte(BcValue::Closure(BcClosure::new(
+            self.program.cell_template,
+            frame,
+        ))))
+    }
+}
+
+impl BcBifContext<'_, '_> {
+    /// Rebuild an evaluated value over fresh env frames (parent: the root
+    /// env), so it no longer keeps alive the frames it was built in
+    /// (eu-oaz72.70, dict design note §12). A native is returned as it is;
+    /// a data constructor is rebuilt field by field, following `OP_ATOM`
+    /// aliases, and a nullary constructor over the root env is kept.
+    ///
+    /// All or nothing: `None` if any reachable field is not a native or a
+    /// data constructor (a thunk, a function, a cell — each of which pins
+    /// its own frame, so copying the rest would gain nothing), or if more
+    /// than `budget` constructors would be rebuilt. Never forces; nothing is
+    /// collected while it runs, since an intrinsic does not reach a safe
+    /// point between allocations.
+    fn detach(
+        &self,
+        view: MutatorHeapView<'_>,
+        value: BcValue,
+        budget: &mut usize,
+    ) -> Result<Option<BcValue>, ExecutionError> {
+        // An updatable `Atom` thunk (`thunk ✳i`, as a let-bound list element
+        // naming a variable) is looked through too: its value is the value
+        // its slot names, and a value that is not yet evaluated is refused
+        // below anyway.
+        let value = self.follow_aliases(view, value, true)?;
+        let closure = AbiClosure::Byte(value);
+        let Some((tag, env, offsets)) = self.cons_of(&closure) else {
+            let AbiClosure::Byte(value) = closure;
+            return Ok(matches!(value, BcValue::Native(_)).then_some(value));
+        };
+        if offsets.is_empty() && env == self.state.root_env {
+            let AbiClosure::Byte(value) = closure;
+            return Ok(Some(value));
+        }
+        if *budget == 0 {
+            return Ok(None);
+        }
+        *budget -= 1;
+        let mut fields = Vec::with_capacity(offsets.len());
+        for idx in 0..offsets.len() {
+            let Some(AbiClosure::Byte(field)) = self.data_field(view, &closure, idx) else {
+                return Ok(None);
+            };
+            match self.detach(view, field, budget)? {
+                Some(f) => fields.push(f),
+                None => return Ok(None),
+            }
+        }
+        self.build_data(view, tag, &fields).map(Some)
+    }
+
+    /// Follow `OP_ATOM` alias closures to the value they name (at most a
+    /// bounded number of hops; a longer chain is returned where it stops).
+    /// An updatable alias (a thunk) is followed only if `through_thunks`:
+    /// the caller must then accept the target only if it is evaluated, since
+    /// otherwise storing the target would bypass the thunk's memoisation.
+    fn follow_aliases(
+        &self,
+        view: MutatorHeapView<'_>,
+        mut value: BcValue,
+        through_thunks: bool,
+    ) -> Result<BcValue, ExecutionError> {
+        for _ in 0..64 {
+            let BcValue::Closure(c) = &value else {
+                break;
+            };
+            if (c.update() && !through_thunks) || c.arity() > 0 {
+                break;
+            }
+            let code = self.program.code.as_slice();
+            let mut pc = peek_pc(self.decoded, c);
+            if Op::from_u8(read_u8(code, &mut pc)) != Some(Op::Atom) {
+                break;
+            }
+            let dref = read_ref(code, &mut pc)?;
+            value = resolve_ref(
+                view,
+                &self.state.constants,
+                c.env(),
+                self.state.globals,
+                dref,
+            )?;
+        }
+        Ok(value)
     }
 }
 

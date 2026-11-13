@@ -65,6 +65,7 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::NdArray(_) => IntrinsicType::Array,
         Native::Vec(_) => IntrinsicType::Vec,
         Native::Set(_) => IntrinsicType::Set,
+        Native::Dict(_) => IntrinsicType::Dict,
         Native::Prng(_) | Native::Producer(_) => IntrinsicType::Unknown,
     }
 }
@@ -425,8 +426,19 @@ pub fn resolve_native_unboxing(
     // closure and, if it is a boxed scalar, read its inner native via the
     // neutral ABI (`value_native` unboxes a boxed Cons's field 0).
     let closure = machine.resolve_closure(view, arg)?;
+    closure_native_unboxing(machine, view, &closure)
+}
+
+/// Read the native value of an already-resolved value handle (a list
+/// element, say), looking through boxed scalar constructors. Raises the
+/// same errors as [`resolve_native_unboxing`] for anything else.
+pub fn closure_native_unboxing(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    closure: &AbiClosure,
+) -> Result<Native, ExecutionError> {
     let dc: Option<DataConstructor> = machine
-        .data_tag(view, &closure)
+        .data_tag(view, closure)
         .and_then(|tag| tag.try_into().ok());
     match dc {
         Some(
@@ -436,7 +448,7 @@ pub fn resolve_native_unboxing(
             | DataConstructor::BoxedZdt
             | DataConstructor::BoxedTypeData,
         ) => machine
-            .value_native(view, &closure)
+            .value_native(view, closure)
             .ok_or_else(|| ExecutionError::Panic(Smid::default(), "empty boxed value".to_string())),
         Some(_) => Err(ExecutionError::NotValue(
             machine.annotation(),
@@ -518,6 +530,60 @@ pub fn set_arg<'guard>(
             machine.annotation(),
             Box::new((
                 crate::eval::types::IntrinsicType::Set,
+                native_type(&native),
+                describe_native(&native, machine, view),
+            )),
+        ))
+    }
+}
+
+/// Helper for intrinsics to access a dict arg: the root of its tree.
+pub fn dict_arg(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+) -> Result<crate::eval::memory::dict::Tree, ExecutionError> {
+    let closure = machine.resolve_closure(view, arg)?;
+    let tag: Option<DataConstructor> = machine
+        .data_tag(view, &closure)
+        .and_then(|tag| tag.try_into().ok());
+    let boxed = matches!(
+        tag,
+        None | Some(
+            DataConstructor::BoxedNumber
+                | DataConstructor::BoxedString
+                | DataConstructor::BoxedSymbol
+                | DataConstructor::BoxedZdt
+        )
+    );
+    let native = if boxed {
+        machine.value_native(view, &closure)
+    } else {
+        None
+    };
+    let Some(native) = native else {
+        // A structured value (block, list, boolean, ...): not a dict.
+        let found = match tag {
+            Some(DataConstructor::Block) => IntrinsicType::Record(Default::default()),
+            Some(DataConstructor::ListCons | DataConstructor::ListNil) => {
+                IntrinsicType::List(Box::new(IntrinsicType::Any))
+            }
+            Some(DataConstructor::BoolTrue | DataConstructor::BoolFalse) => IntrinsicType::Bool,
+            Some(DataConstructor::Unit) => IntrinsicType::Unit,
+            _ => IntrinsicType::Unknown,
+        };
+        return Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            Box::new((IntrinsicType::Dict, found, None)),
+        ));
+    };
+    if let Native::Dict(root) = native {
+        Ok(root)
+    } else {
+        Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            Box::new((
+                IntrinsicType::Dict,
                 native_type(&native),
                 describe_native(&native, machine, view),
             )),

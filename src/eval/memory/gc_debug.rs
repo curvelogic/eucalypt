@@ -5,7 +5,10 @@
 //! - `EU_GC_POISON=1` — Fill swept (reclaimed) memory with a poison pattern
 //!   (`0xDE`). Before marking, check if the object looks poisoned. This
 //!   detects use-after-free: a live pointer leading to poisoned memory means
-//!   the target was swept while still referenced.
+//!   the target was swept while still referenced. Every hole of a
+//!   recycled block is poisoned, and the bump allocator checks that a
+//!   hole is still untouched when it enters it: anything else is a
+//!   write through a stale pointer or a live object in an unmarked line.
 //!
 //! - `EU_GC_VERIFY=1` — After the mark phase (before `defer_sweep`), walk
 //!   all marked objects and verify that every pointer they contain also

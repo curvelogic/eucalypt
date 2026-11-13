@@ -1,37 +1,200 @@
 #!/usr/bin/env eu
-# Demand annotation smoke test (W9)
-#
-# Tests that bindings with different usage cardinalities produce correct
-# results.  Single-use bindings may compile to Values (skip update frame)
-# while multi-use bindings compile to Thunks (memoised).  Both must give
-# the same answer as if all were Thunks.
+{
+  title: "165 demand annotation"
+  doc: "Demand analysis must never change a result, only how it is computed.
+        W9: bindings of every usage cardinality give the answer they would
+        as memoised thunks. eu-oaz72.27: a let group's lambda signatures are
+        a fixpoint over their own calls, and a variable both branches of a
+        conditional force is strict, so an accumulator passed back to its
+        loop is evaluated on each step (constant stack); an accumulator not
+        needed on every path, a value a closure captures and `foldl`'s
+        accumulator stay lazy. eu-oaz72.72: a prelude function's
+        signature claims only the arguments its definition always forces,
+        so a value or seed it may never need stays unevaluated. eu-oaz72.77:
+        in blob mode the signature is derived by the same analysis when the
+        blob is built, and found by the global the call refers to, not by
+        name. eu-oaz72.92: a pipeline step is analysed as one call, aliases
+        and partial applications take the signature of the function they
+        denote, and in blob mode a program's calls of prelude functions
+        take their signatures; none of it may force a value a call does not
+        need."
+}
 
-# Single-use binding: used exactly once — may become Value
-single-use-ok: { x: 42  result: x }.result = 42
+` { target: :test-annotation }
+test-annotation: {
+  single-use-ok: { x: 42  result: x }.result = 42
+  multi-use-ok: { x: 7 + 3  result: x + x }.result = 20
+  unused-ok: { x: 99  y: 100  result: x }.result = 99
+  nested-ok: { x: 1  y: x + 2  result: y }.result = 3
+  chain-ok: { a: 10  b: a + 1  c: b + 1  d: c + 1  result: d }.result = 13
+  multi-chain-ok: { x: 5 * 3  result: [x, x, x] }.result = [15, 15, 15]
+  mixed-ok: { a: 1  b: 2  c: a + b  d: c + c  result: d }.result = 6
+  RESULT: [single-use-ok, multi-use-ok, unused-ok, nested-ok, chain-ok, multi-chain-ok, mixed-ok]
+          all-true? then(:PASS, :FAIL)
+}
 
-# Multi-use binding: used more than once — should remain Thunk (memoised)
-multi-use-ok: { x: 7 + 3  result: x + x }.result = 20
+` "Loop A: `a` is never tested, only returned at the end and passed back with one more `+ 1`."
+loop-a(a, n): (n = 0) then(a, loop-a(a + 1, n - 1))
 
-# Unused binding: should be eliminated but not cause errors
-unused-ok: { x: 99  y: 100  result: x }.result = 99
+` "Mutually recursive with `pong`: the group's signatures are found together."
+ping(a, n): (n = 0) then(a, pong(a + 1, n - 1))
 
-# Nested single-use: inner binding used once
-nested-ok: { x: 1  y: x + 2  result: y }.result = 3
+` "Mutually recursive with `ping`."
+pong(a, n): (n = 0) then(a, ping(a + 2, n - 1))
 
-# Chain of single-use bindings
-chain-ok: { a: 10  b: a + 1  c: b + 1  d: c + 1  result: d }.result = 13
+` "A loop local to a function body (a nested let group)."
+local-loop(n): { go(a, i): (i = n) then(a, go(a + 1, i + 1)) }.(go(0, 0))
 
-# Multi-use with computation (memoisation is optimisation, not semantic)
-multi-chain-ok: { x: 5 * 3  result: [x, x, x] }.result = [15, 15, 15]
+steps: 100000
 
-# Mixed: some bindings single-use, some multi-use
-mixed-ok: { a: 1  b: 2  c: a + b  d: c + c  result: d }.result = 6
+` { target: :strict-accumulators
+    verify: [:loop-values, :constant-stack] }
+strict-accumulators: {
+  simple: loop-a(0, steps)
+  mutual: ping(0, steps)
+  local: local-loop(steps)
+}
 
-RESULT: if(
-  and(single-use-ok,
-  and(multi-use-ok,
-  and(unused-ok,
-  and(nested-ok,
-  and(chain-ok,
-  and(multi-chain-ok, mixed-ok)))))),
-  :PASS, :FAIL)
+` "every loop computes its value"
+loop-values(context): {
+  r: context.result
+  checks: [r.simple = 100000, r.mutual = 150000, r.local = 100000]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` "no loop grows the stack with its iteration count"
+constant-stack(context): (context.stats.max-stack < 1000) then(:PASS, :FAIL)
+
+` "The accumulator is passed back but never needed: it must not be forced."
+unused-acc(a, n): (n = 0) then(1, unused-acc(a + panic("accumulator forced"), n - 1))
+
+` "The accumulator is needed only when `n > 1000`, which never happens here."
+one-branch(a, n): { late: (n > 1000) then(a, 0) }.((n = 0) then(0, one-branch(a, n - 1) + late))
+
+` "Returns a closure; building it must not force what it captures."
+adder(a): { y: • }.(a + y)
+
+` "Never forces `a`; shares the name `go` with `strict-go`'s loop, which is strict in it."
+lazy-go(n): { go(a, i): (i = n) then(0, go(a, i + 1)) }.(go(panic("lazy go forced"), 0))
+
+` "A strict accumulator loop also called `go`."
+strict-go(n): { go(a, i): (i = n) then(a, go(a + 1, i + 1)) }.(go(0, 0))
+
+` "Takes two arguments and forces only the second."
+second-of(a, i): i
+
+` "Calls through an alias named `step`, like `strict-step`'s strict loop: the alias may be lazy."
+via-alias(f): { step: f }.(step(panic("alias forced"), 1))
+
+` "Calls a parameter named `hop`, like `strict-hop`'s loop: the parameter may be lazy."
+via-param(hop): hop(panic("parameter forced"), 1)
+
+` "An accumulator loop called `hop`. `via-param` binds `hop` as a parameter, so calls of `hop` take no signature and this loop is not made strict."
+strict-hop(n): { hop(a, i): (i = n) then(a, hop(a + 1, i + 1)) }.(hop(0, 0))
+
+` "A strict accumulator loop called `step`."
+strict-step(n): { step(a, i): (i = n) then(a, step(a + 1, i + 1)) }.(step(0, 0))
+
+` "A local `min` of two arguments that never forces its second (recursive, so not inlined away)."
+first-max(n): { min(a, b): (a > 9) then(a, min(a + 1, b)) }.(min(n, panic("min argument forced")))
+
+` "A local `min` of one argument, recursive so it is not inlined away."
+next-max(n): { min(x): (x > 9) then(x, min(x + 1)) }.(min(n))
+
+` { target: :test-laziness }
+test-laziness: {
+  unused: unused-acc(0, 10) = 1
+  untaken: one-branch(panic("accumulator forced"), 3) = 0
+  closure: (adder(panic("captured value forced")) block?) = false
+  closure-applied: adder(2)(3) = 5
+  lazy-foldl: ([1, 2, 3] foldl({ acc: • x: • }.(x), panic("foldl accumulator forced"))) = 3
+  same-name: [lazy-go(3), strict-go(3)] = [0, 3]
+  alias: [via-alias(second-of), strict-step(3)] = [1, 3]
+  parameter: [[second-of] map(via-param), strict-hop(3)] = [[1], 3]
+  arities: [first-max(3), next-max(3)] = [10, 10]
+  partial: (loop-a(panic("partial application forced")) block?) = false
+  RESULT: [unused, untaken, closure, closure-applied, lazy-foldl, same-name, alias, parameter, arities, partial]
+          all-true? then(:PASS, :FAIL)
+}
+
+` "Steps 0 to 1, but forces a panic on the step from 1."
+step-once(x): (x = 1) then(panic("iterate step forced"), x + 1)
+
+` "A local `head-or`, strict in its first argument; calls of the prelude's `head-or` must not take its signature."
+local-head-or(xs): { head-or(d, l): ((l count) = d) then(d, head-or(d + 1, l)) }.(head-or(0, xs))
+
+` "A fold step that returns its element, and fails if its result at element 6 is ever evaluated: only a fold strict in its accumulator evaluates it."
+acc-unless-five(acc, x): (x = 6) then(acc + panic("accumulator forced"), x)
+
+` "A user helper named like the prelude's `deep-find-first`, strict in its second argument."
+deep-helpers: { deep-find-first(k, d, b): d + d }
+
+` "A user helper named like the prelude's `head-or`, lazy in both arguments."
+head-helpers: { head-or(d, xs): 0 }
+
+` { doc: "Saturated calls, not pipelines: `xs f(a)` compiles as a partial application, which takes no signature."
+    target: :test-prelude-laziness }
+test-prelude-laziness: {
+  repeat-value: (repeat(panic("repeat value forced")) nil?) = false
+  iterate-seed: (iterate(panic("iterate function forced"), panic("iterate seed forced")) nil?) = false
+  iterate-step: (iterate(step-once, 0) take(3) count) = 3
+  take-list: take(0, panic("take list forced")) = []
+  zip-with-function: zip-with(panic("zip-with function forced"), [], panic("zip-with list forced")) = []
+  zip-second: zip([], panic("zip second list forced")) = []
+  filter-predicate: filter(panic("filter predicate forced"), []) = []
+  append-tail: (append([1], panic("append tail forced")) head) = 1
+  snoc-element: (snoc(panic("snoc element forced"), [1]) head) = 1
+  mapcat-function: mapcat(panic("mapcat function forced"), []) = []
+  cross-function: cross(panic("cross function forced"), [], panic("cross list forced")) = []
+  interleave-second: (interleave([1], panic("interleave second forced")) head) = 1
+  take-while-predicate: take-while(panic("take-while predicate forced"), []) = []
+  sort-by-key: sort-by(panic("sort-by key forced"), panic("sort-by comparator forced"), []) = []
+  sort-by-num-key: sort-by-num(panic("sort-by-num key forced"), []) = []
+  group-by-key: group-by(panic("group-by key forced"), []) = {}
+  discriminate-lazy: (discriminate(panic("discriminate predicate forced"), panic("discriminate list forced")) count) = 2
+  group-consecutive-key: group-consecutive-by(panic("group-consecutive-by key forced"), []) = []
+  deep-find-key: deep-find(panic("deep-find key forced"), []) = []
+  deep-transform-data: deep-transform(const(1), panic("deep-transform data forced")) = 1
+  head-or-default: head-or(panic("head-or default forced"), [1]) = 1
+  tail-or-default: tail-or(panic("tail-or default forced"), [1]) = []
+  sliding-function: over-sliding-pairs(panic("over-sliding-pairs function forced"), []) = []
+  shared-name: [local-head-or[1, 2], head-or(panic("prelude head-or default forced"), [1])] = [2, 1]
+  head-or-unforced: (head-or(panic("head-or default forced"), [1]) block?) = false
+  iota-start: (iota(panic("iota start forced")) nil?) = false
+  iota-tail: (iota(panic("iota start forced")) tail nil?) = false
+  foldl-accumulator: foldl(acc-unless-five, 0, range(0, 10)) = 9
+  discriminate-empty: discriminate(panic("discriminate predicate forced"), []) = [[], []]
+  RESULT: [repeat-value, iterate-seed, iterate-step, take-list, zip-with-function,
+           zip-second, filter-predicate, append-tail, snoc-element, mapcat-function,
+           cross-function, interleave-second, take-while-predicate, sort-by-key,
+           sort-by-num-key, group-by-key, discriminate-lazy, group-consecutive-key,
+           deep-find-key, deep-transform-data, head-or-default, tail-or-default,
+           sliding-function, shared-name, head-or-unforced, iota-start, iota-tail,
+           foldl-accumulator, discriminate-empty]
+          all-true? then(:PASS, :FAIL)
+}
+
+` { target: :test-prelude-names }
+test-prelude-names: {
+  helper-strict: (deep-helpers.deep-find-first(:a, 1, {}) = 2) ∧ (deep-find-first(:a, panic("argument forced"), {a: 1}) = 1)
+  helper-lazy: (head-helpers.head-or(1, []) = 0) ∧ (head-or(panic("default forced"), [1]) = 1)
+  RESULT: [helper-strict, helper-lazy] all-true? then(:PASS, :FAIL)
+}
+
+` "Strict in `i`, never forces `a`; recursive so it is not inlined away."
+keep(i, a): (i > 0) then(keep(i - 1, a), 0)
+
+` { doc: "Each check binds a value the call does not need: a signature that claimed it strict would force it."
+    target: :test-signature-propagation }
+test-signature-propagation: {
+  pipeline-default: { d: panic("head-or default forced")  result: [1] head-or(d) }.result = 1
+  pipeline-empty: { xs: []  result: xs head-or(5) }.result = 5
+  pipeline-branch: { x: panic("untaken branch forced")  result: (1 = 1) then(2, x) }.result = 2
+  alias: { x: panic("alias argument forced")  hold: keep  result: hold(2, x) }.result = 0
+  partial: { x: panic("partial argument forced")  k: keep(2)  result: k(x) }.result = 0
+  partial-pipeline: { x: panic("pipeline argument forced")  result: x keep(2) }.result = 0
+  prelude-partial: { l: panic("zip second list forced")  result: zip([], l) }.result = []
+  prelude-alias: { f: panic("zip-with function forced")  result: zip-with(f, [], [1]) }.result = []
+  RESULT: [pipeline-default, pipeline-empty, pipeline-branch, alias, partial,
+           partial-pipeline, prelude-partial, prelude-alias]
+          all-true? then(:PASS, :FAIL)
+}

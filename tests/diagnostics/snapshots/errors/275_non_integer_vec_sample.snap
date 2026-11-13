@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/275_non_integer_vec_sample
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/275_non_integer_vec_sample.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/275_non_integer_vec_sample.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: vec.sample count 1.5 must be an integer
+  ┌─ tests/harness/errors/275_non_integer_vec_sample.eu:2:4
+  │
+2 │ x: vec.sample(1.5, vec.of([1, 2, 3]), random.stream(42)).value
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - x at 275_non_integer_vec_sample.eu:2:4

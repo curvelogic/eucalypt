@@ -584,6 +584,7 @@ From highest (tightest) to lowest binding:
 | 45 | append | left | `<<` | Deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -716,12 +717,18 @@ concat([[1,2], [3], [4,5]])   # [1, 2, 3, 4, 5]
 
 ```
 [1,2,3,4,5] take(3)          # [1, 2, 3]
+[1,2,3] take(1.5)            # error: take count 1.5 must be an integer
 ```
+
+A non-integer count or index is an error in `take`, `drop`, `split-at`,
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions. `range` takes bounds, not a count, and accepts non-integers.
 
 #### `drop(n, l)` — remove first n elements
 
 ```
 [1,2,3,4,5] drop(3)          # [4, 5]
+[1,2,3] drop(5)              # [] (stops at the end of the list)
 ```
 
 #### `any(p?, l)` — true if any element satisfies p?
@@ -816,6 +823,41 @@ Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
 { a: 1 b: 2 } dissoc([:z])             # { a: 1 b: 2 }
 { a: 1 } dissoc([:a])                  # {}
 ```
+
+### 3.2a Sets and Vecs
+
+Build a collection from a list with `of`; `from-list` is an alias of it
+(the same function), pairing with `to-list`. Elements must be primitives
+(numbers, strings, symbols).
+
+```
+s: [3, 1, 3, 2] set.of           # set of 1, 2, 3 (alias: set.from-list)
+s set.to-list                    # [1, 2, 3] — sorted, duplicates removed
+2 ∈ s                            # true
+v: [10, 20, 30] vec.of           # O(1) indexed access (alias: vec.from-list)
+v vec.nth(1)                     # 20
+```
+
+### 3.2b Dicts
+
+A dict is a persistent dictionary ordered by key, with O(log n) `get`,
+`assoc` and `dissoc`. Keys are numbers, strings, symbols, or lists of those
+(nested at most 32 deep); `1` and `1.0` are the same key. Values are lazy
+and computed at most once, so a dict can refer to itself as a memo table.
+Collection argument last, as for sets.
+
+```
+d: [[:b, 2], [:a, 1]] dict.of    # alias: dict.from-list
+d dict.get(:a)                   # 1 (an error if absent)
+d dict.get-or(:z, 0)             # 0
+d dict.assoc([3, 4], :pt)        # list keys, e.g. coordinates
+d dict.dissoc(:b) dict.size      # 1
+d dict.to-list                   # [[:a, 1], [:b, 2]] — key order
+```
+
+Order across types: numbers < strings < symbols (by name) < lists
+(lexicographic). `dict.of` keeps the first of equal keys and the last value.
+A dict cannot be rendered yet; render `dict.to-list` instead.
 
 ### 3.3 String Functions (str namespace)
 
@@ -1293,7 +1335,7 @@ The following are commonly assumed but are **not** in the prelude:
 
 - `flatten` — use `concat` (flattens one level)
 - `unique` — does not exist in prelude
-- `even?` / `odd?` — do not exist (use `x % 2 = 0`)
+- `even?` / `odd?` — do not exist (use `2 ∣ x` / `2 ∤ x`, or `x % 2 = 0`; `∣` is U+2223 divides, not `|`)
 - `round` / `ceil` — use `floor` and `ceiling` (or bracket notation `⌊n⌋` and `⌈n⌉`)
 - `select(ks, b)` — **exists**: `{ a: 1, b: 2, c: 3 } select([:a, :c])` → `{ a: 1, c: 3 }`
 - `dissoc(ks, b)` — **exists**: `{ a: 1, b: 2 } dissoc([:a])` → `{ b: 2 }`

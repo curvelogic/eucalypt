@@ -1,0 +1,2 @@
+` "A non-integer vec.nth index is an error, not truncated (eu-oaz72.88)"
+r: vec.of[10, 20] vec.nth(0.5)
