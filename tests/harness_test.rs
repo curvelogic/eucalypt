@@ -4969,6 +4969,54 @@ pub fn test_error_273_divides_zero_divisor() {
     run_error_test(&error_opts("273_divides_zero_divisor.eu"));
 }
 
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_nth_negative() {
+    run_error_test(&error_opts("277_vec_nth_negative.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_nth_non_integer() {
+    run_error_test(&error_opts("277_vec_nth_non_integer.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_nth_out_of_range() {
+    run_error_test(&error_opts("277_vec_nth_out_of_range.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_slice_negative() {
+    run_error_test(&error_opts("277_vec_slice_negative.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_vec_slice_non_integer() {
+    run_error_test(&error_opts("277_vec_slice_non_integer.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_array_get_non_integer() {
+    run_error_test(&error_opts("277_array_get_non_integer.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_array_slice_negative() {
+    run_error_test(&error_opts("277_array_slice_negative.eu"));
+}
+
+/// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
+#[test]
+pub fn test_error_277_array_slice_non_integer() {
+    run_error_test(&error_opts("277_array_slice_non_integer.eu"));
+}
+
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
 pub fn test_error_275_non_integer_take() {
