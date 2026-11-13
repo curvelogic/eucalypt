@@ -104,3 +104,24 @@ total expressions) is the bead that recovers constant stack soundly.
   applications.
 - The 110 trace divergence (one extra boundary frame in blob mode).
 - Analysis precision gaps the old table masked (design report §5 step 4).
+
+## Review round 1 changes (head after `2243d42`)
+
+- A let binding whose right-hand side is a bare intrinsic (`if: __IF`)
+  now takes the intrinsic's signature in the analysis. Before, every
+  prelude function written through `if`/`then` derived as lazy throughout
+  at blob build (sound, but far weaker than source mode, where inlining has
+  removed the alias). `max`, `take`'s count and `foldl`'s list are now
+  strict.
+- `the_embedded_blob_carries_derived_demand_signatures`
+  (`tests/wire_format_enforcement_test.rs`, blob mode) pins known strict
+  and lazy positions. Fault injection: a blob with no signatures fails it.
+- `src/core/dependency.rs` (`split_letrecs`) joins the hashed sources.
+- Ticks after this change (measured-single): 015 1,945,868; 019 989,233;
+  022 46,900,711. Max stack unchanged (6,017 / 12,009 / 800,006). The
+  benches were measured against master `b8bfb43`, before #1169; against
+  current master the tick gains are smaller (review 2: 019 −8.5%, 022
+  −7.1%).
+- Precision gap left open: a pipeline step (`xs nil? then(d, …)`) is a
+  partial application, which takes no signature, so `head-or` and similar
+  derive lazy in their list.
