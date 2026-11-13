@@ -271,14 +271,19 @@ fn the_embedded_blob_carries_derived_demand_signatures() {
 
     // `Some(true)`: the definition forces the argument on every path, and
     // the analysis must find it. `Some(false)`: some path never forces it,
-    // so a strict claim would be unsound. `None`: lazy is sound but strict
-    // would be too; the analysis does not see through a pipeline step
-    // (`xs nil? then(d, …)` is a partial application), so it is not pinned.
+    // so a strict claim would be unsound. `None`: not pinned. A pipeline
+    // step (`xs nil? then(d, …)`) saturates `then`, an alias (`zip-with:
+    // map2`) and a partial application (`zip: zip-with(pair)`) take the
+    // signature of the function they denote (eu-oaz72.92).
     let (s, l) = (Some(true), Some(false));
     for (name, expected) in [
         ("max", vec![s, s]),
         ("take", vec![s, l]),
-        ("head-or", vec![l, None]),
+        ("then", vec![l, l, s]),
+        ("head-or", vec![l, s]),
+        ("tail-or", vec![l, s]),
+        ("zip-with", vec![l, s, l]),
+        ("zip", vec![s, l]),
         ("foldl", vec![l, l, s]),
         ("append", vec![s, l]),
         ("nth", vec![None, l]),
@@ -291,4 +296,75 @@ fn the_embedded_blob_carries_derived_demand_signatures() {
             }
         }
     }
+}
+
+/// Every signature the embedded blob carries is the one the analysis
+/// derives from the prelude source now, slot by slot, not just the
+/// positions pinned above (eu-oaz72.92). The front-end steps are those
+/// `cargo xtask prelude-compile` runs before step 5b; if they drift apart,
+/// this fails rather than passing silently.
+#[test]
+#[cfg(prelude_blob_ok)]
+fn every_blob_signature_matches_the_source_analysis() {
+    use eucalypt::core::analyse_demand::derive_top_level_signatures;
+    use eucalypt::driver::source::SourceLoader;
+    use eucalypt::eval::stg::blob::PreludeBlob;
+    use eucalypt::syntax::input::{Input, Locator};
+
+    let inputs = vec![
+        Input::new(
+            Locator::Fs(root().join("build-meta.yaml")),
+            Some("__build".to_string()),
+            "yaml",
+        ),
+        Input::new(
+            Locator::Pseudo("io".to_string()),
+            Some("__io".to_string()),
+            "core",
+        ),
+        Input::new(
+            Locator::Pseudo("args".to_string()),
+            Some("__args".to_string()),
+            "core",
+        ),
+        Input::new(Locator::Fs(root().join(PRELUDE_SOURCE_PATH)), None, "eu"),
+    ];
+    let mut loader = SourceLoader::new(vec![]).with_deterministic_io(true);
+    for input in &inputs {
+        loader.load(input).expect("load");
+    }
+    for input in &inputs {
+        loader.translate(input).expect("translate");
+    }
+    loader.merge_units(&inputs).expect("merge_units");
+    loader.extract_operators();
+    loader.extract_visibility();
+    loader.cook().expect("cook");
+    loader.hoist_namespaces().expect("hoist_namespaces");
+    loader.fuse_destructure().expect("fuse_destructure");
+    let derived = derive_top_level_signatures(&loader.core().expr);
+
+    let blob = PreludeBlob::from_bytes(eucalypt::driver::resources::PRELUDE_BLOB_BYTES)
+        .expect("embedded blob decodes");
+    assert_eq!(blob.demand_signatures.len(), blob.name_to_slot.len());
+    let mut mismatches = Vec::new();
+    for (name, &slot) in &blob.name_to_slot {
+        let expected = derived.get(name).cloned().flatten();
+        if blob.demand_signatures[slot] != expected {
+            mismatches.push(name.clone());
+        }
+    }
+    mismatches.sort();
+    assert!(
+        mismatches.is_empty(),
+        "blob signatures differ from the source analysis for: {mismatches:?}"
+    );
+    // The slots with no signature are the prelude's values, not functions
+    // the analysis failed to see.
+    let known = blob.demand_signatures.iter().flatten().count();
+    assert!(
+        known * 10 >= blob.demand_signatures.len() * 9,
+        "only {known} of {} slots carry a signature",
+        blob.demand_signatures.len()
+    );
 }
