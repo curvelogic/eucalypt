@@ -1,2 +1,2 @@
 exit: 1
-stderr: "(?s)numeric overflow.*errors/088_numeric_range_literal_operands\.eu:2:11"
+stderr: "(?s)numeric overflow.*errors[/\\]088_numeric_range_literal_operands\.eu:2:11"
