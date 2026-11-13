@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**49 of 262 fixtures diverge.**
+**53 of 266 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -60,6 +60,10 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/275_non_integer_window_all_step` | user tests/harness/errors/275_non_integer_window_all_step.eu:2:14 | user tests/harness/errors/275_non_integer_window_all_step.eu:2:14 | 2 (1 user) | 1 (1 user) |
 | `errors/275_non_integer_window_size` | user tests/harness/errors/275_non_integer_window_size.eu:2:14 | user tests/harness/errors/275_non_integer_window_size.eu:2:14 | 2 (1 user) | 1 (1 user) |
 | `errors/275_non_integer_window_step` | user tests/harness/errors/275_non_integer_window_step.eu:2:14 | user tests/harness/errors/275_non_integer_window_step.eu:2:14 | 2 (1 user) | 1 (1 user) |
+| `errors/276_array_shape_not_integer` | user tests/harness/errors/276_array_shape_not_integer.eu:2:4 | user tests/harness/errors/276_array_shape_not_integer.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/276_array_shape_overflow` | user tests/harness/errors/276_array_shape_overflow.eu:2:4 | user tests/harness/errors/276_array_shape_overflow.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/276_array_shape_reshape_overflow` | user tests/harness/errors/276_array_shape_reshape_overflow.eu:2:4 | user tests/harness/errors/276_array_shape_reshape_overflow.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/276_array_shape_too_large` | user tests/harness/errors/276_array_shape_too_large.eu:2:4 | user tests/harness/errors/276_array_shape_too_large.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
 | `many-decls/huge_decls_type_warning` | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | 1 (1 user) | 1 (1 user) |
 | `many-decls/many_decls_nested_user_fn` | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | 2 (1 user) | 2 (1 user) |
