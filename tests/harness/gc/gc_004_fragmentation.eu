@@ -76,3 +76,39 @@ verify-fragmentation(context):
 
 # Helper function to check if all values are true
 all-true?(values): values all(= true)
+
+# ---------------------------------------------------------------- #
+# Compaction of a fragmented heap (eu-oaz72.90). Each deep recursion
+# leaves its frames and thunks spread thinly across hundreds of blocks
+# when it returns, with a little of each block still live. Under a
+# tight `--heap-limit-mib` (tests/gc_volume_trigger_test.rs runs this
+# file at 10 MiB) only evacuating those blocks — which by the next
+# collection sit in the unswept and recycled lists — keeps the
+# footprint within the limit. Without the limit it checks the values.
+# ---------------------------------------------------------------- #
+
+` "Depth-`n` non-tail recursion: every level leaves a frame and a thunk on the heap."
+deep(n): (n <= 0) then(0, 1 + deep(n - 1))
+
+compaction-depth: 30000
+compaction-reads: range(0, 200)
+
+` "Sum of `compaction-reads`, each offset by `d`: reads `d` 200 times after it is shared."
+read-sum(d): compaction-reads map(+ d) sum
+
+` "Expected `read-sum(d)`, in closed form."
+read-sum-expected(d): 19900 + 200 * d
+
+` { target: :test-compaction
+    doc: "Deep recursions that leave the heap fragmented: results correct, and within a tight heap limit" }
+test-compaction: {
+  d0: deep(compaction-depth)
+  d1: deep(compaction-depth + 1)
+  d2: deep(compaction-depth + 2)
+  checks: [
+    read-sum(d0) = read-sum-expected(compaction-depth),
+    read-sum(d1) = read-sum-expected(compaction-depth + 1),
+    read-sum(d2) = read-sum-expected(compaction-depth + 2)
+  ]
+  RESULT: checks all-true? then(:PASS, :FAIL)
+}

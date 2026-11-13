@@ -150,6 +150,27 @@ evacuation resolves its candidate blocks to a set of base addresses once per
 collection; both searches were O(blocks) per marked object, which the old
 policy hid by rarely collecting.
 
+### Choosing blocks to evacuate
+
+Before each collection `Heap::analyze_collection_strategy` grades every bump
+block (`head`, `overflow`, `rest`, `unswept` and `recycled`) by the lines the
+last mark left marked: sparse up to 25%, fragmented up to 75%. Most blocks
+sit in `unswept` or `recycled` by then, since every block goes to `unswept`
+after a collection.
+
+1. Under 10% of blocks sparse or fragmented: mark in place.
+2. 30% or more: mark in place unless the footprint passes 3/4 of the heap
+   limit (`footprint_under_pressure`). An evacuating collection updates every
+   live object however few blocks it moves, so it is worth paying only when
+   the blocks it empties can be given back to the system. They are released
+   after the *next* collection: the mark phase line-marks an object's old
+   copy before evacuating it, so its lines stay marked until then.
+3. Otherwise evacuate the unpinned sparse and fragmented blocks, sparsest
+   first, while their marked lines fit `evacuation_budget_lines` (an eighth
+   of the heap's lines).
+
+`EU_GC_STRESS=1` instead evacuates every unpinned block on every collection.
+
 ### No Emergency Collection
 
 **Critical limitation**: Allocation failures cause panics rather than triggering emergency collection:

@@ -655,6 +655,7 @@ dependencies = [
  "codespan",
  "codespan-reporting",
  "criterion",
+ "crossbeam-channel",
  "csv",
  "ctrlc",
  "dirs",
