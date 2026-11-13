@@ -169,6 +169,25 @@ At the end of a `.eu` file:
 | `C-M-a` | `treesit-beginning-of-defun` | Go to start of declaration |
 | `C-M-e` | `treesit-end-of-defun` | Go to end of declaration |
 
+## Checking the mode against the grammar
+
+The mode's font-lock queries name tree-sitter node types, so a grammar
+change can break them: a query that no longer matches the grammar raises
+`treesit-query-error` and switches off every feature at that
+`treesit-font-lock-level`. After changing the grammar or the queries, run
+
+```sh
+scripts/check-emacs-mode.sh            # examples/aoc25/*.eu by default
+scripts/check-emacs-mode.sh FILE.eu... # or a corpus of your own
+```
+
+It compiles the grammar from `editors/tree-sitter-eucalypt/src` into a
+temporary directory, compiles every query the mode uses, and fontifies each
+file at levels 1 to 4 in `emacs --batch`, failing on any query error or if
+level 3 and 4 faces are not applied. It needs Emacs 29+ with tree-sitter
+and a C compiler; without them it prints `SKIP` and exits 0, or exits 2
+under `--require` (for CI, where they must be present).
+
 ## Licence
 
 Copyright 2024, 2026 Greg Hawkins.  Distributed under the same terms as
