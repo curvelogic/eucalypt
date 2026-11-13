@@ -1,10 +1,11 @@
 {
-  title: "236 lists and block fields keep their sharing"
+  title: "236 lists, block fields and namespaces keep their sharing"
   doc: "eu-oaz72.36: a list built by `foldr` or `filter` must be computed once
         and shared, however often it is traversed. Each target sums its list
         eight times; the `shared` validator FAILs when the elements or the
         spine are recomputed on every traversal. eu-oaz72.87: a block field
-        read with `.` is likewise computed once however often it is read."
+        read with `.` is likewise computed once however often it is read.
+        eu-oaz72.94: a prelude namespace read with `.` is built once."
 }
 
 # One evaluation of `slow` costs tens of thousands of ticks, so ten of them
@@ -80,4 +81,24 @@ eight-reads(b): range(0, 8) map(read(b)) sum
 dot-lookup: {
   sum: eight-reads(mk(10))
   expected: 8 * (10 * 1999000 + 45) + 28
+}
+
+# A prelude namespace read with `.` in a loop. In blob mode every prelude
+# binding is a global thunk, and the lookup forced an unevaluated global
+# without updating its slot, so each `str.len` rebuilt the whole `str`
+# namespace block, about 350 allocations (engine: `Op::LookupLit`,
+# eu-oaz72.94). Rebuilding a block is one tick, so the budget counts
+# allocations: about 50 per read when shared (either prelude mode), 400
+# when rebuilt.
+len-plus(i): str.len("ab") + i
+len-total: range(0, 1000) map(len-plus) sum
+
+` "the namespace is built once however often it is read"
+built-once(context): (context.stats.allocs < 200000) then(:PASS, :FAIL)
+
+` { target: :namespace-lookup
+    verify: [:values, :built-once] }
+namespace-lookup: {
+  sum: len-total
+  expected: 1000 * 2 + 499500
 }
