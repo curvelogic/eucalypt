@@ -1,0 +1,2 @@
+exit: 1
+stderr: "split-at count 0.5 must be an integer"

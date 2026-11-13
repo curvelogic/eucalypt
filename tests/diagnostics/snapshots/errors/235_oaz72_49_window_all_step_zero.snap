@@ -18,7 +18,7 @@ trace-prelude-frames: 1
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: window step 0 must be positive
+error: window-all step 0 must be positive
   ┌─ tests/harness/errors/235_oaz72_49_window_all_step_zero.eu:3:31
   │
 3 │ x: [1, 2, 3] window-all(2, 0) take(3)
@@ -45,7 +45,7 @@ trace-prelude-frames: 1
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: window step 0 must be positive
+error: window-all step 0 must be positive
   ┌─ tests/harness/errors/235_oaz72_49_window_all_step_zero.eu:3:31
   │
 3 │ x: [1, 2, 3] window-all(2, 0) take(3)

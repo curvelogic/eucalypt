@@ -934,7 +934,28 @@ pub fn test_harness_129() {
 }
 
 #[test]
+/// 130_vec.eu includes negative sample counts and an empty-vec shuffle,
+/// which once recursed forever in `stream-advance` (eu-oaz72.95). A
+/// regression there hangs rather than fails, so a bounded run of the
+/// `test` target gates first and `run_test` then applies the verdict.
 pub fn test_harness_130() {
+    let mut cmd = std::process::Command::new(eu_binary());
+    cmd.args([
+        "--heap-limit-mib",
+        "2048",
+        "-t",
+        "test",
+        "tests/harness/130_vec.eu",
+    ]);
+    let deadline = std::time::Duration::from_secs(30);
+    run_with_deadline(cmd, deadline).unwrap_or_else(|| {
+        panic!(
+            "130_vec.eu did not complete within {}s — a negative sample count \
+             or an empty-vec shuffle no longer returns (`stream-advance` in \
+             lib/prelude.eu)",
+            deadline.as_secs()
+        )
+    });
     run_test(&opts("130_vec.eu"));
 }
 
@@ -3728,6 +3749,36 @@ pub fn test_error_272_logical_word_inside_string() {
     run_error_test(&error_opts("272_logical_word_inside_string.eu"));
 }
 
+/// `nth` is not strict in its list: a negative index is reported before
+/// the list is forced, in blob mode as in source mode (eu-oaz72.77).
+#[test]
+pub fn test_error_274_nth_negative_lazy_list() {
+    run_error_test(&error_opts("274_nth_negative_lazy_list.eu"));
+}
+
+/// Array shapes are validated before ndarray sees them: an oversized,
+/// overflowing or fractional dimension is a named error, not a panic
+/// (eu-oaz72.96).
+#[test]
+pub fn test_error_276_array_shape_too_large() {
+    run_error_test(&error_opts("276_array_shape_too_large.eu"));
+}
+
+#[test]
+pub fn test_error_276_array_shape_overflow() {
+    run_error_test(&error_opts("276_array_shape_overflow.eu"));
+}
+
+#[test]
+pub fn test_error_276_array_shape_not_integer() {
+    run_error_test(&error_opts("276_array_shape_not_integer.eu"));
+}
+
+#[test]
+pub fn test_error_276_array_shape_reshape_overflow() {
+    run_error_test(&error_opts("276_array_shape_reshape_overflow.eu"));
+}
+
 #[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
@@ -4921,4 +4972,88 @@ fn gc_poison_small_heap_churn_reports_no_hole() {
 pub fn test_tester_fails_unrun_checked_target() {
     let exit_code = tester::test(&opts("testdata/unrun_checked_target.eu")).unwrap();
     assert_eq!(exit_code, 1);
+}
+
+/// The divides operator `∣` inherits `%`'s zero-divisor error.
+#[test]
+pub fn test_error_273_divides_zero_divisor() {
+    run_error_test(&error_opts("273_divides_zero_divisor.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_take() {
+    run_error_test(&error_opts("275_non_integer_take.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_drop() {
+    run_error_test(&error_opts("275_non_integer_drop.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_split_at() {
+    run_error_test(&error_opts("275_non_integer_split_at.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_rotate() {
+    run_error_test(&error_opts("275_non_integer_rotate.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_nth() {
+    run_error_test(&error_opts("275_non_integer_nth.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_update_nth() {
+    run_error_test(&error_opts("275_non_integer_update_nth.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_window_size() {
+    run_error_test(&error_opts("275_non_integer_window_size.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_window_step() {
+    run_error_test(&error_opts("275_non_integer_window_step.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_window_all_size() {
+    run_error_test(&error_opts("275_non_integer_window_all_size.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_window_all_step() {
+    run_error_test(&error_opts("275_non_integer_window_all_step.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_random_sample() {
+    run_error_test(&error_opts("275_non_integer_random_sample.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_set_sample() {
+    run_error_test(&error_opts("275_non_integer_set_sample.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_275_non_integer_vec_sample() {
+    run_error_test(&error_opts("275_non_integer_vec_sample.eu"));
 }

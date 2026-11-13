@@ -1,0 +1,2 @@
+` "A non-integer index to `update-nth` is an error (eu-oaz72.58). It used to round up."
+x: [1, 2, 3] update-nth(0.5, inc)

@@ -10399,7 +10399,7 @@ ship with eucalypt:
 | Function | Description |
 |----------|-------------|
 | `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is not rejected |
-| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0. A non-integer `n` is not rejected |
+| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0, `[]` when `n` exceeds the length of `l`. A non-integer `n` is not rejected |
 | `take-while(p?, l)` | Initial elements of list `l` while `p?` is true |
 | `take-until(p?)` | Initial elements of list `l` while `p?` is false |
 | `drop-while(p?, l)` | Skip initial elements of list `l` while `p?` is true |
@@ -13538,6 +13538,7 @@ concat([[1,2], [3], [4,5]])   # [1, 2, 3, 4, 5]
 
 ```
 [1,2,3,4,5] drop(3)          # [4, 5]
+[1,2,3] drop(5)              # [] (stops at the end of the list)
 ```
 
 #### `any(p?, l)` — true if any element satisfies p?
@@ -16701,7 +16702,7 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `foldr(f, init)` | Right fold |
 | `sort-by(f)` | Sort by key function |
 | `take(n)` | First n elements (`[]` if n <= 0) |
-| `drop(n)` | Remove first n (list unchanged if n <= 0) |
+| `drop(n)` | Remove first n (list unchanged if n <= 0; `[]` if n exceeds the length) |
 | `zip` | Pair elements from two lists |
 | `zip-with(f)` | Combine elements with function |
 | `concat` | Flatten nested lists one level (use `concat`, not `flatten` — does not exist) |

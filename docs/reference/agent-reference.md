@@ -584,6 +584,7 @@ From highest (tightest) to lowest binding:
 | 45 | append | left | `<<` | Deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -716,12 +717,18 @@ concat([[1,2], [3], [4,5]])   # [1, 2, 3, 4, 5]
 
 ```
 [1,2,3,4,5] take(3)          # [1, 2, 3]
+[1,2,3] take(1.5)            # error: take count 1.5 must be an integer
 ```
+
+A non-integer count or index is an error in `take`, `drop`, `split-at`,
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions. `range` takes bounds, not a count, and accepts non-integers.
 
 #### `drop(n, l)` — remove first n elements
 
 ```
 [1,2,3,4,5] drop(3)          # [4, 5]
+[1,2,3] drop(5)              # [] (stops at the end of the list)
 ```
 
 #### `any(p?, l)` — true if any element satisfies p?
@@ -1328,7 +1335,7 @@ The following are commonly assumed but are **not** in the prelude:
 
 - `flatten` — use `concat` (flattens one level)
 - `unique` — does not exist in prelude
-- `even?` / `odd?` — do not exist (use `x % 2 = 0`)
+- `even?` / `odd?` — do not exist (use `2 ∣ x` / `2 ∤ x`, or `x % 2 = 0`; `∣` is U+2223 divides, not `|`)
 - `round` / `ceil` — use `floor` and `ceiling` (or bracket notation `⌊n⌋` and `⌈n⌉`)
 - `select(ks, b)` — **exists**: `{ a: 1, b: 2, c: 3 } select([:a, :c])` → `{ a: 1, c: 3 }`
 - `dissoc(ks, b)` — **exists**: `{ a: 1, b: 2 } dissoc([:a])` → `{ b: 2 }`

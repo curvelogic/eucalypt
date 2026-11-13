@@ -1,0 +1,9 @@
+# Medium-object churn: every round rebuilds a 1,000-element set, whose
+# storage spans many lines but less than a block. The loop forces the set
+# each round, so only one set is live at a time and the heap should not
+# grow with the number of rounds.
+rounds: 32000
+churn(s, i): s set.remove(i % 1000) set.add(i % 1000)
+done?(s, i): (i = rounds) ∨ ((s set.size) < 0)
+loop(s, i): done?(s, i) then(s, loop(churn(s, i), i + 1))
+r: loop(range(0, 1000) set.from-list, 0) set.size

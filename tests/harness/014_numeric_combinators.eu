@@ -13,8 +13,6 @@ tail(l): __TAIL(l)
 ` :suppress
 take(n, l): __IF((n zero?) || (l empty?), [], cons(l head, take(n dec, l tail)))
 ` :suppress
-drop(n, l): __IF((n zero?) || (l empty?), l, drop(n dec, l tail))
-` :suppress
 repeat(i): __CONS(i, repeat(i))
 ` :suppress
 repeat-n(n, i): repeat(i) take(n)

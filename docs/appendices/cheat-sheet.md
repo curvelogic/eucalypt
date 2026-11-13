@@ -297,6 +297,7 @@ From highest to lowest binding:
 | 45 | append | right | `++`, `<<` | List append, deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -356,7 +357,8 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `foldr(f, init)` | Right fold |
 | `sort-by(f)` | Sort by key function |
 | `take(n)` | First n elements (`[]` if n <= 0) |
-| `drop(n)` | Remove first n (list unchanged if n <= 0) |
+| `drop(n)` | Remove first n (list unchanged if n <= 0; `[]` if n exceeds the length) |
+| `nth(n)` | Element at index `n` from 0 (error if out of range) |
 | `zip` | Pair elements from two lists |
 | `zip-with(f)` | Combine elements with function |
 | `concat` | Flatten nested lists one level (use `concat`, not `flatten` — does not exist) |
@@ -367,6 +369,11 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `any(p?)` | Does any element match? |
 | `all(p?)` | Do all elements match? |
 | `nub-by(f)` | Deduplicate by key function (no `unique` in prelude) |
+
+A non-integer count or index is an error in `take`, `drop`, `split-at`,
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions; an integral
+float such as `2.0` is accepted.
 
 ### Blocks
 
@@ -442,7 +449,7 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
-| `even?` / `odd?` | Do **not** exist — use `x % 2 = 0` / `x % 2 = 1` |
+| `even?` / `odd?` | Do **not** exist — use `2 ∣ x` / `2 ∤ x` (U+2223 divides, not `\|`) or `x % 2 = 0` |
 
 ### Lenses (`lens.eu`)
 

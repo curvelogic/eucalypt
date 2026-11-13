@@ -957,10 +957,11 @@ pub enum ExecutionError {
     Traced(Box<ExecutionError>, Box<(Vec<Smid>, Vec<Smid>, Smid)>),
     #[error("allocation error")]
     AllocationError,
-    /// Live data surviving a collection exhausts the `--heap-limit-mib`
-    /// limit: `(live MiB, limit MiB)` (eu-oaz72.4).
+    /// The heap still in use after a collection exhausts the
+    /// `--heap-limit-mib` limit: `(MiB in use, limit MiB)`, where in use
+    /// is the live data (eu-oaz72.4) or the blocks held (eu-oaz72.73).
     #[error(
-        "heap limit exceeded: {0} MiB of live data remains after garbage collection, \
+        "heap limit exceeded: {0} MiB remains in use after garbage collection, \
          against a heap limit of {1} MiB (raise --heap-limit-mib, or use 0 for no limit)"
     )]
     HeapLimitExceeded(usize, usize),
@@ -1166,6 +1167,12 @@ pub enum ExecutionError {
     ArrayShapeMismatch(Smid, String),
     #[error("negative array index or dimension: {1} — array indices and dimensions must be non-negative")]
     ArrayNegativeIndex(Smid, f64),
+    #[error("{1} {2} must be an integer")]
+    ArrayNonIntegerIndex(Smid, String, f64),
+    /// An array shape whose element count exceeds what one array can
+    /// hold: `(function, shape, maximum element count)`.
+    #[error("{1}: array shape {2} has too many elements — an array holds at most {3} elements")]
+    ArrayTooLarge(Smid, String, String, usize),
     #[error("list index out of bounds: index {1} is beyond the end of the list")]
     ListIndexOutOfBounds(Smid, usize),
     /// `dict.get` of a key the dict does not hold; `.1` renders the key.
@@ -1263,6 +1270,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::ArrayNdIndexOutOfBounds(s, _) => *s,
             ExecutionError::ArrayShapeMismatch(s, _) => *s,
             ExecutionError::ArrayNegativeIndex(s, _) => *s,
+            ExecutionError::ArrayNonIntegerIndex(s, _, _) => *s,
+            ExecutionError::ArrayTooLarge(s, _, _, _) => *s,
             ExecutionError::IoNotAllowed(s) => *s,
             ExecutionError::IoFail(s, _) => *s,
             ExecutionError::IoTimeout(s, _) => *s,
