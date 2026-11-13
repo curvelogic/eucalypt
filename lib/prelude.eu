@@ -224,7 +224,7 @@ random: monad{bind: random-bind, return: random-ret} {
       type: s"number → [a] → any → {..}" }
   sample(n, lst, stream): {
     shuffled: shuffle(lst, stream)
-    value: shuffled.value take(n)
+    value: shuffled.value __take(n)
     rest: shuffled.rest
   }
 
@@ -1471,7 +1471,7 @@ nth(n, l): {
 }.(__require-int("nth index", n, if((n number?) ∧ (n < 0), panic("index {n} out of range: list indices start at 0"), aux(n, l))))
 
 ` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
-Panics if `n` is out of range, including a negative `n`, or not an integer."
+An error if `n` is out of range, negative or not an integer."
 update-nth(n, f, l): {
   rejoin([prefix, [s: suffix]]): prefix ++ (f(s) ‖ suffix)
 }.(__require-int("update-nth index", n, if((n number?) ∧ (n < 0), panic("index {n} out of range: list indices start at 0"), l split-at(n) rejoin)))
@@ -1535,7 +1535,7 @@ ints-from: iota
 
 ` { doc: "`range(b, e)` - return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b`."
     type: s"number → number → [number]" }
-range(b, e): ints-from(b) take(e - b)
+range(b, e): ints-from(b) __take(e - b)
 
 ` { doc: "`count(l)` - return count of items in list `l`."
     type: s"[a] → number" }
@@ -2054,7 +2054,7 @@ set: {
   ` { doc: "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`. Returns value/rest block."
       type: s"number → any → any → {..}" }
   sample(k, s, stream): {
-    floats: (stream random.as-list) take(k)
+    floats: (stream random.as-list) __take(k)
     value: s sample-raw(floats)
     rest: stream-advance(k, stream)
   }
@@ -2164,7 +2164,7 @@ vec: {
   ` { doc: "`vec.sample(n, v)` - random monad action: pick `n` random elements from vec `v` without replacement."
       type: s"number → vec → any → {..}" }
   sample(n, v, stream): {
-    floats: (stream random.as-list) take(n)
+    floats: (stream random.as-list) __take(n)
     value: v sample-raw(floats)
     rest: stream-advance(n, stream)
   }

@@ -32,6 +32,7 @@ tests: {
   window-integral-float: [1, 2, 3] window(2.0, 1.0) //= [[1, 2], [2, 3]]
   window-all-integral-float: [1, 2, 3] window-all(2.0, 2.0) //= [[1, 2], [3]]
   take-computed-count: [1, 2, 3] take(3 - 1) //= [1, 2]
+  range-fractional-bound: range(0, 2.5) //= [0, 1, 2]
 }
 
 RESULT: tests values all-true? then(:PASS, :FAIL)

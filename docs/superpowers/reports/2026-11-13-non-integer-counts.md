@@ -53,3 +53,19 @@ existing intrinsic, not a new API.
 - `cargo fmt`, `cargo clippy --workspace --all-targets -D warnings`,
   `cargo test` all clean. Prelude blob regenerated; prelude reference and
   cheat sheet / agent reference updated.
+
+## Left unchanged: `range` and the `sample` functions
+
+`range(b, e)` takes bounds, not a count, and `random.sample`, `set.sample`
+and `vec.sample` take a count the bead does not name. They now call the
+unchecked `__take`, so they behave exactly as before (`range(0, 2.5)` is
+`[0, 1, 2]`, `range(0.5, 3)` is `[0.5, 1.5, 2.5]`) rather than failing with
+an error that names `take`. Whether they should reject non-integers too is
+left to the owner. A harness check in `036_takes_and_drops.eu` pins
+`range(0, 2.5)`; it fails if `range` goes back through `take`.
+
+## Also in this PR (coordinator follow-ups from eu-oaz72.71)
+
+- CHANGELOG entry for `drop(n)` past the end returning `[]` (PR #1172).
+- The local nil-safe `drop` in `tests/harness/014_numeric_combinators.eu`
+  is removed; the test now uses the prelude's `drop`.
