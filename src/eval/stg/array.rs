@@ -16,6 +16,7 @@ use crate::{
             CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
         },
         memory::{
+            bump::MAX_ALLOC_SIZE,
             mutator::MutatorHeapView,
             ndarray,
             syntax::{Native, Ref},
@@ -68,7 +69,7 @@ impl StgIntrinsic for ArrayZeros {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let shape = num_list_to_usize_vec(machine, view, &args[0])?;
+        let shape = num_list_to_shape(machine, view, &args[0], "arr.zeros")?;
         machine_return_ndarray(machine, view, ndarray::zeros(&shape))
     }
 }
@@ -113,7 +114,7 @@ impl StgIntrinsic for ArrayFill {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let shape = num_list_to_usize_vec(machine, view, &args[0])?;
+        let shape = num_list_to_shape(machine, view, &args[0], "arr.fill")?;
         let value = num_arg(machine, view, &args[1])?.as_f64().unwrap_or(0.0);
         machine_return_ndarray(machine, view, ndarray::filled(&shape, value))
     }
@@ -153,7 +154,7 @@ impl StgIntrinsic for ArrayFromFlat {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let shape = num_list_to_usize_vec(machine, view, &args[0])?;
+        let shape = num_list_to_shape(machine, view, &args[0], "arr.from-flat")?;
         let values = num_list_to_f64_vec(machine, view, &args[1])?;
         let smid = machine.annotation();
         let data_len = values.len();
@@ -472,7 +473,7 @@ impl StgIntrinsic for ArrayReshape {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let new_shape = num_list_to_usize_vec(machine, view, &args[0])?;
+        let new_shape = num_list_to_shape(machine, view, &args[0], "arr.reshape")?;
         let smid = machine.annotation();
         let arr = ndarray_arg(machine, view, &args[1])?;
         let old_total: usize = arr.shape().iter().product();
@@ -758,6 +759,69 @@ fn num_list_to_usize_vec(
         .collect()
 }
 
+/// The most elements one array can hold: its values are a single heap
+/// object of `f64`s, and the heap allocates no object larger than
+/// [`MAX_ALLOC_SIZE`] bytes.
+const MAX_ARRAY_ELEMENTS: usize = MAX_ALLOC_SIZE / std::mem::size_of::<f64>();
+
+/// Extract an array shape from a cons-list of numbers, for the array
+/// function `function` (named in any error).
+///
+/// Every dimension is validated before anything is allocated, so that
+/// no shape reaches `ndarray` that it would panic on or try to allocate
+/// beyond the heap's largest object.
+fn num_list_to_shape(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+    function: &str,
+) -> Result<Vec<usize>, ExecutionError> {
+    let smid = machine.annotation();
+    let dims = super::support::collect_num_list(machine, view, arg.clone())?;
+    validate_shape(smid, function, &dims)
+}
+
+/// Check a shape given as numbers: each dimension a non-negative whole
+/// number, and the product of the non-zero dimensions (what `ndarray`
+/// checks against `isize::MAX`) no more than [`MAX_ARRAY_ELEMENTS`].
+fn validate_shape(smid: Smid, function: &str, dims: &[f64]) -> Result<Vec<usize>, ExecutionError> {
+    let too_large = || {
+        let rendered: Vec<String> = dims.iter().map(|d| d.to_string()).collect();
+        ExecutionError::ArrayTooLarge(
+            smid,
+            function.to_string(),
+            format!("[{}]", rendered.join(", ")),
+            MAX_ARRAY_ELEMENTS,
+        )
+    };
+    let mut shape = Vec::with_capacity(dims.len());
+    let mut count: usize = 1;
+    for &d in dims {
+        if !d.is_finite() || d.fract() != 0.0 {
+            return Err(ExecutionError::ArrayNonIntegerIndex(
+                smid,
+                format!("{function} dimension"),
+                d,
+            ));
+        }
+        if d < 0.0 {
+            return Err(ExecutionError::ArrayNegativeIndex(smid, d));
+        }
+        if d > MAX_ARRAY_ELEMENTS as f64 {
+            return Err(too_large());
+        }
+        let n = d as usize;
+        if n != 0 {
+            count = count
+                .checked_mul(n)
+                .filter(|&c| c <= MAX_ARRAY_ELEMENTS)
+                .ok_or_else(too_large)?;
+        }
+        shape.push(n);
+    }
+    Ok(shape)
+}
+
 /// Extract a list of numbers as f64 from a cons-list
 fn num_list_to_f64_vec(
     machine: &mut dyn IntrinsicMachine,
@@ -827,5 +891,67 @@ pub(crate) fn array_binop<F: Fn(f64, f64) -> f64>(
             "array arithmetic requires at least one array operand; both arguments are scalars"
                 .to_string(),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shape_of(dims: &[f64]) -> Result<Vec<usize>, ExecutionError> {
+        validate_shape(Smid::default(), "arr.zeros", dims)
+    }
+
+    #[test]
+    fn whole_dimensions_are_accepted() {
+        assert_eq!(shape_of(&[2.0, 3.0]).unwrap(), vec![2, 3]);
+        assert_eq!(shape_of(&[]).unwrap(), Vec::<usize>::new());
+        assert_eq!(shape_of(&[-0.0]).unwrap(), vec![0]);
+        let max = MAX_ARRAY_ELEMENTS as f64;
+        assert_eq!(shape_of(&[max]).unwrap(), vec![MAX_ARRAY_ELEMENTS]);
+        // A zero dimension leaves the others to ndarray's own check,
+        // which counts only the non-zero axes.
+        assert_eq!(shape_of(&[0.0, max]).unwrap(), vec![0, MAX_ARRAY_ELEMENTS]);
+    }
+
+    #[test]
+    fn fractional_and_non_finite_dimensions_are_rejected() {
+        for d in [2.5, -0.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(
+                matches!(
+                    shape_of(&[d]),
+                    Err(ExecutionError::ArrayNonIntegerIndex(_, _, _))
+                ),
+                "{d} accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn negative_dimensions_are_rejected() {
+        assert!(matches!(
+            shape_of(&[3.0, -1.0]),
+            Err(ExecutionError::ArrayNegativeIndex(_, _))
+        ));
+    }
+
+    #[test]
+    fn oversized_shapes_are_rejected() {
+        let max = MAX_ARRAY_ELEMENTS as f64;
+        for dims in [
+            vec![1e20],
+            vec![max + 1.0],
+            vec![1e5, 1e5],
+            vec![1e5, 1e5, 1e5, 1e5],
+            vec![0.0, 1e5, 1e5],
+        ] {
+            assert!(
+                matches!(
+                    shape_of(&dims),
+                    Err(ExecutionError::ArrayTooLarge(_, _, _, _))
+                ),
+                "{dims:?} accepted"
+            );
+        }
     }
 }

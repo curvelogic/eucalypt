@@ -3721,6 +3721,29 @@ pub fn test_error_274_nth_negative_lazy_list() {
     run_error_test(&error_opts("274_nth_negative_lazy_list.eu"));
 }
 
+/// Array shapes are validated before ndarray sees them: an oversized,
+/// overflowing or fractional dimension is a named error, not a panic
+/// (eu-oaz72.96).
+#[test]
+pub fn test_error_276_array_shape_too_large() {
+    run_error_test(&error_opts("276_array_shape_too_large.eu"));
+}
+
+#[test]
+pub fn test_error_276_array_shape_overflow() {
+    run_error_test(&error_opts("276_array_shape_overflow.eu"));
+}
+
+#[test]
+pub fn test_error_276_array_shape_not_integer() {
+    run_error_test(&error_opts("276_array_shape_not_integer.eu"));
+}
+
+#[test]
+pub fn test_error_276_array_shape_reshape_overflow() {
+    run_error_test(&error_opts("276_array_shape_reshape_overflow.eu"));
+}
+
 #[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.

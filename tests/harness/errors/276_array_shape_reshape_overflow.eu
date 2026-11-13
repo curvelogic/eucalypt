@@ -1,0 +1,2 @@
+` "Reshaping to a shape whose element count overflows is a named error, not an overflow panic (eu-oaz72.96)"
+a: arr.zeros([4]) arr.reshape([100000, 100000, 100000, 100000])
