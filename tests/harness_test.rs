@@ -3717,8 +3717,8 @@ pub fn test_error_272_logical_word_inside_string() {
 /// `nth` is not strict in its list: a negative index is reported before
 /// the list is forced, in blob mode as in source mode (eu-oaz72.77).
 #[test]
-pub fn test_error_273_nth_negative_lazy_list() {
-    run_error_test(&error_opts("273_nth_negative_lazy_list.eu"));
+pub fn test_error_274_nth_negative_lazy_list() {
+    run_error_test(&error_opts("274_nth_negative_lazy_list.eu"));
 }
 
 #[test]
@@ -4914,4 +4914,10 @@ fn gc_poison_small_heap_churn_reports_no_hole() {
 pub fn test_tester_fails_unrun_checked_target() {
     let exit_code = tester::test(&opts("testdata/unrun_checked_target.eu")).unwrap();
     assert_eq!(exit_code, 1);
+}
+
+/// The divides operator `∣` inherits `%`'s zero-divisor error.
+#[test]
+pub fn test_error_273_divides_zero_divisor() {
+    run_error_test(&error_opts("273_divides_zero_divisor.eu"));
 }

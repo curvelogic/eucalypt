@@ -8,10 +8,12 @@
         conditional force is strict, so an accumulator passed back to its
         loop is evaluated on each step (constant stack); an accumulator not
         needed on every path, a value a closure captures and `foldl`'s
-        accumulator stay lazy. eu-oaz72.77: a prelude function is never
-        stricter than its definition, in blob mode as in source mode: its
-        signature is derived by the same analysis when the blob is built,
-        and found by the global the call refers to, not by name."
+        accumulator stay lazy. eu-oaz72.72: a prelude function's
+        signature claims only the arguments its definition always forces,
+        so a value or seed it may never need stays unevaluated. eu-oaz72.77:
+        in blob mode the signature is derived by the same analysis when the
+        blob is built, and found by the global the call refers to, not by
+        name."
 }
 
 ` { target: :test-annotation }
@@ -82,7 +84,7 @@ via-alias(f): { step: f }.(step(panic("alias forced"), 1))
 ` "Calls a parameter named `hop`, like `strict-hop`'s loop: the parameter may be lazy."
 via-param(hop): hop(panic("parameter forced"), 1)
 
-` "A strict accumulator loop called `hop`, a name bound nowhere else except as `via-param`'s parameter."
+` "An accumulator loop called `hop`. `via-param` binds `hop` as a parameter, so calls of `hop` take no signature and this loop is not made strict."
 strict-hop(n): { hop(a, i): (i = n) then(a, hop(a + 1, i + 1)) }.(hop(0, 0))
 
 ` "A strict accumulator loop called `step`."
@@ -110,47 +112,60 @@ test-laziness: {
           all-true? then(:PASS, :FAIL)
 }
 
+` "Steps 0 to 1, but forces a panic on the step from 1."
+step-once(x): (x = 1) then(panic("iterate step forced"), x + 1)
+
+` "A local `head-or`, strict in its first argument; calls of the prelude's `head-or` must not take its signature."
+local-head-or(xs): { head-or(d, l): ((l count) = d) then(d, head-or(d + 1, l)) }.(head-or(0, xs))
+
+` "A fold step that returns its element, and fails if its result at element 6 is ever evaluated: only a fold strict in its accumulator evaluates it."
+acc-unless-five(acc, x): (x = 6) then(acc + panic("accumulator forced"), x)
+
 ` "A user helper named like the prelude's `deep-find-first`, strict in its second argument."
 deep-helpers: { deep-find-first(k, d, b): d + d }
 
 ` "A user helper named like the prelude's `head-or`, lazy in both arguments."
 head-helpers: { head-or(d, xs): 0 }
 
-` "A fold step that returns its element, and fails if its result at element 6 is ever evaluated: only a fold strict in its accumulator evaluates it."
-acc-unless-five(acc, x): (x = 6) then(acc + panic("accumulator forced"), x)
-
-` { target: :test-prelude-laziness }
+` { doc: "Saturated calls, not pipelines: `xs f(a)` compiles as a partial application, which takes no signature."
+    target: :test-prelude-laziness }
 test-prelude-laziness: {
-  head-or-default: head-or(panic("default forced"), [1]) = 1
-  tail-or-default: tail-or(panic("default forced"), [1, 2]) = [2]
-  append-tail: (append([1], panic("tail forced")) head) = 1
-  take-none: take(0, panic("list forced")) = []
-  filter-empty: filter(panic("predicate forced"), []) = []
-  zip-empty: zip([], panic("list forced")) = []
-  zip-with-empty: zip-with(+, [], panic("list forced")) = []
-  snoc-head: (snoc(panic("element forced"), [1]) head) = 1
-  interleave-head: (interleave([1], panic("list forced")) head) = 1
-  take-while-empty: take-while(panic("predicate forced"), []) = []
-  sort-by-empty: sort-by(panic("key forced"), <, []) = []
-  sort-by-num-empty: sort-by-num(panic("key forced"), []) = []
-  group-by-empty: group-by(panic("key forced"), []) = {}
-  discriminate-empty: discriminate(panic("predicate forced"), []) = [[], []]
-  group-consecutive-empty: group-consecutive-by(panic("function forced"), []) = []
-  sliding-pairs-empty: over-sliding-pairs(panic("function forced"), []) = []
-  mapcat-empty: mapcat(panic("function forced"), []) = []
-  cross-empty: cross(panic("function forced"), [], panic("list forced")) = []
-  deep-transform-const: deep-transform(const(1), panic("data forced")) = 1
-  repeat-lazy: (repeat(panic("value forced")) nil?) = false
-  iota-lazy: (iota(panic("count forced")) tail nil?) = false
-  iota-head-lazy: (iota(panic("count forced")) nil?) = false
-  foldl-acc-lazy: (range(0, 10) foldl(acc-unless-five, 0)) = 9
-  head-or-unforced: (head-or(panic("default forced"), [1]) block?) = false
-  RESULT: [head-or-default, tail-or-default, append-tail, take-none, filter-empty,
-           zip-empty, zip-with-empty, snoc-head, interleave-head, take-while-empty,
-           sort-by-empty, sort-by-num-empty, group-by-empty, discriminate-empty,
-           group-consecutive-empty, sliding-pairs-empty, mapcat-empty, cross-empty,
-           deep-transform-const, repeat-lazy, iota-lazy, iota-head-lazy, foldl-acc-lazy,
-           head-or-unforced]
+  repeat-value: (repeat(panic("repeat value forced")) nil?) = false
+  iterate-seed: (iterate(panic("iterate function forced"), panic("iterate seed forced")) nil?) = false
+  iterate-step: (iterate(step-once, 0) take(3) count) = 3
+  take-list: take(0, panic("take list forced")) = []
+  zip-with-function: zip-with(panic("zip-with function forced"), [], panic("zip-with list forced")) = []
+  zip-second: zip([], panic("zip second list forced")) = []
+  filter-predicate: filter(panic("filter predicate forced"), []) = []
+  append-tail: (append([1], panic("append tail forced")) head) = 1
+  snoc-element: (snoc(panic("snoc element forced"), [1]) head) = 1
+  mapcat-function: mapcat(panic("mapcat function forced"), []) = []
+  cross-function: cross(panic("cross function forced"), [], panic("cross list forced")) = []
+  interleave-second: (interleave([1], panic("interleave second forced")) head) = 1
+  take-while-predicate: take-while(panic("take-while predicate forced"), []) = []
+  sort-by-key: sort-by(panic("sort-by key forced"), panic("sort-by comparator forced"), []) = []
+  sort-by-num-key: sort-by-num(panic("sort-by-num key forced"), []) = []
+  group-by-key: group-by(panic("group-by key forced"), []) = {}
+  discriminate-lazy: (discriminate(panic("discriminate predicate forced"), panic("discriminate list forced")) count) = 2
+  group-consecutive-key: group-consecutive-by(panic("group-consecutive-by key forced"), []) = []
+  deep-find-key: deep-find(panic("deep-find key forced"), []) = []
+  deep-transform-data: deep-transform(const(1), panic("deep-transform data forced")) = 1
+  head-or-default: head-or(panic("head-or default forced"), [1]) = 1
+  tail-or-default: tail-or(panic("tail-or default forced"), [1]) = []
+  sliding-function: over-sliding-pairs(panic("over-sliding-pairs function forced"), []) = []
+  shared-name: [local-head-or[1, 2], head-or(panic("prelude head-or default forced"), [1])] = [2, 1]
+  head-or-unforced: (head-or(panic("head-or default forced"), [1]) block?) = false
+  iota-start: (iota(panic("iota start forced")) nil?) = false
+  iota-tail: (iota(panic("iota start forced")) tail nil?) = false
+  foldl-accumulator: foldl(acc-unless-five, 0, range(0, 10)) = 9
+  discriminate-empty: discriminate(panic("discriminate predicate forced"), []) = [[], []]
+  RESULT: [repeat-value, iterate-seed, iterate-step, take-list, zip-with-function,
+           zip-second, filter-predicate, append-tail, snoc-element, mapcat-function,
+           cross-function, interleave-second, take-while-predicate, sort-by-key,
+           sort-by-num-key, group-by-key, discriminate-lazy, group-consecutive-key,
+           deep-find-key, deep-transform-data, head-or-default, tail-or-default,
+           sliding-function, shared-name, head-or-unforced, iota-start, iota-tail,
+           foldl-accumulator, discriminate-empty]
           all-true? then(:PASS, :FAIL)
 }
 

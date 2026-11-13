@@ -60,12 +60,14 @@ fn peel_meta(expr: &RcExpr) -> &RcExpr {
 /// that uses the name: names bound anywhere as a lambda parameter or as a
 /// let binding whose right-hand side is not a lambda (an alias such as
 /// `step: f` may refer to a lazy function), and names bound to lambdas of
-/// different arities. A parameter counts even when it is the name's only
-/// binding, which costs nothing (a parameter has no signature of its own).
-/// Prelude globals in blob mode are not looked up here: the compiler keys
-/// their signatures by slot (eu-oaz72.77). Let-bound lambdas of one arity
-/// remain merged by `record_named_signature`, whose lub is sound for each
-/// of them.
+/// different arities. Let-bound lambdas of one arity remain merged by
+/// `record_named_signature`, whose lub is sound for each of them.
+///
+/// The names are whole-program, but they cover only bindings in the
+/// analysed tree: the STG compiler takes a free callee's signature (a
+/// blob-mode prelude global) from the slot it resolves to (eu-oaz72.77), so
+/// a block key or parameter named `map` does not hide the prelude `map`'s
+/// signature.
 fn ambiguous_names(expr: &RcExpr) -> HashSet<String> {
     #[derive(Default)]
     struct Uses {

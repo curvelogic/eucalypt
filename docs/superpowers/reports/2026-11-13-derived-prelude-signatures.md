@@ -39,12 +39,12 @@ Gating checks:
 
 - `tests/harness/165_demand_annotation.eu`, targets `test-prelude-laziness`
   (§2.2) and `test-prelude-names` (L1, L2);
-- `tests/harness/errors/273_nth_negative_lazy_list.eu` (the `nth` error);
+- `tests/harness/errors/274_nth_negative_lazy_list.eu` (the `nth` error);
 - unit tests `top_level_signatures_are_per_binder`,
   `demand_signatures_round_trip` and `demand_analysis_changes_change_the_hash`.
 
 Fault injection: (1) xtask marking every derived parameter strict fails
-`test-prelude-laziness` and the 273 error test; (2) the compiler falling
+`test-prelude-laziness` and the 274 error test; (2) the compiler falling
 back to the user name table for `Var::Free` callees fails
 `test-prelude-names`; (3) dropping the duplicate-name rule fails the unit
 test. Each passes again once restored. The regenerated blob is

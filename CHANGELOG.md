@@ -4,6 +4,10 @@ All notable changes to eucalypt are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Divides operators `∣` and `∤` (eu-oaz72.68)** — `n ∣ m` is `true` when `n` divides `m` (`m % n = 0`), so `3 ∣ 12` is `true` and `xs filter(3 ∣ _)` keeps the multiples of 3; `n ∤ m` is its negation. Both sit at the precedence of `=`, so `a + b ∣ c * d` groups as `(a + b) ∣ (c * d)`. A zero divisor fails as `%` does. Note `∣` is U+2223, not `|`.
+
 ### Fixed
 
 - **The garbage collector now runs on allocation volume, not only at the heap limit (eu-oaz72.4)** — it used to collect only once the heap reached `--heap-limit-mib`, so under the 32 GiB default it never collected and long-running programs grew until the operating system killed them, while under a small limit it collected on almost every check once the limit was reached. It now collects after an allocation volume set from the live data the previous collection left (at least 32 MiB), so a program with little live data keeps a small heap. When more than 7/8 of a `--heap-limit-mib` limit is live after a collection, evaluation now stops with a `heap limit exceeded` error rather than collecting on every check; the limit is not a hard cap on the heap, which can still exceed it through fragmentation and large objects. Marking no longer searches the block lists for every object, which made collections slow on large heaps.
