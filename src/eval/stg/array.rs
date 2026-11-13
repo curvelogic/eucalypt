@@ -512,8 +512,8 @@ impl StgIntrinsic for ArraySlice {
     ) -> Result<(), ExecutionError> {
         let smid = machine.annotation();
         let arr = ndarray_arg(machine, view, &args[0])?;
-        let axis = num_arg(machine, view, &args[1])?.as_f64().unwrap_or(0.0) as usize;
-        let index = num_arg(machine, view, &args[2])?.as_f64().unwrap_or(0.0) as usize;
+        let axis = array_index(num_arg(machine, view, &args[1])?.as_f64(), smid)?;
+        let index = array_index(num_arg(machine, view, &args[2])?.as_f64(), smid)?;
         match arr.slice_along(axis, index) {
             Some(sliced) => machine_return_ndarray(machine, view, sliced),
             None => Err(ExecutionError::ArrayShapeMismatch(
@@ -738,8 +738,8 @@ fn num_list_to_i64_vec(
 
 /// Extract a list of numbers from a cons-list, converting to usize.
 ///
-/// Returns an error if any value is negative, since negative indices
-/// have no meaning for array dimensions or coordinates.
+/// Returns an error if any value is negative or not an integer, since
+/// such indices have no meaning for array dimensions or coordinates.
 fn num_list_to_usize_vec(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
@@ -749,13 +749,28 @@ fn num_list_to_usize_vec(
     let nums = super::support::collect_num_list(machine, view, arg.clone())?;
     nums.into_iter()
         .map(|n| {
-            if n < 0.0 {
+            if n.fract() != 0.0 || !n.is_finite() {
+                Err(ExecutionError::ArrayNonIntegerIndex(smid, n))
+            } else if n < 0.0 {
                 Err(ExecutionError::ArrayNegativeIndex(smid, n))
             } else {
                 Ok(n as usize)
             }
         })
         .collect()
+}
+
+/// Convert a single array axis or index to a `usize`, rejecting a
+/// negative or non-integer value as `num_list_to_usize_vec` does.
+fn array_index(n: Option<f64>, smid: Smid) -> Result<usize, ExecutionError> {
+    let n = n.unwrap_or(f64::NAN);
+    if n.fract() != 0.0 || !n.is_finite() {
+        Err(ExecutionError::ArrayNonIntegerIndex(smid, n))
+    } else if n < 0.0 {
+        Err(ExecutionError::ArrayNegativeIndex(smid, n))
+    } else {
+        Ok(n as usize)
+    }
 }
 
 /// Extract a list of numbers as f64 from a cons-list

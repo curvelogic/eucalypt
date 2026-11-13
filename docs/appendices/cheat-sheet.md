@@ -550,7 +550,7 @@ either operand is an array. Scalar broadcasting is supported.
 | `v ∈ s` / `v ∉ s` | Membership |
 | `∅` | The empty set |
 | `xs vec.of` / `xs vec.from-list` | Vec of primitives with O(1) indexed access (aliases) |
-| `v vec.nth(n)` / `vec.len(v)` | Element at index `n` (0-based) / length |
+| `v vec.nth(n)` / `vec.len(v)` | Element at index `n` (0-based; a negative or non-integer `n` is an error) / length |
 
 ### IO
 

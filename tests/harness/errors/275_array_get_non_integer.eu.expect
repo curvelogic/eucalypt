@@ -1,0 +1,2 @@
+exit: 1
+stderr: "non-integer array index or dimension: 0.5"

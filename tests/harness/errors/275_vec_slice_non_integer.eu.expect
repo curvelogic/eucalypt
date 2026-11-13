@@ -1,0 +1,2 @@
+exit: 1
+stderr: "vec.slice to 2.5 must be an integer"
