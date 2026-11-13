@@ -376,6 +376,9 @@ pub struct HeapState {
     lobs: Vec<LargeObjectBlock>,
     /// Recycled large object blocks available for reuse
     recycled_lobs: Vec<LargeObjectBlock>,
+    /// Bytes of the large object blocks in `lobs`, so that
+    /// [`HeapState::blocks_held`] is O(1) on every poll (eu-oaz72.73).
+    lob_bytes_in_use: usize,
     /// Number of GC collections performed
     collections_count: u64,
     /// High-water mark of allocated blocks
@@ -479,6 +482,7 @@ impl HeapState {
             unswept: VecDeque::new(),
             lobs: vec![],
             recycled_lobs: vec![],
+            lob_bytes_in_use: 0,
             collections_count: 0,
             peak_heap_blocks: 0,
             evacuation_target: None,
@@ -642,7 +646,11 @@ impl HeapState {
             .iter()
             .take(MAX_SCAN)
             .position(|b| b.find_largest_hole().is_some_and(|(_, hole)| hole >= size))?;
-        self.recycled.remove(index)
+        let mut block = self.recycled.remove(index)?;
+        // Start bumping from the top hole, so that `bump` reaches the hole
+        // found above whatever the block's cursor was.
+        block.recycle();
+        Some(block)
     }
 
     /// Retire the overflow block and put into service one that can take
@@ -675,10 +683,13 @@ impl HeapState {
         self.lines_since_gc += size.div_ceil(LINE_SIZE_BYTES);
         // First, try to find a recycled block that can fit this allocation
         if let Some(recycled_block) = self.find_suitable_recycled_lob(size) {
+            self.lob_bytes_in_use += recycled_block.allocated_size();
             self.lobs.push(recycled_block);
         } else {
             // No suitable recycled block, create a new one
-            self.lobs.push(LargeObjectBlock::new(size));
+            let lob = LargeObjectBlock::new(size);
+            self.lob_bytes_in_use += lob.allocated_size();
+            self.lobs.push(lob);
         }
         self.lobs
             .last_mut()
@@ -755,7 +766,9 @@ impl HeapState {
             if header.is_marked_with_state(mark_state) {
                 index += 1;
             } else {
-                dead.push(self.lobs.swap_remove(index));
+                let lob = self.lobs.swap_remove(index);
+                self.lob_bytes_in_use -= lob.allocated_size();
+                dead.push(lob);
             }
         }
 
@@ -877,8 +890,14 @@ impl HeapState {
 
     /// Defer sweeping: move all blocks from `rest` to `unswept` for
     /// lazy sweep at allocation time. Called after mark phase.
+    ///
+    /// Blocks still in `recycled` go back to `unswept` too (eu-oaz72.73):
+    /// their cursor and their place in `recycled` (free blocks at the
+    /// back) come from an older sweep, and the new mark may have freed
+    /// more of them, so they are swept again against the new line maps.
     pub fn defer_sweep(&mut self) {
         self.unswept.append(&mut self.rest);
+        self.unswept.append(&mut self.recycled);
     }
 
     /// Sweep every block still in `unswept`, without a mark phase.
@@ -1085,13 +1104,20 @@ impl HeapState {
             + self.overflow.iter().count()
             + self.evacuation_target.iter().count()
             + self.filled_evacuation_blocks.len();
-        let lob_bytes: usize = self
-            .lobs
+        debug_assert_eq!(
+            self.lob_bytes_in_use,
+            self.lobs
+                .iter()
+                .map(LargeObjectBlock::allocated_size)
+                .sum::<usize>()
+        );
+        // At most 16 blocks are kept for reuse (`recycle_lob`).
+        let recycled_lob_bytes: usize = self
+            .recycled_lobs
             .iter()
-            .chain(&self.recycled_lobs)
             .map(LargeObjectBlock::allocated_size)
             .sum();
-        bump_blocks + lob_bytes.div_ceil(BLOCK_SIZE_BYTES)
+        bump_blocks + (self.lob_bytes_in_use + recycled_lob_bytes).div_ceil(BLOCK_SIZE_BYTES)
     }
 
     /// Return fully free blocks to the system until at most `target`
@@ -1583,12 +1609,19 @@ pub fn gc_trigger_blocks_for(live_blocks: usize, growth: usize, limit: Option<us
 ///
 /// 7/8 of the limit, the threshold live data is held to, leaving 1/8 for
 /// what one poll interval allocates. When fragmentation leaves more than
-/// that held after a collection, halfway from what is held to the limit
-/// instead: collecting on every poll would not free the holes the
+/// that held after a collection, halfway from what is held to what the
+/// limit tolerates ([`footprint_limit_tolerated`]) instead, so there is
+/// always headroom: collecting on every poll would not free the holes the
 /// allocator is still to reuse.
 pub fn footprint_trigger_blocks(limit: usize, held: usize) -> usize {
     let base = limit.saturating_mul(7) / 8;
-    base.max(held + limit.saturating_sub(held) / 2)
+    if held <= base {
+        base
+    } else {
+        held + footprint_limit_tolerated(limit)
+            .saturating_sub(held)
+            .div_ceil(2)
+    }
 }
 
 /// Blocks a collection may leave held under a heap of `limit` blocks
@@ -1935,6 +1968,57 @@ mod oom_tests {
         assert_ne!(base, partial_base);
         assert_eq!(state.blocks_held(), held + 1);
         assert!(state.overflow().bump(BLOCK_SIZE_BYTES - 64).is_some());
+    }
+
+    #[test]
+    fn test_replace_overflow_bumps_from_top_of_reused_block() {
+        // eu-oaz72.73 review: a recycled block's cursor can sit below the
+        // hole that made it eligible; bumping must still reach that hole.
+        let mut state = HeapState::new();
+        let mut block = block_with_marked_lines(0);
+        for line in 100..110 {
+            block.mark_line_for_test(line);
+        }
+        assert!(block.recycle());
+        assert!(block.bump(18_000).is_some());
+        // A later mark finds the block empty: its largest hole is now the
+        // whole block, far above the cursor.
+        block.reset_region_marks();
+        state.recycled.push_back(block);
+
+        assert!(state.replace_overflow(28_000).bump(28_000).is_some());
+    }
+
+    #[test]
+    fn test_defer_sweep_resweeps_recycled_blocks() {
+        // eu-oaz72.73 review: blocks left in `recycled` are swept again
+        // after a collection, so any that became free reach the back.
+        let mut state = HeapState::new();
+        let mut block = block_with_marked_lines(10);
+        assert!(block.recycle());
+        state.recycled.push_back(block);
+        state.recycled[0].reset_region_marks();
+        state.defer_sweep();
+        assert!(state.recycled.is_empty());
+        assert_eq!(state.unswept.len(), 1);
+        state.sweep_unswept();
+        assert_eq!(state.recycled[0].free_lines(), LINE_COUNT);
+        assert_eq!(state.release_free_blocks(0), 1);
+    }
+
+    #[test]
+    fn test_footprint_trigger_always_leaves_headroom() {
+        // eu-oaz72.73 review: with more than the limit held but within the
+        // tolerance, the next collection must not run on the next block.
+        let limit = 1024;
+        assert_eq!(footprint_trigger_blocks(limit, 0), 896);
+        assert_eq!(footprint_trigger_blocks(limit, 896), 896);
+        for held in [900, 1024, 1100, 1151] {
+            assert!(
+                footprint_trigger_blocks(limit, held) > held,
+                "no headroom at {held} blocks held"
+            );
+        }
     }
 
     #[test]
@@ -4310,6 +4394,7 @@ pub mod tests {
 
         // Simulate recycling (normally done during GC)
         let recycled_lob = state.lobs.pop().unwrap();
+        state.lob_bytes_in_use -= recycled_lob.allocated_size();
         state.recycle_lob(recycled_lob);
         assert_eq!(state.recycled_lobs.len(), 1);
 

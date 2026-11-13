@@ -488,6 +488,14 @@ collection exceeds about 7/8 of the limit, evaluation stops with a
 `heap limit exceeded` error naming both sizes; raise the limit (or use 0)
 for such a program.
 
+The limit also bounds the memory the heap holds, not only its live data.
+Once the heap holds 7/8 of the limit, it collects whatever the allocation
+volume and returns empty blocks to the system. Live data spread thinly
+across many blocks can still hold the heap slightly over the limit, so a
+tolerance applies: 1/8 of the limit, and at least 1 MiB. If two successive
+collections each leave more than the limit plus that tolerance, evaluation
+stops with the same `heap limit exceeded` error.
+
 ### Error Output Format
 
 By default, errors are formatted for human reading. For programmatic use:
