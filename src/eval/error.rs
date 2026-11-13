@@ -957,10 +957,11 @@ pub enum ExecutionError {
     Traced(Box<ExecutionError>, Box<(Vec<Smid>, Vec<Smid>, Smid)>),
     #[error("allocation error")]
     AllocationError,
-    /// Live data surviving a collection exhausts the `--heap-limit-mib`
-    /// limit: `(live MiB, limit MiB)` (eu-oaz72.4).
+    /// The heap still in use after a collection exhausts the
+    /// `--heap-limit-mib` limit: `(MiB in use, limit MiB)`, where in use
+    /// is the live data (eu-oaz72.4) or the blocks held (eu-oaz72.73).
     #[error(
-        "heap limit exceeded: {0} MiB of live data remains after garbage collection, \
+        "heap limit exceeded: {0} MiB remains in use after garbage collection, \
          against a heap limit of {1} MiB (raise --heap-limit-mib, or use 0 for no limit)"
     )]
     HeapLimitExceeded(usize, usize),
