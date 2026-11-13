@@ -1163,6 +1163,9 @@ impl ProtoSyntax for ProtoAppGroup {
         let mut intrinsic_index = None;
         let mut intrinsic_name: Option<&str> = None;
         let mut callee_name: Option<&str> = None;
+        // Whether the callee is a free variable: in blob mode, a prelude
+        // global rather than a binding in the analysed tree.
+        let mut callee_free = false;
         let mut local_binder = LetBinder::synthetic_let(context);
 
         // Find a reference for the function.
@@ -1175,6 +1178,7 @@ impl ProtoSyntax for ProtoAppGroup {
                 }
                 Var::Free(name) => {
                     callee_name = Some(name.as_str());
+                    callee_free = true;
                     let r = compiler.resolve_free_var(*s, name)?;
                     Box::new(ProtoRef::new(r))
                 }
@@ -1196,8 +1200,12 @@ impl ProtoSyntax for ProtoAppGroup {
         };
 
         // Look up per-argument demands.  Try intrinsic signatures first,
-        // then user function signatures from demand analysis, then
-        // prelude function signatures for blob-mode globals.
+        // then, by the callee's name, the signatures from demand analysis
+        // for a bound callee or the prelude table for a free one (a
+        // blob-mode prelude global).  Neither table answers for the other
+        // kind: a bound name such as a parameter `map` or a local `max` is
+        // not the prelude function, and a user binding that shares a
+        // prelude name says nothing about the prelude global.
         //
         // A signature describes a saturated call: only then does the
         // callee's body run and force its strict parameters.  A partial
@@ -1207,13 +1215,13 @@ impl ProtoSyntax for ProtoAppGroup {
             .and_then(|name| compiler.intrinsic_demand_sigs.get(name))
             .map(|v| v.as_slice())
             .or_else(|| {
+                let table = if callee_free {
+                    &compiler.prelude_demand_sigs
+                } else {
+                    &compiler.user_demand_sigs
+                };
                 callee_name
-                    .and_then(|name| compiler.user_demand_sigs.get(name))
-                    .map(|v| v.as_slice())
-            })
-            .or_else(|| {
-                callee_name
-                    .and_then(|name| compiler.prelude_demand_sigs.get(name))
+                    .and_then(|name| table.get(name))
                     .map(|v| v.as_slice())
             })
             .filter(|sigs| self.args.len() >= sigs.len());
