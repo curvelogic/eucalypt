@@ -77,8 +77,20 @@ The blob carries a demand signature for each prelude global, by slot
 them by running the demand analysis (`derive_top_level_signatures` in
 `src/core/analyse_demand.rs`) over the merged prelude core: the same
 analysis source mode runs over the prelude. A signature records which
-arguments the binding's own lambda forces on every path; a binding that is
-not a lambda (an alias, a partial application, a block) has none.
+arguments the binding's own lambda forces on every path. An alias takes
+the signature of the function it names (`zip-with: map2`), and a partial
+application the signature of its function less the arguments it supplies
+(`zip: zip-with(pair)`); a block or other value has none (eu-oaz72.92).
+The analysis reads an application spine as one call, so a pipeline step
+such as `xs nil? then(d, xs head)` saturates `then` and `head-or` is
+strict in its list, and a call of a conditional written through an alias
+or a wrapper (`if: __IF`, `then(t, f, c): if(c, t, f)`) joins its branches
+as a call of `__IF` does.
+
+In blob mode the demand analysis of the user program also takes these
+signatures, for calls whose callee is a free variable naming a prelude
+global, as source mode's analysis of prelude and program together sees
+them.
 
 The STG compiler uses these signatures for a call whose callee is a free
 variable resolving to a prelude global, both in user code at run time and

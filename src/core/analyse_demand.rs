@@ -212,18 +212,20 @@ pub fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
 /// for the pre-compiled blob (eu-oaz72.77).
 ///
 /// Runs the same demand analysis source mode runs over the prelude (after
-/// the SCC splitting source mode also applies first) and reads, for each
+/// the SCC split source mode also applies first) and reads, for each
 /// binding of the top-level `Let`/`Meta` chain — the chain `xtask
-/// prelude-compile` peels into global slots — the signature of the lambda
-/// it binds. The signature is the one recorded for that binder's own
-/// lambda, not the name-merged [`NamedSignatureTable`] entry, so a local
-/// helper of the same name elsewhere in the prelude cannot weaken or
-/// strengthen it.
+/// prelude-compile` peels into global slots — the signature its `Let`
+/// group settled on: a lambda's own (by binder, not the name-merged
+/// [`NamedSignatureTable`] entry, so a local helper of the same name
+/// elsewhere in the prelude cannot weaken or strengthen it), and for an
+/// alias or a partial application (`zip-with: map2`, `zip:
+/// zip-with(pair)`) the signature of the function it denotes
+/// (eu-oaz72.92).
 ///
-/// The result maps each top-level name to `Some(signature)` for a lambda
-/// binding, or `None` for a binding that is not a lambda (an alias, a
-/// partial application, a block). A name bound more than once along the
-/// chain maps to `None`: a slot keyed by that name could hold either.
+/// The result maps each top-level name to `Some(signature)`, or `None` for
+/// a binding that denotes no known function (a block, a value). A name
+/// bound more than once along the chain maps to `None`: a slot keyed by
+/// that name could hold either.
 ///
 /// Every signature is sound by construction, being the analysis' own
 /// result: the hand-written table this replaces claimed more strictness
@@ -231,33 +233,34 @@ pub fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
 /// (`docs/superpowers/reports/2026-11-13-prelude-demand-signatures-design.md`).
 pub fn derive_top_level_signatures(expr: &RcExpr) -> HashMap<String, Option<DemandSignature>> {
     let split = crate::core::dependency::split_letrecs(expr);
-    let (annotated, signatures, _) = analyse_demands(&split);
+    let mut analyser = DemandAnalyser::new();
+    analyser.root_block = root_block(&split);
+    analyser.analyse_expr(&split);
 
     let mut result: HashMap<String, Option<DemandSignature>> = HashMap::new();
     let mut seen: HashSet<String> = HashSet::new();
-    let mut current = annotated;
+    let mut current = &split;
     loop {
-        let next = match &*current.inner {
+        current = match &*current.inner {
             Expr::Let(_, scope, _) => {
-                for binding in &scope.pattern {
-                    let sig = match &*peel_meta(&binding.expr).inner {
-                        Expr::Lam(_, _, lam) => signatures
-                            .get(&(Rc::as_ptr(&lam.body.inner) as usize))
-                            .cloned(),
-                        _ => None,
-                    };
+                // The top-level chain is analysed once, outside any
+                // enclosing fixpoint, so its groups' seeds are final.
+                let settled = analyser
+                    .seeds
+                    .get(&(scope as *const LetScope<RcExpr> as usize));
+                for (i, binding) in scope.pattern.iter().enumerate() {
+                    let sig = settled.and_then(|sigs| sigs.get(i).cloned().flatten());
                     if seen.insert(binding.name.clone()) {
                         result.insert(binding.name.clone(), sig);
                     } else {
                         result.insert(binding.name.clone(), None);
                     }
                 }
-                scope.body.clone()
+                &scope.body
             }
-            Expr::Meta(_, inner, _) => inner.clone(),
+            Expr::Meta(_, inner, _) => inner,
             _ => break,
         };
-        current = next;
     }
     result
 }
@@ -365,9 +368,37 @@ fn shared_env(env: DemandEnv) -> DemandEnv {
 /// `Lam` frame holds none (parameters are not known functions).
 struct SigFrame {
     sigs: Vec<Option<DemandSignature>>,
+    /// For each binding that is a conditional — `__IF` itself, an alias of
+    /// one, or a lambda whose body is a conditional over its own parameters
+    /// (`then(t, f, c): if(c, t, f)`) — the argument positions of its
+    /// condition, then-branch and else-branch, so a saturated call through
+    /// it joins its branches as a call of `__IF` does (eu-oaz72.92).
+    branches: Vec<Option<IfShape>>,
     /// Set when a call was analysed with one of this frame's signatures, so
     /// the result depends on them.
     consulted: bool,
+}
+
+/// Argument positions of a conditional's condition, then-branch and
+/// else-branch. `__IF` is `[0, 1, 2]`.
+type IfShape = [usize; 3];
+
+/// The demand signatures of the prelude globals a blob-mode program's free
+/// variables resolve to: `sigs[name_to_slot[name]]`, as in the STG
+/// compiler's `prelude_demand_sigs` (eu-oaz72.92). Without them, the
+/// analysis of a blob-mode user program knew nothing of the prelude
+/// functions it calls, where source mode, analysing prelude and program
+/// together, does.
+#[derive(Clone, Copy)]
+pub struct PreludeSignatures<'a> {
+    pub name_to_slot: &'a HashMap<String, usize>,
+    pub sigs: &'a [Option<DemandSignature>],
+}
+
+impl PreludeSignatures<'_> {
+    fn get(&self, name: &str) -> Option<&DemandSignature> {
+        self.sigs.get(*self.name_to_slot.get(name)?)?.as_ref()
+    }
 }
 
 /// Iterations of a `Let` group's signature fixpoint before falling back to
@@ -388,9 +419,12 @@ fn merge_envs(a: &DemandEnv, b: &DemandEnv) -> DemandEnv {
 }
 
 /// The demand analyser.
-pub struct DemandAnalyser {
+pub struct DemandAnalyser<'p> {
     /// Intrinsic seed signatures.
     intrinsic_sigs: HashMap<String, DemandSignature>,
+    /// Signatures of the prelude globals free variables resolve to, in
+    /// blob mode.
+    prelude: Option<PreludeSignatures<'p>>,
     /// Signatures discovered during analysis (keyed by Lam body pointer).
     signatures: SignatureTable,
     /// Name-keyed signatures for user function calls. The STG compiler
@@ -424,16 +458,17 @@ pub struct DemandAnalyser {
     visits: usize,
 }
 
-impl Default for DemandAnalyser {
+impl Default for DemandAnalyser<'_> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl DemandAnalyser {
+impl<'p> DemandAnalyser<'p> {
     pub fn new() -> Self {
         DemandAnalyser {
             intrinsic_sigs: build_intrinsic_signatures(),
+            prelude: None,
             signatures: HashMap::new(),
             named_signatures: HashMap::new(),
             named_log: Vec::new(),
@@ -443,6 +478,13 @@ impl DemandAnalyser {
             sig_log: Vec::new(),
             visits: 0,
         }
+    }
+
+    /// Give calls whose callee is a free variable naming a prelude global
+    /// that global's signature (blob mode).
+    pub fn with_prelude(mut self, prelude: Option<PreludeSignatures<'p>>) -> Self {
+        self.prelude = prelude;
+        self
     }
 
     /// Run the demand analysis on the given expression, returning the
@@ -612,6 +654,7 @@ impl DemandAnalyser {
         // use their demands.
         self.frames.push(SigFrame {
             sigs: Vec::new(),
+            branches: Vec::new(),
             consulted: false,
         });
         let (new_rhs_exprs, rhs_envs) = self.analyse_let_rhss(scope);
@@ -889,40 +932,26 @@ impl DemandAnalyser {
     /// then justified by the RHS itself, so it is sound without being a
     /// fixpoint.
     fn analyse_let_rhss(&mut self, scope: &LetScope<RcExpr>) -> (Vec<RcExpr>, Vec<DemandEnv>) {
-        let arities: Vec<Option<usize>> = scope
-            .pattern
+        let rhss: Vec<RcExpr> = scope.pattern.iter().map(|b| b.expr.clone()).collect();
+        let arities: Vec<Option<usize>> = rhss
             .iter()
-            .map(|b| match &*peel_meta(&b.expr).inner {
+            .map(|rhs| match &*peel_meta(rhs).inner {
                 Expr::Lam(_, _, lam) => Some(lam.pattern.len()),
                 _ => None,
             })
             .collect();
-        // A binding that is a bare intrinsic (`if: __IF`) is an alias: a
-        // call through it is a call of the intrinsic, and takes the
-        // intrinsic's signature. Without this, every function written
-        // through such an alias was analysed as lazy in all its arguments
-        // wherever the alias is still a binding, as in the prelude analysed
-        // at blob build (eu-oaz72.77).
-        let aliases: Vec<Option<DemandSignature>> = scope
-            .pattern
-            .iter()
-            .map(|b| match &*peel_meta(&b.expr).inner {
-                Expr::Intrinsic(_, name) => self.intrinsic_sigs.get(name).cloned(),
-                _ => None,
-            })
-            .collect();
-        let seed_key = scope as *const LetScope<RcExpr> as usize;
         let frame = self.frames.len() - 1;
+        self.frames[frame].branches = self.resolve_shapes(frame, &rhss);
+        let seed_key = scope as *const LetScope<RcExpr> as usize;
         self.frames[frame].sigs = match self.seeds.get(&seed_key) {
             Some(seed) => seed.clone(),
-            None => arities
-                .iter()
-                .zip(&aliases)
-                .map(|(a, alias)| {
-                    a.map(|k| vec![Demand::strict_once(); k])
-                        .or_else(|| alias.clone())
-                })
-                .collect(),
+            None => {
+                let base = arities
+                    .iter()
+                    .map(|a| a.map(|k| vec![Demand::strict_once(); k]))
+                    .collect();
+                self.resolve_values(frame, &rhss, base)
+            }
         };
 
         let mut rounds = 0;
@@ -939,30 +968,32 @@ impl DemandAnalyser {
                 rhs_envs.push(rhs_env);
             }
 
-            let derived: Vec<Option<DemandSignature>> = new_rhs_exprs
+            // The lambdas' signatures are this round's results; every other
+            // binding's (an alias, a partial application) is then resolved
+            // from them, so it never reads the previous round's.
+            let consulted = self.frames[frame].consulted;
+            let previous = std::mem::take(&mut self.frames[frame].sigs);
+            let base = new_rhs_exprs
                 .iter()
-                .zip(arities.iter().zip(&aliases))
-                .map(|(rhs, (arity, alias))| {
-                    if arity.is_none() {
-                        return alias.clone();
-                    }
-                    match &*peel_meta(rhs).inner {
+                .zip(&arities)
+                .map(|(rhs, arity)| {
+                    arity.and_then(|_| match &*peel_meta(rhs).inner {
                         Expr::Lam(_, _, lam) => self
                             .signatures
                             .get(&(Rc::as_ptr(&lam.body.inner) as usize))
                             .cloned(),
                         _ => None,
-                    }
+                    })
                 })
                 .collect();
+            let derived = self.resolve_values(frame, &new_rhs_exprs, base);
 
-            let settled = !self.frames[frame].consulted
-                || rounds >= MAX_SIGNATURE_ITERATIONS
-                || derived == self.frames[frame].sigs;
+            let settled = !consulted || rounds >= MAX_SIGNATURE_ITERATIONS || derived == previous;
             if settled {
                 // Body calls see the signatures the RHSs actually have.
                 self.seeds.insert(seed_key, derived.clone());
                 self.frames[frame].sigs = derived;
+                self.frames[frame].consulted = consulted;
                 return (new_rhs_exprs, rhs_envs);
             }
 
@@ -979,17 +1010,136 @@ impl DemandAnalyser {
             }
             rounds += 1;
             self.frames[frame].sigs = if rounds == MAX_SIGNATURE_ITERATIONS {
-                arities
+                let base = arities
                     .iter()
-                    .zip(&aliases)
-                    .map(|(a, alias)| {
-                        a.map(|k| vec![Demand::lazy_multi(); k])
-                            .or_else(|| alias.clone())
-                    })
-                    .collect()
+                    .map(|a| a.map(|k| vec![Demand::lazy_multi(); k]))
+                    .collect();
+                self.resolve_values(frame, &rhss, base)
             } else {
                 derived
             };
+        }
+    }
+
+    /// The signatures of a `Let` group's bindings: `base` for its lambdas
+    /// (indices whose `base` entry is set), and, for every other binding,
+    /// the signature of the function value its RHS denotes
+    /// (`value_signature`), resolved with the group's own signatures in the
+    /// frame. An alias of an alias resolves in later passes; the passes stop
+    /// when nothing changes, at most one per binding.
+    ///
+    /// Leaves the frame's `sigs` holding the result, and its `consulted`
+    /// flag as it was.
+    fn resolve_values(
+        &mut self,
+        frame: usize,
+        rhss: &[RcExpr],
+        base: Vec<Option<DemandSignature>>,
+    ) -> Vec<Option<DemandSignature>> {
+        let consulted = self.frames[frame].consulted;
+        let fixed: Vec<bool> = base.iter().map(Option::is_some).collect();
+        self.frames[frame].sigs = base;
+        for _ in 0..=rhss.len() {
+            let mut changed = false;
+            for (i, rhs) in rhss.iter().enumerate() {
+                if fixed[i] {
+                    continue;
+                }
+                let sig = self.value_signature(rhs);
+                if self.frames[frame].sigs[i] != sig {
+                    self.frames[frame].sigs[i] = sig;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        self.frames[frame].consulted = consulted;
+        self.frames[frame].sigs.clone()
+    }
+
+    /// The demand signature of the function an expression evaluates to,
+    /// where it is known: a lambda's own, an intrinsic's, a bound or
+    /// prelude variable's, or, for a partial application `f(a1, …, ak)`,
+    /// the signature of `f` less its first `k` parameters (eu-oaz72.92).
+    /// Calling the partial application with the rest runs `f`'s body, so
+    /// the remaining parameters are demanded as `f` demands them.
+    fn value_signature(&mut self, expr: &RcExpr) -> Option<DemandSignature> {
+        let expr = peel_meta(expr);
+        match &*expr.inner {
+            Expr::App(..) => {
+                let (head, levels) = app_spine(expr);
+                let supplied: usize = levels.iter().map(|(_, args)| args.len()).sum();
+                let sig = self.value_signature(head)?;
+                (sig.len() > supplied).then(|| sig[supplied..].to_vec())
+            }
+            _ => self.lookup_signature(expr, usize::MAX),
+        }
+    }
+
+    /// The `IfShape` of each binding of a `Let` group, in its frame
+    /// (`frame`), resolving aliases within the group as `resolve_values`
+    /// does.
+    fn resolve_shapes(&mut self, frame: usize, rhss: &[RcExpr]) -> Vec<Option<IfShape>> {
+        self.frames[frame].branches = vec![None; rhss.len()];
+        for _ in 0..=rhss.len() {
+            let mut changed = false;
+            for (i, rhs) in rhss.iter().enumerate() {
+                let shape = self.binding_shape(rhs);
+                if self.frames[frame].branches[i] != shape {
+                    self.frames[frame].branches[i] = shape;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        std::mem::take(&mut self.frames[frame].branches)
+    }
+
+    /// The `IfShape` of a let binding's RHS: `__IF`, a bound alias of a
+    /// conditional, or a lambda whose body is a saturated call of a
+    /// conditional passing its own parameters as condition and branches.
+    fn binding_shape(&self, rhs: &RcExpr) -> Option<IfShape> {
+        match &*peel_meta(rhs).inner {
+            Expr::Lam(_, _, lam) => {
+                let (head, levels) = app_spine(peel_meta(&lam.body));
+                if levels.is_empty() {
+                    return None;
+                }
+                let args: Vec<&RcExpr> = levels.iter().flat_map(|(_, a)| a.iter()).collect();
+                // The head is outside the lambda: one scope further out.
+                let shape = self.shape_of(head, 1)?;
+                if args.len() != 3 {
+                    return None;
+                }
+                let mut out = [0; 3];
+                for (k, &pos) in shape.iter().enumerate() {
+                    match &*args.get(pos)?.inner {
+                        Expr::Var(_, Var::Bound(bv)) if bv.scope == 0 => {
+                            out[k] = bv.binder as usize;
+                        }
+                        _ => return None,
+                    }
+                }
+                Some(out)
+            }
+            _ => self.shape_of(rhs, 0),
+        }
+    }
+
+    /// The `IfShape` of a callee, `depth` scopes inside the innermost frame.
+    fn shape_of(&self, f: &RcExpr, depth: usize) -> Option<IfShape> {
+        match &*peel_meta(f).inner {
+            Expr::Intrinsic(_, name) if name == "IF" => Some([0, 1, 2]),
+            Expr::Var(_, Var::Bound(bv)) => {
+                let scope = (bv.scope as usize).checked_sub(depth)?;
+                let index = self.frames.len().checked_sub(1 + scope)?;
+                *self.frames[index].branches.get(bv.binder as usize)?
+            }
+            _ => None,
         }
     }
 
@@ -1025,6 +1175,7 @@ impl DemandAnalyser {
         // functions.
         self.frames.push(SigFrame {
             sigs: Vec::new(),
+            branches: Vec::new(),
             consulted: false,
         });
         let (new_body, body_env) = self.analyse_expr(&scope.body);
@@ -1057,29 +1208,50 @@ impl DemandAnalyser {
     }
 
     /// Analyse an `App` expression.
+    ///
+    /// A spine of applications, `App(App(g, a), b)`, is analysed as one
+    /// call of `g` with `a ++ b`: a pipeline step `xs nil? then(d, e)` is
+    /// `then(d, e)` applied to `xs nil?`, and only the whole spine
+    /// saturates `then`. Evaluating the outer application runs `g`'s body
+    /// with every argument, so `g`'s signature applies across the spine
+    /// (eu-oaz72.92). The expression keeps its shape.
     fn analyse_app(&mut self, s: Smid, f: &RcExpr, args: &[RcExpr]) -> (RcExpr, DemandEnv) {
+        // Levels of the spine, innermost first, ending with this one.
+        let mut levels: Vec<(Smid, &[RcExpr])> = vec![(s, args)];
+        let mut head = f;
+        while let Expr::App(s2, f2, a2) = &*head.inner {
+            levels.push((*s2, a2));
+            head = f2;
+        }
+        levels.reverse();
+        let all_args: Vec<&RcExpr> = levels.iter().flat_map(|(_, a)| a.iter()).collect();
+        let total = all_args.len();
+
         // Analyse the function. A lambda literal in function position that
         // receives all its parameters is applied once here, so its captured
         // variables keep their cardinality (see `analyse_lam_once`). A
         // partial application returns a closure that may be called any
         // number of times, so it takes the shared path.
-        let (new_f, f_env) = match &*f.inner {
-            Expr::Lam(ls, inl, scope) if args.len() >= scope.pattern.len() => {
+        let (new_head, f_env) = match &*head.inner {
+            Expr::Lam(ls, inl, scope) if total >= scope.pattern.len() => {
                 self.analyse_lam_once(*ls, *inl, scope)
             }
-            _ => self.analyse_expr(f),
+            _ => self.analyse_expr(head),
         };
         let mut env = f_env;
 
         // Try to find the function's signature
-        let sig = self.lookup_signature(f, args.len());
-        let is_if =
-            matches!(&*f.inner, Expr::Intrinsic(_, name) if name == "IF") && args.len() == 3;
-        let mut branch_envs: Vec<DemandEnv> = Vec::new();
+        let sig = self.lookup_signature(head, total);
+        // A saturated call of a conditional evaluates exactly one branch.
+        let shape = self
+            .shape_of(head, 0)
+            .filter(|_| sig.as_ref().is_some_and(|s| total >= s.len()));
+        let mut then_env = DemandEnv::new();
+        let mut else_env = DemandEnv::new();
 
         // Analyse each argument with the demand from the signature
-        let mut new_args = Vec::with_capacity(args.len());
-        for (i, arg) in args.iter().enumerate() {
+        let mut new_args = Vec::with_capacity(total);
+        for (i, arg) in all_args.into_iter().enumerate() {
             let (new_arg, arg_env) = self.analyse_expr(arg);
 
             // The demand the function places on this argument position.
@@ -1104,18 +1276,20 @@ impl DemandAnalyser {
                 env = merge_envs(&env, &scaled_env);
             }
 
-            if is_if && i > 0 {
-                branch_envs.push(arg_env);
+            match shape {
+                Some([_, t, _]) if t == i => then_env = arg_env,
+                Some([_, _, e]) if e == i => else_env = arg_env,
+                _ => {}
             }
             new_args.push(new_arg);
         }
 
-        // Exactly one branch of an `IF` is evaluated, so a variable that
-        // both branches force is forced whichever is taken (the lub of the
-        // branches). The signature's lazy branch demands cannot see that.
-        // Cardinality keeps the conservative sum.
-        if let [then_env, else_env] = branch_envs.as_slice() {
-            for (key, d) in then_env {
+        // Exactly one branch of a conditional is evaluated, so a variable
+        // that both branches force is forced whichever is taken (the lub of
+        // the branches). The signature's lazy branch demands cannot see
+        // that. Cardinality keeps the conservative sum.
+        if shape.is_some() {
+            for (key, d) in &then_env {
                 let joined = else_env.get(key).map(|e| d.lub(*e));
                 if joined.is_some_and(|j| j.strictness == Strictness::Strict) {
                     if let Some(entry) = env.get_mut(key) {
@@ -1125,7 +1299,14 @@ impl DemandAnalyser {
             }
         }
 
-        (RcExpr::from(Expr::App(s, new_f, new_args)), env)
+        // Rebuild the spine.
+        let mut new_args = new_args.into_iter();
+        let mut new_f = new_head;
+        for (ls, level_args) in levels {
+            let level: Vec<RcExpr> = new_args.by_ref().take(level_args.len()).collect();
+            new_f = RcExpr::from(Expr::App(ls, new_f, level));
+        }
+        (new_f, env)
     }
 
     /// Look up the demand signature for a function expression applied to
@@ -1138,14 +1319,21 @@ impl DemandAnalyser {
             Expr::Var(_, Var::Bound(bv)) => {
                 let index = self.frames.len().checked_sub(1 + bv.scope as usize)?;
                 let frame = &mut self.frames[index];
-                let sig = frame.sigs.get(bv.binder as usize)?.as_ref()?;
-                if nargs < sig.len() {
-                    return None;
-                }
-                let sig = sig.clone();
+                let entry = frame.sigs.get(bv.binder as usize)?;
+                // The result depends on the frame's signatures, whether or
+                // not this one is known yet.
                 frame.consulted = true;
-                Some(sig)
+                entry.as_ref().filter(|sig| nargs >= sig.len()).cloned()
             }
+
+            // A prelude global, in blob mode: the signature derived for it
+            // when the blob was built. Saturated calls only, as above.
+            Expr::Var(_, Var::Free(name)) => self
+                .prelude
+                .as_ref()?
+                .get(name)
+                .filter(|sig| nargs >= sig.len())
+                .cloned(),
 
             // Intrinsic function: use seed signature
             Expr::Intrinsic(_, name) => self.intrinsic_sigs.get(name).cloned(),
@@ -1161,12 +1349,34 @@ impl DemandAnalyser {
     }
 }
 
+/// The head of an application spine and its levels' arguments, innermost
+/// first: `App(App(g, a), b)` is `(g, [a, b])`. A non-application is its
+/// own head with no levels.
+fn app_spine(expr: &RcExpr) -> (&RcExpr, Vec<(Smid, &[RcExpr])>) {
+    let mut levels = Vec::new();
+    let mut head = expr;
+    while let Expr::App(s, f, args) = &*head.inner {
+        levels.push((*s, args.as_slice()));
+        head = f;
+    }
+    levels.reverse();
+    (head, levels)
+}
+
 /// Run the demand analysis pass on a core expression.
 ///
 /// Returns the annotated expression and the signature side-table.
 pub fn analyse_demands(expr: &RcExpr) -> (RcExpr, SignatureTable, NamedSignatureTable) {
-    let analyser = DemandAnalyser::new();
-    analyser.analyse(expr)
+    analyse_demands_with_prelude(expr, None)
+}
+
+/// Run the demand analysis pass on a blob-mode program, whose free
+/// variables name prelude globals with the signatures in `prelude`.
+pub fn analyse_demands_with_prelude(
+    expr: &RcExpr,
+    prelude: Option<PreludeSignatures<'_>>,
+) -> (RcExpr, SignatureTable, NamedSignatureTable) {
+    DemandAnalyser::new().with_prelude(prelude).analyse(expr)
 }
 
 /// Walk the annotated core expression and print demand annotations for
@@ -1880,8 +2090,147 @@ mod tests {
             sigs["other"].as_ref().expect("other is a lambda")[0].strictness,
             Strictness::Strict
         );
-        assert_eq!(sigs["alias"], None, "an alias has no signature of its own");
+        assert_eq!(
+            sigs["alias"], sigs["take"],
+            "an alias takes the signature of the binding it names"
+        );
         assert_eq!(sigs["dup"], None, "a name bound twice has no signature");
+    }
+
+    fn strictness(sig: &Option<DemandSignature>) -> Vec<Strictness> {
+        sig.as_ref()
+            .expect("a signature")
+            .iter()
+            .map(|d| d.strictness)
+            .collect()
+    }
+
+    /// A small prelude in the shapes the real one uses (eu-oaz72.92): an
+    /// intrinsic alias, a conditional written through it, a pipeline step,
+    /// an alias of a lambda and partial applications. Needs no blob.
+    #[test]
+    fn signatures_follow_aliases_partial_applications_and_pipelines() {
+        use Strictness::{Lazy, Strict};
+        let if_ = free("if");
+        let then = free("then");
+        let (t, f, c) = (free("t"), free("f"), free("c"));
+        let (d, xs) = (free("d"), free("xs"));
+        let (a, b) = (free("a"), free("b"));
+        let expr = let_(
+            vec![
+                // if: __IF
+                (if_.clone(), bif("IF")),
+                // then(t, f, c): if(c, t, f)
+                (
+                    then.clone(),
+                    lam(
+                        vec![t.clone(), f.clone(), c.clone()],
+                        app(var(if_.clone()), vec![var(c.clone()), var(t), var(f)]),
+                    ),
+                ),
+                // head-or(d, xs): xs nil? then(d, xs head)
+                (
+                    free("head-or"),
+                    lam(
+                        vec![d.clone(), xs.clone()],
+                        app(
+                            app(
+                                var(then.clone()),
+                                vec![var(d), app(bif("HEAD"), vec![var(xs.clone())])],
+                            ),
+                            vec![app(bif("NILP"), vec![var(xs)])],
+                        ),
+                    ),
+                ),
+                // both(a, c): if(c, a + 1, a + 2) — `a` forced on either branch
+                (
+                    free("both"),
+                    lam(
+                        vec![a.clone(), c.clone()],
+                        app(
+                            var(if_),
+                            vec![
+                                var(c.clone()),
+                                app(bif("ADD"), vec![var(a.clone()), num(1)]),
+                                app(bif("ADD"), vec![var(a.clone()), num(2)]),
+                            ],
+                        ),
+                    ),
+                ),
+                // either(a, b, c): c then(a + 1, a + b) — `a` on both, `b` on one
+                (
+                    free("either"),
+                    lam(
+                        vec![a.clone(), b.clone(), c.clone()],
+                        app(
+                            app(
+                                var(then.clone()),
+                                vec![
+                                    app(bif("ADD"), vec![var(a.clone()), num(1)]),
+                                    app(bif("ADD"), vec![var(a), var(b)]),
+                                ],
+                            ),
+                            vec![var(c)],
+                        ),
+                    ),
+                ),
+                // otherwise: then
+                (free("otherwise"), var(then.clone())),
+                // default-to(d): then(d) — a partial application
+                (free("default-to"), app(var(then), vec![num(0)])),
+                // inc: __ADD(1)
+                (free("inc"), app(bif("ADD"), vec![num(1)])),
+            ],
+            num(0),
+        );
+        let sigs = derive_top_level_signatures(&expr);
+
+        assert_eq!(strictness(&sigs["if"]), vec![Strict, Lazy, Lazy]);
+        assert_eq!(strictness(&sigs["then"]), vec![Lazy, Lazy, Strict]);
+        assert_eq!(
+            strictness(&sigs["head-or"]),
+            vec![Lazy, Strict],
+            "a pipeline step saturates `then`"
+        );
+        assert_eq!(
+            strictness(&sigs["both"]),
+            vec![Strict, Strict],
+            "branches join through an alias of `__IF`"
+        );
+        assert_eq!(
+            strictness(&sigs["either"]),
+            vec![Strict, Lazy, Strict],
+            "branches join through a lambda that is a conditional"
+        );
+        assert_eq!(sigs["otherwise"], sigs["then"]);
+        assert_eq!(strictness(&sigs["default-to"]), vec![Lazy, Strict]);
+        assert_eq!(strictness(&sigs["inc"]), vec![Strict]);
+    }
+
+    /// In blob mode a call of a prelude global (a free variable) takes the
+    /// signature derived for it (eu-oaz72.92).
+    #[test]
+    fn free_callees_take_prelude_signatures() {
+        let x = free("x");
+        let expr = let_(
+            vec![(x.clone(), app(bif("ADD"), vec![num(1), num(2)]))],
+            app(var(free("f")), vec![var(x)]),
+        );
+        let x_strictness = |prelude| {
+            let (result, _, _) = analyse_demands_with_prelude(&expr, prelude);
+            match &*result.inner {
+                Expr::Let(_, scope, _) => scope.pattern[0].demand.strictness,
+                other => panic!("expected Let, got: {other:?}"),
+            }
+        };
+        let name_to_slot = HashMap::from([("f".to_string(), 0)]);
+        let sigs = vec![Some(vec![Demand::strict_once()])];
+        let prelude = PreludeSignatures {
+            name_to_slot: &name_to_slot,
+            sigs: &sigs,
+        };
+        assert_eq!(x_strictness(None), Strictness::Lazy);
+        assert_eq!(x_strictness(Some(prelude)), Strictness::Strict);
     }
 
     #[test]
