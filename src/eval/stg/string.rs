@@ -32,6 +32,7 @@ use super::{
 
 use regex::Regex;
 use serde_json::Number;
+use std::borrow::Cow;
 
 /// Get (or store and get) regex from machine rcache
 ///
@@ -321,7 +322,7 @@ impl CallGlobal1 for NumParse {}
 /// leading zero never means octal here: the digits are always read as
 /// decimal. Only the integer part (after an optional `-`) is touched;
 /// anything else the grammar rejects is still rejected.
-fn strip_leading_zeros(s: &str) -> std::borrow::Cow<'_, str> {
+fn strip_leading_zeros(s: &str) -> Cow<'_, str> {
     let (sign, digits) = match s.strip_prefix('-') {
         Some(rest) => ("-", rest),
         None => ("", s),
@@ -331,9 +332,9 @@ fn strip_leading_zeros(s: &str) -> std::borrow::Cow<'_, str> {
     // Keep the last digit of the integer part even when it is a zero.
     let strip = zeros.min(int_len.saturating_sub(1));
     if strip == 0 {
-        std::borrow::Cow::Borrowed(s)
+        Cow::Borrowed(s)
     } else {
-        std::borrow::Cow::Owned(format!("{sign}{}", &digits[strip..]))
+        Cow::Owned(format!("{sign}{}", &digits[strip..]))
     }
 }
 
