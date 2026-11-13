@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**61 of 274 fixtures diverge.**
+**65 of 279 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -52,8 +52,12 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/250_dict_bad_pair_computed` | user tests/harness/errors/250_dict_bad_pair_computed.eu:2:30 | user tests/harness/errors/250_dict_bad_pair_computed.eu:2:30 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_get_missing` | user tests/harness/errors/250_dict_get_missing.eu:2:9 | user tests/harness/errors/250_dict_get_missing.eu:2:9 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_key_depth` | user tests/harness/errors/250_dict_key_depth.eu:5:9 | user tests/harness/errors/250_dict_key_depth.eu:5:48 | 2 (2 user) | 2 (2 user) |
+| `errors/250_dict_merge_strict` | user tests/harness/errors/250_dict_merge_strict.eu:2:13 | user tests/harness/errors/250_dict_merge_strict.eu:2:13 | 2 (2 user) | 1 (1 user) |
 | `errors/250_dict_not_a_dict` | user tests/harness/errors/250_dict_not_a_dict.eu:2:16 | user tests/harness/errors/250_dict_not_a_dict.eu:2:16 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_render` | user tests/harness/errors/250_dict_render.eu:2:9 | user tests/harness/errors/250_dict_render.eu:2:9 | 0 (0 user) | 0 (0 user) |
+| `errors/250_dict_to_block_collision` | user tests/harness/errors/250_dict_to_block_collision.eu:2:9 | user tests/harness/errors/250_dict_to_block_collision.eu:2:9 | 2 (2 user) | 2 (2 user) |
+| `errors/250_dict_to_block_list_key` | user tests/harness/errors/250_dict_to_block_list_key.eu:2:9 | user tests/harness/errors/250_dict_to_block_list_key.eu:2:9 | 2 (2 user) | 2 (2 user) |
+| `errors/250_dict_update_strict` | user tests/harness/errors/250_dict_update_strict.eu:2:12 | user tests/harness/errors/250_dict_update_strict.eu:2:12 | 2 (2 user) | 1 (1 user) |
 | `errors/250_dict_value_cycle` | user tests/harness/errors/250_dict_value_cycle.eu:3:19 | user tests/harness/errors/250_dict_value_cycle.eu:3:19 | 3 (3 user) | 3 (3 user) |
 | `errors/275_non_integer_nth` | user tests/harness/errors/275_non_integer_nth.eu:2:14 | user tests/harness/errors/275_non_integer_nth.eu:2:14 | 2 (1 user) | 1 (1 user) |
 | `errors/275_non_integer_window_all_size` | user tests/harness/errors/275_non_integer_window_all_size.eu:2:14 | user tests/harness/errors/275_non_integer_window_all_size.eu:2:14 | 2 (1 user) | 1 (1 user) |

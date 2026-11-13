@@ -1,0 +1,2 @@
+` "`dict.pop-min` of an empty dict is an error naming the operation."
+result: dict.empty dict.pop-min

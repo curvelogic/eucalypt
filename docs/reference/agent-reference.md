@@ -855,6 +855,24 @@ d dict.dissoc(:b) dict.size      # 1
 d dict.to-list                   # [[:a, 1], [:b, 2]] — key order
 ```
 
+Ordered operations, updates and merges:
+
+```
+d dict.keys                      # [:a, :b] (dict.values: [1, 2])
+d dict.min                       # [:a, 1] (dict.max: [:b, 2])
+d dict.pop-min                   # [:a, 1, rest] — rest is d without :a
+d dict.range(:a, :b)             # the sub-dict with :a ≤ k < :b
+d dict.update(:a, + 1, 0)        # :a mapped to 2 (lazily); absent keys start from 0
+d dict.update-strict(:a, + 1, 0) # the same, evaluated now: use it for counting
+b dict.merge-with(+, a)          # union of a and b, a's value + b's on collisions
+{x: 1} dict.from-block           # dict keyed :x (dict.to-block converts back)
+```
+
+A dict keyed by `[priority, item]` is a priority queue: `pop-min` takes the
+next item, `assoc` pushes one. Updates and merges store lazy values; in a
+counting loop use `update-strict` or `merge-with-strict`, which evaluate each
+new value, so no chain of unevaluated additions builds up.
+
 Order across types: numbers < strings < symbols (by name) < lists
 (lexicographic). `dict.of` keeps the first of equal keys and the last value.
 A dict cannot be rendered yet; render `dict.to-list` instead.

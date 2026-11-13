@@ -5976,6 +5976,15 @@ test: {
 Several test targets can be embedded in one file. Each is run as a
 separate test.
 
+The tester runs a file's `test-` and `bench-` targets, its `main`
+target, and any target that names validators with `verify`. Any other
+target is not run. So that its checks are not skipped silently,
+`eu test` fails a file that declares such a target when the target's
+body binds `RESULT` or uses an inline assertion (`//=`, `//=>`, `//!`,
+`//=?`, `//=?>`): name it `test-…` or give it `verify`. The check reads
+the target's own body, so checks reached only through a reference to
+another declaration are not seen.
+
 ## How the default verdict is computed
 
 Each test target is rendered to output, and that output is parsed back
@@ -9124,7 +9133,7 @@ Sets are unordered collections of unique values, provided by the
 ### Creating Sets
 
 ```sh
-eu -e '[1, 2, 2, 3, 3, 3] set.from-list set.to-list'
+eu -e '[1, 2, 2, 3, 3, 3] set.of set.to-list'
 ```
 
 ```yaml
@@ -9133,7 +9142,8 @@ eu -e '[1, 2, 2, 3, 3, 3] set.from-list set.to-list'
 - 3
 ```
 
-Duplicates are removed and elements are sorted.
+Duplicates are removed and elements are sorted. `set.from-list` is an
+alias of `set.of` — the same function, pairing with `set.to-list`.
 
 The empty set is written as `∅`:
 
@@ -10307,6 +10317,7 @@ table is verified against `named_precedence` in
 | 45 | append | left | `<<` | Deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -10336,17 +10347,17 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 - [Lists](lists.md) -- list construction, transformation, folding, sorting (91 entries)
 - [Blocks](blocks.md) -- block construction, access, merging, transformation (66 entries)
 - [Strings](strings.md) -- string manipulation, regex, formatting (36 entries)
-- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (30 entries)
+- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (32 entries)
 - [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (12 entries)
 - [Combinators](combinators.md) -- function composition, application, utilities (14 entries)
 - [Calendar](calendar.md) -- date and time functions (8 entries)
-- [Sets](sets.md) -- set operations (14 entries)
-- [Dicts](dicts.md) -- persistent ordered dictionaries (11 entries)
+- [Sets](sets.md) -- set operations (15 entries)
+- [Dicts](dicts.md) -- persistent ordered dictionaries (24 entries)
 - [Random Numbers](random.md) -- random number generation, monadic random: namespace (15 entries)
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
-- [IO](io.md) -- environment, time, argument access, and monad utility (85 entries)
+- [IO](io.md) -- environment, time, argument access, and monad utility (86 entries)
 
-*386 documented entries in total.*
+*403 documented entries in total.*
 
 ## Standard Libraries
 
@@ -10398,8 +10409,8 @@ ship with eucalypt:
 
 | Function | Description |
 |----------|-------------|
-| `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is not rejected |
-| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0, `[]` when `n` exceeds the length of `l`. A non-integer `n` is not rejected |
+| `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is an error |
+| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0, `[]` when `n` exceeds the length of `l`. A non-integer `n` is an error |
 | `take-while(p?, l)` | Initial elements of list `l` while `p?` is true |
 | `take-until(p?)` | Initial elements of list `l` while `p?` is false |
 | `drop-while(p?, l)` | Skip initial elements of list `l` while `p?` is true |
@@ -10427,11 +10438,11 @@ ship with eucalypt:
 
 | Function | Description |
 |----------|-------------|
-| `split-at(n, l)` | Split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0 |
+| `split-at(n, l)` | Split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0; a non-integer `n` is an error |
 | `split-after(p?, l)` | Split list where `p?` becomes false and return pair |
 | `split-when(p?, l)` | Split list where `p?` becomes true and return pair |
-| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step`; a size or step that is not positive is an error |
-| `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n`; a size that is not positive is an error |
+| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step`; a size or step that is not a positive integer is an error |
+| `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n`; a size that is not a positive integer is an error |
 | `discriminate(pred, xs)` | Return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false |
 
 ## Folds and Scans
@@ -10481,7 +10492,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `nth(n, l)` | Return `n`th item (from 0) of list if it exists, otherwise error; a negative `n` is an error |
+| `nth(n, l)` | Return `n`th item (from 0) of list if it exists, otherwise error; a negative or non-integer `n` is an error |
 | `(l !! r)` | Return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get` |
 | `count(l)` | Return count of items in list `l` |
 | `last` | Return last element of list `l` |
@@ -10492,10 +10503,10 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0 |
+| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`.
-Panics if `n` is out of range, including a negative `n` |
+An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`.
 Returns `l` unchanged if no element matches |
 | `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
@@ -10505,8 +10516,8 @@ Returns `l` unchanged if no element matches |
 | `butlast(l)` | Return all elements of list `l` except the last |
 | `unzip(pairs)` | List of pairs to pair of lists. Inverse of zip |
 | `interleave(a, b)` | Alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended |
-| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n`; a size that is not positive gives `[]`, otherwise a step that is not positive is an error |
-| `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk; a size that is not positive gives `[]` |
+| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n`; a size that is not positive gives `[]`, otherwise a step that is not positive is an error; a non-integer size or step is an error |
+| `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk; a size that is not positive gives `[]`; a non-integer size is an error |
 | `group-consecutive-by(f, xs)` | Group consecutive elements where `f` returns equal values into sublists |
 | `group-consecutive` | Group consecutive equal elements into sublists |
 | `uniq(xs)` | Remove consecutive duplicates from a list |
@@ -10722,6 +10733,8 @@ hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 
 | Function | Description |
 |----------|-------------|
+| `(l ∣ r)` | `true` if `l` divides `r`, i.e. `r % l = 0`; `3 ∣ 12` is `true`. Note `∣` is U+2223 (divides), not `\|` |
+| `(l ∤ r)` | `true` if `l` does not divide `r`, i.e. `not(l ∣ r)`; `5 ∤ 12` is `true` |
 | `(∸ x)` | Unary minus; negate |
 
 ## Numeric Functions
@@ -10844,7 +10857,8 @@ hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 
 | Function | Description |
 |----------|-------------|
-| `set.from-list(xs)` | Create a set from list `xs` of primitive values |
+| `set.of` | Create a set from list `xs` of primitive values, in one pass (duplicates removed) |
+| `set.from-list` | Alias of `set.of`: create a set from list `xs` of primitive values |
 | `set.to-list` | Return sorted list of elements in set `s` |
 | `set.add` | Add element `e` to set `s` |
 | `set.remove` | Remove element `e` from set `s` |
@@ -10854,13 +10868,13 @@ hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 | `set.union` | Return union of sets `a` and `b` |
 | `set.intersect` | Return intersection of sets `a` and `b` |
 | `set.diff` | Return elements in set `a` that are not in set `b` |
-| `set.sample(k, s, stream)` | Random monad action: pick `n` random elements from set `s`. Returns value/rest block |
+| `set.sample(k, s, stream)` | Random monad action: pick `n` random elements from set `s`. Returns value/rest block; a negative `n` samples nothing; a non-integer `n` is an error |
 | `∅` | The empty set |
 | `(l ∈ r)` | True if element `v` is a member of set `s` |
 | `(l ∉ r)` | True if element `v` is not a member of set `s` |
 
 ```eu
-s: set.from-list([1, 2, 3, 2, 1])
+s: set.of([1, 2, 3, 2, 1])
 # s contains {1, 2, 3} (duplicates removed)
 ```
 
@@ -10895,6 +10909,19 @@ d: set.diff(a, b) set.to-list        # [1]
 | `dict.contains?` | True if dict `d` holds key `k` |
 | `dict.size` | Return the number of entries in dict `d` |
 | `dict.empty?(d)` | True if dict `d` has no entries |
+| `dict.keys` | Return the keys of dict `d` in key order |
+| `dict.values` | Return the values of dict `d` in key order |
+| `dict.min` | Return `[key, value]` for the least key of dict `d`; an error if `d` is empty |
+| `dict.max` | Return `[key, value]` for the greatest key of dict `d`; an error if `d` is empty |
+| `dict.pop-min` | Return `[key, value, rest]` for the least key of dict `d`, where `rest` is `d` without it; an error if `d` is empty. With keys `[priority, item]` this makes a dict a priority queue |
+| `dict.pop-max` | Return `[key, value, rest]` for the greatest key of dict `d`, where `rest` is `d` without it; an error if `d` is empty |
+| `dict.range` | Return the dict of the entries of dict `d` whose keys `k` satisfy `lo ≤ k < hi` |
+| `dict.update` | Return dict `d` with key `k` mapped to the lazy value `f(old)`, where `old` is the value at `k`, or `default` if `d` does not hold `k` |
+| `dict.update-strict` | As `dict.update`, but `f(old)` is evaluated before it is stored, so repeated updates (such as counting) do not build up unevaluated values |
+| `dict.merge-with` | Return the union of dicts `a` and `b`. Where both hold a key, the value is the lazy `f(va, vb)`, with `a`'s value first, and `a`'s key is kept |
+| `dict.merge-with-strict(f, a, b)` | As `dict.merge-with`, but each combined value `f(va, vb)` is evaluated before it is stored |
+| `dict.from-block(b)` | Create a dict from block `b`, keyed by its symbol keys. Values stay lazy |
+| `dict.to-block` | Return a block of the entries of dict `d` in key order. Symbol keys are kept, string keys become symbols, and number keys become symbols of their rendered text. A list key, or two keys that become the same symbol (a string and a symbol with the same text, say), is an error |
 
 ---
 
@@ -10937,7 +10964,7 @@ eu --seed 42 example.eu
 | `random.split(s)` | State-monad action that splits the stream into two independent streams. Returns a value/rest block where value and rest are each independent streams |
 | `random.choice(lst, stream)` | State-monad action returning a random element from list |
 | `random.shuffle(lst)` | State-monad action returning a shuffled copy of list |
-| `random.sample(n, lst, stream)` | State-monad action returning n elements sampled without replacement |
+| `random.sample(n, lst, stream)` | State-monad action returning n elements sampled without replacement; a non-integer n is an error |
 | `random.run(action, stream)` | Run a random action on a stream; returns a value/rest block |
 | `random.eval(action, stream)` | Run a random action and return only the value |
 | `random.exec(action, stream)` | DEPRECATED: use random.run(action, stream).rest. Run a random action and return only the remaining stream |
@@ -11160,10 +11187,11 @@ has no metadata at all.
 | `alter?(k?, v!, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `update?(k?, f, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `vec.of` | Convert list `xs` of primitive values to a vec for O(1) indexed access |
+| `vec.from-list` | Alias of `vec.of`: convert list `xs` of primitive values to a vec |
 | `vec.len` | Return the number of elements in vec `v` |
 | `vec.nth` | Return the element at index `n` (0-based) in vec `v` |
 | `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v` |
-| `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement |
+| `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement; a negative `n` samples nothing; a non-integer `n` is an error |
 | `vec.shuffle(v, stream)` | Random monad action: return vec `v` in random order |
 | `vec.to-list` | Convert vec `v` back to a cons-list |
 | `arr.zeros` | Create an array of zeros with the given shape list |
@@ -11698,6 +11726,15 @@ program whose live data is small stays small. If the live data left after a
 collection exceeds about 7/8 of the limit, evaluation stops with a
 `heap limit exceeded` error naming both sizes; raise the limit (or use 0)
 for such a program.
+
+The limit also bounds the memory the heap holds, not only its live data.
+Once the heap holds 7/8 of the limit, it collects whatever the allocation
+volume and returns empty blocks to the system. Live data spread thinly
+across many blocks can still hold the heap over the limit, which the
+collector cannot compact away, so a tolerance applies: half the limit, and
+at least 1 MiB. If two successive
+collections each leave more than the limit plus that tolerance, evaluation
+stops with the same `heap limit exceeded` error.
 
 ### Error Output Format
 
@@ -13400,6 +13437,7 @@ From highest (tightest) to lowest binding:
 | 45 | append | left | `<<` | Deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -13532,7 +13570,12 @@ concat([[1,2], [3], [4,5]])   # [1, 2, 3, 4, 5]
 
 ```
 [1,2,3,4,5] take(3)          # [1, 2, 3]
+[1,2,3] take(1.5)            # error: take count 1.5 must be an integer
 ```
+
+A non-integer count or index is an error in `take`, `drop`, `split-at`,
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions. `range` takes bounds, not a count, and accepts non-integers.
 
 #### `drop(n, l)` — remove first n elements
 
@@ -13634,6 +13677,20 @@ Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
 { a: 1 } dissoc([:a])                  # {}
 ```
 
+### 3.2a Sets and Vecs
+
+Build a collection from a list with `of`; `from-list` is an alias of it
+(the same function), pairing with `to-list`. Elements must be primitives
+(numbers, strings, symbols).
+
+```
+s: [3, 1, 3, 2] set.of           # set of 1, 2, 3 (alias: set.from-list)
+s set.to-list                    # [1, 2, 3] — sorted, duplicates removed
+2 ∈ s                            # true
+v: [10, 20, 30] vec.of           # O(1) indexed access (alias: vec.from-list)
+v vec.nth(1)                     # 20
+```
+
 ### 3.2b Dicts
 
 A dict is a persistent dictionary ordered by key, with O(log n) `get`,
@@ -13650,6 +13707,24 @@ d dict.assoc([3, 4], :pt)        # list keys, e.g. coordinates
 d dict.dissoc(:b) dict.size      # 1
 d dict.to-list                   # [[:a, 1], [:b, 2]] — key order
 ```
+
+Ordered operations, updates and merges:
+
+```
+d dict.keys                      # [:a, :b] (dict.values: [1, 2])
+d dict.min                       # [:a, 1] (dict.max: [:b, 2])
+d dict.pop-min                   # [:a, 1, rest] — rest is d without :a
+d dict.range(:a, :b)             # the sub-dict with :a ≤ k < :b
+d dict.update(:a, + 1, 0)        # :a mapped to 2 (lazily); absent keys start from 0
+d dict.update-strict(:a, + 1, 0) # the same, evaluated now: use it for counting
+b dict.merge-with(+, a)          # union of a and b, a's value + b's on collisions
+{x: 1} dict.from-block           # dict keyed :x (dict.to-block converts back)
+```
+
+A dict keyed by `[priority, item]` is a priority queue: `pop-min` takes the
+next item, `assoc` pushes one. Updates and merges store lazy values; in a
+counting loop use `update-strict` or `merge-with-strict`, which evaluate each
+new value, so no chain of unevaluated additions builds up.
 
 Order across types: numbers < strings < symbols (by name) < lists
 (lexicographic). `dict.of` keeps the first of equal keys and the last value.
@@ -14131,7 +14206,7 @@ The following are commonly assumed but are **not** in the prelude:
 
 - `flatten` — use `concat` (flattens one level)
 - `unique` — does not exist in prelude
-- `even?` / `odd?` — do not exist (use `x % 2 = 0`)
+- `even?` / `odd?` — do not exist (use `2 ∣ x` / `2 ∤ x`, or `x % 2 = 0`; `∣` is U+2223 divides, not `|`)
 - `round` / `ceil` — use `floor` and `ceiling` (or bracket notation `⌊n⌋` and `⌈n⌉`)
 - `select(ks, b)` — **exists**: `{ a: 1, b: 2, c: 3 } select([:a, :c])` → `{ a: 1, c: 3 }`
 - `dissoc(ks, b)` — **exists**: `{ a: 1, b: 2 } dissoc([:a])` → `{ b: 2 }`
@@ -15933,14 +16008,14 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 
 ## Sets for membership
 
-- Use sets (`set.from-list`) for repeated membership testing, not `any(= x)` over a list. Faster and reads better with `∈`:
+- Use sets (`set.of`) for repeated membership testing, not `any(= x)` over a list. Faster and reads better with `∈`:
   ```eu,notest
   # Before
   allowed: [:a, :b, :c]
   allowed any(= v)
 
   # After
-  allowed: set.from-list[:a, :b, :c]
+  allowed: set.of[:a, :b, :c]
   v ∈ allowed            # as expression
   v when(∈ allowed, f)   # section as predicate
   ```
@@ -16643,6 +16718,7 @@ From highest to lowest binding:
 | 45 | append | right | `++`, `<<` | List append, deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -16703,6 +16779,7 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `sort-by(f)` | Sort by key function |
 | `take(n)` | First n elements (`[]` if n <= 0) |
 | `drop(n)` | Remove first n (list unchanged if n <= 0; `[]` if n exceeds the length) |
+| `nth(n)` | Element at index `n` from 0 (error if out of range) |
 | `zip` | Pair elements from two lists |
 | `zip-with(f)` | Combine elements with function |
 | `concat` | Flatten nested lists one level (use `concat`, not `flatten` — does not exist) |
@@ -16713,6 +16790,11 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `any(p?)` | Does any element match? |
 | `all(p?)` | Do all elements match? |
 | `nub-by(f)` | Deduplicate by key function (no `unique` in prelude) |
+
+A non-integer count or index is an error in `take`, `drop`, `split-at`,
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions; an integral
+float such as `2.0` is accepted.
 
 ### Blocks
 
@@ -16788,7 +16870,7 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
-| `even?` / `odd?` | Do **not** exist — use `x % 2 = 0` / `x % 2 = 1` |
+| `even?` / `odd?` | Do **not** exist — use `2 ∣ x` / `2 ∤ x` (U+2223 divides, not `\|`) or `x % 2 = 0` |
 
 ### Lenses (`lens.eu`)
 
@@ -16852,8 +16934,16 @@ and each is computed at most once.
 | `d dict.get(k)` | Value at `k`; an error if absent |
 | `d dict.get-or(k, default)` | Value at `k`, or `default` |
 | `d dict.assoc(k, v)` / `d dict.dissoc(k)` | New dict with `k` set / removed (O(log n)) |
-| `d dict.contains?(k)` / `dict.size(d)` | Holds `k`? / number of entries |
+| `d dict.contains?(k)` / `d dict.size` | Holds `k`? / number of entries |
 | `d dict.to-list` | `[key, value]` pairs in key order |
+| `d dict.keys` / `d dict.values` | Keys / values in key order |
+| `d dict.min` / `d dict.max` | `[key, value]` for the least / greatest key; an error if empty |
+| `d dict.pop-min` / `d dict.pop-max` | `[key, value, rest]`; with keys `[priority, item]`, a priority queue |
+| `d dict.range(lo, hi)` | Sub-dict of keys `lo ≤ k < hi` |
+| `d dict.update(k, f, default)` | Map `k` to `f(old)`, `old` defaulting to `default` (lazy) |
+| `d dict.update-strict(k, f, default)` | As `update`, evaluating `f(old)` now: `d dict.update-strict(k, + 1, 0)` counts |
+| `b dict.merge-with(f, a)` | Union; `f(va, vb)` where both hold a key (lazy; `merge-with-strict` evaluates it) |
+| `b dict.from-block` / `d dict.to-block` | Block to dict (symbol keys) / dict to block (string, symbol and number keys) |
 
 Keys order numbers < strings < symbols < lists; `1` and `1.0` are the same
 key. A dict cannot be rendered yet: convert it with `dict.to-list` first.
@@ -16885,6 +16975,17 @@ key. A dict cannot be rendered yet: convert it with `dict.to-list` first.
 
 The standard `+`, `-`, `*`, `/` operators are polymorphic and apply element-wise when
 either operand is an array. Scalar broadcasting is supported.
+
+### Sets and Vecs (`set` / `vec` namespaces)
+
+| Expression | Description |
+|---|---|
+| `xs set.of` / `xs set.from-list` | Set of primitives from a list (one pass; the names are aliases) |
+| `s set.to-list` | Sorted list of a set's elements |
+| `v ∈ s` / `v ∉ s` | Membership |
+| `∅` | The empty set |
+| `xs vec.of` / `xs vec.from-list` | Vec of primitives with O(1) indexed access (aliases) |
+| `v vec.nth(n)` / `vec.len(v)` | Element at index `n` (0-based; a negative or non-integer `n` is an error) / length |
 
 ### IO
 

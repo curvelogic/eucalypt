@@ -2133,6 +2133,62 @@ dict: {
   ` { doc: "`dict.empty?(d)` - true if dict `d` has no entries."
       type: s"any → bool" }
   empty?(d): (d size) = 0
+
+  ` { doc: "`dict.keys(d)` - return the keys of dict `d` in key order."
+      type: s"any → [any]" }
+  keys: '__DICT.KEYS'
+
+  ` { doc: "`dict.values(d)` - return the values of dict `d` in key order."
+      type: s"any → [any]" }
+  values: '__DICT.VALUES'
+
+  ` { doc: "`dict.min(d)` - return `[key, value]` for the least key of dict `d`; an error if `d` is empty."
+      type: s"any → [any]" }
+  min: '__DICT.MIN'
+
+  ` { doc: "`dict.max(d)` - return `[key, value]` for the greatest key of dict `d`; an error if `d` is empty."
+      type: s"any → [any]" }
+  max: '__DICT.MAX'
+
+  ` { doc: "`dict.pop-min(d)` - return `[key, value, rest]` for the least key of dict `d`, where `rest` is `d` without it; an error if `d` is empty. With keys `[priority, item]` this makes a dict a priority queue."
+      type: s"any → [any]" }
+  pop-min: '__DICT.POP_MIN'
+
+  ` { doc: "`dict.pop-max(d)` - return `[key, value, rest]` for the greatest key of dict `d`, where `rest` is `d` without it; an error if `d` is empty."
+      type: s"any → [any]" }
+  pop-max: '__DICT.POP_MAX'
+
+  ` { doc: "`dict.range(lo, hi, d)` - return the dict of the entries of dict `d` whose keys `k` satisfy `lo ≤ k < hi`."
+      type: s"any → any → any → any" }
+  range: '__DICT.RANGE'
+
+  ` { doc: "`dict.update(k, f, default, d)` - return dict `d` with key `k` mapped to the lazy value `f(old)`, where `old` is the value at `k`, or `default` if `d` does not hold `k`."
+      type: s"any → (any → any) → any → any → any" }
+  update: '__DICT.UPDATE'
+
+  ` { doc: "`dict.update-strict(k, f, default, d)` - as `dict.update`, but `f(old)` is evaluated before it is stored, so repeated updates (such as counting) do not build up unevaluated values."
+      type: s"any → (any → any) → any → any → any" }
+  update-strict: '__DICT.UPDATE_STRICT'
+
+  ` { doc: "`dict.merge-with(f, a, b)` - return the union of dicts `a` and `b`. Where both hold a key, the value is the lazy `f(va, vb)`, with `a`'s value first, and `a`'s key is kept."
+      type: s"(any → any → any) → any → any → any" }
+  merge-with: '__DICT.MERGE_WITH'
+
+  # merge-with-strict's step: merge the entry [k, v] of b into acc
+  ` :suppress
+  merge-strict-step(f, acc, [k, v]): (acc contains?(k)) then(acc update-strict(k, flip(f, v), null), acc assoc(k, v))
+
+  ` { doc: "`dict.merge-with-strict(f, a, b)` - as `dict.merge-with`, but each combined value `f(va, vb)` is evaluated before it is stored."
+      type: s"(any → any → any) → any → any → any" }
+  merge-with-strict(f, a, b): b to-list foldl(merge-strict-step(f), a)
+
+  ` { doc: "`dict.from-block(b)` - create a dict from block `b`, keyed by its symbol keys. Values stay lazy."
+      type: s"{..} → any" }
+  from-block(b): b elements of
+
+  ` { doc: "`dict.to-block(d)` - return a block of the entries of dict `d` in key order. Symbol keys are kept, string keys become symbols, and number keys become symbols of their rendered text. A list key, or two keys that become the same symbol (a string and a symbol with the same text, say), is an error."
+      type: s"any → {..}" }
+  to-block: '__DICT.TO_BLOCK'
 }
 
 

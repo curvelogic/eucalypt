@@ -1,0 +1,2 @@
+` "`dict.to-block` of a dict whose string key x and symbol key x name the same block entry is an error naming both."
+result: dict.of[["x", 1], [:x, 2]] dict.to-block

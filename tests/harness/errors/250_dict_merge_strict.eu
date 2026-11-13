@@ -1,0 +1,4 @@
+` "`dict.merge-with-strict` evaluates each combined value `f(va, vb)` when the dict is built; `dict.merge-with` would leave it unevaluated."
+boom(a, b): panic("combined")
+
+result: dict.merge-with-strict(boom, dict.of[[1, 1]], dict.of[[1, 2]]) dict.size

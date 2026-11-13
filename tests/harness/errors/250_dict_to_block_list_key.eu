@@ -1,0 +1,2 @@
+` "`dict.to-block` of a dict with a list key is an error naming the key."
+result: dict.of[[:a, 1], [[1, 2], 2]] dict.to-block
