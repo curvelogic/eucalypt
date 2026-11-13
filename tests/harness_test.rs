@@ -4914,3 +4914,63 @@ pub fn test_tester_fails_unrun_checked_target() {
 pub fn test_error_273_divides_zero_divisor() {
     run_error_test(&error_opts("273_divides_zero_divisor.eu"));
 }
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_take() {
+    run_error_test(&error_opts("274_non_integer_take.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_drop() {
+    run_error_test(&error_opts("274_non_integer_drop.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_split_at() {
+    run_error_test(&error_opts("274_non_integer_split_at.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_rotate() {
+    run_error_test(&error_opts("274_non_integer_rotate.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_nth() {
+    run_error_test(&error_opts("274_non_integer_nth.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_update_nth() {
+    run_error_test(&error_opts("274_non_integer_update_nth.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_window_size() {
+    run_error_test(&error_opts("274_non_integer_window_size.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_window_step() {
+    run_error_test(&error_opts("274_non_integer_window_step.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_window_all_size() {
+    run_error_test(&error_opts("274_non_integer_window_all_size.eu"));
+}
+
+/// A non-integer count, index, size or step is an error (eu-oaz72.58).
+#[test]
+pub fn test_error_274_non_integer_window_all_step() {
+    run_error_test(&error_opts("274_non_integer_window_all_step.eu"));
+}

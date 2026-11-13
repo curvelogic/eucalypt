@@ -1,0 +1,2 @@
+` "A non-integer count to `rotate` is an error (eu-oaz72.58). It used to round up."
+x: [1, 2, 3] rotate(1.5)

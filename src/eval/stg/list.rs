@@ -10,7 +10,10 @@ use crate::{
         machine::intrinsic::{
             CallGlobal0, CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic,
         },
-        memory::{mutator::MutatorHeapView, syntax::Ref},
+        memory::{
+            mutator::MutatorHeapView,
+            syntax::{Native, Ref},
+        },
     },
 };
 
@@ -233,7 +236,9 @@ impl CallGlobal1 for IsList {}
 
 /// ISNUMBER(value)
 ///
-/// Return true if the value is a number, false otherwise
+/// Return true if the value is a number, false otherwise. A number is
+/// either boxed (a literal) or a bare native (the result of arithmetic),
+/// so both representations count.
 pub struct IsNumber;
 
 impl StgIntrinsic for IsNumber {
@@ -249,10 +254,10 @@ impl StgIntrinsic for IsNumber {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let closure = machine.resolve_closure(view, &args[0])?;
-        let result = matches!(
-            machine.data_tag(view, &closure),
-            Some(tag) if tag == DataConstructor::BoxedNumber.tag()
-        );
+        let result = match machine.data_tag(view, &closure) {
+            Some(tag) => tag == DataConstructor::BoxedNumber.tag(),
+            None => matches!(machine.value_native(view, &closure), Some(Native::Num(_))),
+        };
         machine_return_bool(machine, view, result)
     }
 }
