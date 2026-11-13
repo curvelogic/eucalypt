@@ -10,6 +10,7 @@ All notable changes to eucalypt are documented here.
 
 ### Changed
 
+- **A negative count to `set.sample` or `vec.sample` is an error (eu-oaz72.95)** — it used to hang; it now stops with `set.sample count -1 must not be negative` (likewise `vec.sample`). A zero count still samples nothing. `window-all`'s error for a step that is not positive now names `window-all step` rather than `window step`.
 - **A non-integer count or index is an error in list functions (eu-oaz72.58)** — `take`, `drop`, `split-at`, `rotate`, `nth`, `update-nth`, `window`, `window-all` (and so `partition` and `partition-all`), `random.sample`, `set.sample` and `vec.sample` now stop with an error naming the function and the value, such as `take count 1.5 must be an integer`, when given a count, index, size or step that is not a whole number. Before, `take`, `drop`, `split-at`, `rotate` and `update-nth` behaved as if the count were rounded up (`[1, 2, 3] take(0.5)` was `[1]`), and `nth` and `window` gave an unrelated error. A whole-number float such as `2.0` is still accepted. `range` is unchanged: its arguments are bounds, not a count, so `range(0, 2.5)` is still `[0, 1, 2]`.
 
 ### Fixed

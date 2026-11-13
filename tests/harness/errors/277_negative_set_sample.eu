@@ -1,0 +1,2 @@
+` "A negative count to `set.sample` is an error, not a hang (eu-oaz72.95)."
+x: set.sample(-1, set.of([1, 2, 3]), random.stream(42)).rest random.as-list head

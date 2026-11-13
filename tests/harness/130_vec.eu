@@ -40,6 +40,14 @@ test: {
   set-sample-result: set.sample(3, test-set, random.stream(42))
   set-sample-size: set-sample-result.value set.size //= 3
 
+  # A zero count samples nothing and leaves the stream where it was
+  vec-sample-zero: vec.sample(0, data, random.stream(42)).value vec.len //= 0
+  set-sample-zero: set.sample(0, test-set, random.stream(42)).value set.size //= 0
+  ` :suppress
+  unadvanced: random.stream(42) random.as-list head
+  vec-sample-zero-rest: (vec.sample(0, data, random.stream(42)).rest random.as-list head) = unadvanced
+  set-sample-zero-rest: (set.sample(0, test-set, random.stream(42)).rest random.as-list head) = unadvanced
+
   # Computed (thunk) elements — vec.of must deep-force before extraction
   interp: ["a", "b", "c"] map("x-{}") vec.of
   interp-len: interp vec.len //= 3
@@ -54,6 +62,8 @@ test: {
            , name-count, name-first
            , sample-len, shuffle-len
            , set-sample-size
+           , vec-sample-zero, set-sample-zero
+           , vec-sample-zero-rest, set-sample-zero-rest
            , interp-len, interp-first
            , computed-nums-len, computed-nums-trip
            ] all-true? then(:PASS, :FAIL)

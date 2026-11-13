@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/277_negative_vec_sample
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/277_negative_vec_sample.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/277_negative_vec_sample.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: vec.sample count -1 must not be negative
+  ┌─ tests/harness/errors/277_negative_vec_sample.eu:2:4
+  │
+2 │ x: vec.sample(-1, vec.of([1, 2, 3]), random.stream(42)).rest random.as-list head
+  │    ^^^
+  │
+  = while evaluating (outermost first):
+    - x at 277_negative_vec_sample.eu:2:77
+    - x at 277_negative_vec_sample.eu:2:4

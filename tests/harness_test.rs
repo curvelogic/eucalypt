@@ -4999,3 +4999,15 @@ pub fn test_error_275_non_integer_set_sample() {
 pub fn test_error_275_non_integer_vec_sample() {
     run_error_test(&error_opts("275_non_integer_vec_sample.eu"));
 }
+
+/// A negative sample count is an error, not a hang (eu-oaz72.95).
+#[test]
+pub fn test_error_277_negative_set_sample() {
+    run_error_test(&error_opts("277_negative_set_sample.eu"));
+}
+
+/// A negative sample count is an error, not a hang (eu-oaz72.95).
+#[test]
+pub fn test_error_277_negative_vec_sample() {
+    run_error_test(&error_opts("277_negative_vec_sample.eu"));
+}

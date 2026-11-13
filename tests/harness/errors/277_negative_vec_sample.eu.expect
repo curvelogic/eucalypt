@@ -1,0 +1,2 @@
+exit: 1
+stderr: "vec.sample count -1 must not be negative"
