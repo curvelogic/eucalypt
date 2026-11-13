@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**51 of 256 fixtures diverge.**
+**52 of 257 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -29,6 +29,7 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/094_io_no_flag` | user tests/harness/errors/094_io_no_flag.eu:4:9 | none | 0 (0 user) | 0 (0 user) |
 | `errors/100_fn_call_source_loc` | user tests/harness/errors/100_fn_call_source_loc.eu:2:9 | user tests/harness/errors/100_fn_call_source_loc.eu:2:9 | 1 (1 user) | 1 (1 user) |
 | `errors/106_io_check_fail` | user tests/harness/errors/106_io_check_fail.eu:2:23 | none | 0 (0 user) | 0 (0 user) |
+| `errors/110_unknown_short_arg` | user tests/harness/errors/110_unknown_short_arg.eu:2:14 | user tests/harness/errors/110_unknown_short_arg.eu:2:14 | 2 (1 user) | 1 (1 user) |
 | `errors/124_dbg_io_map` | user tests/harness/errors/124_dbg_io_map.eu:2:28 | none | 0 (0 user) | 0 (0 user) |
 | `errors/125_dbg_io_function_wrap` | user tests/harness/errors/125_dbg_io_function_wrap.eu:2:28 | none | 0 (0 user) | 0 (0 user) |
 | `errors/141_calzdt_year_overflow` | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | 0 (0 user) | 0 (0 user) |

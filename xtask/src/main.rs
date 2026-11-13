@@ -48,7 +48,10 @@ use eucalypt::{
         blob::{PreludeBlob, PreludeBytecodeImage},
         make_standard_runtime,
         syntax::LambdaForm,
-        wire_format::{blob_source_hash, BLOB_PATH, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH},
+        wire_format::{
+            blob_source_hash, BLOB_PATH, DEMAND_ANALYSIS_PATHS, INTRINSIC_TABLE_PATH,
+            PRELUDE_SOURCE_PATH,
+        },
     },
     syntax::input::{Input, Locator},
 };
@@ -95,13 +98,25 @@ fn cmd_prelude_compile() -> Result<()> {
     // `blob_source_hash` is shared verbatim with `build.rs` (which `include!`s
     // the module), so the stamp written here and the expectation checked there
     // cannot drift. It covers the prelude source, the intrinsic catalogue —
-    // whose length fixes the global slot numbering baked in below — and the
+    // whose length fixes the global slot numbering baked in below — the
+    // demand analysis that derives the baked signatures (step 5b), and the
     // BV1 wire-format version.
     let source_bytes = std::fs::read(&prelude_src)
         .with_context(|| format!("reading {}", prelude_src.display()))?;
     let intrinsic_table_bytes = std::fs::read(&intrinsic_table)
         .with_context(|| format!("reading {}", intrinsic_table.display()))?;
-    let source_hash = blob_source_hash(&source_bytes, &intrinsic_table_bytes);
+    let demand_analysis_bytes = DEMAND_ANALYSIS_PATHS
+        .iter()
+        .map(|p| {
+            let path = workspace_root.join(p);
+            std::fs::read(&path).with_context(|| format!("reading {}", path.display()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let source_hash = blob_source_hash(
+        &source_bytes,
+        &intrinsic_table_bytes,
+        &demand_analysis_bytes,
+    );
 
     // ── 2. Run the front-end pipeline ────────────────────────────────────────
     // The prelude references `__build` (from build-meta.yaml) and intrinsics
@@ -384,6 +399,25 @@ fn cmd_prelude_compile() -> Result<()> {
         .map(|(i, (name, _))| (name.clone(), i))
         .collect();
 
+    // ── 5b. Derive each binding's demand signature (eu-oaz72.77) ─────────────
+    // Run the demand analysis source mode runs over the prelude, on the same
+    // merged core the peel above took the bodies from, and keep the
+    // signature of each top-level lambda by slot. The STG compiler takes a
+    // prelude global's signature from here, both for user calls at run time
+    // and for the intra-prelude calls compiled below, so blob and source
+    // mode use one analysis.
+    let derived = eucalypt::core::analyse_demand::derive_top_level_signatures(&core_expr);
+    let demand_signatures: Vec<Option<eucalypt::core::analyse_demand::DemandSignature>> =
+        binding_bodies
+            .iter()
+            .map(|(name, _)| derived.get(name).cloned().flatten())
+            .collect();
+    println!(
+        "  demand signatures derived: {}/{} slots",
+        demand_signatures.iter().filter(|s| s.is_some()).count(),
+        demand_signatures.len()
+    );
+
     // ── 6. Compile each binding body independently with Ref::G for peers ─────
     let mut source_map = eucalypt::common::sourcemap::SourceMap::new();
     let runtime = make_standard_runtime(&mut source_map);
@@ -398,6 +432,7 @@ fn cmd_prelude_compile() -> Result<()> {
         render_type: eucalypt::eval::stg::RenderType::Headless,
         // Resolve Var::Free references to prelude names as Ref::G.
         prelude_globals: Some(name_to_slot.clone()),
+        prelude_demand_sigs: std::sync::Arc::new(demand_signatures.clone()),
         ..Default::default()
     };
 
@@ -590,6 +625,7 @@ fn cmd_prelude_compile() -> Result<()> {
         inlinable_bindings,
         desugared_unit_cores: desugared_unit_cores_bytes,
         bytecode,
+        demand_signatures,
     };
 
     let bytes = blob.to_bytes().context("serialise PreludeBlob")?;
