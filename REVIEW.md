@@ -39,7 +39,28 @@ tests is a send-back. Each test must gate
 — a failing assertion fails `cargo test` — with each target's `RESULT`
 computed from its checks (`docs/guide/testing.md`; the pattern in
 `tests/harness/189_r9oy_union_as_spec.eu` and
-`tests/harness/182_typedata_alias_resolution.eu`).
+`tests/harness/182_typedata_alias_resolution.eu`). A target with checks
+must run: name it `test-*` or give it `verify:` metadata.
+
+Two exceptions. A lockfile-only change (dependency versions, no source
+change) needs no harness test. A change no `.eu` program can reach
+(an internal layer, or a path no program can currently trigger) is gated
+instead by unit tests that are fault-injection verified, and the PR says
+why no harness test is possible.
+
+**Harness layout.** New checks go into an existing topic file in
+`tests/harness/` (a new target, or new checks in an existing one) wherever
+one fits. A new file is only for a new topic: it is named by topic, uses a
+number no other file in its directory uses, and is never named after a bead
+or plan phase. Cite the bead in doc metadata instead. A bead-named or
+duplicate-numbered file is a send-back.
+
+**Eucalypt style.** Every `.eu` file in the diff, harness tests and error
+fixtures included, follows `docs/eucalypt-style.md`. In particular: `then`
+rather than `if` (or a two-way `cond`) for a simple two-way test;
+juxtaposed `f[…]` and `g{…}` calls rather than `f([…])` and `g({…})`; and
+backtick doc metadata rather than `#` comments to document a declaration.
+A violation is a send-back.
 
 **No clippy suppression.** A new `#[allow(...)]`, `#![allow(...)]` or
 `#[expect(...)]` for a clippy lint, or a lint relaxed in configuration, is a
