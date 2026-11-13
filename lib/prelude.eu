@@ -145,8 +145,8 @@ monad(m): {
 # Compatibility alias: deprecated, use random.stream. Returns a lazy cons-list of floats.
 random-stream(seed): random.stream(seed) random.as-list
 
-# Helper: advance an opaque stream n steps.
-stream-advance(n, s): if(n = 0, s, stream-advance(n - 1, __STREAM_ADVANCE(s)))
+# Helper: advance an opaque stream n steps; a count that is not positive leaves it unadvanced.
+stream-advance(n, s): (n <= 0) then(s, stream-advance(n - 1, __STREAM_ADVANCE(s)))
 
 random-ret(v, stream): { value: v, rest: stream }
 
@@ -1401,7 +1401,8 @@ __require-int(what, n, v): __IF((n number?) ∧ (floor(n) != n), panic("{what} {
 take(n, l): __require-int("take count", n, __take(n, l))
 
 ` { doc: "`__take(n, l)` - internal: `take` without its integer check."
-    export: :suppress }
+    export: :suppress
+    blame: :transparent }
 __take(n, l): __IF((n <= 0) ∨ (l nil?), [], cons(l head, __take(n dec, l tail)))
  
 ` { doc: "`drop(n, l)` - return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0, `[]` when `n` exceeds the length of `l`. A non-integer `n` is an error."
@@ -1410,18 +1411,24 @@ __take(n, l): __IF((n <= 0) ∨ (l nil?), [], cons(l head, __take(n dec, l tail)
 drop(n, l): __require-int("drop count", n, __drop(n, l))
 
 ` { doc: "`__drop(n, l)` - internal: `drop` without its integer check."
-    export: :suppress }
+    export: :suppress
+    blame: :transparent }
 __drop(n, l): __IF((n <= 0), l, __IF(l nil?, [], __drop(n dec, l tail)))
 
 ` { doc: "`rotate(n, l)` - rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error."
     type: s"number → [a] → [a]" }
-rotate(n, l): { s: split-at(n, l) }.(__require-int("rotate count", n, second(s) ++ first(s)))
+rotate(n, l): { s: __split-at(n, l) }.(__require-int("rotate count", n, second(s) ++ first(s)))
 
 ` { doc: "`split-at(n, l)` - split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0; a non-integer `n` is an error."
     type: s"number → [a] → ([a], [a])" }
-split-at(n, l): {
+split-at(n, l): __require-int("split-at count", n, __split-at(n, l))
+
+` { doc: "`__split-at(n, l)` - internal: `split-at` without its integer check."
+    export: :suppress
+    blame: :transparent }
+__split-at(n, l): {
   aux(n, xs, prefix): if((xs nil?) ∨ (n <= 0), [prefix reverse, xs], aux(n dec, xs tail, cons(xs head, prefix)))
-}.(__require-int("split-at count", n, aux(n, l, [])))
+}.aux(n, l, [])
 
 ` { doc: "`transpose(rows)` - transpose a matrix (list of lists)."
     type: s"[[a]] → [[a]]" }
@@ -1474,7 +1481,7 @@ nth(n, l): {
 An error if `n` is out of range, negative or not an integer."
 update-nth(n, f, l): {
   rejoin([prefix, [s: suffix]]): prefix ++ (f(s) ‖ suffix)
-}.(__require-int("update-nth index", n, if((n number?) ∧ (n < 0), panic("index {n} out of range: list indices start at 0"), l split-at(n) rejoin)))
+}.(__require-int("update-nth index", n, if((n number?) ∧ (n < 0), panic("index {n} out of range: list indices start at 0"), l __split-at(n) rejoin)))
 
 ` "`update-first(p?, f, l)` - apply `f` to the first element matching `p?` in list `l`.
 Returns `l` unchanged if no element matches."
@@ -1666,7 +1673,7 @@ window-all(n, step, l): {
   aux(xs): { chunk: xs __take(n) }.((chunk nil?) then([], cons(chunk, xs __drop(step) aux)))
 }.(__require-int("window-all size", n, __require-int("window-all step", step,
    if((n number?) ∧ (n <= 0), [],
-   if((step number?) ∧ (step <= 0), panic("window step {step} must be positive"), aux(l))))))
+   if((step number?) ∧ (step <= 0), panic("window-all step {step} must be positive"), aux(l))))))
 
 ` { doc: "`partition-all(n, l)` - list of lists of non-overlapping segments of `l`, including any final short chunk; a size that is not positive gives `[]`; a non-integer size is an error."
     type: s"number → [a] → [[a]]" }
@@ -2051,7 +2058,7 @@ set: {
   ` :suppress
   sample-raw: '__SET.SAMPLE'
 
-  ` { doc: "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`. Returns value/rest block; a non-integer `n` is an error."
+  ` { doc: "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`. Returns value/rest block; a negative `n` samples nothing; a non-integer `n` is an error."
       type: s"number → any → any → {..}" }
   sample(k, s, stream): __require-int("set.sample count", k, {
     floats: (stream random.as-list) __take(k)
@@ -2161,7 +2168,7 @@ vec: {
   ` :suppress
   sample-raw: '__VEC.SAMPLE'
 
-  ` { doc: "`vec.sample(n, v)` - random monad action: pick `n` random elements from vec `v` without replacement; a non-integer `n` is an error."
+  ` { doc: "`vec.sample(n, v)` - random monad action: pick `n` random elements from vec `v` without replacement; a negative `n` samples nothing; a non-integer `n` is an error."
       type: s"number → vec → any → {..}" }
   sample(n, v, stream): __require-int("vec.sample count", n, {
     floats: (stream random.as-list) __take(n)
