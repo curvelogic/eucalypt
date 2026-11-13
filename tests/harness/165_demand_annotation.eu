@@ -121,6 +121,7 @@ test-prelude-laziness: {
   repeat-value: (repeat(panic("repeat value forced")) nil?) = false
   iterate-seed: (iterate(panic("iterate function forced"), panic("iterate seed forced")) nil?) = false
   iterate-step: (iterate(step-once, 0) take(3) count) = 3
+  take-list: take(0, panic("take list forced")) = []
   zip-with-function: zip-with(panic("zip-with function forced"), [], panic("zip-with list forced")) = []
   zip-second: zip([], panic("zip second list forced")) = []
   filter-predicate: filter(panic("filter predicate forced"), []) = []
@@ -141,7 +142,7 @@ test-prelude-laziness: {
   tail-or-default: tail-or(panic("tail-or default forced"), [1]) = []
   sliding-function: over-sliding-pairs(panic("over-sliding-pairs function forced"), []) = []
   shared-name: [local-head-or[1, 2], head-or(panic("prelude head-or default forced"), [1])] = [2, 1]
-  RESULT: [repeat-value, iterate-seed, iterate-step, zip-with-function,
+  RESULT: [repeat-value, iterate-seed, iterate-step, take-list, zip-with-function,
            zip-second, filter-predicate, append-tail, snoc-element, mapcat-function,
            cross-function, interleave-second, take-while-predicate, sort-by-key,
            sort-by-num-key, group-by-key, discriminate-lazy, group-consecutive-key,

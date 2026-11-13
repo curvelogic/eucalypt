@@ -328,8 +328,9 @@ pub fn build_prelude_signatures() -> HashMap<String, DemandSignature> {
     sigs.insert("then".into(), vec![lm(), lm(), sm()]);
     sigs.insert("when".into(), vec![sm(), lm(), lm()]);
 
-    // Lookup functions. has(s, b) looks `s` up in `b map-values(...)`,
-    // whose `block` is lazy in its list.
+    // Lookup functions. has(s, b) reaches `b` only through
+    // `map-values`, which rebuilds it with `block`; the intrinsic
+    // catalogue does not mark `block` strict, so `b` is not claimed.
     sigs.insert("has".into(), vec![sm(), lm()]);
     sigs.insert("lookup".into(), vec![sm(), sm()]);
     sigs.insert("lookup-in".into(), vec![sm(), sm()]);
