@@ -13,7 +13,11 @@ master/branch pairs, with the range.
    starting optimistic (every parameter strict and used once). A saturated
    call through a let-bound variable uses its signature; partial
    applications stay lazy. On reaching the iteration cap the signatures
-   are reset to pessimistic for one final round.
+   are reset to pessimistic for one final round. The STG compiler
+   (`src/eval/stg/compiler.rs`) matches this: it applies a signature's
+   strict demands only to a call with at least as many arguments as the
+   signature, so a partial application such as `loop-a(panic("x"))`
+   forces nothing.
 2. A variable both branches of an `IF` force is strict.
 3. A lambda value (not applied where it is built) places only lazy demand
    on what it captures. On master `k(a): { y: • }.(a + y)` was strict in

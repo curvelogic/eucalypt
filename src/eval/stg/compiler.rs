@@ -1166,6 +1166,11 @@ impl ProtoSyntax for ProtoAppGroup {
         // Look up per-argument demands.  Try intrinsic signatures first,
         // then user function signatures from demand analysis, then
         // prelude function signatures for blob-mode globals.
+        //
+        // A signature describes a saturated call: only then does the
+        // callee's body run and force its strict parameters.  A partial
+        // application builds a closure that forces nothing yet, so it
+        // takes no signature (as in the analysis' `lookup_signature`).
         let arg_demands: Option<&[crate::core::demand::Demand]> = intrinsic_name
             .and_then(|name| compiler.intrinsic_demand_sigs.get(name))
             .map(|v| v.as_slice())
@@ -1178,7 +1183,8 @@ impl ProtoSyntax for ProtoAppGroup {
                 callee_name
                     .and_then(|name| compiler.prelude_demand_sigs.get(name))
                     .map(|v| v.as_slice())
-            });
+            })
+            .filter(|sigs| self.args.len() >= sigs.len());
 
         // Detect self-recursive call: callee name matches the
         // enclosing recursive binding.  The VM will resolve Ref::L
