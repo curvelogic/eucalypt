@@ -116,6 +116,9 @@ deep-helpers: { deep-find-first(k, d, b): d + d }
 ` "A user helper named like the prelude's `head-or`, lazy in both arguments."
 head-helpers: { head-or(d, xs): 0 }
 
+` "A fold step that returns its element, and fails if its result at element 6 is ever evaluated: only a fold strict in its accumulator evaluates it."
+acc-unless-five(acc, x): (x = 6) then(acc + panic("accumulator forced"), x)
+
 ` { target: :test-prelude-laziness }
 test-prelude-laziness: {
   head-or-default: head-or(panic("default forced"), [1]) = 1
@@ -139,12 +142,15 @@ test-prelude-laziness: {
   deep-transform-const: deep-transform(const(1), panic("data forced")) = 1
   repeat-lazy: (repeat(panic("value forced")) nil?) = false
   iota-lazy: (iota(panic("count forced")) tail nil?) = false
+  iota-head-lazy: (iota(panic("count forced")) nil?) = false
+  foldl-acc-lazy: (range(0, 10) foldl(acc-unless-five, 0)) = 9
   head-or-unforced: (head-or(panic("default forced"), [1]) block?) = false
   RESULT: [head-or-default, tail-or-default, append-tail, take-none, filter-empty,
            zip-empty, zip-with-empty, snoc-head, interleave-head, take-while-empty,
            sort-by-empty, sort-by-num-empty, group-by-empty, discriminate-empty,
            group-consecutive-empty, sliding-pairs-empty, mapcat-empty, cross-empty,
-           deep-transform-const, repeat-lazy, iota-lazy, head-or-unforced]
+           deep-transform-const, repeat-lazy, iota-lazy, iota-head-lazy, foldl-acc-lazy,
+           head-or-unforced]
           all-true? then(:PASS, :FAIL)
 }
 

@@ -111,7 +111,8 @@ pub const INTRINSIC_TABLE_PATH: &str = "src/eval/intrinsics.rs";
 
 /// Paths, relative to the workspace root, of the demand analysis that derives
 /// the blob's per-slot demand signatures (`PreludeBlob::demand_signatures`,
-/// eu-oaz72.77).
+/// eu-oaz72.77), and of the STG compiler that turns those signatures, and
+/// every prelude body, into the blob's code.
 ///
 /// A signature is a claim about which arguments a prelude function forces,
 /// and the STG compiler acts on it by evaluating those arguments early. A
@@ -120,7 +121,11 @@ pub const INTRINSIC_TABLE_PATH: &str = "src/eval/intrinsics.rs";
 /// [`blob_source_hash`]. As with [`INTRINSIC_TABLE_PATH`], hashing whole
 /// files over-invalidates (a comment edit forces a regeneration), which is
 /// the safe direction.
-pub const DEMAND_ANALYSIS_PATHS: &[&str] = &["src/core/analyse_demand.rs", "src/core/demand.rs"];
+pub const DEMAND_ANALYSIS_PATHS: &[&str] = &[
+    "src/core/analyse_demand.rs",
+    "src/core/demand.rs",
+    "src/eval/stg/compiler.rs",
+];
 
 /// Path, relative to the workspace root, of this very file — which `build.rs`
 /// `include!`s, and which cargo therefore does not track for it.
@@ -146,6 +151,7 @@ pub const BUILD_RERUN_PATHS: &[&str] = &[
     WIRE_FORMAT_MODULE_PATH,
     "src/core/analyse_demand.rs",
     "src/core/demand.rs",
+    "src/eval/stg/compiler.rs",
     // Embedded via `include_bytes!` in `src/driver/resources.rs`; cargo does
     // not track non-Rust files referenced that way.
     "lib/test.eu",
@@ -170,8 +176,8 @@ fn absorb(hasher: &mut Sha256, tag: &[u8], bytes: &[u8]) {
 ///   serialised code-stream layout, which nothing on disk reveals;
 /// - `lib/prelude.eu` — the bindings themselves;
 /// - `src/eval/intrinsics.rs` — the global slot numbering the blob bakes in;
-/// - the demand analysis sources ([`DEMAND_ANALYSIS_PATHS`], in that order)
-///   — the analysis that derived the blob's demand signatures.
+/// - the demand analysis and STG compiler sources ([`DEMAND_ANALYSIS_PATHS`],
+///   in that order) — what derived the blob's signatures and compiled its code.
 ///
 /// `xtask prelude-compile` stamps the result into `PreludeBlob::source_hash`;
 /// `build.rs` recomputes it and compares.
