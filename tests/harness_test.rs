@@ -3327,6 +3327,13 @@ pub fn test_241_oaz72_32_set_vec_of() {
     run_test(&opts("241_oaz72_32_set_vec_of.eu"));
 }
 
+/// mulmod, powmod and modinv are exact across the i64 range and normalise
+/// negative operands into [0, m) (eu-oaz72.24).
+#[test]
+pub fn test_291_modular_arithmetic() {
+    run_test(&opts("291_modular_arithmetic.eu"));
+}
+
 /// The BFS and Dijkstra templates of the Advent of Code cookbook
 /// (eu-oaz72.16), with the Dijkstra queue a dict keyed by `[priority, seq]`
 /// (eu-oaz72.22).
@@ -5397,4 +5404,34 @@ pub fn test_error_290_set_of_random_stream_element() {
 #[test]
 pub fn test_error_284_interpolation_two_names() {
     run_error_test(&error_opts("284_interpolation_two_names.eu"));
+}
+
+#[test]
+pub fn test_error_291_modinv_not_invertible() {
+    run_error_test(&error_opts("291_modinv_not_invertible.eu"));
+}
+
+#[test]
+pub fn test_error_292_modulus_not_positive() {
+    run_error_test(&error_opts("292_modulus_not_positive.eu"));
+}
+
+#[test]
+pub fn test_error_293_powmod_negative_exponent() {
+    run_error_test(&error_opts("293_powmod_negative_exponent.eu"));
+}
+
+#[test]
+pub fn test_error_294_modular_non_integer() {
+    run_error_test(&error_opts("294_modular_non_integer.eu"));
+}
+
+#[test]
+pub fn test_error_295_modular_out_of_range() {
+    run_error_test(&error_opts("295_modular_out_of_range.eu"));
+}
+
+#[test]
+pub fn test_error_296_bitwise_float_out_of_range() {
+    run_error_test(&error_opts("296_bitwise_float_out_of_range.eu"));
 }

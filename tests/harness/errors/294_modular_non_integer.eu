@@ -1,0 +1,2 @@
+` "eu-oaz72.24: modular arithmetic takes whole numbers, not fractions"
+x: powmod(2.5, 2, 7)

@@ -1090,6 +1090,9 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "FLOOR" => Some("floor"),
         "CEILING" => Some("ceiling"),
         "POW" => Some("pow"),
+        "MULMOD" => Some("mulmod"),
+        "POWMOD" => Some("powmod"),
+        "MODINV" => Some("modinv"),
 
         // Comparison operators
         "EQ" => Some("=="),

@@ -1,0 +1,2 @@
+exit: 1
+stderr: "6 has no inverse modulo 9, because gcd\(6, 9\) = 3"

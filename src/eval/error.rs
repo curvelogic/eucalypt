@@ -1304,6 +1304,13 @@ pub enum ExecutionError {
     ArrayBoundsError { index: usize, length: usize },
     #[error("bitwise operations require integer arguments ({1})")]
     BitwiseIntegerRequired(Smid, String),
+    /// `mulmod`, `powmod` or `modinv` received an argument outside its
+    /// domain (a non-integer, a modulus <= 0, a negative exponent) or
+    /// `modinv` was asked for an inverse that does not exist. The string
+    /// is the complete message after the "modular arithmetic: " prefix,
+    /// including any help line (eu-oaz72.24).
+    #[error("modular arithmetic: {1}")]
+    ModularArithmetic(Smid, String),
     #[error("array index out of bounds: coordinates {1:?} are outside the array bounds")]
     ArrayNdIndexOutOfBounds(Smid, Vec<usize>),
     #[error("array shape mismatch: {1}")]
@@ -1470,6 +1477,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::DivisionByZero(s, _) => *s,
             ExecutionError::BadDateTimeComponents(s, _) => *s,
             ExecutionError::BitwiseIntegerRequired(s, _) => *s,
+            ExecutionError::ModularArithmetic(s, _) => *s,
             ExecutionError::NotSerialisable(s, _) => *s,
             _ => Smid::default(),
         }

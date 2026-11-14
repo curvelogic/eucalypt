@@ -1172,6 +1172,21 @@ lazy_static! {
             ty: function(vec![any(), any()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 220
+            name: "MULMOD",
+            ty: function(vec![num(), num(), num(), num()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 221
+            name: "POWMOD",
+            ty: function(vec![num(), num(), num(), num()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 222
+            name: "MODINV",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
     ];
 }
 
