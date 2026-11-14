@@ -778,9 +778,16 @@ fn catenation_operand_note(
     if !source_map.is_user_file(file) {
         return None;
     }
-    let operand = source_map
-        .catenation_operand(file, span)
-        .or_else(|| source_map.catenation_operand_by_head(file, span))?;
+    // Only an operand blamed by its own location (eu-oaz72.121) is found
+    // from the step head; every other error is raised at the operator.
+    let by_head = || {
+        let ExecutionError::UnexpectedFunction(..) = inner else {
+            return None;
+        };
+        let source: &str = codespan_reporting::files::Files::source(files, file).ok()?;
+        source_map.catenation_operand_by_head(file, span, source)
+    };
+    let operand = source_map.catenation_operand(file, span).or_else(by_head)?;
     evidence::catenation_note(operand, source_map, files)
 }
 

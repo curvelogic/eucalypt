@@ -618,6 +618,7 @@ impl SourceMap {
         &self,
         file: usize,
         span: Span,
+        source: &str,
     ) -> Option<&CatenationOperand> {
         self.catenation_operands.values().find(|operand| {
             let start = self.source_info_for_smid(operand.step.0);
@@ -639,6 +640,13 @@ impl SourceMap {
                         && *f2 == file
                         && s1.start() == span.start()
                         && s2.end() <= span.end()
+                        // The head's last atom may sit inside closing
+                        // brackets that belong to the head: `nth(0)`.
+                        && source
+                            .get(s2.end().to_usize()..span.end().to_usize())
+                            .is_some_and(|rest| {
+                                rest.chars().all(|c| matches!(c, ')' | ']' | '}') || c.is_whitespace())
+                            })
                 }
                 _ => false,
             }
