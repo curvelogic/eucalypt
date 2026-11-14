@@ -175,9 +175,10 @@ pub(crate) fn verify_post_update(heap: &Heap) {
     }
 
     // We can't walk blocks to find all forwarded objects (same false
-    // positive issue). But if the existing mark re-traversal passed
-    // (level 1) and the evacuation target checks passed (checkpoint 2),
-    // then forwarding pointer resolution is consistent.
+    // positive issue). Instead, before the old copies were freed,
+    // `verify_no_forwarded_references` traversed everything reachable and
+    // checked that no live pointer still reaches a forwarded header
+    // (eu-oaz72.136).
     //
     // As a structural check, verify that the evacuation target and
     // filled_evacuation_blocks are empty after finalise_evacuation
