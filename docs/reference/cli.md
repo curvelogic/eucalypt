@@ -34,7 +34,8 @@ eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
 
 - `run` (default) - Evaluate eucalypt code
 - `test` - Run tests in each file or directory given (the current
-  directory if none); see [Testing](../guide/testing.md#running-several-files)
+  directory if none); `-o PATH` writes the HTML report to `PATH`; see
+  [Testing](../guide/testing.md#running-several-files)
 - `check` - Type-check eucalypt source files
 - `doc` - Extract documentation from eucalypt source files
 - `dump` - Dump intermediate representations

@@ -1228,6 +1228,11 @@ impl EucalyptOptions {
         self
     }
 
+    pub fn without_output(mut self) -> Self {
+        self.output = None;
+        self
+    }
+
     pub fn with_export_type(mut self, format: String) -> Self {
         self.export_type = Some(format);
         self
