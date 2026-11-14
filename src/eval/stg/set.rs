@@ -1,9 +1,12 @@
 //! Set intrinsics for the eucalypt VM.
 //!
 //! These intrinsics operate on `Native::Set` values, providing
-//! construction, membership, mutation, and set algebra.
+//! construction, membership, mutation, and set algebra. A set is a header
+//! over the dict's persistent ordered tree (`memory::set::HeapSet`), so add,
+//! remove and membership are O(log n) and each operation shares the
+//! untouched parts of its input.
 
-use std::convert::TryInto;
+use std::{collections::HashMap, convert::TryInto};
 
 use crate::{
     common::sourcemap::Smid,
@@ -14,9 +17,10 @@ use crate::{
             CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic,
         },
         memory::{
+            dict::{Dict, Tree},
             mutator::MutatorHeapView,
-            set::sort_dedup,
-            syntax::{Native, Ref},
+            set::{set_unit, HeapSet, Primitive},
+            syntax::Ref,
         },
         stg::tags::DataConstructor,
         types::IntrinsicType,
@@ -90,7 +94,7 @@ impl StgIntrinsic for SetEmpty {
         _emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        machine_return_set(machine, view, &[])
+        machine_return_set(machine, view, None)
     }
 }
 
@@ -135,9 +139,11 @@ impl StgIntrinsic for SetOf {
                 &IntrinsicType::Set,
             )?);
         }
-        // One sort + dedup: O(n log n), not n repeated insertions.
-        let sorted = sort_dedup(&view, primitives);
-        machine_return_set(machine, view, &sorted)
+        // One sort + dedup and a bottom-up build: O(n log n), not n
+        // repeated insertions.
+        let root =
+            HeapSet::from_elements(&Dict::new(view, machine.symbol_pool()), primitives)?.root();
+        machine_return_set(machine, view, root)
     }
 }
 
@@ -159,22 +165,30 @@ impl StgIntrinsic for SetToList {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let set = set_arg(machine, view, &args[0])?;
-        // Copy the (Copy) elements out so no borrow of the set spans the
+        // Copy the (Copy) keys out so no borrow of the set spans the
         // allocations below.
-        let sorted = set.elements().to_vec();
+        let sorted = set.elements(&Dict::new(view, machine.symbol_pool()));
 
         // Box each element and assemble the (sorted) list via the neutral ABI.
         let mut items = Vec::with_capacity(sorted.len());
-        for prim in &sorted {
-            let native = set_primitive_to_native(prim);
-            let box_tag = match &native {
-                Native::Num(_) => DataConstructor::BoxedNumber.tag(),
-                Native::Str(_) => DataConstructor::BoxedString.tag(),
-                Native::Sym(_) => DataConstructor::BoxedSymbol.tag(),
-                _ => {
+        for key in &sorted {
+            let (box_tag, native) = match key.to_primitive() {
+                Some(prim @ Primitive::Num(_)) => (
+                    DataConstructor::BoxedNumber.tag(),
+                    set_primitive_to_native(&prim),
+                ),
+                Some(prim @ Primitive::Str(_)) => (
+                    DataConstructor::BoxedString.tag(),
+                    set_primitive_to_native(&prim),
+                ),
+                Some(prim @ Primitive::Sym(_)) => (
+                    DataConstructor::BoxedSymbol.tag(),
+                    set_primitive_to_native(&prim),
+                ),
+                None => {
                     return Err(ExecutionError::Panic(
-                        Smid::default(),
-                        "unexpected native type in set".to_string(),
+                        machine.annotation(),
+                        "unexpected element type in set".to_string(),
                     ))
                 }
             };
@@ -207,14 +221,17 @@ impl StgIntrinsic for SetAdd {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let prim = arg_to_element(machine, view, &args[0], &IntrinsicType::Set)?;
-        let set = set_arg(machine, view, &args[1])?;
-        // Always a fresh set, even when `prim` is already a member: set `=`
-        // compares by identity, so returning the input would change it.
-        let elements = set
-            .with_added(&view, prim)
-            .unwrap_or_else(|| set.elements().to_vec());
-        machine_return_set(machine, view, &elements)
+        let key = arg_to_element(machine, view, &args[0], &IntrinsicType::Set)?.to_key();
+        let root = set_arg(machine, view, &args[1])?.root();
+        let d = Dict::new(view, machine.symbol_pool());
+        // A member leaves the tree as it is. The header is always fresh,
+        // even then: set `=` compares by identity, so returning the input
+        // would change it.
+        let root = match d.lookup(root, &key) {
+            Some(_) => root,
+            None => d.insert(root, key, set_unit())?,
+        };
+        machine_return_set(machine, view, root)
     }
 }
 
@@ -239,13 +256,12 @@ impl StgIntrinsic for SetRemove {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let prim = arg_to_element(machine, view, &args[0], &IntrinsicType::Set)?;
-        let set = set_arg(machine, view, &args[1])?;
-        // Always a fresh set, even when `prim` is not a member (see SET.ADD).
-        let elements = set
-            .with_removed(&view, &prim)
-            .unwrap_or_else(|| set.elements().to_vec());
-        machine_return_set(machine, view, &elements)
+        let key = arg_to_element(machine, view, &args[0], &IntrinsicType::Set)?.to_key();
+        let root = set_arg(machine, view, &args[1])?.root();
+        // Always a fresh header, even when `key` is not a member (see
+        // SET.ADD).
+        let root = Dict::new(view, machine.symbol_pool()).delete(root, &key)?;
+        machine_return_set(machine, view, root)
     }
 }
 
@@ -283,8 +299,11 @@ impl StgIntrinsic for SetContains {
             Ok(p) => p,
             Err(_) => return machine_return_bool(machine, view, false),
         };
-        let set = set_arg(machine, view, &args[1])?;
-        machine_return_bool(machine, view, set.contains(&view, &prim))
+        let root = set_arg(machine, view, &args[1])?.root();
+        let found = Dict::new(view, machine.symbol_pool())
+            .lookup(root, &prim.to_key())
+            .is_some();
+        machine_return_bool(machine, view, found)
     }
 }
 
@@ -329,10 +348,11 @@ impl StgIntrinsic for SetUnion {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         // Pipeline: `a set.union(b)` → SET.UNION(b, a) → args[0]=b, args[1]=a
-        let a = set_arg(machine, view, &args[1])?;
-        let b = set_arg(machine, view, &args[0])?;
-        let elements = a.union(&view, &b);
-        machine_return_set(machine, view, &elements)
+        let a = set_arg(machine, view, &args[1])?.root();
+        let b = set_arg(machine, view, &args[0])?.root();
+        let d = Dict::new(view, machine.symbol_pool());
+        let root = d.union_with(a, b, &mut |va, _| Ok(va.clone()))?;
+        machine_return_set(machine, view, root)
     }
 }
 
@@ -354,10 +374,11 @@ impl StgIntrinsic for SetIntersect {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         // Pipeline: `a set.intersect(b)` → SET.INTERSECT(b, a) → args[0]=b, args[1]=a
-        let a = set_arg(machine, view, &args[1])?;
-        let b = set_arg(machine, view, &args[0])?;
-        let elements = a.intersect(&view, &b);
-        machine_return_set(machine, view, &elements)
+        let a = set_arg(machine, view, &args[1])?.root();
+        let b = set_arg(machine, view, &args[0])?.root();
+        let d = Dict::new(view, machine.symbol_pool());
+        let root = d.intersect(a, b)?;
+        machine_return_set(machine, view, root)
     }
 }
 
@@ -379,10 +400,11 @@ impl StgIntrinsic for SetDiff {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         // Pipeline: `a set.diff(b)` → SET.DIFF(b, a) → args[0]=b, args[1]=a
-        let a = set_arg(machine, view, &args[1])?;
-        let b = set_arg(machine, view, &args[0])?;
-        let elements = a.diff(&view, &b);
-        machine_return_set(machine, view, &elements)
+        let a = set_arg(machine, view, &args[1])?.root();
+        let b = set_arg(machine, view, &args[0])?.root();
+        let d = Dict::new(view, machine.symbol_pool());
+        let root = d.difference(a, b)?;
+        machine_return_set(machine, view, root)
     }
 }
 
@@ -442,25 +464,39 @@ impl StgIntrinsic for SetSample {
         use super::support::collect_num_list;
 
         let floats = collect_num_list(machine, view, args[0].clone())?;
-        let s = set_arg(machine, view, &args[1])?;
-        let elements = s.elements();
-        let len = elements.len();
+        let root = set_arg(machine, view, &args[1])?.root();
+        let d = Dict::new(view, machine.symbol_pool());
+        let len = d.size(root) as usize;
         let count = floats.len().min(len);
 
-        // Partial Fisher-Yates on index array
-        let mut indices: Vec<usize> = (0..len).collect();
+        // Partial Fisher-Yates over ranks, recording only the swapped
+        // positions: the same draws as shuffling a dense index array, in
+        // O(k log n) rather than O(n).
+        let mut swapped: HashMap<usize, usize> = HashMap::new();
+        let mut picked = Vec::with_capacity(count);
         for (i, &f) in floats.iter().take(count).enumerate() {
             let remaining = len - i;
             let j = i + (f * remaining as f64) as usize % remaining;
-            indices.swap(i, j);
+            let at_i = *swapped.get(&i).unwrap_or(&i);
+            let at_j = *swapped.get(&j).unwrap_or(&j);
+            swapped.insert(j, at_i);
+            picked.push(at_j);
         }
 
-        // The sample is a subset, so re-sorting restores set order.
-        let sampled = sort_dedup(
-            &view,
-            indices[..count].iter().map(|&idx| elements[idx]).collect(),
-        );
-        machine_return_set(machine, view, &sampled)
+        // The sample is a subset: sorting the ranks restores set order.
+        picked.sort_unstable();
+        let mut entries = Vec::with_capacity(count);
+        for rank in picked {
+            let node = d.nth(root, rank as u64).ok_or_else(|| {
+                ExecutionError::Panic(
+                    machine.annotation(),
+                    "set sample rank out of range".to_string(),
+                )
+            })?;
+            entries.push((d.node(node).key(), set_unit()));
+        }
+        let sampled: Tree = d.build_sorted(&entries)?;
+        machine_return_set(machine, view, sampled)
     }
 }
 

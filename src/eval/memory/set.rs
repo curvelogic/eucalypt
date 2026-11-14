@@ -2,27 +2,28 @@
 //!
 //! Sets contain only primitive values (numbers, strings, symbols).
 //!
-//! All storage lives in the GC heap (eu-oaz72.5): a set is a sorted,
-//! deduplicated heap [`Array`] of [`Primitive`] elements, and string
-//! elements are `RefPtr<HeapString>`s traced by the collector. No Rust
-//! allocation is owned by a heap object, so nothing leaks when a set is
-//! swept. Membership is a binary search; add and remove copy into a
-//! fresh array (O(n)); union, intersection and difference are linear
-//! merges.
-
-use std::cmp::Ordering;
+//! A set is a header over the dict's persistent ordered tree (eu-oaz72.21,
+//! design note §6): the elements are the tree's keys and every value is an
+//! inert unit. All storage lives in the GC heap and is traced by the
+//! collector (ADR-002). Add, remove and membership are O(log n), size is
+//! O(1), and union, intersection and difference are join-based.
+//!
+//! [`Primitive`] remains the element type of vecs, which store heap arrays
+//! of primitives; the array helpers below serve them.
 
 use serde_json::Number;
 
 use super::{
-    alloc::{MutatorScope, ScopedAllocator, StgObject},
+    alloc::{MutatorScope, StgObject},
     array::Array,
     collect::{CollectorHeapView, CollectorScope, GcScannable, OpaqueHeapBytes, ScanPtr},
+    dict::{Dict, DictKey, Tree},
     number::ExactNum,
     string::HeapString,
     symbol::SymbolId,
-    syntax::RefPtr,
+    syntax::{Native, RefPtr},
 };
+use crate::eval::bytecode::BcValue;
 use crate::eval::error::ExecutionError;
 
 /// A primitive value that can be stored in a set or vec.
@@ -68,17 +69,12 @@ impl Primitive {
         }
     }
 
-    /// Total order: numbers before strings before symbols; numbers by
-    /// exact value ([`ExactNum`]), strings by content, symbols by id.
-    pub fn cmp_in(&self, other: &Primitive, guard: &dyn MutatorScope) -> Ordering {
-        match (self, other) {
-            (Primitive::Num(a), Primitive::Num(b)) => a.cmp(b),
-            (Primitive::Str(_), Primitive::Str(_)) => self.str_in(guard).cmp(&other.str_in(guard)),
-            (Primitive::Sym(a), Primitive::Sym(b)) => a.cmp(b),
-            (Primitive::Num(_), _) => Ordering::Less,
-            (_, Primitive::Num(_)) => Ordering::Greater,
-            (Primitive::Str(_), Primitive::Sym(_)) => Ordering::Less,
-            (Primitive::Sym(_), Primitive::Str(_)) => Ordering::Greater,
+    /// The dict key for this element (sets store elements as keys).
+    pub fn to_key(self) -> DictKey {
+        match self {
+            Primitive::Num(n) => DictKey::Num(n),
+            Primitive::Str(p) => DictKey::Str(p),
+            Primitive::Sym(id) => DictKey::Sym(id),
         }
     }
 
@@ -104,13 +100,6 @@ impl Primitive {
             }
         }
     }
-}
-
-/// Sort and deduplicate a vector of primitives into set order.
-pub fn sort_dedup(guard: &dyn MutatorScope, mut elems: Vec<Primitive>) -> Vec<Primitive> {
-    elems.sort_by(|a, b| a.cmp_in(b, guard));
-    elems.dedup_by(|a, b| a.cmp_in(b, guard) == Ordering::Equal);
-    elems
 }
 
 /// Mark a heap array of primitives: its backing buffer (queued as opaque
@@ -152,12 +141,21 @@ pub(crate) fn update_primitive_array(
     }
 }
 
-/// A set of primitive values, stored entirely in the GC heap.
+/// The value every set entry holds: inert (no heap pointer), so a set
+/// node's value needs no tracing and no per-element allocation.
+pub fn set_unit() -> BcValue {
+    BcValue::Native(Native::Num(Number::from(0)))
+}
+
+/// A set of primitive values: a header over a persistent weight-balanced
+/// tree of [`DictNode`](super::dict::DictNode)s whose keys are the
+/// elements and whose values are [`set_unit`] (design note §6).
 ///
-/// Elements are sorted by [`Primitive::cmp_in`] and contain no
-/// duplicates.
+/// Every set operation returns a fresh header, so set `=`, which compares
+/// headers by identity, behaves as it did before sets moved onto tree
+/// nodes. The header is the only part not shared between versions.
 pub struct HeapSet {
-    elements: Array<Primitive>,
+    root: Tree,
 }
 
 impl StgObject for HeapSet {}
@@ -169,143 +167,64 @@ impl GcScannable for HeapSet {
         marker: &mut CollectorHeapView<'a>,
         out: &mut Vec<ScanPtr<'a>>,
     ) {
-        scan_primitive_array(&self.elements, scope, marker, out);
+        // Push the root so `DictNode::scan` traces the whole tree.
+        if let Some(p) = self.root {
+            if marker.mark(p) {
+                out.push(ScanPtr::from_non_null(scope, p));
+            }
+        }
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
-        update_primitive_array(&mut self.elements, heap);
+        if let Some(p) = &mut self.root {
+            if let Some(new_ptr) = heap.forwarded_to(*p) {
+                *p = new_ptr;
+            }
+        }
     }
 }
 
 impl HeapSet {
-    /// Create a set from elements already sorted and deduplicated.
-    pub fn from_sorted<'guard, A: ScopedAllocator<'guard>>(
-        mem: &A,
-        sorted: &[Primitive],
-    ) -> Result<Self, ExecutionError> {
-        Ok(HeapSet {
-            elements: Array::try_from_slice(mem, sorted)?,
-        })
+    /// A set over `root`, whose values must all be [`set_unit`].
+    pub fn new(root: Tree) -> Self {
+        HeapSet { root }
+    }
+
+    /// Build a set from elements in any order, with duplicates (an equal
+    /// element keeps the first occurrence).
+    pub fn from_elements(d: &Dict<'_>, elems: Vec<Primitive>) -> Result<Self, ExecutionError> {
+        let entries = elems
+            .into_iter()
+            .map(|e| (e.to_key(), set_unit()))
+            .collect();
+        let sorted = d.sort_last_wins(entries);
+        Ok(HeapSet::new(d.build_sorted(&sorted)?))
+    }
+
+    /// The root of the element tree.
+    pub fn root(&self) -> Tree {
+        self.root
     }
 
     /// The elements, in sorted order.
-    pub fn elements(&self) -> &[Primitive] {
-        self.elements.as_slice()
-    }
-
-    /// Binary search for an element: `Ok(index)` if present, else
-    /// `Err(insertion_index)`.
-    pub fn find(&self, guard: &dyn MutatorScope, elem: &Primitive) -> Result<usize, usize> {
-        self.elements()
-            .binary_search_by(|probe| probe.cmp_in(elem, guard))
-    }
-
-    /// Check if the set contains an element.
-    pub fn contains(&self, guard: &dyn MutatorScope, elem: &Primitive) -> bool {
-        self.find(guard, elem).is_ok()
-    }
-
-    /// Elements of this set with `elem` added, or `None` if already present.
-    pub fn with_added(&self, guard: &dyn MutatorScope, elem: Primitive) -> Option<Vec<Primitive>> {
-        match self.find(guard, &elem) {
-            Ok(_) => None,
-            Err(at) => {
-                let old = self.elements();
-                let mut out = Vec::with_capacity(old.len() + 1);
-                out.extend_from_slice(&old[..at]);
-                out.push(elem);
-                out.extend_from_slice(&old[at..]);
-                Some(out)
-            }
-        }
-    }
-
-    /// Elements of this set with `elem` removed, or `None` if absent.
-    pub fn with_removed(
-        &self,
-        guard: &dyn MutatorScope,
-        elem: &Primitive,
-    ) -> Option<Vec<Primitive>> {
-        match self.find(guard, elem) {
-            Err(_) => None,
-            Ok(at) => {
-                let old = self.elements();
-                let mut out = Vec::with_capacity(old.len() - 1);
-                out.extend_from_slice(&old[..at]);
-                out.extend_from_slice(&old[at + 1..]);
-                Some(out)
-            }
-        }
+    pub fn elements(&self, d: &Dict<'_>) -> Vec<DictKey> {
+        let mut out = Vec::with_capacity(self.len());
+        d.for_each(self.root, |n| out.push(n.key()));
+        out
     }
 
     /// Return the number of elements.
     pub fn len(&self) -> usize {
-        self.elements.len()
+        self.root.map_or(0, |p| {
+            // SAFETY: a set root points at a live, immutable node.
+            unsafe { p.as_ref() }.size()
+        })
     }
 
     /// Return whether the set is empty.
     pub fn is_empty(&self) -> bool {
-        self.elements.is_empty()
+        self.root.is_none()
     }
-
-    /// Sorted elements of the union of two sets.
-    pub fn union(&self, guard: &dyn MutatorScope, other: &HeapSet) -> Vec<Primitive> {
-        merge(guard, self.elements(), other.elements(), true, true, true)
-    }
-
-    /// Sorted elements of the intersection of two sets.
-    pub fn intersect(&self, guard: &dyn MutatorScope, other: &HeapSet) -> Vec<Primitive> {
-        merge(guard, self.elements(), other.elements(), false, true, false)
-    }
-
-    /// Sorted elements of the difference (self - other).
-    pub fn diff(&self, guard: &dyn MutatorScope, other: &HeapSet) -> Vec<Primitive> {
-        merge(guard, self.elements(), other.elements(), true, false, false)
-    }
-}
-
-/// Linear merge of two sorted, deduplicated slices, keeping elements only
-/// in `a` (`left`), in both (`both`), and only in `b` (`right`).
-fn merge(
-    guard: &dyn MutatorScope,
-    a: &[Primitive],
-    b: &[Primitive],
-    left: bool,
-    both: bool,
-    right: bool,
-) -> Vec<Primitive> {
-    let mut out = Vec::new();
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() && j < b.len() {
-        match a[i].cmp_in(&b[j], guard) {
-            Ordering::Less => {
-                if left {
-                    out.push(a[i]);
-                }
-                i += 1;
-            }
-            Ordering::Greater => {
-                if right {
-                    out.push(b[j]);
-                }
-                j += 1;
-            }
-            Ordering::Equal => {
-                if both {
-                    out.push(a[i]);
-                }
-                i += 1;
-                j += 1;
-            }
-        }
-    }
-    if left {
-        out.extend_from_slice(&a[i..]);
-    }
-    if right {
-        out.extend_from_slice(&b[j..]);
-    }
-    out
 }
 
 #[cfg(test)]
@@ -319,86 +238,61 @@ mod tests {
         Primitive::Num(n.into())
     }
 
-    fn set(view: &MutatorHeapView, elems: Vec<Primitive>) -> HeapSet {
-        HeapSet::from_sorted(view, &sort_dedup(view, elems)).unwrap()
-    }
-
-    fn nums(s: &[Primitive]) -> Vec<f64> {
-        s.iter()
-            .map(|p| match p {
-                Primitive::Num(n) => n.as_f64(),
+    fn nums(keys: &[DictKey]) -> Vec<f64> {
+        keys.iter()
+            .map(|k| match k {
+                DictKey::Num(n) => n.as_f64(),
                 _ => panic!("not a number"),
             })
             .collect()
     }
 
     #[test]
-    fn sort_dedup_orders_and_deduplicates() {
+    fn from_elements_orders_and_deduplicates() {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
         let mut pool = SymbolPool::new();
+        // Interned first, so `z` has the lower id: symbols order by name.
         let z = pool.intern("z");
+        let y = pool.intern("y");
         let b = view.str("b").unwrap().as_ptr();
         let a = view.str("a").unwrap().as_ptr();
         let a2 = view.str("a").unwrap().as_ptr();
-        let s = set(
-            &view,
+        let d = Dict::new(view, &pool);
+        let s = HeapSet::from_elements(
+            &d,
             vec![
                 Primitive::Sym(z),
                 Primitive::Str(b),
                 num(3.0),
                 Primitive::Str(a),
                 num(1.0),
+                Primitive::Sym(y),
                 Primitive::Str(a2),
                 num(1.0),
             ],
-        );
-        let e = s.elements();
-        assert_eq!(e.len(), 5);
+        )
+        .unwrap();
+        let e = s.elements(&d);
+        assert_eq!(s.len(), 6);
         assert_eq!(nums(&e[..2]), vec![1.0, 3.0]);
         assert_eq!(e[2].str_in(&view), Some("a"));
         assert_eq!(e[3].str_in(&view), Some("b"));
-        assert!(matches!(e[4], Primitive::Sym(_)));
-    }
-
-    #[test]
-    fn add_remove_contains() {
-        let heap = Heap::new();
-        let view = MutatorHeapView::new(&heap);
-        let s = set(&view, vec![num(1.0), num(3.0)]);
-        assert!(s.with_added(&view, num(3.0)).is_none());
-        let added = s.with_added(&view, num(2.0)).unwrap();
-        assert_eq!(nums(&added), vec![1.0, 2.0, 3.0]);
-        assert!(s.with_removed(&view, &num(2.0)).is_none());
-        assert_eq!(nums(&s.with_removed(&view, &num(1.0)).unwrap()), vec![3.0]);
-        assert!(s.contains(&view, &num(3.0)));
-        assert!(!s.contains(&view, &num(2.0)));
-        let hello = view.str("hello").unwrap().as_ptr();
-        let hello2 = view.str("hello").unwrap().as_ptr();
-        let t = HeapSet::from_sorted(&view, &[Primitive::Str(hello)]).unwrap();
-        assert!(t.contains(&view, &Primitive::Str(hello2)));
-    }
-
-    #[test]
-    fn set_algebra() {
-        let heap = Heap::new();
-        let view = MutatorHeapView::new(&heap);
-        let a = set(&view, vec![num(1.0), num(2.0), num(4.0)]);
-        let b = set(&view, vec![num(2.0), num(3.0), num(4.0), num(5.0)]);
-        assert_eq!(nums(&a.union(&view, &b)), vec![1.0, 2.0, 3.0, 4.0, 5.0]);
-        assert_eq!(nums(&a.intersect(&view, &b)), vec![2.0, 4.0]);
-        assert_eq!(nums(&a.diff(&view, &b)), vec![1.0]);
-        assert_eq!(nums(&b.diff(&view, &a)), vec![3.0, 5.0]);
+        assert!(matches!(e[4], DictKey::Sym(id) if id == y));
+        assert!(matches!(e[5], DictKey::Sym(id) if id == z));
+        d.check_invariants(s.root()).unwrap();
     }
 
     #[test]
     fn empty_set() {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
-        let s = HeapSet::from_sorted(&view, &[]).unwrap();
+        let pool = SymbolPool::new();
+        let d = Dict::new(view, &pool);
+        let s = HeapSet::from_elements(&d, vec![]).unwrap();
         assert!(s.is_empty());
         assert_eq!(s.len(), 0);
-        assert!(!s.contains(&view, &num(1.0)));
+        assert!(s.elements(&d).is_empty());
     }
 
     #[test]
@@ -406,5 +300,6 @@ mod tests {
         let p = Primitive::from_number(&Number::from(42));
         assert!(matches!(p, Primitive::Num(ExactNum::Int(42))));
         assert!(Primitive::Num(7.5.into()).to_number().is_some());
+        assert!(matches!(p.to_key(), DictKey::Num(ExactNum::Int(42))));
     }
 }

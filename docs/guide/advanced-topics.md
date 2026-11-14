@@ -144,8 +144,13 @@ in a code review.
 
 ## Sets
 
-Sets are unordered collections of unique values, provided by the
-`set` namespace.
+Sets are collections of unique numbers, strings and symbols, provided
+by the `set` namespace. A set is held as a persistent balanced tree (the
+same structure as a [dict](dicts.md)), so `set.add`, `set.remove` and
+`set.contains?` take time logarithmic in the set's size, `set.size` is
+constant, and each new set shares most of its structure with the old
+one. `set.to-list` returns the elements in order: numbers first (by
+value), then strings, then symbols (by name).
 
 ### Creating Sets
 

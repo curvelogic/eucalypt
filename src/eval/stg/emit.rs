@@ -7,6 +7,7 @@ use crate::eval::{
     machine::intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
     memory::{
         self,
+        dict::Dict,
         mutator::MutatorHeapView,
         ndarray::HeapNdArray,
         set::{HeapSet, Primitive as SetPrimitive},
@@ -113,8 +114,14 @@ fn emit_set(
         emitter,
         Event::OutputSequenceStart(metadata.clone()),
     )?;
-    for elem in set.elements() {
-        let prim = set_primitive_to_render_primitive(elem, machine, view);
+    for key in set.elements(&Dict::new(view, machine.symbol_pool())) {
+        let Some(prim) = key.to_primitive() else {
+            return Err(ExecutionError::Panic(
+                machine.annotation(),
+                "unexpected element type in set".to_string(),
+            ));
+        };
+        let prim = set_primitive_to_render_primitive(&prim, machine, view);
         emit_scalar(machine, emitter, &RenderMetadata::empty(), &prim)?;
     }
     emit_event(machine, emitter, Event::OutputSequenceEnd)
