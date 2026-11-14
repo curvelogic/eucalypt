@@ -1064,6 +1064,12 @@ impl SourceLoader {
 
     /// Final verification of core expression prior to run
     pub fn verify(&mut self) -> Result<Vec<CoreError>, EucalyptError> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(ref blob) = self.prelude_blob {
+            let is_global = |n: &str| blob.name_to_slot.contains_key(n);
+            return content::verify_with_globals(self.core.expr.clone(), &is_global)
+                .map_err(EucalyptError::from);
+        }
         content::verify(self.core.expr.clone()).map_err(EucalyptError::from)
     }
 

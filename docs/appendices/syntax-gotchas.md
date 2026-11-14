@@ -103,6 +103,12 @@ for example:
 note: 'xs foldl(+, 0) + 1' was read as 'xs (foldl(+, 0) + 1)'; parenthesise the pipeline: '(xs foldl(+, 0)) + 1'
 ```
 
+The note is shown only when the step's function is likely to be what the
+operator received: not when the step starts with a literal (`xs 1 + 2`),
+and not when an operator on the way took a right operand that may itself
+be a function, such as a call (`xs 1 + nth(0)`, `xs nth(0) = (k + 1)`).
+Parenthesising the pipeline would fix nothing there.
+
 The note appears only when the operator expression was written without
 parentheses as a pipeline step. Inside an expression-anaphor lambda, such
 as `map(_ nth(0) = 1)`, it states the parse but suggests no parentheses:
