@@ -159,4 +159,40 @@ divisibility: {
         (pipelines values all-true?)
 }
 
-RESULT: (integer-arithmetic.pass ∧ floating-point-arithmetic.pass ∧ mixed-arithmetic.pass ∧ divisibility.pass) then(:PASS, :FAIL)
+` { doc: "Exact comparison of integers with floats above 2^53 (eu-oaz72.116): `=`, `!=` and the orderings agree with set and dict membership; equal values stay equal." }
+exact-comparison: {
+  big: 9007199254740993
+  flt: 9007199254740992.0
+
+  trues: {
+    ne: big != flt
+    ne-flipped: flt != big
+    gt: big > flt
+    lt: flt < big
+    gte: big >= flt
+    umax-lt: 18446744073709551615 < 18446744073709551616.0
+    neg-lt: -9007199254740993 < -9007199254740992.0
+    set-agrees: ([flt] set.of set.contains?(big)) = (big = flt)
+    set-distinct: ([flt, big] set.of set.size) = 2
+    dict-distinct: (dict.of[[flt, :f]] dict.get-or(big, :none)) = :none
+    int-float-eq: 1 = 1.0
+    float-int-eq: 1.0 = 1
+    int-float-lte: 1 <= 1.0
+    int-float-gte: 1 >= 1.0
+    at-2-53: 9007199254740992 = flt
+    neg-zero: 0 = -0.0
+  }
+
+  falses: {
+    eq: big = flt
+    eq-flipped: flt = big
+    lte: big <= flt
+    umax-eq: 18446744073709551615 = 18446744073709551616.0
+    neg-eq: -9007199254740993 = -9007199254740992.0
+    int-float-ne: 1 != 1.0
+  }
+
+  pass: (trues values all-true?) ∧ (falses values map(not) all-true?)
+}
+
+RESULT: (integer-arithmetic.pass ∧ floating-point-arithmetic.pass ∧ mixed-arithmetic.pass ∧ divisibility.pass ∧ exact-comparison.pass) then(:PASS, :FAIL)

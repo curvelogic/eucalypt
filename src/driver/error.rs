@@ -41,6 +41,11 @@ pub enum EucalyptError {
     /// OS-level reason (e.g. "Permission denied", "No space left on device").
     #[error("{}", format_file_could_not_be_written(.0, .1.as_deref()))]
     FileCouldNotBeWritten(String, Option<String>),
+    /// `eu test` found no test files in the inputs it was given.
+    ///
+    /// The field names the inputs searched.
+    #[error("no test files found in {0}")]
+    NoTestsFound(String),
 }
 
 /// Format a "file could not be read" error message including the OS reason when available.
