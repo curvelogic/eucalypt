@@ -1,4 +1,2 @@
-# Mistake: '=' used for a declaration inside an expression. 'result' is
-# undefined, so this is an assignment-style mistake in both prelude modes
-# (eu-oaz72.134: source mode used to report only an unresolved variable).
+` "Mistake: `=` used for a declaration inside an expression. `result` is undefined, so this is an assignment-style mistake in both prelude modes; source mode used to report only an unresolved variable (eu-oaz72.134)"
 r: result = 42

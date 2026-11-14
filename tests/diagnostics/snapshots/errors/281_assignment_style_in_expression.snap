@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/281_assignment_style_in_expression.eu:4:11
+primary: user tests/harness/errors/281_assignment_style_in_expression.eu:2:11
 help-lines: 0
 note-lines: 1
 secondary-labels: 0
@@ -19,9 +19,9 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: assignment-style syntax: 'result = ...' is not a valid eucalypt declaration
-  ┌─ tests/harness/errors/281_assignment_style_in_expression.eu:4:11
+  ┌─ tests/harness/errors/281_assignment_style_in_expression.eu:2:11
   │
-4 │ r: result = 42
+2 │ r: result = 42
   │           ^
   │
   = eucalypt uses ':' for declarations, not '='; write 'result: <value>' instead of 'result = <value>'

@@ -2665,11 +2665,6 @@ pub fn test_typecheck_091_deprecated_not_referenced() {
 }
 
 #[test]
-pub fn test_error_281() {
-    run_error_test(&error_opts("281_assignment_style_in_expression.eu"));
-}
-
-#[test]
 pub fn test_error_158() {
     run_error_test(&error_opts("158_self_assign_direct.eu"));
 }
@@ -3217,26 +3212,33 @@ pub fn test_236_oaz72_36_constructor_field_sharing() {
 /// target with one).
 #[test]
 pub fn test_251_prelude_modes_agree_on_assignment_style() {
+    let deadline = std::time::Duration::from_secs(120);
+    let run = |cmd: std::process::Command, what: &str| {
+        run_with_deadline(cmd, deadline)
+            .unwrap_or_else(|| panic!("{what} did not finish within {}s", deadline.as_secs()))
+    };
     for mode in [None, Some("--source-prelude")] {
         let label = mode.unwrap_or("default prelude");
 
         let mut cmd = std::process::Command::new(eu_binary());
         cmd.arg("test");
         cmd.args(mode);
-        cmd.arg("tests/harness/251_oaz72_134_prelude_mode_eq.eu");
-        let out = cmd.output().expect("failed to run eu test");
+        cmd.arg("tests/harness/251_assignment_style_prelude_modes.eu");
+        cmd.args(["--heap-limit-mib", "2048"]);
+        let out = run(cmd, "eu test 251");
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(
             out.status.success() && stdout.contains("PASS") && !stdout.contains("FAIL"),
-            "251_oaz72_134_prelude_mode_eq failed ({label}):\n{stdout}{stderr}"
+            "251_assignment_style_prelude_modes failed ({label}):\n{stdout}{stderr}"
         );
 
         let mut cmd = std::process::Command::new(eu_binary());
         cmd.arg("run");
         cmd.args(mode);
         cmd.arg("tests/harness/errors/281_assignment_style_in_expression.eu");
-        let out = cmd.output().expect("failed to run eu");
+        cmd.args(["--heap-limit-mib", "2048"]);
+        let out = run(cmd, "eu run 281");
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert_eq!(
             out.status.code(),
@@ -5279,4 +5281,9 @@ pub fn test_error_279_catenation_step_receives_function() {
 #[test]
 pub fn test_error_280_catenation_parenthesised_step() {
     run_error_test(&error_opts("280_catenation_parenthesised_step.eu"));
+}
+
+#[test]
+pub fn test_error_281_assignment_style_in_expression() {
+    run_error_test(&error_opts("281_assignment_style_in_expression.eu"));
 }
