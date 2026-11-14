@@ -82,6 +82,7 @@ fn binary_branch(tag: Tag) -> (Tag, Rc<StgSyn>) {
 /// Compare two numbers for equality by exact value, agreeing with
 /// set, vec and dict key equality ([`ExactNum`]): integers above 2^53
 /// stay distinct from nearby floats, and `1 = 1.0` holds.
+/// NaN needs no guard: a `Number` cannot hold one.
 fn num_eq(x: &Number, y: &Number) -> bool {
     ExactNum::from_number(x) == ExactNum::from_number(y)
 }
