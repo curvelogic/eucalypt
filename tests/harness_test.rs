@@ -5301,3 +5301,17 @@ pub fn test_error_286_lone_anaphor_argument() {
 pub fn test_error_287_anaphoric_section_argument() {
     run_error_test(&error_opts("287_anaphoric_section_argument.eu"));
 }
+
+/// The argument of a function whose body is its parameter keeps its own
+/// location, so the pipeline-step note is shown (eu-oaz72.133).
+#[test]
+pub fn test_error_282_catenation_step_identity_argument() {
+    run_error_test(&error_opts("282_catenation_step_identity_argument.eu"));
+}
+
+/// No pipeline-step note when the function comes from an operator's right
+/// operand (eu-oaz72.133).
+#[test]
+pub fn test_error_283_catenation_function_from_right() {
+    run_error_test(&error_opts("283_catenation_function_from_right.eu"));
+}
