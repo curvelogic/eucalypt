@@ -4,6 +4,14 @@ use crate::syntax::rowan::kind::SyntaxKind::{self, *};
 use codespan::{ByteIndex, ByteOffset, Span};
 use std::{iter::Peekable, str::Chars};
 
+/// The end of a format specifier starting at `start` in `text`: the next
+/// `}` or `:`, less any trailing whitespace, which is not part of it.
+fn format_spec_end(text: &str, start: ByteIndex) -> ByteIndex {
+    let rest = &text[start.to_usize()..];
+    let raw_len = rest.find(['}', ':']).unwrap_or(rest.len());
+    start + ByteOffset(rest[..raw_len].trim_end().len() as i64)
+}
+
 /// String pattern lexer for parsing string interpolation
 /// This lexer preserves all source information for lossless parsing
 pub struct StringPatternLexer<'text> {
@@ -111,10 +119,22 @@ impl<'text> StringPatternLexer<'text> {
     }
 
     /// Parse format specifier content after :
+    ///
+    /// The specifier runs to the next `}` or `:` but stops before any
+    /// trailing whitespace, which the next call emits as trivia: in
+    /// `"{ s : up }"` the specifier is `up`, not `up `. Whitespace inside
+    /// the specifier (the printf space flag in `% d`) is kept.
     fn format_content(&mut self, start: ByteIndex) -> (SyntaxKind, Span, &'text str) {
-        let end = self.consume(|c| c != '}' && c != ':');
-        let content = self.slice(start, end);
-        (STRING_FORMAT_SPEC, self.make_span(start, end), content)
+        let end = format_spec_end(self.text, start);
+        while self.position < end {
+            self.bump();
+        }
+        let content = self.slice(start, self.position);
+        (
+            STRING_FORMAT_SPEC,
+            self.make_span(start, self.position),
+            content,
+        )
     }
 
     /// Skip whitespace and return true if any was found
@@ -313,10 +333,22 @@ impl<'text> CStringPatternLexer<'text> {
     }
 
     /// Parse format specifier content after :
+    ///
+    /// The specifier runs to the next `}` or `:` but stops before any
+    /// trailing whitespace, which the next call emits as trivia: in
+    /// `"{ s : up }"` the specifier is `up`, not `up `. Whitespace inside
+    /// the specifier (the printf space flag in `% d`) is kept.
     fn format_content(&mut self, start: ByteIndex) -> (SyntaxKind, Span, &'text str) {
-        let end = self.consume(|c| c != '}' && c != ':');
-        let content = self.slice(start, end);
-        (STRING_FORMAT_SPEC, self.make_span(start, end), content)
+        let end = format_spec_end(self.text, start);
+        while self.position < end {
+            self.bump();
+        }
+        let content = self.slice(start, self.position);
+        (
+            STRING_FORMAT_SPEC,
+            self.make_span(start, self.position),
+            content,
+        )
     }
 
     /// Skip whitespace and return true if any was found
@@ -499,6 +531,38 @@ mod tests {
                 (COLON, ":"),
                 (STRING_FORMAT_SPEC, "%03d"),
                 (CLOSE_BRACE, "}")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_padded_format_specifier_excludes_trailing_whitespace() {
+        let expected = vec![
+            (OPEN_BRACE, "{"),
+            (WHITESPACE, " "),
+            (STRING_INTERPOLATION_TARGET, "s"),
+            (WHITESPACE, " "),
+            (COLON, ":"),
+            (WHITESPACE, " "),
+            (STRING_FORMAT_SPEC, "up"),
+            (WHITESPACE, "  "),
+            (CLOSE_BRACE, "}"),
+        ];
+        assert_eq!(lex("{ s : up  }"), expected);
+        assert_eq!(lex_c("{ s : up  }"), expected);
+    }
+
+    #[test]
+    fn test_format_specifier_keeps_internal_whitespace() {
+        assert_eq!(
+            lex("{n:% d }"),
+            vec![
+                (OPEN_BRACE, "{"),
+                (STRING_INTERPOLATION_TARGET, "n"),
+                (COLON, ":"),
+                (STRING_FORMAT_SPEC, "% d"),
+                (WHITESPACE, " "),
+                (CLOSE_BRACE, "}"),
             ]
         );
     }

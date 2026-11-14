@@ -1,0 +1,25 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/281_interpolation_two_names
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/281_interpolation_two_names.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/281_interpolation_two_names.eu:5:16
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unexpected content in string interpolation: expected a name or dotted lookup, optionally followed by ':' and a format
+  ┌─ tests/harness/errors/281_interpolation_two_names.eu:5:16
+  │
+5 │ greeting: "{ a b }"
+  │                ^

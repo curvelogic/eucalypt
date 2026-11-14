@@ -5232,3 +5232,10 @@ pub fn test_error_279_catenation_step_receives_function() {
 pub fn test_error_280_catenation_parenthesised_step() {
     run_error_test(&error_opts("280_catenation_parenthesised_step.eu"));
 }
+
+/// Leftover tokens in a closed string interpolation are a parse error,
+/// not dropped: `{ a b }` used to evaluate as `{a}` (eu-oaz72.50).
+#[test]
+pub fn test_error_281_interpolation_two_names() {
+    run_error_test(&error_opts("281_interpolation_two_names.eu"));
+}

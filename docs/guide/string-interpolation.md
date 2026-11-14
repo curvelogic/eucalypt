@@ -113,6 +113,10 @@ label: '99'
 > sum: x + y
 > result: "{sum}"
 > ```
+>
+> Anything else inside the braces — a second name, as in `"{ a b }"` —
+> is a parse error. Whitespace around the name and the format
+> specifier is ignored: `"{ n : %06d }"` is `"{n:%06d}"`.
 
 ## Escaping Braces
 

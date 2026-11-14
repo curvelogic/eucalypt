@@ -59,6 +59,11 @@ pub enum ParseError {
     UnclosedStringInterpolation {
         range: TextRange,
     },
+    /// A closed string interpolation holds tokens beyond a name or dotted
+    /// lookup and its format specifier, e.g. `"{a b}"`
+    InvalidStringInterpolation {
+        range: TextRange,
+    },
     InvalidZdtLiteral {
         range: TextRange,
         /// A brief description of why the literal is invalid
@@ -135,6 +140,11 @@ impl fmt::Display for ParseError {
             ParseError::UnclosedStringInterpolation { .. } => {
                 write!(f, "unterminated string interpolation (missing '}}')")
             }
+            ParseError::InvalidStringInterpolation { .. } => write!(
+                f,
+                "unexpected content in string interpolation: expected a name or \
+                 dotted lookup, optionally followed by ':' and a format"
+            ),
             ParseError::InvalidZdtLiteral { reason, .. } => match reason {
                 ZdtInvalidReason::Empty => write!(
                     f,
