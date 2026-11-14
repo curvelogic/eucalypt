@@ -120,6 +120,10 @@
 (t_string "t\"" @string.special)
 (t_string "\"" @string.special)
 
+; S-strings (type-data literals) - opaque, no interpolation, no escapes
+(s_string) @string
+(s_string_content) @string
+
 ; Symbols
 (symbol
   ":" @constant
@@ -180,6 +184,10 @@
 ; Juxtaposed parameters — f{x y}:, f[a, b]: and f[h : t]:
 (block_param
   (identifier) @parameter)
+; and the bound name of a renamed field, f{x: px}:
+(block_param
+  (declaration
+    (soup . (name (identifier) @parameter) .)))
 (list_param
   (identifier) @parameter)
 
@@ -225,9 +233,6 @@
 
 ; Docstrings — string-valued metadata (aliased to docstring by grammar)
 (docstring) @comment.documentation
-
-; Block-valued unit metadata (non-docstring)
-(unit_metadata (block) @comment.documentation)
 
 ; Doc values inside block-valued declaration metadata
 ; Matches: ` {doc: "text", ...}

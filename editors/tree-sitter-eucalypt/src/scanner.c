@@ -566,6 +566,35 @@ static bool skip_operator(TSLexer *lexer) {
     return true;
 }
 
+// Is the lexer at a declaration colon? As in the Rowan lexer, a ':'
+// immediately followed by a name start or a quote is a symbol (`x :y`), not
+// a colon (eu-ioz21.7).
+static bool at_declaration_colon(TSLexer *lexer) {
+    if (lexer->lookahead != ':') return false;
+    lexer->advance(lexer, true);
+    return !is_identifier_start(lexer->lookahead) && lexer->lookahead != '\'';
+}
+
+// After a name: is this `name:` or `name(...):`? The parameter list must
+// be immediately adjacent to the name (see the note in
+// at_declaration_start). The juxtaposed `name[...]:` and `name{...}:` heads
+// need no lookahead: a colon followed by whitespace cannot continue the
+// previous soup, so the parser starts a new declaration there anyway.
+static bool at_head_after_name(TSLexer *lexer) {
+    bool had_space = skip_whitespace(lexer);
+    if (at_declaration_colon(lexer)) return true;
+    if (had_space || lexer->lookahead != '(') return false;
+    int depth = 1;
+    lexer->advance(lexer, true);
+    while (depth > 0 && !lexer->eof(lexer)) {
+        if (lexer->lookahead == '(') depth++;
+        else if (lexer->lookahead == ')') depth--;
+        lexer->advance(lexer, true);
+    }
+    skip_whitespace(lexer);
+    return at_declaration_colon(lexer);
+}
+
 // Check if we're at the start of a declaration
 // Patterns: `identifier:`, `'quoted':`, `identifier(...):`, `(op_pattern):`
 static bool at_declaration_start(TSLexer *lexer) {
@@ -589,24 +618,7 @@ static bool at_declaration_start(TSLexer *lexer) {
         // not be mistaken for one when the identifier is actually the value
         // of the PREVIOUS declaration and the '(' begins the NEXT
         // declaration's own operator/paren head.
-        bool had_space = skip_whitespace(lexer);
-
-        // identifier: or identifier(...):
-        if (lexer->lookahead == ':') return true;
-        if (!had_space && lexer->lookahead == '(') {
-            // Could be function declaration f(x):
-            // Skip to matching paren
-            int depth = 1;
-            lexer->advance(lexer, true);
-            while (depth > 0 && !lexer->eof(lexer)) {
-                if (lexer->lookahead == '(') depth++;
-                else if (lexer->lookahead == ')') depth--;
-                lexer->advance(lexer, true);
-            }
-            skip_whitespace(lexer);
-            if (lexer->lookahead == ':') return true;
-        }
-        return false;
+        return at_head_after_name(lexer);
     }
 
     // Check for quoted identifier
@@ -615,25 +627,10 @@ static bool at_declaration_start(TSLexer *lexer) {
         while (lexer->lookahead != '\'' && !lexer->eof(lexer)) {
             lexer->advance(lexer, true);
         }
-        if (lexer->lookahead == '\'') {
-            lexer->advance(lexer, true);
-            // See immediate-adjacency note above.
-            bool had_space = skip_whitespace(lexer);
-            if (lexer->lookahead == ':') return true;
-            if (!had_space && lexer->lookahead == '(') {
-                // quoted function decl
-                int depth = 1;
-                lexer->advance(lexer, true);
-                while (depth > 0 && !lexer->eof(lexer)) {
-                    if (lexer->lookahead == '(') depth++;
-                    else if (lexer->lookahead == ')') depth--;
-                    lexer->advance(lexer, true);
-                }
-                skip_whitespace(lexer);
-                if (lexer->lookahead == ':') return true;
-            }
-        }
-        return false;
+        if (lexer->lookahead != '\'') return false;
+        lexer->advance(lexer, true);
+        // See immediate-adjacency note above.
+        return at_head_after_name(lexer);
     }
 
     // Check for operator declaration (x op y): or (op x): or (x op):
@@ -666,7 +663,7 @@ static bool at_declaration_start(TSLexer *lexer) {
             // Prefix: (!x): - operator and identifier
             // Postfix: (x!): - identifier and operator
             // Binary: (x + y): - identifiers and operator
-            if (has_operator && lexer->lookahead == ':') {
+            if (has_operator && at_declaration_colon(lexer)) {
                 return true;
             }
         }

@@ -112,6 +112,40 @@
           (eucalypt-check--fail "no %s applied at level %d" face level))))
     (princ (format "fontified %d files at levels 1-4\n" (length files)))))
 
+;; Each literal kind must be fontified: a grammar node the mode has no
+;; rule for would otherwise fall back to the default face unnoticed (the
+;; s_string node, eu-ioz21.7). Each entry is (SOURCE TEXT FACE): TEXT,
+;; inside SOURCE, must carry FACE at every character.
+(defconst eucalypt-check--literal-faces
+  '(("x: \"plain\"\n" "plain" font-lock-string-face)
+    ("x: c\"cee\"\n" "cee" font-lock-string-face)
+    ("x: r\"raw\"\n" "raw" font-lock-string-face)
+    ("x: s\"{a: number}\"\n" "s\"{a: number}\"" font-lock-string-face)
+    ("x: t\"2024-03-15\"\n" "2024-03-15" font-lock-constant-face))
+  "Literals and the face each must carry at level 4.")
+
+(defun eucalypt-check--literals ()
+  "Check that each literal kind gets its face."
+  (pcase-dolist (`(,source ,text ,face) eucalypt-check--literal-faces)
+    (with-temp-buffer
+      (insert source)
+      (eucalypt-mode)
+      (setq-local treesit-font-lock-level 4)
+      (treesit-font-lock-recompute-features)
+      (treesit-font-lock-fontify-region (point-min) (point-max))
+      (goto-char (point-min))
+      (search-forward text)
+      (let ((pos (match-beginning 0)))
+        (while (< pos (match-end 0))
+          (let ((f (get-text-property pos 'face)))
+            (unless (memq face (if (listp f) f (list f)))
+              (eucalypt-check--fail "%S: %S at %d has face %S, not %S"
+                                    source text pos f face)
+              (setq pos (match-end 0))))
+          (setq pos (1+ pos))))))
+  (princ (format "checked %d literal faces\n"
+                 (length eucalypt-check--literal-faces))))
+
 (defun eucalypt-check-run ()
   "Entry point: check queries, then fontify `command-line-args-left'."
   (unless (treesit-language-available-p 'eucalypt)
@@ -120,6 +154,7 @@
   (let ((files command-line-args-left))
     (setq command-line-args-left nil)
     (eucalypt-check--compile-queries)
+    (eucalypt-check--literals)
     (when files (eucalypt-check--fontify files))
     (if (zerop eucalypt-check--failures)
         (progn (princ "PASS\n") (kill-emacs 0))

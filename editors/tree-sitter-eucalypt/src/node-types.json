@@ -225,6 +225,10 @@
       "required": false,
       "types": [
         {
+          "type": "cons_pattern",
+          "named": true
+        },
+        {
           "type": "declaration",
           "named": true
         },
@@ -390,7 +394,17 @@
   {
     "type": "format_spec",
     "named": true,
-    "fields": {}
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": false,
+      "types": [
+        {
+          "type": "format_spec_content",
+          "named": true
+        }
+      ]
+    }
   },
   {
     "type": "interpolation",
@@ -557,6 +571,10 @@
           "named": true
         },
         {
+          "type": "s_string",
+          "named": true
+        },
+        {
           "type": "string",
           "named": true
         },
@@ -708,6 +726,26 @@
     "fields": {}
   },
   {
+    "type": "s_string",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": false,
+      "types": [
+        {
+          "type": "s_string_content",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "s_string_content",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "soup",
     "named": true,
     "fields": {},
@@ -840,6 +878,11 @@
     }
   },
   {
+    "type": "t_string_content",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "unit_metadata",
     "named": true,
     "fields": {},
@@ -943,6 +986,10 @@
     "named": true
   },
   {
+    "type": "format_spec_content",
+    "named": true
+  },
+  {
     "type": "identifier",
     "named": true
   },
@@ -959,12 +1006,12 @@
     "named": false
   },
   {
-    "type": "t\"",
+    "type": "s\"",
     "named": false
   },
   {
-    "type": "t_string_content",
-    "named": true
+    "type": "t\"",
+    "named": false
   },
   {
     "type": "{",
