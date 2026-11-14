@@ -6,6 +6,9 @@ count(d, w): d dict.update-strict(w, + 1, 0)
 ` { type: "dict(string, number)" }
 counts: ["a", "b", "a"] foldl(count, dict.empty)
 
+` { type: "[number]" }
+tallies: counts dict.values
+
 ` { type: "number" }
 total: counts dict.values foldl(+, 0)
 
@@ -24,4 +27,4 @@ score([k, v, rest]): v + (rest dict.size)
 ` { type: "dict([number], number) → number" }
 nearest(q): q dict.pop-min score
 
-result: [total, words, a-count, nearest(queue), counts dict.contains?("b")]
+result: [tallies, total, words, a-count, nearest(queue), counts dict.contains?("b")]
