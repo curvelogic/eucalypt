@@ -1,56 +1,29 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/250_dict_to_block_list_key
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_to_block_list_key.eu
-prelude-modes: divergent
+prelude-modes: identical
 
-=== blob prelude ===
+=== both prelude modes ===
 exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/250_dict_to_block_list_key.eu:2:9
-help-lines: 0
-note-lines: 1
-secondary-labels: 1
-trace-frames: 2
-trace-user-frames: 2
-trace-prelude-frames: 0
-prelude-excerpt-lines: 0
-rust-panic: no
---- stderr ---
-error: dict key [1, 2] cannot be a block key
-  ┌─ tests/harness/errors/250_dict_to_block_list_key.eu:2:9
-  │
-2 │ result: dict.of[[:a, 1], [[1, 2], 2]] dict.to-block
-  │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ---- called from here
-  │
-  = block keys are symbols: 'dict.to-block' accepts string, symbol and number keys
-  = while evaluating (outermost first):
-    - result at 250_dict_to_block_list_key.eu:2:39
-    - result at 250_dict_to_block_list_key.eu:2:9
-
-=== --source-prelude ===
-exit: 1
-errors: 1
-warnings: 0
-code: -
-primary: user tests/harness/errors/250_dict_to_block_list_key.eu:2:9
+primary: user tests/harness/errors/250_dict_to_block_list_key.eu:2:39
 help-lines: 0
 note-lines: 1
 secondary-labels: 0
-trace-frames: 2
-trace-user-frames: 2
+trace-frames: 1
+trace-user-frames: 1
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: dict key [1, 2] cannot be a block key
-  ┌─ tests/harness/errors/250_dict_to_block_list_key.eu:2:9
+  ┌─ tests/harness/errors/250_dict_to_block_list_key.eu:2:39
   │
 2 │ result: dict.of[[:a, 1], [[1, 2], 2]] dict.to-block
-  │         ^^^^
+  │                                       ^^^^
   │
   = block keys are symbols: 'dict.to-block' accepts string, symbol and number keys
   = while evaluating (outermost first):
     - result at 250_dict_to_block_list_key.eu:2:39
-    - result at 250_dict_to_block_list_key.eu:2:9

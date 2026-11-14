@@ -12,8 +12,8 @@ primary: user tests/harness/errors/250_dict_merge_strict.eu:2:13
 help-lines: 0
 note-lines: 0
 secondary-labels: 1
-trace-frames: 2
-trace-user-frames: 2
+trace-frames: 1
+trace-user-frames: 1
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -29,7 +29,6 @@ error: panic: combined
   │
   = while evaluating (outermost first):
     - result at 250_dict_merge_strict.eu:4:72
-    - result at 250_dict_merge_strict.eu:4:38
 
 === --source-prelude ===
 exit: 1

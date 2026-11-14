@@ -1,56 +1,29 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/250_dict_to_block_collision
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_to_block_collision.eu
-prelude-modes: divergent
+prelude-modes: identical
 
-=== blob prelude ===
+=== both prelude modes ===
 exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/250_dict_to_block_collision.eu:2:9
-help-lines: 0
-note-lines: 1
-secondary-labels: 1
-trace-frames: 2
-trace-user-frames: 2
-trace-prelude-frames: 0
-prelude-excerpt-lines: 0
-rust-panic: no
---- stderr ---
-error: dict keys "x" and :x both name block key 'x'
-  ┌─ tests/harness/errors/250_dict_to_block_collision.eu:2:9
-  │
-2 │ result: dict.of[["x", 1], [:x, 2]] dict.to-block
-  │         ^^^^^^^^^^^^^^^^^^^^^^^^^^ ---- called from here
-  │
-  = a block holds each key once: 'dict.to-block' names an entry by a string key's text and a number key's rendered text, so keys such as "x" and :x, or 1 and "1", collide
-  = while evaluating (outermost first):
-    - result at 250_dict_to_block_collision.eu:2:36
-    - result at 250_dict_to_block_collision.eu:2:9
-
-=== --source-prelude ===
-exit: 1
-errors: 1
-warnings: 0
-code: -
-primary: user tests/harness/errors/250_dict_to_block_collision.eu:2:9
+primary: user tests/harness/errors/250_dict_to_block_collision.eu:2:36
 help-lines: 0
 note-lines: 1
 secondary-labels: 0
-trace-frames: 2
-trace-user-frames: 2
+trace-frames: 1
+trace-user-frames: 1
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: dict keys "x" and :x both name block key 'x'
-  ┌─ tests/harness/errors/250_dict_to_block_collision.eu:2:9
+  ┌─ tests/harness/errors/250_dict_to_block_collision.eu:2:36
   │
 2 │ result: dict.of[["x", 1], [:x, 2]] dict.to-block
-  │         ^^^^
+  │                                    ^^^^
   │
   = a block holds each key once: 'dict.to-block' names an entry by a string key's text and a number key's rendered text, so keys such as "x" and :x, or 1 and "1", collide
   = while evaluating (outermost first):
     - result at 250_dict_to_block_collision.eu:2:36
-    - result at 250_dict_to_block_collision.eu:2:9
