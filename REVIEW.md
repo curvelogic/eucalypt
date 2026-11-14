@@ -204,9 +204,8 @@ round 1 and posts no owner hold. Once the author has pushed fixes, a fresh
   fixed, in round 2's verdict and, where a second independent review ran,
   in that review too. It also reviews the diff between round 2's head and
   the new head; if that head is no longer an ancestor (a rebase, a
-  force-push), it reviews the diff of the PR's changes as they stand at
-  each head, compared with each other, and anything master brought in is
-  out of scope. It is not a new open-ended review: anything else is out of
+  force-push), it compares the PR's own changes at the two heads (as `git
+  range-diff` does), and anything master brought in is out of scope. It is not a new open-ended review: anything else is out of
   scope this round. CI on the new head is read first, as in every round.
 - **Two reviewers where two are required.** Where this file requires a
   second independent review (the *Sensitive areas* rows that say so, and
