@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/287_anaphoric_section_argument
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/287_anaphoric_section_argument.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/287_anaphoric_section_argument.eu:4:7
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
+  ┌─ tests/harness/errors/287_anaphoric_section_argument.eu:4:7
+  │
+4 │ r: xs nth(_ + 1)
+  │       ^^^^^^^^^^
+  │
+  = a function value cannot be used directly here; it must first be called with all of its remaining arguments
+  = while evaluating (outermost first):
+    - r at 287_anaphoric_section_argument.eu:4:7
+    - in 'nth' (prelude)

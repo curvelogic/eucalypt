@@ -232,6 +232,13 @@ impl<'smap> Cooker<'smap> {
 
         if wrap_lambda {
             self.in_expr_anaphor_scope = true;
+            // A soup that is nothing but one anaphor (`_` in `nth(_)`)
+            // becomes the identity function (eu-oaz72.132).
+            if let [only] = filled.as_slice() {
+                if let Expr::ExprAnaphor(s, _) = &*only.inner {
+                    self.source_map.record_lone_anaphor(*s);
+                }
+            }
         }
 
         let atoms: Vec<_> = {

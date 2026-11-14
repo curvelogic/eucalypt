@@ -5287,3 +5287,17 @@ pub fn test_error_280_catenation_parenthesised_step() {
 pub fn test_error_281_assignment_style_in_expression() {
     run_error_test(&error_opts("281_assignment_style_in_expression.eu"));
 }
+
+/// A lone anaphor argument makes the argument the identity function, and
+/// the error states it (eu-oaz72.132).
+#[test]
+pub fn test_error_286_lone_anaphor_argument() {
+    run_error_test(&error_opts("286_lone_anaphor_argument.eu"));
+}
+
+/// An anaphoric section passed where a value is wanted gets no
+/// lone-anaphor note (eu-oaz72.132).
+#[test]
+pub fn test_error_287_anaphoric_section_argument() {
+    run_error_test(&error_opts("287_anaphoric_section_argument.eu"));
+}

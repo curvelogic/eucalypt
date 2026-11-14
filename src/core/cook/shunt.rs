@@ -1,5 +1,5 @@
 //! Logic for resolving operator precedences
-use crate::common::sourcemap::{CatenationOperand, HasSmid, Smid, SourceMap};
+use crate::common::sourcemap::{CatenationOperand, HasSmid, LoneAnaphorCall, Smid, SourceMap};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
 
@@ -364,6 +364,7 @@ impl<'smap> Shunter<'smap> {
             match &*xs[1].inner {
                 Expr::ArgTuple(tuple_smid, args) => {
                     let smid = self.source_map.merge(f.smid(), *tuple_smid);
+                    self.record_lone_anaphor_call(smid, args);
                     RcExpr::from(Expr::App(smid, f, args.to_vec()))
                 }
                 _ => panic!("shunt: pseudocall op without arg tuple"),
@@ -388,6 +389,31 @@ impl<'smap> Shunter<'smap> {
             RcExpr::from(Expr::App(f.smid(), f, vec![x]))
         } else {
             RcExpr::from(Expr::App(op.smid(), op, xs.to_vec()))
+        }
+    }
+
+    /// Record the call at `call` if any of its `args` is the identity
+    /// function cook made of a lone anaphor (eu-oaz72.132).
+    fn record_lone_anaphor_call(&mut self, call: Smid, args: &[RcExpr]) {
+        let anaphors: Vec<(usize, Smid)> = args
+            .iter()
+            .enumerate()
+            .filter_map(|(i, arg)| match &*arg.inner {
+                Expr::Lam(s, _, scope)
+                    if self.source_map.is_lone_anaphor(*s)
+                        && matches!(&*scope.body.inner, Expr::Var(v, _) if v == s) =>
+                {
+                    Some((i, *s))
+                }
+                _ => None,
+            })
+            .collect();
+        if !anaphors.is_empty() {
+            self.source_map.record_lone_anaphor_call(LoneAnaphorCall {
+                call,
+                arity: args.len(),
+                anaphors,
+            });
         }
     }
 
