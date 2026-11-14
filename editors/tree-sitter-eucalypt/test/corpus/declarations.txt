@@ -1350,3 +1350,102 @@ x: ℕ
     (soup
       (name
         (identifier)))))
+
+================================================================================
+Several non-ASCII declarations in one block (eu-ioz21.9: the external
+scanner classified identifier characters with the C locale, so in a native
+build each declaration after the first non-ASCII one was swallowed by the
+previous declaration's value)
+================================================================================
+
+xs: {
+  α: 1
+  β: []
+  γ: δ
+  δ: x
+  ε: :sym
+  ℕ: 2
+  ж: 3
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (block
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (literal
+              (number))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (list)))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (name
+              (identifier))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (name
+              (identifier))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (literal
+              (symbol
+                (identifier)))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (literal
+              (number))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (literal
+              (number))))))))
+
+================================================================================
+Bullet anaphor in parentheses after a declaration (eu-ioz21.9: `•` starts
+but does not continue an identifier in the rowan lexer, so the scanner's
+lookahead must consume the start character before any continuations, or it
+loops forever)
+================================================================================
+
+a: 1
+f: (• + 1)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (paren_expr
+        (soup
+          (name
+            (identifier))
+          (operator)
+          (literal
+            (number)))))))
