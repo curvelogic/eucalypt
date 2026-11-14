@@ -302,11 +302,12 @@ pub fn prepare(
     }
 
     // Check for assignment-style declarations (e.g. `result = 42`) before injecting
-    // the blob's inline cores.  The final verify pass normally catches this pattern
-    // by looking for `App(Var::Free("="), [Var::Free(name), ...])`, but after
-    // injection the `=` combinator is distributed and replaced, so the pattern
-    // becomes invisible.  Running verify here, while `=` is still a free variable,
-    // preserves the helpful diagnostic.
+    // the blob's inline cores.  The verifier looks for `App(=, [Var::Free(name),
+    // ...])` with `=` either free (blob path) or bound to the prelude's `=`
+    // (source path), and treats a blob prelude global as defined, so both
+    // prelude modes agree (eu-oaz72.134).  After injection the `=` combinator
+    // is distributed and replaced, so on the blob path the pattern is only
+    // visible here; the final verify below still catches it on the source path.
     {
         let errors = loader.verify()?;
         if !errors.is_empty() {
