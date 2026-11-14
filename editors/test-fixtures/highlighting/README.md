@@ -24,3 +24,28 @@ Every file parses and evaluates with `eu` (check with
 (`editors/vscode/test/grammar.test.js`) assert the TextMate scopes of
 tokens on these files; the rowan LSP semantic tokens are the reference
 classification. Follow `docs/eucalypt-style.md` when adding to them.
+
+## Consistency check
+
+`scripts/check-highlighting-consistency.js` classifies every token of
+these fixtures, `lib/*.eu` (not `prelude.eu`), `tests/harness/**/*.eu`
+outside `errors/` and `examples/aoc25/**/*.eu` with the TextMate grammar,
+the tree-sitter `highlights.scm` and the LSP's semantic tokens, and fails
+on any disagreement with the semantic tokens that
+`consistency-allowlist.json` does not accept. Each allow-list rule gives
+its reason and a reference. To run it:
+
+```sh
+cargo build --release
+(cd editors/vscode && npm ci)
+(cd editors/tree-sitter-eucalypt && npm ci)
+node scripts/check-highlighting-consistency.js            # the check
+node scripts/check-highlighting-consistency.js --summary  # grouped counts
+```
+
+`--only textmate` or `--only tree-sitter` checks one grammar; files on
+the command line replace the corpus. A rule that no longer matches
+anything is reported as a warning: remove it once the defect it accepts
+is fixed. The comparison is on coarse classes where the highlighters are
+meant to agree (every kind of name reference compares as `name`); see
+`docs/superpowers/reports/2026-11-14-highlighting-consistency-check.md`.
