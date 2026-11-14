@@ -520,7 +520,7 @@ Options:
   `flamegraph.pl` and similar tools. A stack is sampled every 1009 ticks and
   keeps its innermost 64 frames. Implies `--profile`.
 
-Profiling slows a run by about 10% (1.01–1.36× across the benchmark
+Profiling slows a run by about 15% (1.02–1.42× across the benchmark
 suite). With the flag off the engine runs its unprofiled dispatch loops and
 there is no measurable cost. Both figures were measured on a single machine;
 see `docs/superpowers/reports/2026-11-14-eu-oaz72.37-profiler.md`.
