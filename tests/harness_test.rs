@@ -3277,6 +3277,11 @@ pub fn test_241_oaz72_32_set_vec_of() {
     run_test(&opts("241_oaz72_32_set_vec_of.eu"));
 }
 
+#[test]
+pub fn test_242_oaz72_116_exact_numeric_eq() {
+    run_test(&opts("242_oaz72_116_exact_numeric_eq.eu"));
+}
+
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {

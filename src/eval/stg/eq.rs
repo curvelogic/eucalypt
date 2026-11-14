@@ -12,6 +12,7 @@ use crate::{
         machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
         memory::{
             mutator::MutatorHeapView,
+            number::ExactNum,
             string::HeapString,
             syntax::{Native, Ref, RefPtr},
         },
@@ -78,17 +79,11 @@ fn binary_branch(tag: Tag) -> (Tag, Rc<StgSyn>) {
     )
 }
 
-/// Compare two numbers for equality
+/// Compare two numbers for equality by exact value, agreeing with
+/// set, vec and dict key equality ([`ExactNum`]): integers above 2^53
+/// stay distinct from nearby floats, and `1 = 1.0` holds.
 fn num_eq(x: &Number, y: &Number) -> bool {
-    if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-        l == r
-    } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-        l == r
-    } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-        l == r
-    } else {
-        false
-    }
+    ExactNum::from_number(x) == ExactNum::from_number(y)
 }
 
 /// Compare two heap strings for equality

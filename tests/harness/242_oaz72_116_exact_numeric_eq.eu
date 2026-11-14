@@ -1,0 +1,45 @@
+#!/usr/bin/env eu
+# eu-oaz72.116: `=`, `!=` and the ordering operators compare numbers by
+# exact value, agreeing with set and dict membership. They used to go
+# through f64, so an integer above 2^53 equalled the nearest float.
+
+big: 9007199254740993
+flt: 9007199254740992.0
+umax: 18446744073709551615
+two64: 18446744073709551616.0
+
+` { target: :test }
+test: {
+  checks: [
+    (big = flt) not,
+    big != flt,
+    (flt = big) not,
+    flt != big,
+    big > flt,
+    flt < big,
+    big >= flt,
+    (big <= flt) not,
+    (umax = two64) not,
+    umax < two64,
+    (-9007199254740993 = -9007199254740992.0) not,
+    -9007199254740993 < -9007199254740992.0,
+
+    # = agrees with set and dict membership
+    ([flt] set.of set.contains?(big)) = (big = flt),
+    ([flt, big] set.of set.size) = 2,
+    (dict.of[[flt, :f]] dict.get-or(big, :none)) = :none,
+
+    # values that are equal stay equal
+    1 = 1.0,
+    1.0 = 1,
+    (1 != 1.0) not,
+    1 <= 1.0,
+    1 >= 1.0,
+    9007199254740992 = flt,
+    0 = -0.0,
+    2 < 2.5,
+    -3 < -2.5
+  ]
+
+  RESULT: checks all-true? then(:PASS, :FAIL)
+}
