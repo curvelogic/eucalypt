@@ -541,8 +541,7 @@ fn profile_tick(state: &mut BcMachineState, heap: &Heap) {
 
 /// Profiled force sub-run entry (eu-oaz72.37): charge what the forcing
 /// intrinsic has allocated so far to its own dispatch's location.
-fn profile_enter_force(state: &mut BcMachineState, heap: &Heap) {
-    let location = profile_location(state, heap);
+fn profile_enter_force(state: &mut BcMachineState, heap: &Heap, location: Smid) {
     let allocs = state.allocs;
     if let Some(p) = state.profiler.as_deref_mut() {
         p.enter_force(location, allocs, heap.bytes_allocated());
@@ -4712,8 +4711,16 @@ impl BcBifContext<'_, '_> {
         // sub-run error, so an intrinsic that swallows the force error resumes
         // on the intact caller stack (was: the error was propagated first,
         // leaving the caller on the truncated sub-run stack).
+        // The forcing intrinsic's site, taken before the sub-run puts the
+        // thunk in `current` (whose location the fallback would otherwise
+        // pick when the annotation register is invalid).
+        let force_site = self
+            .state
+            .profiler
+            .is_some()
+            .then(|| profile_location(self.state, self.heap));
         let saved_terminated = enter_whnf_subrun(self.state, value);
-        let run_result = self.drive_to_whnf();
+        let run_result = self.drive_to_whnf(force_site);
         exit_whnf_subrun(
             self.state,
             run_result,
@@ -4726,9 +4733,11 @@ impl BcBifContext<'_, '_> {
     /// The re-entrant dispatch loop for `run_to_whnf`: drives `step` (with a
     /// NullEmitter and the `Bif` dispatch tail) until the sub-evaluation
     /// terminates. Mirrors `evaluate_to_whnf_impl` (`vm.rs`).
-    fn drive_to_whnf(&mut self) -> Result<(), ExecutionError> {
-        if self.state.profiler.is_some() {
-            profile_enter_force(self.state, self.heap);
+    /// `force_site` is `Some` exactly when profiling: the location of the
+    /// intrinsic's dispatch that is forcing.
+    fn drive_to_whnf(&mut self, force_site: Option<Smid>) -> Result<(), ExecutionError> {
+        if let Some(site) = force_site {
+            profile_enter_force(self.state, self.heap, site);
             let result = self.drive_to_whnf_loop::<true>();
             if let Some(p) = self.state.profiler.as_deref_mut() {
                 p.exit_force();
@@ -6754,6 +6763,114 @@ mod tests {
         assert!(
             m.state.capture_end_pending,
             "capture_end_pending must be left untouched (HeapSyn parity)"
+        );
+    }
+
+    /// eu-oaz72.37: a profiled force sub-run (`BcBifContext::force` →
+    /// `drive_to_whnf`) keeps the forcing intrinsic's own allocations on its
+    /// call site, both before and after the force, charges the forced
+    /// thunk's work to the thunk, and a folded-stack sample taken inside the
+    /// force keeps the suspended caller's frames.
+    ///
+    /// Fault injection: removing the `profile_enter_force` call in
+    /// `drive_to_whnf` fails the pre-force assertion (the intrinsic's
+    /// allocations move to the thunk); removing `exit_force` fails the
+    /// post-force assertion (the intrinsic's later work lands on the thunk's
+    /// annotation); sampling `stack_trace_capped` instead of `profile_trace`
+    /// in `profile_tick` fails the folded-stack assertion.
+    #[test]
+    fn profiled_force_attributes_intrinsic_and_thunk_separately() {
+        let intrinsic_site = Smid::fake(7001);
+        let thunk_site = Smid::fake(7002);
+        let caller_site = Smid::fake(7003);
+
+        // The thunk: an annotated `let` allocating two closures, returning
+        // a number.
+        let syn = dsl::ann(
+            thunk_site,
+            dsl::let_(
+                vec![
+                    dsl::thunk(dsl::atom(dsl::num(5))),
+                    dsl::thunk(dsl::atom(dsl::num(6))),
+                ],
+                dsl::atom(dsl::num(1)),
+            ),
+        );
+        let (prog, root, gforms) = encode(&syn, &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+        let thunk = m.state.current;
+        m.state.current = BcValue::Native(num(0));
+        m.enable_profiler(true);
+
+        // A caller frame suspended under the force.
+        let args = MutatorHeapView::new(&m.heap).array(&[]);
+        m.state.stack.push(BcContinuation::ApplyTo {
+            args,
+            annotation: caller_site,
+        });
+
+        // The intrinsic, dispatched at `intrinsic_site`, allocates before
+        // forcing.
+        m.state.annotation = intrinsic_site;
+        m.state.allocs += 7;
+        if let Some(p) = m.state.profiler.as_deref_mut() {
+            // The first record inside the force takes a folded sample.
+            p.set_ticks(crate::eval::bytecode::profile::FOLDED_SAMPLE_INTERVAL - 1);
+        }
+        {
+            let mut ctx = BcBifContext {
+                state: &mut m.state,
+                program: &m.program,
+                symbol_pool: &mut m.symbol_pool,
+                rcache: &mut m.rcache,
+                test_mode: m.test_mode,
+                heap: &mut m.heap,
+                intrinsics: &m.intrinsics,
+                metrics: &mut m.metrics,
+                clock: &mut m.clock,
+                dump_heap: m.dump_heap,
+                predecode: m.predecode,
+                decoded: &m.decoded,
+            };
+            let forced = ctx.force(AbiClosure::Byte(thunk)).unwrap();
+            let AbiClosure::Byte(v) = forced;
+            assert!(matches!(v, BcValue::Native(_)), "thunk forced to WHNF");
+        }
+
+        // Back in the intrinsic: it allocates more, then its dispatch ends.
+        m.state.allocs += 3;
+        profile_tick(&mut m.state, &m.heap);
+
+        let p = m.profiler().unwrap();
+        let at = |s: Smid| p.locations().get(&s).copied().unwrap_or_default();
+        let intrinsic = at(intrinsic_site);
+        let thunk_counts = at(thunk_site);
+        assert_eq!(
+            intrinsic.allocs,
+            10,
+            "the intrinsic's allocations before and after the force stay on its site: {:?}",
+            p.locations()
+        );
+        assert_eq!(
+            intrinsic.ticks,
+            1,
+            "the intrinsic's own dispatch is charged to its site: {:?}",
+            p.locations()
+        );
+        assert_eq!(
+            thunk_counts.allocs,
+            2,
+            "the forced thunk's let is charged to the thunk: {:?}",
+            p.locations()
+        );
+        assert!(thunk_counts.ticks >= 1, "the thunk's dispatches are ticked");
+
+        let folded = p.folded_samples().unwrap();
+        assert!(
+            folded
+                .keys()
+                .any(|trace| trace.first() == Some(&thunk_site) && trace.contains(&caller_site)),
+            "a sample inside the force keeps the suspended caller frame: {folded:?}"
         );
     }
 }

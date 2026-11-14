@@ -147,6 +147,20 @@ impl Profiler {
         &self.by_location
     }
 
+    /// The folded-stack samples (innermost-first smids → count), if
+    /// enabled. Test-only: the report renders them through a source map.
+    #[cfg(test)]
+    pub(crate) fn folded_samples(&self) -> Option<&HashMap<Vec<Smid>, u64>> {
+        self.folded.as_ref()
+    }
+
+    /// Set the tick count, so a test can make the next record take a
+    /// folded-stack sample.
+    #[cfg(test)]
+    pub(crate) fn set_ticks(&mut self, ticks: u64) {
+        self.ticks = ticks;
+    }
+
     /// Aggregate the per-location counters by display label (several smids
     /// can resolve to the same function and site), sorted by ticks, then
     /// bytes, then label.

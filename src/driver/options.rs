@@ -8,10 +8,10 @@ use crate::{
 use clap::{Args, Parser, Subcommand};
 use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 /// Default number of rows in the `--profile` table (eu-oaz72.37).
 pub const DEFAULT_PROFILE_TOP: usize = 30;
-use std::str::FromStr;
 
 /// Format for error output
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
