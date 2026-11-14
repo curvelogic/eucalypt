@@ -1375,6 +1375,17 @@ impl ExecutionError {
             other => (other, [].as_slice(), [].as_slice(), Smid::default()),
         };
 
+        // A dict render error is raised from the render machinery, which has
+        // no annotation of its own: the machine's last annotation is then
+        // whatever user code ran last, unrelated to the dict being rendered
+        // (eu-oaz72.21). Never fall back to it for these errors; no location
+        // is better than a wrong one.
+        let last_annotation = match inner {
+            ExecutionError::DictKeyNotRenderable(..)
+            | ExecutionError::DictRenderKeyCollision(..) => Smid::default(),
+            _ => last_annotation,
+        };
+
         // Determine the best primary source location:
         // - Prefer a user-file location (the call site in user code) over a
         //   prelude/resource location (the site of the failure inside a library)

@@ -560,8 +560,24 @@ Recorded as built; none changes an agreed choice.
   `Lens`/`Traversal`; `dict` is a type keyword, so, like `set`, it cannot
   be a record field name in a type string. The `Dict(T)` rename (OPEN 9)
   is not in this PR.
+- **Signatures beyond §9 (round 2).** Signatures must not warn on valid
+  code, and a dict may hold keys and values of mixed types, so the
+  arguments that need not match the dict's types are loosened: `get-or`
+  is `any → d → dict(k, v) → v | d`; `assoc` is
+  `j → w → dict(k, v) → dict(k | j, v | w)`; `update`/`update-strict` are
+  `j → (v | d → w) → d → dict(k, v) → dict(k | j, v | w)`; `range`'s
+  bounds and the key of `dissoc` and `contains?` are `any`. `get`,
+  `to-list`, `min` and `pop-min` stay as §9 gives them.
+  `eu check --strict tests/harness/250_dict.eu` is a test.
+- **Render error location.** A render error comes from the render
+  machinery, which has no annotation, so `DictKeyNotRenderable` and
+  `DictRenderKeyCollision` carry no source location: the machine's current
+  or last annotation is whatever user code ran last, unrelated to the
+  dict. A location for them would need the dict to carry its construction
+  Smid, a change to the GC-traced dict layout left out of this PR.
 - **Known checker limit.** A literal symbol inside a tuple is not widened
   when a type variable is instantiated, so `pq dict.assoc([2, :d], 0)` on
   a dict built from `[[3, :c], …]` warns (`(number, :c)` against
-  `(number, :d)`). `cons([2, :d], [[3, :c]])` warns the same way today; the
-  fix belongs to the checker, not to the dict signatures.
+  `(number, :d)`) under the §9 `assoc`; the loosened `assoc` no longer
+  does. `cons([2, :d], [[3, :c]])` still warns; the fix belongs to the
+  checker (eu-oaz72.127).

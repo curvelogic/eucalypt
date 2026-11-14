@@ -1018,10 +1018,19 @@ fn entry_names(
             }
         }
     });
+    // `dict.to-block` is called from user code, so the machine's current
+    // annotation is its call site. Rendering is not: `DICT.RENDER_VIEW` runs
+    // inside the render wrapper, where the current annotation is whatever
+    // the machine last evaluated, unrelated to the dict. A render error
+    // therefore carries no source location rather than a wrong one.
+    let smid = match naming {
+        EntryNaming::ToBlock => m.annotation(),
+        EntryNaming::Render => Smid::default(),
+    };
     if let Some(key) = list_key {
         return Err(match naming {
-            EntryNaming::ToBlock => ExecutionError::DictKeyNotBlockKey(m.annotation(), key),
-            EntryNaming::Render => ExecutionError::DictKeyNotRenderable(m.annotation(), key),
+            EntryNaming::ToBlock => ExecutionError::DictKeyNotBlockKey(smid, key),
+            EntryNaming::Render => ExecutionError::DictKeyNotRenderable(smid, key),
         });
     }
     let mut seen: HashMap<&str, DictKey> = HashMap::with_capacity(names.len());
@@ -1029,18 +1038,12 @@ fn entry_names(
         if let Some(first) = seen.insert(name.as_str(), *key) {
             let (first, second) = (render_key(m, view, &first), render_key(m, view, key));
             return Err(match naming {
-                EntryNaming::ToBlock => ExecutionError::DictBlockKeyCollision(
-                    m.annotation(),
-                    first,
-                    second,
-                    name.clone(),
-                ),
-                EntryNaming::Render => ExecutionError::DictRenderKeyCollision(
-                    m.annotation(),
-                    first,
-                    second,
-                    name.clone(),
-                ),
+                EntryNaming::ToBlock => {
+                    ExecutionError::DictBlockKeyCollision(smid, first, second, name.clone())
+                }
+                EntryNaming::Render => {
+                    ExecutionError::DictRenderKeyCollision(smid, first, second, name.clone())
+                }
             });
         }
     }

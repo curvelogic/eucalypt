@@ -3695,6 +3695,12 @@ pub fn test_error_250_dict_render_collision() {
 }
 
 #[test]
+/// eu-oaz72.21: a dict render error carries no stale source location.
+pub fn test_error_250_dict_render_location() {
+    run_error_test(&error_opts("250_dict_render_location.eu"));
+}
+
+#[test]
 /// eu-oaz72.21: a dict value that depends on itself is reported as a cycle.
 pub fn test_error_250_dict_value_cycle() {
     run_error_test(&error_opts("250_dict_value_cycle.eu"));
@@ -4636,6 +4642,27 @@ pub fn test_typecheck_115_deprecated_prelude_member() {
 #[test]
 pub fn test_typecheck_116_dict_typed_no_warning() {
     run_typecheck_test("116_dict_typed_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_118_dict_mixed_types_no_warning() {
+    run_typecheck_test("118_dict_mixed_types_no_warning.eu");
+}
+
+/// The dict prelude signatures must not warn on valid dict code: the
+/// dict harness test checks clean under `eu check --strict`
+/// (eu-oaz72.21 round 2).
+#[test]
+pub fn test_250_dict_checks_clean_strict() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", "--strict", "tests/harness/250_dict.eu"])
+        .output()
+        .expect("failed to run eu check");
+    assert!(
+        output.status.success(),
+        "eu check --strict tests/harness/250_dict.eu warned:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

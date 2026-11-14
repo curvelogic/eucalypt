@@ -1,14 +1,14 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/250_dict_render
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_render.eu
-prelude-modes: divergent
+prelude-modes: identical
 
-=== blob prelude ===
+=== both prelude modes ===
 exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/250_dict_render.eu:2:9
+primary: none
 help-lines: 0
 note-lines: 1
 secondary-labels: 0
@@ -19,32 +19,4 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: cannot render dict key [1, 2]: rendered mapping keys are strings, numbers or symbols
-  ┌─ tests/harness/errors/250_dict_render.eu:2:9
-  │
-2 │ result: dict.of[[[1, 2], :a], [3, :b]]
-  │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  │
-  = a dict renders as a mapping, so its keys must be numbers, strings or symbols; render 'dict.to-list(d)' to output [key, value] pairs instead
-
-=== --source-prelude ===
-exit: 1
-errors: 1
-warnings: 0
-code: -
-primary: user tests/harness/errors/250_dict_render.eu:2:9
-help-lines: 0
-note-lines: 1
-secondary-labels: 0
-trace-frames: 0
-trace-user-frames: 0
-trace-prelude-frames: 0
-prelude-excerpt-lines: 0
-rust-panic: no
---- stderr ---
-error: cannot render dict key [1, 2]: rendered mapping keys are strings, numbers or symbols
-  ┌─ tests/harness/errors/250_dict_render.eu:2:9
-  │
-2 │ result: dict.of[[[1, 2], :a], [3, :b]]
-  │         ^^^^
-  │
-  = a dict renders as a mapping, so its keys must be numbers, strings or symbols; render 'dict.to-list(d)' to output [key, value] pairs instead
+ = a dict renders as a mapping, so its keys must be numbers, strings or symbols; render 'dict.to-list(d)' to output [key, value] pairs instead

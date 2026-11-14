@@ -1,14 +1,14 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/250_dict_render_collision
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_render_collision.eu
-prelude-modes: divergent
+prelude-modes: identical
 
-=== blob prelude ===
+=== both prelude modes ===
 exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/250_dict_render_collision.eu:2:9
+primary: none
 help-lines: 0
 note-lines: 1
 secondary-labels: 0
@@ -19,32 +19,4 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: dict keys 1 and "1" both render as mapping key '1'
-  ┌─ tests/harness/errors/250_dict_render_collision.eu:2:9
-  │
-2 │ result: dict.of[[1, :a], ["1", :b]]
-  │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  │
-  = a mapping holds each key once: a dict renders a string key as its text and a number key as its rendered text, so keys such as "x" and :x, or 1 and "1", collide; render 'dict.to-list(d)' to output [key, value] pairs instead
-
-=== --source-prelude ===
-exit: 1
-errors: 1
-warnings: 0
-code: -
-primary: user tests/harness/errors/250_dict_render_collision.eu:2:9
-help-lines: 0
-note-lines: 1
-secondary-labels: 0
-trace-frames: 0
-trace-user-frames: 0
-trace-prelude-frames: 0
-prelude-excerpt-lines: 0
-rust-panic: no
---- stderr ---
-error: dict keys 1 and "1" both render as mapping key '1'
-  ┌─ tests/harness/errors/250_dict_render_collision.eu:2:9
-  │
-2 │ result: dict.of[[1, :a], ["1", :b]]
-  │         ^^^^
-  │
-  = a mapping holds each key once: a dict renders a string key as its text and a number key as its rendered text, so keys such as "x" and :x, or 1 and "1", collide; render 'dict.to-list(d)' to output [key, value] pairs instead
+ = a mapping holds each key once: a dict renders a string key as its text and a number key as its rendered text, so keys such as "x" and :x, or 1 and "1", collide; render 'dict.to-list(d)' to output [key, value] pairs instead

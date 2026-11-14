@@ -369,21 +369,25 @@ dist: dict.of[[[0, 0], 0]]
 
 The `dict` functions carry these types, for example:
 
-| Function       | Type                                            |
-|----------------|-------------------------------------------------|
-| `dict.of`      | `[(k, v)] -> dict(k, v)`                        |
-| `dict.get`     | `k -> dict(k, v) -> v`                          |
-| `dict.assoc`   | `k -> v -> dict(k, v) -> dict(k, v)`            |
-| `dict.update`  | `k -> (v -> v) -> v -> dict(k, v) -> dict(k, v)` |
-| `dict.to-list` | `dict(k, v) -> [(k, v)]`                        |
-| `dict.pop-min` | `dict(k, v) -> (k, v, dict(k, v))`              |
+| Function       | Type                                                     |
+|----------------|----------------------------------------------------------|
+| `dict.of`      | `[(k, v)] -> dict(k, v)`                                 |
+| `dict.get`     | `k -> dict(k, v) -> v`                                   |
+| `dict.get-or`  | `any -> d -> dict(k, v) -> v \| d`                       |
+| `dict.assoc`   | `j -> w -> dict(k, v) -> dict(k \| j, v \| w)`           |
+| `dict.update`  | `j -> (v \| d -> w) -> d -> dict(k, v) -> dict(k \| j, v \| w)` |
+| `dict.range`   | `any -> any -> dict(k, v) -> dict(k, v)`                 |
+| `dict.to-list` | `dict(k, v) -> [(k, v)]`                                 |
+| `dict.pop-min` | `dict(k, v) -> (k, v, dict(k, v))`                       |
 
 Results such as `pop-min`'s are fixed tuples, so destructuring them
 (`[k, v, rest]`) gives each part its own type. Keys of different types in
 one dict are allowed at run time (they order numbers < strings < symbols <
-lists), but a call whose key arguments have different types, such as
-`d dict.range(0, :z)`, draws a warning; like every type warning it does not
-change what the program does.
+lists), so the signatures do not tie a default, a new key or value, or a
+range bound to the dict's own types: `dict.get-or(:b, null)` on a dict of
+numbers, `dict.range(0, :z)`, and an `assoc` or `update` that brings in a
+new key or value type all check clean. `dict.get` keeps the precise
+`k -> dict(k, v) -> v`, so a lookup's result has the dict's value type.
 
 ### Row polymorphism
 
