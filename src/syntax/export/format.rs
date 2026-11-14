@@ -295,8 +295,20 @@ impl Formatter {
 
         // Handle metadata if present
         if let Some(meta) = unit.meta() {
-            result = result.append(self.reformat_block_metadata(&meta));
+            // The parser puts comments that follow the metadata (up to the
+            // first declaration) inside the metadata soup. Emit them as
+            // comments of the declaration, not as part of the metadata.
+            let (meta_doc, trailing) = self.split_meta_trailing_comments(&meta);
+            result = result.append(meta_doc);
             result = result.append(RcDoc::hardline()).append(RcDoc::hardline());
+            for (comment, blank_after) in trailing {
+                result = result
+                    .append(RcDoc::text(comment))
+                    .append(RcDoc::hardline());
+                if blank_after {
+                    result = result.append(RcDoc::hardline());
+                }
+            }
         }
 
         // Format each declaration with its leading comments
@@ -306,9 +318,10 @@ impl Formatter {
                 // Blank line between declarations
                 result = result.append(RcDoc::hardline());
             }
-            // Comments before the first declaration with no metadata are
-            // already emitted as the header by extract_leading_comments.
-            if i > 0 || unit.meta().is_some() {
+            // Comments before the first declaration are already emitted:
+            // as the header by extract_leading_comments, or, after unit
+            // metadata, by split_meta_trailing_comments.
+            if i > 0 {
                 for (comment, blank_after) in self.extract_declaration_leading_comments(decl) {
                     result = result
                         .append(RcDoc::text(comment))
@@ -337,8 +350,67 @@ impl Formatter {
         result
     }
 
-    /// Comments that follow the last declaration (or metadata) of `node`,
-    /// as direct children, with the blank line separating them kept.
+    /// Unit metadata, split from the comments that trail it inside its
+    /// soup. Each trailing comment carries whether a blank line follows it.
+    fn split_meta_trailing_comments(
+        &self,
+        meta: &rowan_ast::BlockMetadata,
+    ) -> (RcDoc<'static, ()>, Vec<(String, bool)>) {
+        let Some(soup) = meta.soup() else {
+            return (RcDoc::nil(), Vec::new());
+        };
+        let children: Vec<_> = soup.syntax().children_with_tokens().collect();
+        // Index of the first comment of the trailing run of comments and
+        // whitespace.
+        let mut first = children.len();
+        for (i, c) in children.iter().enumerate().rev() {
+            match c {
+                rowan::NodeOrToken::Token(t)
+                    if matches!(t.kind(), SyntaxKind::COMMENT | SyntaxKind::WHITESPACE) =>
+                {
+                    if t.kind() == SyntaxKind::COMMENT {
+                        first = i;
+                    }
+                }
+                _ => break,
+            }
+        }
+        if first == children.len() {
+            return (self.reformat_block_metadata(meta), Vec::new());
+        }
+
+        let mut trailing: Vec<(String, bool)> = Vec::new();
+        for c in &children[first..] {
+            if let rowan::NodeOrToken::Token(t) = c {
+                match t.kind() {
+                    SyntaxKind::COMMENT => trailing.push((t.text().to_string(), false)),
+                    _ if t.text().matches('\n').count() > 1 => {
+                        if let Some(last) = trailing.last_mut() {
+                            last.1 = true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut text = String::new();
+        let mut col = 0;
+        for c in &children[..first] {
+            match c {
+                rowan::NodeOrToken::Node(n) => {
+                    self.process_node_conservative(n, &mut text, &mut col)
+                }
+                rowan::NodeOrToken::Token(t) => {
+                    self.process_token_conservative(t, &mut text, &mut col)
+                }
+            }
+        }
+        (RcDoc::text(text.trim().to_string()), trailing)
+    }
+
+    /// Comments that follow the last declaration of `node`, as direct
+    /// children, with the blank line separating them kept.
     fn extract_trailing_comments(&self, node: &SyntaxNode) -> Vec<String> {
         let mut out = Vec::new();
         for child in node
@@ -1683,8 +1755,13 @@ mod correctness_tests {
 
     #[test]
     fn test_reformat_keeps_comment_after_unit_metadata() {
+        // The comment stays attached to the declaration it precedes.
         let once = reformat("{ :m }\n\n# about a\na: 1\n");
-        assert!(once.contains("# about a"), "{once}");
+        assert_eq!(once, "{ :m }\n\n# about a\na: 1\n");
+        assert_eq!(once, reformat(&once));
+        // A blank line after the comment is kept.
+        let once = reformat("{ :m }\n\n# about\n\n# a\na: 1\n");
+        assert_eq!(once, "{ :m }\n\n# about\n\n# a\na: 1\n");
     }
 
     #[test]
