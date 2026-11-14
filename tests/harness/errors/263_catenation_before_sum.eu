@@ -1,5 +1,5 @@
 f(a): a * 2
 x: 3
 
-` "`x f(1) + 1` calls the result of `+`: the note names it, without a precedence guess or the old wrong `f(a) + 1` example (eu-oaz72.28)"
+` "`x f(1) + 1` calls the result of `+`: the notes state the parse (eu-oaz72.29) and name `+`, without a precedence guess or the old wrong `f(a) + 1` example (eu-oaz72.28)"
 r: x f(1) + 1

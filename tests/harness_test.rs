@@ -5219,3 +5219,16 @@ pub fn test_error_278_intrinsic_call_site_set_of() {
 pub fn test_error_278_intrinsic_call_site_vec_of() {
     run_error_test(&error_opts("278_intrinsic_call_site_vec_of.eu"));
 }
+
+/// The operator in a pipeline step receives the step's function, and the
+/// error states the parse (eu-oaz72.29).
+#[test]
+pub fn test_error_279_catenation_step_receives_function() {
+    run_error_test(&error_opts("279_catenation_step_receives_function.eu"));
+}
+
+/// A parenthesised pipeline step gets no parse note (eu-oaz72.29).
+#[test]
+pub fn test_error_280_catenation_parenthesised_step() {
+    run_error_test(&error_opts("280_catenation_parenthesised_step.eu"));
+}
