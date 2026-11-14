@@ -432,7 +432,7 @@ startup floor) is banked early:
    `cargo build` still falls back to source-prelude. The **content-hash
    whole-program unit cache did not ship** — spec + plan are merged
    (`docs/superpowers/specs/2026-07-03-bv5-unit-cache-design.md`, `#953`); it is a
-   separate deliverable (**BV5-cache**, §9, re-scoped to 0.16+ as the
+   separate deliverable (**BV5-cache**, §9, re-scoped to 0.17+ as the
    serialisation-envelope milestone of CU2, eu-lb0r), and the *per-unit
    incremental* cache is a further step behind the defer-merge restructure
    (**CU1/CU2**, §7, eu-nzps/eu-y7le).
@@ -1090,7 +1090,7 @@ regression, if real, is unpinned.
    survives thunk suspension (Well-Typed's surviving-annotation approach), reconstructing
    "forced because `report` needed `servers`…" across deferral. A feasibility spike
    decides whether the full build fits 0.14 or drops to 0.15; Phase 2's curated trace
-   ships regardless.
+   ships regardless. *(DX3 did not ship in 0.14 or 0.15; §9.)*
 
 **Hint policy (2026-11-12, eu-oaz72.28/.29).** A hint, note or help line is shown
 only when the source gives evidence for it (the identifier it mentions appears in
