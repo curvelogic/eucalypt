@@ -742,6 +742,41 @@ impl Evidence<'_> {
     }
 }
 
+/// The note stating the parse of a pipeline step (eu-oaz72.29), for an
+/// error raised at an infix-operator expression that cook made, without
+/// parentheses in the source, the function operand of a catenation:
+/// `c nth(i) = 2` read as `c (nth(i) = 2)`.
+///
+/// Shown only for an error raised at that operator's own location (never
+/// one borrowed from a trace) and only for the two failures that parse
+/// produces: the operator's result is called (`NotCallable`), or the
+/// operator receives a function, the step's partial application, as an
+/// operand (`UnexpectedFunction`, `CannotReturnFunToCase`, or `NotValue`
+/// for a function application).
+fn catenation_operand_note(
+    inner: &ExecutionError,
+    source_map: &SourceMap,
+    files: &SimpleFiles<String, String>,
+) -> Option<String> {
+    let shape = match inner {
+        ExecutionError::NotCallable(..)
+        | ExecutionError::UnexpectedFunction(..)
+        | ExecutionError::CannotReturnFunToCase(..) => true,
+        ExecutionError::NotValue(_, context) => context == "a function application",
+        _ => false,
+    };
+    if !shape {
+        return None;
+    }
+    let info = source_map.source_info_for_smid(inner.smid())?;
+    let (file, span) = (info.file?, info.span?);
+    if !source_map.is_user_file(file) {
+        return None;
+    }
+    let operand = source_map.catenation_operand(file, span)?;
+    evidence::catenation_note(operand, source_map, files)
+}
+
 /// Generate notes for "not callable" errors (eu-oaz72.28).
 ///
 /// Every note here is either a fact about the value that was called or is
@@ -1611,7 +1646,8 @@ impl ExecutionError {
         }
 
         let ev = Evidence(files.and_then(|f| LabelSource::of(&diag, f)));
-        let notes = match inner {
+        let catenation = files.and_then(|f| catenation_operand_note(inner, source_map, f));
+        let mut notes = match inner {
             ExecutionError::TypeMismatch(_, detail) => {
                 type_mismatch_notes(&detail.0, &detail.1, &ev)
             }
@@ -1800,6 +1836,9 @@ impl ExecutionError {
             | ExecutionError::UnrenderableShape(_, _, rejection) => rejection.notes.clone(),
             _ => vec![],
         };
+        if let Some(note) = catenation {
+            notes.insert(0, note);
+        }
         if notes.is_empty() {
             diag
         } else {

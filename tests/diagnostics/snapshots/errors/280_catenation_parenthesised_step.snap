@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/280_catenation_parenthesised_step
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/280_catenation_parenthesised_step.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/280_catenation_parenthesised_step.eu:5:22
+help-lines: 1
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tried to call a false as a function
+  help: only functions and blocks can be called with arguments
+  ┌─ tests/harness/errors/280_catenation_parenthesised_step.eu:5:22
+  │
+5 │ r: cells (vec.nth(i) = "S")
+  │                      ^
+  │
+  = note: the value called here is the result of '='
+  = while evaluating (outermost first):
+    - r at 280_catenation_parenthesised_step.eu:5:22
