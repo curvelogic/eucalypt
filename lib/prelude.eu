@@ -2091,102 +2091,102 @@ set: {
 dict: {
 
   ` { doc: "`dict.of(pairs)` - create a dict from list `pairs` of `[key, value]` pairs. Keys are evaluated fully; values stay lazy. Where keys are equal (`1` and `1.0` are equal keys), the first key and the last value are kept."
-      type: s"[[any]] → any" }
+      type: s"[(k, v)] → dict(k, v)" }
   of: '__DICT.OF'
 
   ` { doc: "`dict.from-list(pairs)` - alias of `dict.of`."
-      type: s"[[any]] → any" }
+      type: s"[(k, v)] → dict(k, v)" }
   from-list: of
 
   ` { doc: "`dict.empty` - the empty dict."
-      type: s"any" }
+      type: s"dict" }
   empty: of[]
 
   ` { doc: "`dict.to-list(d)` - return the entries of dict `d` as `[key, value]` pairs in key order."
-      type: s"any → [[any]]" }
+      type: s"dict(k, v) → [(k, v)]" }
   to-list: '__DICT.TO_LIST'
 
   ` { doc: "`dict.get(k, d)` - return the value at key `k` in dict `d`; an error naming the key if `d` does not hold it."
-      type: s"any → any → any" }
+      type: s"k → dict(k, v) → v" }
   get: '__DICT.GET'
 
   ` { doc: "`dict.get-or(k, default, d)` - return the value at key `k` in dict `d`, or `default` if `d` does not hold it."
-      type: s"any → any → any → any" }
+      type: s"k → v → dict(k, v) → v" }
   get-or: '__DICT.GET_OR'
 
   ` { doc: "`dict.assoc(k, v, d)` - return dict `d` with key `k` mapped to the lazy value `v`. If `d` holds an equal key, that key is kept and only its value replaced."
-      type: s"any → any → any → any" }
+      type: s"k → v → dict(k, v) → dict(k, v)" }
   assoc: '__DICT.ASSOC'
 
   ` { doc: "`dict.dissoc(k, d)` - return dict `d` without key `k`."
-      type: s"any → any → any" }
+      type: s"k → dict(k, v) → dict(k, v)" }
   dissoc: '__DICT.DISSOC'
 
   ` { doc: "`dict.contains?(k, d)` - true if dict `d` holds key `k`."
-      type: s"any → any → bool" }
+      type: s"k → dict(k, v) → bool" }
   contains?: '__DICT.CONTAINS'
 
   ` { doc: "`dict.size(d)` - return the number of entries in dict `d`."
-      type: s"any → number" }
+      type: s"dict(k, v) → number" }
   size: '__DICT.SIZE'
 
   ` { doc: "`dict.empty?(d)` - true if dict `d` has no entries."
-      type: s"any → bool" }
+      type: s"dict(k, v) → bool" }
   empty?(d): (d size) = 0
 
   ` { doc: "`dict.keys(d)` - return the keys of dict `d` in key order."
-      type: s"any → [any]" }
+      type: s"dict(k, v) → [k]" }
   keys: '__DICT.KEYS'
 
   ` { doc: "`dict.values(d)` - return the values of dict `d` in key order."
-      type: s"any → [any]" }
+      type: s"dict(k, v) → [v]" }
   values: '__DICT.VALUES'
 
   ` { doc: "`dict.min(d)` - return `[key, value]` for the least key of dict `d`; an error if `d` is empty."
-      type: s"any → [any]" }
+      type: s"dict(k, v) → (k, v)" }
   min: '__DICT.MIN'
 
   ` { doc: "`dict.max(d)` - return `[key, value]` for the greatest key of dict `d`; an error if `d` is empty."
-      type: s"any → [any]" }
+      type: s"dict(k, v) → (k, v)" }
   max: '__DICT.MAX'
 
   ` { doc: "`dict.pop-min(d)` - return `[key, value, rest]` for the least key of dict `d`, where `rest` is `d` without it; an error if `d` is empty. With keys `[priority, item]` this makes a dict a priority queue."
-      type: s"any → [any]" }
+      type: s"dict(k, v) → (k, v, dict(k, v))" }
   pop-min: '__DICT.POP_MIN'
 
   ` { doc: "`dict.pop-max(d)` - return `[key, value, rest]` for the greatest key of dict `d`, where `rest` is `d` without it; an error if `d` is empty."
-      type: s"any → [any]" }
+      type: s"dict(k, v) → (k, v, dict(k, v))" }
   pop-max: '__DICT.POP_MAX'
 
   ` { doc: "`dict.range(lo, hi, d)` - return the dict of the entries of dict `d` whose keys `k` satisfy `lo ≤ k < hi`."
-      type: s"any → any → any → any" }
+      type: s"k → k → dict(k, v) → dict(k, v)" }
   range: '__DICT.RANGE'
 
   ` { doc: "`dict.update(k, f, default, d)` - return dict `d` with key `k` mapped to the lazy value `f(old)`, where `old` is the value at `k`, or `default` if `d` does not hold `k`."
-      type: s"any → (any → any) → any → any → any" }
+      type: s"k → (v → v) → v → dict(k, v) → dict(k, v)" }
   update: '__DICT.UPDATE'
 
   ` { doc: "`dict.update-strict(k, f, default, d)` - as `dict.update`, but `f(old)` is evaluated before it is stored, so repeated updates (such as counting) do not build up unevaluated values."
-      type: s"any → (any → any) → any → any → any" }
+      type: s"k → (v → v) → v → dict(k, v) → dict(k, v)" }
   update-strict: '__DICT.UPDATE_STRICT'
 
   ` { doc: "`dict.merge-with(f, a, b)` - return the union of dicts `a` and `b`. Where both hold a key, the value is the lazy `f(va, vb)`, with `a`'s value first, and `a`'s key is kept."
-      type: s"(any → any → any) → any → any → any" }
+      type: s"(v → v → v) → dict(k, v) → dict(k, v) → dict(k, v)" }
   merge-with: '__DICT.MERGE_WITH'
 
   ` { doc: "`dict.merge-with-strict(f, a, b)` - as `dict.merge-with`, but each combined value `f(va, vb)` is evaluated before it is stored."
-      type: s"(any → any → any) → any → any → any" }
+      type: s"(v → v → v) → dict(k, v) → dict(k, v) → dict(k, v)" }
   merge-with-strict(f, a, b): {
     ` "merge the entry `[k, v]` of `b` into `acc`"
     step(acc, [k, v]): (acc contains?(k)) then(acc update-strict(k, flip(f, v), null), acc assoc(k, v))
   }.(b to-list foldl(step, a))
 
   ` { doc: "`dict.from-block(b)` - create a dict from block `b`, keyed by its symbol keys. Values stay lazy."
-      type: s"{..} → any" }
+      type: s"{..} → dict(symbol, any)" }
   from-block(b): b elements of
 
   ` { doc: "`dict.to-block(d)` - return a block of the entries of dict `d` in key order. Symbol keys are kept, string keys become symbols, and number keys become symbols of their rendered text. A list key, or two keys that become the same symbol (a string and a symbol with the same text, say), is an error."
-      type: s"any → {..}" }
+      type: s"dict(k, v) → {..}" }
   to-block: '__DICT.TO_BLOCK'
 }
 

@@ -1185,10 +1185,19 @@ pub enum ExecutionError {
     /// `.1` describes it.
     #[error("invalid dict entry: expected a [key, value] pair, found {1}")]
     BadDictPair(Smid, String),
-    /// A dict reached an output format (dict rendering is not implemented
-    /// yet; eu-oaz72.21 PR 4).
+    /// A dict reached an emitter directly rather than through the render
+    /// wrapper, which renders dicts as mappings (design note §8). Not
+    /// expected from a user program.
     #[error("cannot render a dict")]
     DictNotRenderable(Smid),
+    /// A dict being rendered holds a list key, which no output format's
+    /// mapping key can represent; `.1` renders the key.
+    #[error("cannot render dict key {1}: rendered mapping keys are strings, numbers or symbols")]
+    DictKeyNotRenderable(Smid, String),
+    /// A dict being rendered holds two keys that render as the same mapping
+    /// key: `(first key, second key, rendered key)`.
+    #[error("dict keys {1} and {2} both render as mapping key '{3}'")]
+    DictRenderKeyCollision(Smid, String, String, String),
     /// `dict.min`, `dict.max`, `dict.pop-min` or `dict.pop-max` (named by
     /// `.1`) of a dict with no entries.
     #[error("{1} of an empty dict")]
@@ -1293,6 +1302,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::BadDictKey(s, _) => *s,
             ExecutionError::BadDictPair(s, _) => *s,
             ExecutionError::DictNotRenderable(s) => *s,
+            ExecutionError::DictKeyNotRenderable(s, _) => *s,
+            ExecutionError::DictRenderKeyCollision(s, _, _, _) => *s,
             ExecutionError::EmptyDict(s, _) => *s,
             ExecutionError::DictKeyNotBlockKey(s, _) => *s,
             ExecutionError::DictBlockKeyCollision(s, _, _, _) => *s,
@@ -1732,6 +1743,22 @@ impl ExecutionError {
                 vec![
                     "convert the dict to a list of [key, value] pairs with 'dict.to-list' \
                      before rendering it"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::DictKeyNotRenderable(_, _) => {
+                vec![
+                    "a dict renders as a mapping, so its keys must be numbers, strings or \
+                     symbols; render 'dict.to-list(d)' to output [key, value] pairs instead"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::DictRenderKeyCollision(_, _, _, _) => {
+                vec![
+                    "a mapping holds each key once: a dict renders a string key as its text \
+                     and a number key as its rendered text, so keys such as \"x\" and :x, or \
+                     1 and \"1\", collide; render 'dict.to-list(d)' to output [key, value] \
+                     pairs instead"
                         .to_string(),
                 ]
             }

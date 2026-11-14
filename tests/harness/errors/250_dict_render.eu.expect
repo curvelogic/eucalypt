@@ -1,2 +1,2 @@
 exit: 1
-stderr: "cannot render a dict"
+stderr: "cannot render dict key \[1, 2\]"

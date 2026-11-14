@@ -3683,9 +3683,15 @@ pub fn test_error_250_dict_bad_pair_computed() {
 }
 
 #[test]
-/// eu-oaz72.21: a dict reaching output is a clear error until dict rendering lands.
+/// eu-oaz72.21: a dict with a list key cannot render, and the error names the key.
 pub fn test_error_250_dict_render() {
     run_error_test(&error_opts("250_dict_render.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: two dict keys rendering as the same mapping key is an error naming both.
+pub fn test_error_250_dict_render_collision() {
+    run_error_test(&error_opts("250_dict_render_collision.eu"));
 }
 
 #[test]
@@ -4625,6 +4631,16 @@ pub fn test_typecheck_114_deprecated_member_precision() {
 #[test]
 pub fn test_typecheck_115_deprecated_prelude_member() {
     run_typecheck_test("115_deprecated_prelude_member.eu");
+}
+
+#[test]
+pub fn test_typecheck_116_dict_typed_no_warning() {
+    run_typecheck_test("116_dict_typed_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_117_dict_typed_value_mismatch_warns() {
+    run_typecheck_test("117_dict_typed_value_mismatch_warns.eu");
 }
 
 // ── eu doc tests ──────────────────────────────────────────────────────────────

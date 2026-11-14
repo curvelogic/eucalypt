@@ -538,3 +538,30 @@ Recorded as built; none changes an agreed choice.
   `DictKeyNotBlockKey` for a list key and `DictBlockKeyCollision` for two
   keys that name the same entry (`"x"` and `:x`, `1` and `"1"`), the
   rule §8 and OPEN 5 set for rendering.
+
+## 14. Implementation notes (PR 4)
+
+Recorded as built; none changes an agreed choice.
+
+- **Render view.** `DICT.RENDER_VIEW(x)` returns the dict's entries as a
+  list of block pairs, not a `Block`, and returns unit (not `x`) for any
+  other value: the wrapper's fallback cases on the result, rendering a list
+  as a mapping and sending unit to `EmitNative(x)`, which keeps `x` in its
+  environment. The block render branch is one helper (`render_mapping`)
+  used by the `Block` arm and both list arms, so a dict carries a render
+  tag as a block does. The intrinsic is internal render machinery and is
+  filtered from traces.
+- **Naming and errors.** `dict.to-block` and rendering share one naming
+  function (`entry_names`); rendering raises its own errors,
+  `DictKeyNotRenderable` (list key) and `DictRenderKeyCollision`, whose
+  hints point at `dict.to-list`. `DictNotRenderable` remains for a dict
+  reaching an emitter directly, which the render wrapper no longer allows.
+- **Typing.** `dict(k, v)` is `App(App(Con("dict"), k), v)`, beside
+  `Lens`/`Traversal`; `dict` is a type keyword, so, like `set`, it cannot
+  be a record field name in a type string. The `Dict(T)` rename (OPEN 9)
+  is not in this PR.
+- **Known checker limit.** A literal symbol inside a tuple is not widened
+  when a type variable is instantiated, so `pq dict.assoc([2, :d], 0)` on
+  a dict built from `[[3, :c], …]` warns (`(number, :c)` against
+  `(number, :d)`). `cons([2, :d], [[3, :c]])` warns the same way today; the
+  fix belongs to the checker, not to the dict signatures.

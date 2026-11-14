@@ -13,14 +13,17 @@ use crate::{
     },
 };
 
+use std::{convert::TryInto, rc::Rc};
+
 use super::{
     block::LookupOr,
     boolean::{And, Not, Or},
+    dict::DictRenderView,
     emit::EmitNative,
     eq::Eq,
     panic::Panic,
     support::machine_return_bool,
-    syntax::{dsl::*, LambdaForm},
+    syntax::{dsl::*, LambdaForm, StgSyn},
     tags::DataConstructor,
 };
 
@@ -35,6 +38,8 @@ impl StgIntrinsic for Render {
 
     /// Evaluate inspect and recur
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let dict_render_view: u8 = DictRenderView.index().try_into().unwrap();
+
         let suppressed = lambda(
             1,
             demeta(
@@ -153,23 +158,31 @@ impl StgIntrinsic for Render {
                         ),
                         (
                             DataConstructor::Block.tag(), // [items index] [tagfn tag]
-                            force(
-                                case(
-                                    local(3),
-                                    vec![(
-                                        DataConstructor::BoxedString.tag(), // [tagstr] [items index] [tagfn tag]
-                                        force(call::bif::emit_tag_block_start(lref(0)), unit()),
-                                    )],
-                                    call::bif::emit_block_start(), // [()] [items index] [tagfn tag]
-                                ),
-                                force(
-                                    RenderBlockItems.global(lref(1)),
-                                    call::bif::emit_block_end(),
-                                ),
-                            ),
+                            render_mapping(0, 3),
                         ),
                     ],
-                    EmitNative.global(lref(0)),
+                    // [x] [tagfn tag] [x]: any other value. A dict renders
+                    // as a mapping of its entries in key order (design note
+                    // §8); everything else is emitted as a native.
+                    force(
+                        app_bif(dict_render_view, vec![lref(0)]),
+                        // [view] [x] [tagfn tag] [x]
+                        case(
+                            local(0),
+                            vec![
+                                (
+                                    DataConstructor::ListCons.tag(), // [h t] [view] [x] [tagfn tag] [x]
+                                    render_mapping(2, 5),
+                                ),
+                                (
+                                    DataConstructor::ListNil.tag(), // [view] [x] [tagfn tag] [x]
+                                    render_mapping(0, 3),
+                                ),
+                            ],
+                            // [()] [view] [x] [tagfn tag] [x]
+                            EmitNative.global(lref(2)),
+                        ),
+                    ),
                 ),
             ),
         );
@@ -194,6 +207,28 @@ impl StgIntrinsic for Render {
 }
 
 impl CallGlobal1 for Render {}
+
+/// Render the block items at `lref(items)` as a mapping, tagged by the
+/// render tag at `lref(tag)` when that is a string: the block branch of the
+/// render wrapper, shared with the dict branch, which renders a dict's
+/// entries (`DICT.RENDER_VIEW`) the same way.
+fn render_mapping(items: usize, tag: usize) -> Rc<StgSyn> {
+    force(
+        case(
+            local(tag),
+            vec![(
+                DataConstructor::BoxedString.tag(), // [tagstr] ...
+                force(call::bif::emit_tag_block_start(lref(0)), unit()),
+            )],
+            call::bif::emit_block_start(), // [()] ...
+        ),
+        // [()] ...: everything one deeper
+        force(
+            RenderBlockItems.global(lref(items + 1)),
+            call::bif::emit_block_end(),
+        ),
+    )
+}
 
 /// Render as a document
 pub struct RenderDoc;

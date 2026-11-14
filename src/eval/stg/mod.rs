@@ -289,6 +289,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(dict::DictUpdateStrict));
     rt.add(Box::new(dict::DictMergeWith));
     rt.add(Box::new(dict::DictToBlock));
+    rt.add(Box::new(dict::DictRenderView));
     rt.prepare(source_map);
     Box::new(rt)
 }

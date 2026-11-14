@@ -15,6 +15,7 @@ use std::{collections::HashMap, convert::TryInto};
 use crate::{
     common::sourcemap::Smid,
     eval::{
+        bytecode::BcValue,
         emit::Emitter,
         error::ExecutionError,
         machine::intrinsic::{
@@ -972,6 +973,111 @@ impl StgIntrinsic for DictMergeWith {
 
 impl CallGlobal3 for DictMergeWith {}
 
+/// What a dict's entries are being named for: `dict.to-block` or
+/// rendering. Both name entries the same way; only the errors differ.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EntryNaming {
+    ToBlock,
+    Render,
+}
+
+/// The name of each entry of `tree`, in key order, with its stored value:
+/// a symbol key names its entry by the symbol's name, a string key by its
+/// text, a number key by its rendered text. A list key, or two keys naming
+/// the same entry (`"x"` and `:x`, `1` and `"1"`), is an error (design note
+/// §8, OPEN 5): a block or a rendered mapping holds each key once.
+fn entry_names(
+    m: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    tree: Tree,
+    naming: EntryNaming,
+) -> Result<(Vec<String>, Vec<BcValue>), ExecutionError> {
+    let d = Dict::new(view, m.symbol_pool());
+    let mut names = Vec::with_capacity(d.size(tree) as usize);
+    let mut values = Vec::with_capacity(d.size(tree) as usize);
+    let mut keys = Vec::with_capacity(d.size(tree) as usize);
+    let mut list_key = None;
+    d.for_each(tree, |n| {
+        let key = n.key();
+        let name = match key {
+            DictKey::Num(_) => Some(render_key(m, view, &key)),
+            DictKey::Str(_) => key.str_in(&view).map(str::to_string),
+            DictKey::Sym(id) => Some(m.symbol_pool().resolve(id).to_string()),
+            DictKey::List(_) => None,
+        };
+        match name {
+            Some(name) => {
+                names.push(name);
+                keys.push(key);
+                values.push(n.value().clone());
+            }
+            None => {
+                if list_key.is_none() {
+                    list_key = Some(render_key(m, view, &key));
+                }
+            }
+        }
+    });
+    if let Some(key) = list_key {
+        return Err(match naming {
+            EntryNaming::ToBlock => ExecutionError::DictKeyNotBlockKey(m.annotation(), key),
+            EntryNaming::Render => ExecutionError::DictKeyNotRenderable(m.annotation(), key),
+        });
+    }
+    let mut seen: HashMap<&str, DictKey> = HashMap::with_capacity(names.len());
+    for (name, key) in names.iter().zip(&keys) {
+        if let Some(first) = seen.insert(name.as_str(), *key) {
+            let (first, second) = (render_key(m, view, &first), render_key(m, view, key));
+            return Err(match naming {
+                EntryNaming::ToBlock => ExecutionError::DictBlockKeyCollision(
+                    m.annotation(),
+                    first,
+                    second,
+                    name.clone(),
+                ),
+                EntryNaming::Render => ExecutionError::DictRenderKeyCollision(
+                    m.annotation(),
+                    first,
+                    second,
+                    name.clone(),
+                ),
+            });
+        }
+    }
+    Ok((names, values))
+}
+
+/// Return the entries of `tree` as a list of block pairs `(symbol, value)`
+/// in key order, named by [`entry_names`]; values are passed on as stored,
+/// unevaluated.
+fn return_block_pairs(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    tree: Tree,
+    naming: EntryNaming,
+) -> Result<(), ExecutionError> {
+    // Names first (interning needs the machine mutably), then the pairs.
+    let (names, values) = entry_names(machine, view, tree, naming)?;
+    let ids: Vec<_> = names
+        .iter()
+        .map(|n| machine.symbol_pool_mut().intern(n))
+        .collect();
+    let items = {
+        let m: &dyn IntrinsicMachine = machine;
+        let mut items = Vec::with_capacity(ids.len());
+        for (id, value) in ids.into_iter().zip(values) {
+            let key = m.native_value(view, Native::Sym(id))?;
+            items.push(m.data_value(
+                view,
+                DataConstructor::BlockPair.tag(),
+                &[key, AbiClosure::Byte(value)],
+            )?);
+        }
+        items
+    };
+    machine.return_closure_list(view, items)
+}
+
 /// DICT.TO_BLOCK(d) — a block of the entries in key order: a symbol key
 /// names its entry, a string key the symbol with its text, a number key the
 /// symbol with its rendered text; a list key, or two keys naming the same
@@ -1007,78 +1113,47 @@ impl StgIntrinsic for DictToBlock {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        // Block key names first (interning needs the machine mutably), then
-        // the pairs.
-        let (names, values) = {
-            let m: &dyn IntrinsicMachine = machine;
-            let tree = dict_arg(m, view, &args[0])?;
-            let d = Dict::new(view, m.symbol_pool());
-            let mut names = Vec::with_capacity(d.size(tree) as usize);
-            let mut values = Vec::with_capacity(d.size(tree) as usize);
-            let mut keys = Vec::with_capacity(d.size(tree) as usize);
-            let mut error = None;
-            d.for_each(tree, |n| {
-                let key = n.key();
-                let name = match key {
-                    DictKey::Num(_) => Some(render_key(m, view, &key)),
-                    DictKey::Str(_) => key.str_in(&view).map(str::to_string),
-                    DictKey::Sym(id) => Some(m.symbol_pool().resolve(id).to_string()),
-                    DictKey::List(_) => None,
-                };
-                match name {
-                    Some(name) => {
-                        names.push(name);
-                        keys.push(key);
-                        values.push(n.value().clone());
-                    }
-                    None => {
-                        if error.is_none() {
-                            error = Some(ExecutionError::DictKeyNotBlockKey(
-                                m.annotation(),
-                                render_key(m, view, &key),
-                            ));
-                        }
-                    }
-                }
-            });
-            if let Some(e) = error {
-                return Err(e);
-            }
-            // Two keys naming the same entry (`"x"` and `:x`, `1` and
-            // `"1"`) are an error, as for rendering (design note §8,
-            // OPEN 5): a block holds each key once.
-            let mut seen: HashMap<&str, DictKey> = HashMap::with_capacity(names.len());
-            for (name, key) in names.iter().zip(&keys) {
-                if let Some(first) = seen.insert(name.as_str(), *key) {
-                    return Err(ExecutionError::DictBlockKeyCollision(
-                        m.annotation(),
-                        render_key(m, view, &first),
-                        render_key(m, view, key),
-                        name.clone(),
-                    ));
-                }
-            }
-            (names, values)
-        };
-        let ids: Vec<_> = names
-            .iter()
-            .map(|n| machine.symbol_pool_mut().intern(n))
-            .collect();
-        let items = {
-            let m: &dyn IntrinsicMachine = machine;
-            let mut items = Vec::with_capacity(ids.len());
-            for (id, value) in ids.into_iter().zip(values) {
-                let key = m.native_value(view, Native::Sym(id))?;
-                items.push(m.data_value(
-                    view,
-                    DataConstructor::BlockPair.tag(),
-                    &[key, AbiClosure::Byte(value)],
-                )?);
-            }
-            items
-        };
-        machine.return_closure_list(view, items)
+        let tree = dict_arg(machine, view, &args[0])?;
+        return_block_pairs(machine, view, tree, EntryNaming::ToBlock)
     }
 }
 
 impl CallGlobal1 for DictToBlock {}
+
+/// DICT.RENDER_VIEW(x) — how the render wrapper sees a value that is not a
+/// data constructor it renders itself (design note §8). For a dict, its
+/// entries as a list of block pairs in key order, named as by
+/// `dict.to-block` (the values unevaluated, so rendering forces each as it
+/// would a block's); the wrapper renders that list as a mapping. For any
+/// other value, unit, and the wrapper emits the value as a native. `x` is
+/// already evaluated: the wrapper calls this from its native fallback.
+pub struct DictRenderView;
+
+impl StgIntrinsic for DictRenderView {
+    fn name(&self) -> &str {
+        "DICT.RENDER_VIEW"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let closure = machine.resolve_closure(view, &args[0])?;
+        let tree = match machine.data_tag(view, &closure) {
+            None => match machine.value_native(view, &closure) {
+                Some(Native::Dict(tree)) => Some(tree),
+                _ => None,
+            },
+            Some(_) => None,
+        };
+        match tree {
+            Some(tree) => return_block_pairs(machine, view, tree, EntryNaming::Render),
+            None => machine.return_unit(view),
+        }
+    }
+}
+
+impl CallGlobal1 for DictRenderView {}

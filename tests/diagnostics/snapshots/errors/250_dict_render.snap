@@ -18,13 +18,13 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: cannot render a dict
+error: cannot render dict key [1, 2]: rendered mapping keys are strings, numbers or symbols
   ┌─ tests/harness/errors/250_dict_render.eu:2:9
   │
-2 │ result: dict.of[[1, 2]]
-  │         ^^^^^^^^^^^^^^^
+2 │ result: dict.of[[[1, 2], :a], [3, :b]]
+  │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
-  = convert the dict to a list of [key, value] pairs with 'dict.to-list' before rendering it
+  = a dict renders as a mapping, so its keys must be numbers, strings or symbols; render 'dict.to-list(d)' to output [key, value] pairs instead
 
 === --source-prelude ===
 exit: 1
@@ -41,10 +41,10 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: cannot render a dict
+error: cannot render dict key [1, 2]: rendered mapping keys are strings, numbers or symbols
   ┌─ tests/harness/errors/250_dict_render.eu:2:9
   │
-2 │ result: dict.of[[1, 2]]
+2 │ result: dict.of[[[1, 2], :a], [3, :b]]
   │         ^^^^
   │
-  = convert the dict to a list of [key, value] pairs with 'dict.to-list' before rendering it
+  = a dict renders as a mapping, so its keys must be numbers, strings or symbols; render 'dict.to-list(d)' to output [key, value] pairs instead
