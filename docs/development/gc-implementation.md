@@ -192,16 +192,23 @@ pointer.
 | 1 | Mark phase and post-mark re-traversal of an evacuating collection | a forwarded header not marked by this collection (forwarded by an earlier one) |
 | 2 | After the update phase, before `release_evacuated_lines` frees the old copies: a traversal from the roots with a private visited set (heap marks, line maps and live bytes untouched) | any forwarded header |
 
-The panic names the pointer, its type and the forwarding target. The level-2
-traversal catches the miss in the collection that makes it, while the old
-copy is intact; the level-1 checks catch a stale pointer that survives into
-a later collection, until its old copy's header is overwritten.
+The panic names the pointer, its type and the forwarding target.
+
+Level 2 is the real gate: its traversal catches the miss in the collection
+that makes it, while the old copy is intact. The level-1 checks are a
+cheaper backstop with known gaps. They catch a stale pointer in a later
+collection only while its old copy's header survives (a freed line is soon
+reused), and since the mark state alternates, an old copy forwarded two
+collections earlier reads as marked, so an evacuating mark accepts it.
+
+No check sees a pointer `scan` never reports, a pointer the mutator holds
+outside the roots, or an update that writes a wrong but unforwarded address.
 
 With `EU_GC_VERIFY` unset (and no `EU_GC_POISON`), the cost is nil beyond a
 flag test: each `CollectorHeapView` computes once whether any debug check
 is on, `mark` tests that flag where it used to test `EU_GC_POISON`, and the
-check bodies are out of line. `mark_raw_bytes` and `mark_array` gain the
-same one-flag test; no extra pass runs.
+check bodies are out of line. `mark_raw_bytes` and `mark_array` gain one
+test of whether a forwarding check is on; no extra pass runs.
 
 *Implementation*: `ForwardingCheck`, `CollectorHeapView::debug_mark` and
 `verify_no_forwarded_references` in `src/eval/memory/collect.rs`.

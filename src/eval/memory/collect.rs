@@ -217,11 +217,15 @@ impl<'guard> CollectorHeapView<'guard> {
     /// that nothing reached is forwarded and records visits in a private
     /// set, leaving mark bits, line maps and live bytes unchanged.
     fn forwarding_traversal(heap: &'guard mut Heap) -> Self {
-        let mut view = Self::with_forwarding_check(heap, ForwardingCheck::Any);
-        view.forwarding = ForwardingCheck::Any;
-        view.debug_checks = true;
-        view.visited = Some(Default::default());
-        view
+        let verify = heap.gc_verify_level();
+        CollectorHeapView {
+            heap,
+            debug_checks: true,
+            poison: super::gc_debug::poison_enabled(),
+            forwarding: ForwardingCheck::Any,
+            verify,
+            visited: Some(Default::default()),
+        }
     }
 }
 
@@ -337,7 +341,9 @@ impl CollectorHeapView<'_> {
     pub fn mark_raw_bytes(&mut self, ptr: NonNull<u8>) -> bool {
         debug_assert!(ptr != NonNull::dangling());
         debug_assert!(ptr.as_ptr() as usize != usize::MAX);
-        if self.debug_checks {
+        // Poison is checked only by `mark`: here only a forwarding check
+        // has anything to do.
+        if self.forwarding != ForwardingCheck::Off {
             if let Some(newly) = self.debug_mark(ptr, "raw bytes", false) {
                 return newly;
             }
@@ -357,7 +363,7 @@ impl CollectorHeapView<'_> {
         if let Some(ptr) = arr.allocated_data() {
             debug_assert!(ptr != NonNull::dangling());
             debug_assert!(ptr.as_ptr() as usize != usize::MAX);
-            if self.debug_checks {
+            if self.forwarding != ForwardingCheck::Off {
                 if let Some(newly) = self.debug_mark(ptr.cast(), "array backing", false) {
                     return newly;
                 }
@@ -447,6 +453,13 @@ impl CollectorHeapView<'_> {
         // access is safe during stop-the-world collection — no concurrent
         // readers or writers.
         let header = unsafe { &mut *header_ptr };
+
+        // The forwarding check relies on this: an object is evacuated only
+        // after this collection has marked it (eu-oaz72.136).
+        debug_assert!(
+            header.is_marked_with_state(self.heap.mark_state()),
+            "evacuating an object this collection has not marked"
+        );
 
         // Already forwarded — return existing new location
         if header.is_forwarded() {
@@ -981,6 +994,15 @@ pub mod tests {
         /// deliberately leaves stale: the missed-update bug the forwarding
         /// check exists to catch (eu-oaz72.136).
         Unupdated(RefPtr<TestObj>),
+        /// A pointer array whose `scan_and_update` rewrites the backing
+        /// pointer but not the elements (eu-oaz72.136).
+        StaleElements(Array<RefPtr<TestObj>>),
+        /// A pointer array whose `scan_and_update` rewrites the elements
+        /// but not the backing pointer (eu-oaz72.136).
+        StaleBacking(Array<RefPtr<TestObj>>),
+        /// Raw bytes (as a `HeapString`'s) whose `scan_and_update` leaves
+        /// the backing pointer stale (eu-oaz72.136).
+        StaleBytes(Array<u8>),
     }
 
     impl StgObject for TestObj {}
@@ -999,8 +1021,15 @@ pub mod tests {
                         out.push(ScanPtr::from_non_null(scope, *p));
                     }
                 }
-                TestObj::Many(arr) => {
+                TestObj::Many(arr) | TestObj::StaleElements(arr) | TestObj::StaleBacking(arr) => {
                     scan_ptr_array(arr, scope, marker, out);
+                }
+                TestObj::StaleBytes(bytes) => {
+                    if let Some(ptr) = bytes.allocated_data() {
+                        if marker.mark_raw_bytes(ptr) {
+                            out.push(ScanPtr::from_non_null(scope, ptr.cast::<OpaqueHeapBytes>()));
+                        }
+                    }
                 }
                 TestObj::Compound(arr, body) => {
                     scan_ptr_array(arr, scope, marker, out);
@@ -1013,7 +1042,23 @@ pub mod tests {
 
         fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
             match self {
-                TestObj::Leaf(_) | TestObj::Unupdated(_) => {}
+                TestObj::Leaf(_) | TestObj::Unupdated(_) | TestObj::StaleBytes(_) => {}
+                TestObj::StaleElements(arr) => {
+                    if let Some(old_ptr) = arr.allocated_data() {
+                        if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                            // SAFETY: new_ptr is a valid evacuated copy of
+                            // the same backing allocation.
+                            unsafe { arr.set_backing_ptr(new_ptr.cast()) };
+                        }
+                    }
+                }
+                TestObj::StaleBacking(arr) => {
+                    for p in arr.iter_mut() {
+                        if let Some(new) = heap.forwarded_to(*p) {
+                            *p = new;
+                        }
+                    }
+                }
                 TestObj::Ptr(p) => {
                     if let Some(new) = heap.forwarded_to(*p) {
                         *p = new;
@@ -1220,9 +1265,11 @@ pub mod tests {
             view.alloc(TestObj::Many(view.array(&[]))).unwrap().as_ptr()
         };
 
-        {
-            collect(&mut vec![let_ptr, bif_ptr], &mut heap, &mut clock, true);
-        }
+        // A collection may move its roots: read them back from the root
+        // set rather than reuse the stale locals.
+        let mut roots = vec![let_ptr, bif_ptr];
+        collect(&mut roots, &mut heap, &mut clock, true);
+        let bif_ptr = roots[1];
 
         // Flush lazy sweep so recycled counts are deterministic
         heap.flush_unswept();
@@ -1355,8 +1402,10 @@ pub mod tests {
                 .as_ptr()
         };
 
-        // Do a normal collection first
-        collect(&mut vec![root_ptr], &mut heap, &mut clock, false);
+        // Do a normal collection first; it may move the root
+        let mut roots = vec![root_ptr];
+        collect(&mut roots, &mut heap, &mut clock, false);
+        let root_ptr = roots[0];
         heap.flush_unswept();
 
         let rest_before = heap.rest_block_count();
@@ -1489,6 +1538,13 @@ pub mod tests {
             .unwrap()
             .as_ptr();
         roots.push(holder);
+        let many = {
+            let view = MutatorHeapView::new(&heap);
+            view.alloc(TestObj::Many(view.array(&roots[2..6])))
+                .unwrap()
+                .as_ptr()
+        };
+        roots.push(many);
 
         collect_with_evacuation(&mut roots, &mut heap, &mut clock, &[0], false);
         assert!(roots
@@ -1531,6 +1587,51 @@ pub mod tests {
         let mut roots = vec![holder];
 
         collect_with_evacuation(&mut roots, &mut heap, &mut clock, &[0], false);
+    }
+
+    /// Evacuate the head block holding `holder` and what it points to,
+    /// with verification forced to level 2.
+    fn evacuate_head_block_verified(heap: &mut Heap, holder: TestObj) {
+        heap.set_gc_verify_level(2);
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let holder = MutatorHeapView::new(heap).alloc(holder).unwrap().as_ptr();
+        let mut roots = vec![holder];
+        collect_with_evacuation(&mut roots, heap, &mut clock, &[0], false);
+    }
+
+    /// A stale element of a pointer array is reached only because
+    /// `mark_array` records its backing as visited in the post-update
+    /// traversal (everything is already marked) (eu-oaz72.136).
+    #[test]
+    #[should_panic(expected = "GC VERIFY: marking met a forwarded header after the update phase")]
+    pub fn test_forwarding_check_catches_stale_array_element() {
+        let mut heap = Heap::new();
+        let (leaves, _) = sparse_head_block(&heap, 32);
+        let arr = MutatorHeapView::new(&heap).array(&leaves[..8]);
+        evacuate_head_block_verified(&mut heap, TestObj::StaleElements(arr));
+    }
+
+    /// A stale array backing pointer trips `mark_array`'s check
+    /// (eu-oaz72.136).
+    #[test]
+    #[should_panic(expected = "(type array backing) was evacuated")]
+    pub fn test_forwarding_check_catches_stale_array_backing() {
+        let mut heap = Heap::new();
+        let (leaves, _) = sparse_head_block(&heap, 32);
+        let arr = MutatorHeapView::new(&heap).array(&leaves[..8]);
+        evacuate_head_block_verified(&mut heap, TestObj::StaleBacking(arr));
+    }
+
+    /// A stale raw-bytes backing pointer trips `mark_raw_bytes`'s check
+    /// (eu-oaz72.136).
+    #[test]
+    #[should_panic(expected = "(type raw bytes) was evacuated")]
+    pub fn test_forwarding_check_catches_stale_raw_bytes() {
+        let mut heap = Heap::new();
+        let _ = sparse_head_block(&heap, 32);
+        let bytes = MutatorHeapView::new(&heap).array(&[7u8; 64]);
+        evacuate_head_block_verified(&mut heap, TestObj::StaleBytes(bytes));
     }
 
     /// Miss an update with verification off, so the stale roots survive
@@ -1944,9 +2045,11 @@ pub mod tests {
             view.alloc(TestObj::Many(view.array(&[]))).unwrap().as_ptr()
         };
 
-        {
-            collect(&mut vec![let_ptr, bif_ptr], &mut heap, &mut clock, true);
-        }
+        // A collection may move its roots: read them back from the root
+        // set rather than reuse the stale locals.
+        let mut roots = vec![let_ptr, bif_ptr];
+        collect(&mut roots, &mut heap, &mut clock, true);
+        let bif_ptr = roots[1];
 
         // Flush lazy sweep so recycled counts are deterministic
         heap.flush_unswept();
