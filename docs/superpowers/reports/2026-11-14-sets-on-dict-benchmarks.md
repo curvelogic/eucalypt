@@ -63,3 +63,23 @@ both binaries, so the change does not alter their evaluation or heap; every
 run is under the protocol's ~200 ms floor for ratio analysis, so the wall
 differences (in both directions, within each pair's min–max spread) are
 not evidence either way.
+
+## Prelude mode and the "well under a second" criterion
+
+The figures above use binaries built with the prelude blob
+(`cargo xtask prelude-compile`), as installed binaries are. A clean release
+build without the blob compiles the prelude from source on every run and
+gives different code for the loop: in that mode the add loop takes
+11,200,646 ticks (blob: 10,300,626) and, on this machine, 1.53 s against
+0.56 s for the loop without a set (measured-single, one round). The first
+reviewer, building without the blob, measured 1.45 s median (1.32–1.59)
+against 0.46 s.
+
+So 1e5 adds cost about 0.56 s over the bare loop with the blob and about
+1.0 s without it. That is about 17× faster than master either way, but not
+clearly "well under a second" as the bead's acceptance asks. A callgrind
+profile of 2e4 adds (blob build) puts the tree code (`insert`, `balance`,
+`cmp_keys`) at about 4.5% of instructions; the rest is the engine's
+dispatch, environment access and heap allocation. Closing the gap is engine
+performance work, which the performance protocol leaves to a separately
+approved change.
