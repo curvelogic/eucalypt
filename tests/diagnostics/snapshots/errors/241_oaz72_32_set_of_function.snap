@@ -7,9 +7,9 @@ prelude-modes: identical
 exit: 1
 errors: 1
 warnings: 0
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/harness/errors/241_oaz72_32_set_of_function.eu:2:19
-help-lines: 1
+help-lines: 0
 note-lines: 0
 secondary-labels: 0
 trace-frames: 1
@@ -18,8 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: expected a primitive value but found expected native value
-  help: this can occur when a function or structured value appears where a primitive (number, string, etc.) was expected
+error[EU-EVAL-TYPE]: a function cannot be a set element: set elements must be numbers, strings or symbols
   ┌─ tests/harness/errors/241_oaz72_32_set_of_function.eu:2:19
   │
 2 │ result: [(_ + 1)] set.from-list

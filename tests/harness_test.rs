@@ -5315,3 +5315,18 @@ pub fn test_error_282_catenation_step_identity_argument() {
 pub fn test_error_283_catenation_function_from_right() {
     run_error_test(&error_opts("283_catenation_function_from_right.eu"));
 }
+
+#[test]
+pub fn test_error_288_vec_of_block_element() {
+    run_error_test(&error_opts("288_vec_of_block_element.eu"));
+}
+
+#[test]
+pub fn test_error_289_vec_of_function_element() {
+    run_error_test(&error_opts("289_vec_of_function_element.eu"));
+}
+
+#[test]
+pub fn test_error_290_set_of_random_stream_element() {
+    run_error_test(&error_opts("290_set_of_random_stream_element.eu"));
+}
