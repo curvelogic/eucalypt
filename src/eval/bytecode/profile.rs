@@ -62,6 +62,14 @@ pub struct Profiler {
     /// Folded-stack samples (innermost-first smids → sample count), when
     /// enabled.
     folded: Option<HashMap<Vec<Smid>, u64>>,
+    /// Locations of the dispatches whose intrinsics are forcing a thunk
+    /// (one per nested force sub-run), innermost last.
+    forcing: Vec<Smid>,
+    /// The location of the dispatch a force sub-run has just returned to:
+    /// the sub-run leaves the machine's annotation wherever the forced
+    /// code ended, so the next record (the intrinsic's own dispatch) or
+    /// nested force is charged here instead.
+    resume: Option<Smid>,
 }
 
 impl Profiler {
@@ -73,22 +81,48 @@ impl Profiler {
             last_bytes: bytes,
             ticks: 0,
             folded: folded.then(HashMap::new),
+            forcing: Vec::new(),
+            resume: None,
         }
     }
 
-    /// Attribute one tick, and the allocations and bytes since the previous
-    /// record, to `location`. Returns `true` when a folded-stack sample is
-    /// due (the caller then supplies it through [`Profiler::sample`]).
-    #[inline]
-    pub fn record(&mut self, location: Smid, allocs: u64, bytes: u64) -> bool {
+    /// Charge the allocations and bytes since the previous record to
+    /// `location`, without a tick.
+    fn charge(&mut self, location: Smid, allocs: u64, bytes: u64) {
         let entry = self.by_location.entry(location).or_default();
-        entry.ticks += 1;
         entry.allocs += allocs.wrapping_sub(self.last_allocs);
         entry.bytes += bytes.wrapping_sub(self.last_bytes);
         self.last_allocs = allocs;
         self.last_bytes = bytes;
+    }
+
+    /// An intrinsic dispatched at `location` starts forcing a thunk: what
+    /// it allocated so far is its own, so charge it there before the forced
+    /// code's first record.
+    pub fn enter_force(&mut self, location: Smid, allocs: u64, bytes: u64) {
+        let location = self.resume.take().unwrap_or(location);
+        self.charge(location, allocs, bytes);
+        self.forcing.push(location);
+    }
+
+    /// The force sub-run has finished; the next record belongs to the
+    /// intrinsic's dispatch again.
+    pub fn exit_force(&mut self) {
+        self.resume = self.forcing.pop();
+    }
+
+    /// Attribute one tick, and the allocations and bytes since the previous
+    /// record, to `location` (or to the dispatch a force sub-run has just
+    /// returned to). Returns the location charged when a folded-stack sample
+    /// is due (the caller then supplies it through [`Profiler::sample`]).
+    #[inline]
+    pub fn record(&mut self, location: Smid, allocs: u64, bytes: u64) -> Option<Smid> {
+        let location = self.resume.take().unwrap_or(location);
+        self.charge(location, allocs, bytes);
+        self.by_location.entry(location).or_default().ticks += 1;
         self.ticks += 1;
-        self.folded.is_some() && self.ticks.is_multiple_of(FOLDED_SAMPLE_INTERVAL)
+        (self.folded.is_some() && self.ticks.is_multiple_of(FOLDED_SAMPLE_INTERVAL))
+            .then_some(location)
     }
 
     /// Record one folded-stack sample: `location` (the current code) then
@@ -97,14 +131,10 @@ impl Profiler {
         if let Some(folded) = &mut self.folded {
             if location.is_valid() && trace.first() != Some(&location) {
                 trace.insert(0, location);
+                trace.truncate(FOLDED_STACK_DEPTH);
             }
             *folded.entry(trace).or_default() += 1;
         }
-    }
-
-    /// Whether folded-stack sampling is enabled.
-    pub fn folded_enabled(&self) -> bool {
-        self.folded.is_some()
     }
 
     /// Total ticks recorded.
@@ -266,19 +296,51 @@ mod tests {
     }
 
     #[test]
+    fn forcing_charges_the_intrinsic_not_the_forced_code() {
+        let bif = Smid::fake(1);
+        let thunk = Smid::fake(2);
+        let leftover = Smid::fake(3);
+        let mut p = Profiler::new(0, 0, false);
+        // The intrinsic allocates 5 bytes, then forces a thunk ...
+        p.enter_force(bif, 1, 5);
+        // ... whose code runs one tick allocating 7 ...
+        p.record(thunk, 2, 12);
+        p.exit_force();
+        // ... and the intrinsic's own dispatch ends with the annotation
+        // left wherever the forced code finished, allocating 3 more.
+        p.record(leftover, 3, 15);
+        assert_eq!(
+            p.locations()[&bif],
+            ProfileCounts {
+                ticks: 1,
+                allocs: 2,
+                bytes: 8
+            }
+        );
+        assert_eq!(
+            p.locations()[&thunk],
+            ProfileCounts {
+                ticks: 1,
+                allocs: 1,
+                bytes: 7
+            }
+        );
+        assert!(!p.locations().contains_key(&leftover));
+    }
+
+    #[test]
     fn folded_sampling_is_periodic_and_off_by_default() {
         let a = Smid::fake(1);
         let mut off = Profiler::new(0, 0, false);
         let mut on = Profiler::new(0, 0, true);
         let mut due = 0;
         for _ in 0..(3 * FOLDED_SAMPLE_INTERVAL) {
-            assert!(!off.record(a, 0, 0));
-            if on.record(a, 0, 0) {
+            assert!(off.record(a, 0, 0).is_none());
+            if on.record(a, 0, 0).is_some() {
                 due += 1;
                 on.sample(a, vec![]);
             }
         }
         assert_eq!(due, 3);
-        assert!(!off.folded_enabled());
     }
 }

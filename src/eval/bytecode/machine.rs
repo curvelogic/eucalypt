@@ -436,10 +436,31 @@ impl BcMachineState {
     /// [`Self::stack_trace`], stopping once `cap` frames are collected (the
     /// innermost `cap`), so a profiler sample on a deep stack stays cheap.
     pub fn stack_trace_capped(&self, view: MutatorHeapView<'_>, cap: usize) -> Vec<Smid> {
-        let capacity = self.stack.len().min(64).min(cap);
-        let mut trace = Vec::with_capacity(capacity);
+        Self::continuation_trace(self.stack.iter().rev(), view, cap)
+    }
+
+    /// The `--profile` folded-stack trace (eu-oaz72.37): the live stack,
+    /// then the stacks suspended under each enclosing force sub-run, so a
+    /// sample taken while an intrinsic forces a thunk keeps its callers.
+    /// Innermost first, at most `cap` frames.
+    pub fn profile_trace(&self, view: MutatorHeapView<'_>, cap: usize) -> Vec<Smid> {
+        let frames = self.stack.iter().rev().chain(
+            self.suspended_stacks
+                .iter()
+                .rev()
+                .flat_map(|stack| stack.iter().rev()),
+        );
+        Self::continuation_trace(frames, view, cap)
+    }
+
+    fn continuation_trace<'s>(
+        frames: impl Iterator<Item = &'s BcContinuation>,
+        view: MutatorHeapView<'_>,
+        cap: usize,
+    ) -> Vec<Smid> {
+        let mut trace = Vec::with_capacity(cap.min(64));
         let mut prev = Smid::default();
-        for cont in self.stack.iter().rev() {
+        for cont in frames {
             if trace.len() >= cap {
                 break;
             }
@@ -510,11 +531,21 @@ fn profile_tick(state: &mut BcMachineState, heap: &Heap) {
         Some(p) => p.record(location, allocs, heap.bytes_allocated()),
         None => return,
     };
-    if due {
-        let trace = state.stack_trace_capped(MutatorHeapView::new(heap), FOLDED_STACK_DEPTH);
+    if let Some(charged) = due {
+        let trace = state.profile_trace(MutatorHeapView::new(heap), FOLDED_STACK_DEPTH);
         if let Some(p) = state.profiler.as_deref_mut() {
-            p.sample(location, trace);
+            p.sample(charged, trace);
         }
+    }
+}
+
+/// Profiled force sub-run entry (eu-oaz72.37): charge what the forcing
+/// intrinsic has allocated so far to its own dispatch's location.
+fn profile_enter_force(state: &mut BcMachineState, heap: &Heap) {
+    let location = profile_location(state, heap);
+    let allocs = state.allocs;
+    if let Some(p) = state.profiler.as_deref_mut() {
+        p.enter_force(location, allocs, heap.bytes_allocated());
     }
 }
 
@@ -3441,10 +3472,11 @@ impl<'a> BytecodeMachine<'a> {
                     self.dump_heap,
                 )?;
             }
-            self.dispatch()?;
+            let dispatched = self.dispatch();
             if PROFILE {
                 profile_tick(&mut self.state, &self.heap);
             }
+            dispatched?;
         }
 
         if self.heap.policy_requires_collection() {
@@ -3913,10 +3945,11 @@ impl BytecodeMachine<'_> {
                     self.dump_heap,
                 )?;
             }
-            self.dispatch()?;
+            let dispatched = self.dispatch();
             if PROFILE {
                 profile_tick(&mut self.state, &self.heap);
             }
+            dispatched?;
         }
 
         if self.heap.policy_requires_collection() {
@@ -4695,7 +4728,12 @@ impl BcBifContext<'_, '_> {
     /// terminates. Mirrors `evaluate_to_whnf_impl` (`vm.rs`).
     fn drive_to_whnf(&mut self) -> Result<(), ExecutionError> {
         if self.state.profiler.is_some() {
-            self.drive_to_whnf_loop::<true>()
+            profile_enter_force(self.state, self.heap);
+            let result = self.drive_to_whnf_loop::<true>();
+            if let Some(p) = self.state.profiler.as_deref_mut() {
+                p.exit_force();
+            }
+            result
         } else {
             self.drive_to_whnf_loop::<false>()
         }

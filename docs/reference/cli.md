@@ -496,9 +496,15 @@ Profile: 920400 ticks, 160058 allocs, 32975520 bytes over 11 locations (top 5 by
 
 - **ticks** are machine dispatches, the same unit as `-S` "Ticks"; the
   column sums to the `-S` figure. **allocs** counts closure allocations
-  (the `-S` "Allocs" figure) and **bytes** counts all heap bytes allocated.
-  Each figure is *self* cost: work done by a location's own code, not by the
-  functions it calls.
+  (the `-S` "Allocs" figure) and **bytes** counts heap bytes allocated by
+  evaluation (allocation outside it, such as rendering the result, is not
+  counted).
+- Each figure is *self* cost: work done by a location's own code, not by
+  the functions it calls. Attribution is per dispatch step and approximate
+  at its boundary: a step is charged to the location current when it ends,
+  so the step that enters or returns from a function is charged to the
+  location it moves to. When an intrinsic forces a thunk, the intrinsic's
+  own work is charged to its call site and the forced code to the thunk's.
 - A location is a user-file site (`name at file:line:col`, naming the
   enclosing function and the expression's position, so one function can
   have several rows) or a library function (`name (prelude)`, one row per
@@ -510,7 +516,8 @@ Profile: 920400 ticks, 160058 allocs, 32975520 bytes over 11 locations (top 5 by
   slightly, so their tick totals do too.
 - Lazy evaluation charges a thunk to the code that defines it, at the moment
   something first forces it, so a cheap-looking function can show the cost
-  of data it is the first to touch. The folded stacks show who forced what.
+  of data it is the first to touch. The folded stacks show who forced what,
+  including through intrinsics that force their arguments.
 
 Options:
 

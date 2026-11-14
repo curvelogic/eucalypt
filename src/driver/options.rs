@@ -8,6 +8,9 @@ use crate::{
 use clap::{Args, Parser, Subcommand};
 use std::io::IsTerminal;
 use std::path::PathBuf;
+
+/// Default number of rows in the `--profile` table (eu-oaz72.37).
+pub const DEFAULT_PROFILE_TOP: usize = 30;
 use std::str::FromStr;
 
 /// Format for error output
@@ -253,7 +256,7 @@ pub struct RunArgs {
     pub profile: bool,
 
     /// Number of entries in the --profile table
-    #[arg(long = "profile-top", value_name = "N", default_value_t = 30)]
+    #[arg(long = "profile-top", value_name = "N", default_value_t = DEFAULT_PROFILE_TOP)]
     pub profile_top: usize,
 
     /// Write sampled folded stacks (flame-graph input) to FILE; implies
@@ -754,7 +757,7 @@ impl From<EucalyptCli> for EucalyptOptions {
                 args.profile_top,
                 args.profile_folded.clone(),
             ),
-            _ => (false, 30, None),
+            _ => (false, DEFAULT_PROFILE_TOP, None),
         };
 
         // Extract trailing args from Run command
@@ -1204,9 +1207,6 @@ impl EucalyptOptions {
         &self.error_format
     }
 
-    /// Whether to dump the raw, uncurated continuation-stack trace on
-    /// execution errors instead of the default curated trace
-    /// (design spec §4.3, eu-1tkk.7.12)
     /// Whether `--profile` (or `--profile-folded`) is on.
     pub fn profile(&self) -> bool {
         self.profile
@@ -1222,6 +1222,9 @@ impl EucalyptOptions {
         self.profile_folded.as_ref()
     }
 
+    /// Whether to dump the raw, uncurated continuation-stack trace on
+    /// execution errors instead of the default curated trace
+    /// (design spec §4.3, eu-1tkk.7.12)
     pub fn debug_trace(&self) -> bool {
         self.debug_trace
     }

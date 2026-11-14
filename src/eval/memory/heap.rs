@@ -2438,13 +2438,13 @@ impl Heap {
         size_of::<AllocHeader>() + unsafe { header.as_ref() }.length() as usize
     }
 
-    /// Bytes counted live by the current (or last) mark phase.
     /// Total bytes allocated since the heap was created (header + payload,
     /// after size rounding), for the `--profile` attribution.
     pub fn bytes_allocated(&self) -> u64 {
         self.bytes_allocated.get()
     }
 
+    /// Bytes counted live by the current (or last) mark phase.
     pub fn marked_live_bytes(&self) -> usize {
         self.live_bytes.get()
     }
