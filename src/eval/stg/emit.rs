@@ -92,9 +92,7 @@ fn set_primitive_to_render_primitive(
 ) -> Primitive {
     match prim {
         SetPrimitive::Num(n) => {
-            let num = serde_json::Number::from_f64(n.into_inner())
-                .unwrap_or_else(|| serde_json::Number::from(0));
-            Primitive::Num(num)
+            Primitive::Num(n.to_number().unwrap_or_else(|| serde_json::Number::from(0)))
         }
         SetPrimitive::Str(s) => Primitive::Str(view.scoped(*s).as_str().to_string()),
         SetPrimitive::Sym(id) => Primitive::Sym(machine.symbol_pool().resolve(*id).to_string()),

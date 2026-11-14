@@ -153,7 +153,7 @@ fn key_arg(
 /// quoted, symbols as `:name`, lists bracketed.
 fn render_key(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, key: &DictKey) -> String {
     match key {
-        DictKey::Int(_) | DictKey::UInt(_) | DictKey::Float(_) => key
+        DictKey::Num(_) => key
             .to_number()
             .map_or_else(|| "NaN".to_string(), |n| n.to_string()),
         DictKey::Str(_) => format!("{:?}", key.str_in(&view).unwrap_or_default()),
@@ -178,7 +178,7 @@ fn key_value(
     key: &DictKey,
 ) -> Result<AbiClosure, ExecutionError> {
     let (tag, native) = match key {
-        DictKey::Int(_) | DictKey::UInt(_) | DictKey::Float(_) => {
+        DictKey::Num(_) => {
             let n = key.to_number().ok_or_else(|| {
                 ExecutionError::Panic(machine.annotation(), "NaN dict key".to_string())
             })?;

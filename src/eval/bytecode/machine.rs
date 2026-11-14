@@ -6248,7 +6248,6 @@ mod tests {
         use crate::eval::memory::set::{sort_dedup, HeapSet, Primitive};
         use crate::eval::memory::string::HeapString;
         use crate::eval::memory::vec::HeapVec;
-        use ordered_float::OrderedFloat;
 
         let view = MutatorHeapView::new(heap);
         let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
@@ -6259,7 +6258,7 @@ mod tests {
                 .unwrap()
                 .as_ptr();
             elems.push(Primitive::Str(s));
-            elems.push(Primitive::Num(OrderedFloat(i as f64)));
+            elems.push(Primitive::Num((i as f64).into()));
             for _ in 0..128 {
                 view.alloc(HeapString::from_str(&view, "filler-0123456789abcdef"))
                     .unwrap();
@@ -6307,7 +6306,7 @@ mod tests {
                 Some(format!("elem-{i:03}").as_str()),
                 "vec string element {i} lost across GC"
             );
-            assert!(matches!(v.get(2 * i + 1), Some(Primitive::Num(n)) if n.0 == i as f64));
+            assert!(matches!(v.get(2 * i + 1), Some(Primitive::Num(n)) if n.as_f64() == i as f64));
         }
         let s = view.scoped(set);
         assert_eq!(s.len(), 128);
@@ -6507,7 +6506,6 @@ mod tests {
         use crate::eval::machine::metrics::ThreadOccupation;
         use crate::eval::memory::collect::collect;
         use crate::eval::memory::set::{HeapSet, Primitive};
-        use ordered_float::OrderedFloat;
 
         let mut heap = Heap::new();
         let mut clock = Clock::default();
@@ -6516,7 +6514,7 @@ mod tests {
             let view = MutatorHeapView::new(&heap);
             let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
             let elems: Vec<Primitive> = (0..1000)
-                .map(|i| Primitive::Num(OrderedFloat(i as f64)))
+                .map(|i| Primitive::Num((i as f64).into()))
                 .collect();
             for _ in 0..200 {
                 view.alloc(HeapSet::from_sorted(&view, &elems).unwrap())

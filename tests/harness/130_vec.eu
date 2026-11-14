@@ -73,6 +73,12 @@ test: {
   float-slice: data vec.slice(1.0, 3.0) vec.to-list //= [2, 3]
   slice-clamp: data vec.slice(3, 9) vec.to-list //= [4, 5]
 
+  # Integers above 2^53 keep their identity and digits
+  big: 9007199254740993
+  big-nth: [big] vec.of vec.nth(0) str.of //= "9007199254740993"
+  big-trip: [big, big - 1] vec.of vec.to-list //= [big, big - 1]
+  big-render: ([big] vec.of render-as(:json)) = ([big] render-as(:json))
+
   RESULT: [ len, first, last, middle, mid-first
            , float-index, float-slice, slice-clamp
            , round-trip, round-trip-eq
@@ -86,5 +92,6 @@ test: {
            , shuffle-empty, shuffle-empty-rest
            , interp-len, interp-first
            , computed-nums-len, computed-nums-trip
+           , big-nth, big-trip, big-render
            ] all-true? then(:PASS, :FAIL)
 }

@@ -12,13 +12,13 @@
 
 use std::cmp::Ordering;
 
-use ordered_float::OrderedFloat;
 use serde_json::Number;
 
 use super::{
     alloc::{MutatorScope, ScopedAllocator, StgObject},
     array::Array,
     collect::{CollectorHeapView, CollectorScope, GcScannable, OpaqueHeapBytes, ScanPtr},
+    number::ExactNum,
     string::HeapString,
     symbol::SymbolId,
     syntax::RefPtr,
@@ -31,21 +31,25 @@ use crate::eval::error::ExecutionError;
 /// immutable `HeapString` in the GC heap.
 #[derive(Clone, Copy, Debug)]
 pub enum Primitive {
-    Num(OrderedFloat<f64>),
+    Num(ExactNum),
     Str(RefPtr<HeapString>),
     Sym(SymbolId),
 }
 
+// Exact numbers must not grow set and vec elements.
+const _: () = assert!(std::mem::size_of::<Primitive>() <= 16);
+
 impl Primitive {
-    /// Convert a `serde_json::Number` to a set-safe `OrderedFloat<f64>`.
+    /// Convert a `serde_json::Number` to a set element, keeping integers
+    /// exact.
     pub fn from_number(n: &Number) -> Self {
-        Primitive::Num(OrderedFloat(n.as_f64().unwrap_or(0.0)))
+        Primitive::Num(ExactNum::from_number(n))
     }
 
     /// Convert back to a `serde_json::Number` for rendering.
     pub fn to_number(&self) -> Option<Number> {
         match self {
-            Primitive::Num(n) => Number::from_f64(n.into_inner()),
+            Primitive::Num(n) => n.to_number(),
             _ => None,
         }
     }
@@ -65,7 +69,7 @@ impl Primitive {
     }
 
     /// Total order: numbers before strings before symbols; numbers by
-    /// `OrderedFloat`, strings by content, symbols by id.
+    /// exact value ([`ExactNum`]), strings by content, symbols by id.
     pub fn cmp_in(&self, other: &Primitive, guard: &dyn MutatorScope) -> Ordering {
         match (self, other) {
             (Primitive::Num(a), Primitive::Num(b)) => a.cmp(b),
@@ -312,7 +316,7 @@ mod tests {
     };
 
     fn num(n: f64) -> Primitive {
-        Primitive::Num(OrderedFloat(n))
+        Primitive::Num(n.into())
     }
 
     fn set(view: &MutatorHeapView, elems: Vec<Primitive>) -> HeapSet {
@@ -322,7 +326,7 @@ mod tests {
     fn nums(s: &[Primitive]) -> Vec<f64> {
         s.iter()
             .map(|p| match p {
-                Primitive::Num(n) => n.into_inner(),
+                Primitive::Num(n) => n.as_f64(),
                 _ => panic!("not a number"),
             })
             .collect()
@@ -400,7 +404,7 @@ mod tests {
     #[test]
     fn primitive_number_round_trip() {
         let p = Primitive::from_number(&Number::from(42));
-        assert!(matches!(p, Primitive::Num(n) if n.into_inner() == 42.0));
-        assert!(Primitive::Num(OrderedFloat(7.5)).to_number().is_some());
+        assert!(matches!(p, Primitive::Num(ExactNum::Int(42))));
+        assert!(Primitive::Num(7.5.into()).to_number().is_some());
     }
 }
