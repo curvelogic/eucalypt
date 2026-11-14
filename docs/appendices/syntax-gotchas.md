@@ -173,6 +173,15 @@ filter(has-y(target-y))   # Partial application
 is a 2-arg function (like `(_0 * _1)`), not `(_0 * _0)`. Use numbered
 anaphora `_0 * _0` when you need to reference the same parameter twice.
 
+**A lone anaphor inside a call is the identity function**: the argument's
+scope ends at the parentheses or comma round it, so `xs nth(_)` passes
+`nth` the identity function, not an index. When a function then arrives
+where a value was wanted, the error carries a note stating it:
+
+```
+note: in 'nth(_)', '_' is the whole argument, so the argument is the identity function: an expression anaphor's scope ends at the parentheses round it
+```
+
 **Reference**: See [Anaphora](../guide/anaphora.md) for detailed
 explanation of anaphora usage.
 

@@ -252,6 +252,27 @@ pub struct SourceMap {
     /// the source is recorded. A runtime error raised at one of these spans
     /// because a function was called or received there states the parse.
     catenation_operands: HashMap<(usize, Span), CatenationOperand>,
+    /// The token `Smid`s of expression anaphors that cook found alone in
+    /// their own scope (`_` in `nth(_)`), so that the lambda cook wrapped
+    /// round each is the identity function (eu-oaz72.132).
+    lone_anaphors: std::collections::HashSet<Smid>,
+    /// Juxtaposed calls with an argument that is a lone anaphor, keyed by
+    /// the call's own span (eu-oaz72.132).
+    lone_anaphor_calls: HashMap<(usize, Span), LoneAnaphorCall>,
+}
+
+/// A juxtaposed call `f(...)` with at least one argument that is a lone
+/// expression anaphor, which cook made the identity function
+/// (eu-oaz72.132): `nth(_)` passes `nth` the identity function.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LoneAnaphorCall {
+    /// The whole call, callee and argument tuple: `nth(_)`.
+    pub call: Smid,
+    /// The number of arguments in the tuple.
+    pub arity: usize,
+    /// Each lone-anaphor argument: its zero-based position and the
+    /// anaphor token's `Smid`.
+    pub anaphors: Vec<(usize, Smid)>,
 }
 
 /// The source extents of a catenation whose function operand is an
@@ -578,6 +599,39 @@ impl SourceMap {
     /// `file`/`span`, if cook recorded one (eu-oaz72.29).
     pub fn catenation_operand(&self, file: usize, span: Span) -> Option<&CatenationOperand> {
         self.catenation_operands.get(&(file, span))
+    }
+
+    /// Record that the expression anaphor at `anaphor` was alone in its
+    /// scope, so cook wrapped the identity function round it
+    /// (eu-oaz72.132).
+    pub fn record_lone_anaphor(&mut self, anaphor: Smid) {
+        self.lone_anaphors.insert(anaphor);
+    }
+
+    /// Whether `anaphor` was recorded by [`SourceMap::record_lone_anaphor`].
+    pub fn is_lone_anaphor(&self, anaphor: Smid) -> bool {
+        self.lone_anaphors.contains(&anaphor)
+    }
+
+    /// Record a call with a lone-anaphor argument under the call's own
+    /// location (eu-oaz72.132). Nothing is recorded when the call has no
+    /// source location.
+    pub fn record_lone_anaphor_call(&mut self, call: LoneAnaphorCall) {
+        if let Some(SourceInfo {
+            file: Some(file),
+            span: Some(span),
+            ..
+        }) = self.source_info_for_smid(call.call)
+        {
+            let key = (*file, *span);
+            self.lone_anaphor_calls.insert(key, call);
+        }
+    }
+
+    /// The call with a lone-anaphor argument at `file`/`span`, if cook
+    /// recorded one (eu-oaz72.132).
+    pub fn lone_anaphor_call(&self, file: usize, span: Span) -> Option<&LoneAnaphorCall> {
+        self.lone_anaphor_calls.get(&(file, span))
     }
 
     /// Mark a file ID as belonging to a resource (e.g. the prelude, a stdlib
