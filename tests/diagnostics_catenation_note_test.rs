@@ -130,11 +130,11 @@ fn operator_receives_step_function() {
 #[test]
 fn nested_positions() {
     assert_note(
-        "xs tail head = 2 && true",
+        "xs tail nth(0) = 2 && true",
         &parse_note(
-            "xs tail head = 2 && true",
-            "xs tail (head = 2 && true)",
-            "(xs tail head) = 2 && true",
+            "xs tail nth(0) = 2 && true",
+            "xs tail (nth(0) = 2 && true)",
+            "(xs tail nth(0)) = 2 && true",
         ),
     );
     assert_note(
