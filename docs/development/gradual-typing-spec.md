@@ -857,7 +857,7 @@ likely via option 1 or 2.
 
 1. **Recursive types** — low urgency but the design must accommodate
    them. The type alias mechanisms (section 12) support recursive
-   references — e.g. `{ types: { Tree: "{value: number, left: Tree |
+   references — e.g. `{ types: { Tree: s"{value: number, left: Tree |
    null, right: Tree | null}" } }`. Deferred to Phase 6+. The type
    representation (`Type` enum) should use indirection (`Box`/`Rc`)
    throughout so recursive types can be added without restructuring.
@@ -900,9 +900,9 @@ declare aliases in the unit metadata block at the top of the file:
 
 ```eu,notest
 { import: "data.eu"
-  types: { Person: "{name: string, age: number, email: string | null, ..}"
-           Response: "{status: number, body: string | null}"
-           Tree: "{value: number, left: Tree | null, right: Tree | null}" } }
+  types: { Person: s"{name: string, age: number, email: string | null, ..}"
+           Response: s"{status: number, body: string | null}"
+           Tree: s"{value: number, left: Tree | null, right: Tree | null}" } }
 ```
 
 The `types` key maps alias names to type strings. These are available
@@ -944,7 +944,7 @@ shape (overriding inference), `type-def` names it:
 
 ```eu,notest
 ` { type-def: "Point"
-    type: "{x: number, y: number}" }
+    type: s"{x: number, y: number}" }
 origin: { x: 0, y: 0 }
 ```
 

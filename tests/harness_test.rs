@@ -5391,6 +5391,13 @@ pub fn test_error_290_set_of_random_stream_element() {
     run_error_test(&error_opts("290_set_of_random_stream_element.eu"));
 }
 
+/// Leftover tokens in a closed string interpolation are a parse error,
+/// not dropped: `{ a b }` used to evaluate as `{a}` (eu-oaz72.50).
+#[test]
+pub fn test_error_284_interpolation_two_names() {
+    run_error_test(&error_opts("284_interpolation_two_names.eu"));
+}
+
 #[test]
 pub fn test_error_291_modinv_not_invertible() {
     run_error_test(&error_opts("291_modinv_not_invertible.eu"));
