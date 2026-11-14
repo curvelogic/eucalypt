@@ -1,0 +1,16 @@
+#!/usr/bin/env eu
+{ doc: "A prelude name on the left of `=` is defined, so the assignment-style check must not reject it, in either prelude mode. With the blob, prelude names are still free variables when the check runs, and `xs tail head = 2 && true` was rejected before evaluation as a declaration of `head` (eu-oaz72.134). tests/harness_test.rs runs this file with and without --source-prelude." }
+
+xs: [1, 2, 3]
+
+` "The bead's program, in a branch that is never evaluated: it must not be rejected before evaluation."
+lazy-branch: true then(1, xs tail head = 2 && true)
+t1: lazy-branch = 1
+
+` "A prelude function on the left of `=`, in a discarded branch."
+t2: (false then(head = 2, :ok)) = :ok
+
+` "The parenthesised pipeline is ordinary equality."
+t3: (xs tail head) = 2 && true
+
+RESULT: [t1, t2, t3] all-true? then(:PASS, :FAIL)

@@ -3202,6 +3202,56 @@ pub fn test_236_oaz72_36_constructor_field_sharing() {
     run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
 }
 
+/// eu-oaz72.134 — the assignment-style check must give the same answer in
+/// both prelude modes. With the blob, prelude names are still free when the
+/// check runs and `xs tail head = 2 && true` was rejected before evaluation
+/// as a declaration of `head`; with the source prelude, `=` is bound and the
+/// check never fired, so `r: result = 42` reported only an unresolved
+/// variable. Each fixture runs here with and without `--source-prelude`
+/// (blob mode needs a fresh blob; `scripts/blob-mode-tests.sh` sweeps this
+/// target with one).
+#[test]
+pub fn test_251_prelude_modes_agree_on_assignment_style() {
+    let deadline = std::time::Duration::from_secs(120);
+    let run = |cmd: std::process::Command, what: &str| {
+        run_with_deadline(cmd, deadline)
+            .unwrap_or_else(|| panic!("{what} did not finish within {}s", deadline.as_secs()))
+    };
+    for mode in [None, Some("--source-prelude")] {
+        let label = mode.unwrap_or("default prelude");
+
+        let mut cmd = std::process::Command::new(eu_binary());
+        cmd.arg("test");
+        cmd.args(mode);
+        cmd.arg("tests/harness/251_assignment_style_prelude_modes.eu");
+        cmd.args(["--heap-limit-mib", "2048"]);
+        let out = run(cmd, "eu test 251");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.status.success() && stdout.contains("PASS") && !stdout.contains("FAIL"),
+            "251_assignment_style_prelude_modes failed ({label}):\n{stdout}{stderr}"
+        );
+
+        let mut cmd = std::process::Command::new(eu_binary());
+        cmd.arg("run");
+        cmd.args(mode);
+        cmd.arg("tests/harness/errors/281_assignment_style_in_expression.eu");
+        cmd.args(["--heap-limit-mib", "2048"]);
+        let out = run(cmd, "eu run 281");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "({label}) stderr was:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("assignment-style syntax: 'result = ...'"),
+            "expected the assignment-style diagnostic ({label}), stderr was:\n{stderr}"
+        );
+    }
+}
+
 /// Dicts (eu-oaz72.21). Every target must pass; in addition a lazy dict
 /// value lives in a memoising cell, so three reads of it — through `get`,
 /// `get-or` and `to-list`, from several dict versions sharing the cell, and
@@ -5231,4 +5281,9 @@ pub fn test_error_279_catenation_step_receives_function() {
 #[test]
 pub fn test_error_280_catenation_parenthesised_step() {
     run_error_test(&error_opts("280_catenation_parenthesised_step.eu"));
+}
+
+#[test]
+pub fn test_error_281_assignment_style_in_expression() {
+    run_error_test(&error_opts("281_assignment_style_in_expression.eu"));
 }
