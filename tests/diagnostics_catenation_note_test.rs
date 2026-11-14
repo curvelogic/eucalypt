@@ -23,9 +23,11 @@ xss: [[1], [2]]
 
 /// Run `x: <expr>` and return (exit code, stdout, the diagnostic's notes).
 fn run(expr: &str) -> (i32, String, Vec<String>) {
-    let dir = std::env::temp_dir().join(format!("eu-catenation-note-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let file = dir.join(format!("case{:x}.eu", fxhash(expr)));
+    let file = std::env::temp_dir().join(format!(
+        "eu-catenation-note-{}-{:x}.eu",
+        std::process::id(),
+        fxhash(expr)
+    ));
     std::fs::write(&file, format!("{PRELUDE}x: {expr}\n")).unwrap();
     let out = Command::new(Path::new(env!("CARGO_BIN_EXE_eu")))
         .args([
@@ -157,6 +159,24 @@ fn nested_positions() {
             "((xs) nth(0)) = (1)",
         ),
     );
+    // An operator inside the step's leftmost operand receives the step's
+    // function: the error is raised at the inner `+`, not the `=`.
+    assert_note(
+        "xs nth(0) + 1 = 2",
+        &parse_note(
+            "xs nth(0) + 1 = 2",
+            "xs (nth(0) + 1 = 2)",
+            "(xs nth(0)) + 1 = 2",
+        ),
+    );
+    assert_note(
+        "xs nth(0) * 2 + 1 = 3",
+        &parse_note(
+            "xs nth(0) * 2 + 1 = 3",
+            "xs (nth(0) * 2 + 1 = 3)",
+            "(xs nth(0)) * 2 + 1 = 3",
+        ),
+    );
     // A step operator expression ending before a lower-precedence operator.
     assert_note(
         "xs nth(0) = 1 //=> true",
@@ -173,6 +193,11 @@ fn anaphoric_lambdas() {
         "xss map(_ nth(0) = 1)",
         "note: '_ nth(0) = 1' was read as '_ (nth(0) = 1)'",
     );
+    // An anaphor in the step's head would be scoped by the parentheses too.
+    assert_note(
+        "xss map(nth(0) _ = 1)",
+        "note: 'nth(0) _ = 1' was read as 'nth(0) (_ = 1)'",
+    );
     assert_note(
         "xss map(• nth(0) = 1)",
         &parse_note("• nth(0) = 1", "• (nth(0) = 1)", "(• nth(0)) = 1"),
@@ -188,6 +213,11 @@ fn not_shown_without_the_parse() {
         "xs (nth(0) + 1)",
         // the operator on the left of the catenation: `(1 + xs) nth(0)`
         "1 + xs nth(0)",
+        // a pipeline that is itself an operator expression:
+        // `(1 + xs) (nth(0) = 2)`, not a step on `xs`
+        "1 + xs nth(0) = 2",
+        // an operator off the step's leftmost spine
+        "xs 1 = nth(0) + 1",
         // a section, not a catenation
         "xss map(nth(0) = 1)",
         // a correct pipeline before a lower-precedence operator

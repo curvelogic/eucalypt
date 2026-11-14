@@ -269,9 +269,10 @@ pub struct CatenationOperand {
     /// The last atom of the operator expression's leftmost operand
     /// (`nth(i)`), where the pipeline would end if parenthesised.
     pub step_head_end: Smid,
-    /// Whether the pipeline holds an expression anaphor (`_ nth(0) = 1`).
-    /// Parentheses round it would scope the anaphor to them, so no
-    /// parenthesisation is suggested.
+    /// Whether the pipeline or the step's leftmost operand holds an
+    /// expression anaphor (`_ nth(0) = 1`, `nth(0) _ = 1`). Parentheses
+    /// round them would scope the anaphor to them, so no parenthesisation
+    /// is suggested.
     pub pipeline_has_anaphor: bool,
 }
 

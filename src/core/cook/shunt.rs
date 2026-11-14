@@ -35,7 +35,7 @@ pub struct Written {
 
 /// The source extent of an expression on the shunter's output stack, as
 /// atom `Smid`s (eu-oaz72.29).
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Extent {
     /// The first atom of the expression.
     first: Smid,
@@ -51,6 +51,13 @@ struct Extent {
     infix: bool,
     /// Whether an expression anaphor of this soup is among its atoms.
     anaphor: bool,
+    /// Whether an expression anaphor is among the atoms of the leftmost
+    /// operand: the expression itself unless it is an infix application.
+    head_anaphor: bool,
+    /// The infix applications along the leftmost spine, outermost last:
+    /// in `nth(0) + 1 = 2`, the `+` then the `=`. Each receives a value
+    /// computed from the leftmost operand. Empty unless `infix`.
+    spine: Vec<Smid>,
 }
 
 impl Written {
@@ -73,6 +80,8 @@ impl Extent {
             head_end: written.smid,
             infix: false,
             anaphor: written.anaphor,
+            head_anaphor: written.anaphor,
+            spine: vec![],
         }
     }
 
@@ -84,6 +93,8 @@ impl Extent {
             head_end: right.last,
             infix: false,
             anaphor: left.anaphor || right.anaphor,
+            head_anaphor: left.anaphor || right.anaphor,
+            spine: vec![],
         }
     }
 }
@@ -292,38 +303,47 @@ impl<'smap> Shunter<'smap> {
 
     fn apply_two(&mut self, expr: RcExpr) {
         if let Some(((right, rext), (left, lext))) = self.pop_two_output() {
-            let extent = if expr.is_pseudocall() || expr.is_pseudodot() {
-                Extent::span(&lext, &rext)
-            } else if expr.is_pseudocat() {
-                if rext.infix {
-                    // `x a op b`: the operator expression `a op b`, written
-                    // without parentheses, became the pipeline step applied
-                    // to `x` (eu-oaz72.29). The catenation's application is
-                    // stamped with the operator application's `Smid`
-                    // (`form_apply`), which is where a runtime error from
-                    // calling its result, or from the operator receiving a
-                    // function, is raised.
-                    self.source_map.record_catenation_operand(
-                        right.smid(),
-                        CatenationOperand {
-                            pipeline: (lext.first, lext.last),
-                            step: (rext.first, rext.last),
-                            step_head_end: rext.head_end,
-                            pipeline_has_anaphor: lext.anaphor,
-                        },
-                    );
+            let is_infix = !(expr.is_pseudocall() || expr.is_pseudodot() || expr.is_pseudocat());
+            if expr.is_pseudocat() && rext.infix && !lext.infix {
+                // `x a op b`: the operator expression `a op b`, written
+                // without parentheses, became the pipeline step applied to
+                // `x` (eu-oaz72.29). The catenation's application is stamped
+                // with the operator application's `Smid` (`form_apply`),
+                // which is where a runtime error from calling its result is
+                // raised; an error from an operator on the step's leftmost
+                // spine receiving the step's function is raised at that
+                // operator. A pipeline that is itself an operator expression
+                // (`1 + x a op b`) is not recorded: the parse is
+                // `(1 + x) (a op b)`, not a pipeline step on `x`.
+                let operand = CatenationOperand {
+                    pipeline: (lext.first, lext.last),
+                    step: (rext.first, rext.last),
+                    step_head_end: rext.head_end,
+                    // Parentheses round the pipeline and the step's head
+                    // would scope an anaphor in either to them.
+                    pipeline_has_anaphor: lext.anaphor || rext.head_anaphor,
+                };
+                for op in &rext.spine {
+                    self.source_map
+                        .record_catenation_operand(*op, operand.clone());
                 }
-                Extent::span(&lext, &rext)
-            } else {
+            }
+            let applied = self.form_apply(expr, &[left, right]);
+            let extent = if is_infix {
+                let mut spine = if lext.infix { lext.spine } else { vec![] };
+                spine.push(applied.smid());
                 Extent {
                     first: lext.first,
                     last: rext.last,
                     head_end: lext.head_end,
                     infix: true,
                     anaphor: lext.anaphor || rext.anaphor,
+                    head_anaphor: lext.head_anaphor,
+                    spine,
                 }
+            } else {
+                Extent::span(&lext, &rext)
             };
-            let applied = self.form_apply(expr, &[left, right]);
             self.push_output(applied, extent)
         } else {
             self.error = Some(CoreError::TooFewOperands(expr.smid()))
