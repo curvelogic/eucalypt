@@ -26,11 +26,34 @@ declaration bodies, and idiot bracket expressions.
 
 ### Command integration
 
-- `C-c C-k` — render the current buffer through `eu` and display output
-- `C-u C-c C-k` — same, but edit the command before running
-- `eucalypt-render-region` — render just the active region
-- Output is displayed in a buffer with the appropriate mode (yaml-mode,
-  json-mode, or text-mode) based on the output format
+These commands run `eu` on the visited file, from the file's directory, so
+relative paths (extra inputs in `eucalypt-eu-file-opts`, files a program
+reads, and error locations) resolve from the file's location wherever Emacs
+was started. They offer to save the buffer first. With `C-u`, each lets you
+edit the command before it runs.
+
+- `C-c C-c` — `eucalypt-run`: `eu FILE`
+- `C-c C-r` — `eucalypt-run-target`: `eu FILE -t TARGET`, completing the
+  target from `eu list-targets FILE` (with each target's doc)
+- `C-c C-e` — `eucalypt-evaluate`: `eu FILE -e EXPR`
+- `C-c C-t` — `eucalypt-test`: `eu test FILE`
+- `C-c C-v` — `eucalypt-check`: `eu check FILE`
+
+`eucalypt-run`, `-run-target` and `-evaluate` show standard output in
+`*Eucalypt Output*` (in yaml-mode, json-mode, js-mode or text-mode, from
+`-j`, `--json`, `-x FMT` or `--export FMT` in the arguments) and any
+errors in `*Eucalypt Errors*`. `eucalypt-test` and `eucalypt-check` run in
+`*eucalypt test*` and `*eucalypt check*`; `g` there runs them again. All of
+these buffers use `eucalypt-compilation-mode`, so each `┌─ FILE:LINE:COL`
+location is clickable and `next-error` (`M-g n`) visits it. `eu` runs with
+`NO_COLOR=1`, so no ANSI escape codes appear.
+
+To render text that is not saved to a file:
+
+- `C-c C-k` — `eucalypt-render-buffer`: pipe the buffer to `eu` (as
+  `eu@-`, or `yaml@-` and so on from the file extension), from the file's
+  directory if it has one
+- `eucalypt-render-region` — the same for the active region
 
 ### Unicode operator input
 
@@ -164,12 +187,28 @@ At the end of a `.eu` file:
 
 | Binding | Command | Description |
 |---------|---------|-------------|
+| `C-c C-c` | `eucalypt-run` | Run `eu` on the file |
+| `C-c C-r` | `eucalypt-run-target` | Run `eu` on the file with a target |
+| `C-c C-e` | `eucalypt-evaluate` | Evaluate an expression against the file |
+| `C-c C-t` | `eucalypt-test` | Run `eu test` on the file |
+| `C-c C-v` | `eucalypt-check` | Run `eu check` on the file |
 | `C-c C-k` | `eucalypt-render-buffer` | Render buffer through `eu` |
 | `C-c C-u` | `eucalypt-unicode-menu` | Unicode operator insertion menu |
 | `C-M-a` | `treesit-beginning-of-defun` | Go to start of declaration |
 | `C-M-e` | `treesit-end-of-defun` | Go to end of declaration |
 
-## Checking the mode against the grammar
+## Checking the mode
+
+`scripts/check-emacs-mode.sh` first runs the ERT tests of the commands
+above (`editors/emacs/test/eucalypt-mode-commands-test.el`). They drive a
+stub `eu` and need no network, grammar or built binary; set `EU` to a real
+`eu` to run the tests tagged `real-eu` against it as well:
+
+```sh
+EU=target/release/eu scripts/check-emacs-mode.sh
+```
+
+### Against the grammar
 
 The mode's font-lock queries name tree-sitter node types, so a grammar
 change can break them: a query that no longer matches the grammar raises
