@@ -1582,3 +1582,54 @@ a: x
     (soup
       (name
         (identifier)))))
+
+================================================================================
+Operator-like parentheses followed by a symbol continue the soup (eu-ioz21.7:
+`(x + y) :z` is not an operator declaration head)
+================================================================================
+
+a: g
+(x + y) :z
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (paren_expr
+        (soup
+          (name
+            (identifier))
+          (operator)
+          (name
+            (identifier))))
+      (literal
+        (symbol
+          (identifier))))))
+
+================================================================================
+Quoted name followed by a symbol continues the soup (eu-ioz21.7: `'q' :y` is
+not a declaration head)
+================================================================================
+
+a: f
+'q' :y
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (name
+        (quoted_identifier))
+      (literal
+        (symbol
+          (identifier))))))

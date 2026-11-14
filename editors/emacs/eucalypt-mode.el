@@ -354,10 +354,10 @@ without relying on the buffer syntax table."
                (ne (treesit-node-end n)))
           ;; Find the opening quote (last " before content)
           (when (>= ne start)
-            ;; Opening quote: for c", r", t", the quote is at ns+1; for plain ", at ns
+            ;; Opening quote: for c", r", t", s", the quote is at ns+1; for plain ", at ns
             (let ((q-start (save-excursion
                              (goto-char ns)
-                             (if (memq (char-after) '(?c ?r ?t))
+                             (if (memq (char-after) '(?c ?r ?t ?s))
                                  (1+ ns)
                                ns))))
               (put-text-property q-start (1+ q-start)
