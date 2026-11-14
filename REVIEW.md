@@ -189,6 +189,34 @@ PR. Where release machinery is a workflow holding write access or a
 secret, or a script such a workflow runs, the owner-merges row above
 applies.
 
+## Review rounds
+
+A PR gets two review rounds, the first review and one re-review, and then
+at most one **confirm review**. When round 2 still finds blocking items,
+its reviewer sends the PR back as in round 1 and posts no owner hold. Once
+the author has pushed fixes, a fresh `rig-review` runs the confirm review
+(round 3) on the new head:
+
+- **Scope.** It checks that each blocking finding in round 2's verdict is
+  fixed, and reviews what the commits since round 2's head changed. It is
+  not a new open-ended review: anything else is out of scope this round.
+  CI on the new head is read first, as in every round.
+- **Two reviewers where two are required.** Where this file requires a
+  second independent review (the *Sensitive areas* rows that say so, and
+  an API specified in advance), the confirm round is two fresh `rig-review`s,
+  each forming its verdict without reading the other's.
+- **Pass.** If every round-2 blocker is fixed, nothing the fix commits
+  changed is blocking, and CI on the new head is green, an agent may merge
+  under this file as usual.
+- **Escalate.** If a round-2 blocker is still open, or the confirm review
+  finds a new blocking item, it posts one comment listing each open blocker
+  for the owner, with the hold "Do not merge — owner review", and leaves the
+  PR open. No further round runs.
+
+Unchanged: a PR this file reserves for the owner still goes to the owner
+after any pass, and an explicit hold still binds every agent and is
+released only by the owner (*Owner review filter*).
+
 ## Merging
 
 Method: merge commit, to `master` only.
