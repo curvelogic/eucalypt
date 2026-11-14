@@ -827,11 +827,11 @@ quot(a, b): __QUOT(a, b)
     type: s"number → number → number" }
 rem(a, b): __REM(a, b)
 
-` { doc: "`mulmod(a, b, m)` - `a * b` modulo `m`, exact for all 64-bit integers (computed in 128 bits); result in `[0, m)`."
+` { doc: "`mulmod(a, b, m)` - `a * b` modulo `m`, exact for all 64-bit signed integers (computed in 128 bits); result in `[0, m)`."
     type: s"number → number → number → number" }
 mulmod(a, b, m): __MULMOD(a, b, m)
 
-` { doc: "`powmod(b, e, m)` - `b` raised to the power `e` modulo `m`, exact for all 64-bit integers; `e` must be non-negative; result in `[0, m)`."
+` { doc: "`powmod(b, e, m)` - `b` raised to the power `e` modulo `m`, exact for all 64-bit signed integers; `e` must be non-negative; result in `[0, m)`."
     type: s"number → number → number → number" }
 powmod(b, e, m): __POWMOD(b, e, m)
 

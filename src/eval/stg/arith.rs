@@ -1042,15 +1042,19 @@ fn modular_operand(
     role: &str,
 ) -> Result<i128, ExecutionError> {
     let n = num_arg(machine, view, arg)?;
-    whole_i64(&n).map(i128::from).ok_or_else(|| {
-        ExecutionError::ModularArithmetic(
-            machine.annotation(),
-            format!(
-                "{function} requires whole numbers in the 64-bit signed range, \
-                 but the {role} is {n}"
-            ),
-        )
-    })
+    if let Some(i) = whole_i64(&n) {
+        return Ok(i128::from(i));
+    }
+    let fractional = n.as_f64().is_some_and(|f| f.fract() != 0.0 || !f.is_finite());
+    let problem = if fractional {
+        "a whole number"
+    } else {
+        "in the 64-bit signed range"
+    };
+    Err(ExecutionError::ModularArithmetic(
+        machine.annotation(),
+        format!("{function} requires each argument to be {problem}, but the {role} is {n}"),
+    ))
 }
 
 /// Extract a modulus, which must be a positive integer.

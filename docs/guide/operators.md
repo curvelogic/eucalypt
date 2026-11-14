@@ -172,7 +172,7 @@ a float (`0.5`).
 
 `mulmod(a, b, m)`, `powmod(b, e, m)` and `modinv(a, m)` work modulo `m`
 without overflowing: they compute in 128 bits internally, so they are
-exact for any 64-bit operands and moduli, where `a * b % m` would stop
+exact for any 64-bit signed operands and moduli, where `a * b % m` would stop
 with `numeric overflow` once `a * b` passes 2^63. Each returns the
 residue in `[0, m)`, so negative operands are normalised:
 
