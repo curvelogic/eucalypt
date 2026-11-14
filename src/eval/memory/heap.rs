@@ -536,6 +536,10 @@ impl HeapState {
     /// candidates of the evacuating collection about to mark
     /// (eu-oaz72.108).
     pub fn begin_evacuation_record(&mut self, bases: BlockBaseSet) {
+        debug_assert!(
+            self.evacuation_record.is_none(),
+            "an evacuation record outlived its collection"
+        );
         self.evacuation_record = Some(EvacuationRecord {
             bases,
             regions: Vec::new(),
@@ -1029,72 +1033,6 @@ impl HeapState {
             self.rest.push_back(block);
         }
         false
-    }
-
-    /// Find the block containing `ptr` by its base address and mark
-    /// the line(s) for a small object (single line + implicit next).
-    pub fn mark_line_in_block<T>(&mut self, ptr: NonNull<T>) {
-        let base = bump::block_base_of(ptr);
-
-        if let Some(head) = &mut self.head {
-            if head.base_address() == base {
-                head.mark_line(ptr);
-                return;
-            }
-        }
-
-        if let Some(overflow) = &mut self.overflow {
-            if overflow.base_address() == base {
-                overflow.mark_line(ptr);
-                return;
-            }
-        }
-
-        for block in &mut self.rest {
-            if block.base_address() == base {
-                block.mark_line(ptr);
-                return;
-            }
-        }
-
-        for block in &mut self.unswept {
-            if block.base_address() == base {
-                block.mark_line(ptr);
-                return;
-            }
-        }
-
-        for block in &mut self.recycled {
-            if block.base_address() == base {
-                block.mark_line(ptr);
-                return;
-            }
-        }
-
-        // Evacuation target blocks: objects evacuated into the current target
-        // block must have their lines marked so that lazy sweep does not treat
-        // the live content as free holes.
-        if let Some(target) = &mut self.evacuation_target {
-            if target.base_address() == base {
-                target.mark_line(ptr);
-                return;
-            }
-        }
-        for block in &mut self.filled_evacuation_blocks {
-            if block.base_address() == base {
-                block.mark_line(ptr);
-                return;
-            }
-        }
-
-        // No block found for this pointer
-        self.mark_misses += 1;
-        if super::gc_debug::poison_enabled() || super::gc_debug::verify_enabled() {
-            eprintln!(
-                "GC BUG: mark_line_in_block({:p}) could not find block with base {base:#x}",
-                ptr.as_ptr(),
-            );
-        }
     }
 
     /// Find the block containing `ptr` by its base address and mark

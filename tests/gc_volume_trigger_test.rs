@@ -225,8 +225,8 @@ fn fragmented_heap_is_compacted_under_heap_limit() {
         .arg("tests/harness/gc/gc_004_fragmentation.eu")
         .env("EU_PP_THRESHOLD", "999999999")
         // Stress mode evacuates every block on every collection, which is
-        // not the policy under test (`stress_evacuation_frees_blocks_in_
-        // the_same_collection` covers stress under a tight limit).
+        // not the policy under test: see
+        // `stress_evacuation_compacts_fragmented_heap_under_limit`.
         .env_remove("EU_GC_STRESS");
     let out = run_with_deadline(cmd, Duration::from_secs(600))
         .expect("eu did not finish within 600s under a 10 MiB heap limit");
@@ -255,27 +255,33 @@ fn stress_run_under_limit(file: &str, limit_mib: &str) -> std::process::Output {
     })
 }
 
+/// Assert that `file` passes under `EU_GC_STRESS=1` at `limit_mib`.
+fn assert_stress_passes_under_limit(file: &str, limit_mib: &str) {
+    let out = stress_run_under_limit(file, limit_mib);
+    assert!(
+        out.status.success(),
+        "{file} failed under EU_GC_STRESS at {limit_mib} MiB: evacuated blocks \
+         are not freed until the next collection \
+         (HeapState::release_evacuated_lines)\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 /// An evacuated block is freed in the collection that evacuates it
 /// (eu-oaz72.108). Its objects were line-marked before they were
 /// evacuated, and those lines once stayed marked until the next
 /// collection, so under `EU_GC_STRESS` the heap held about twice the live
-/// data: 228 failed with a heap-limit error at 12-16 MiB and
-/// `gc_004_fragmentation.eu` at 10 MiB. Both pass with the lines freed
-/// (measured down to 10 MiB for 228).
+/// data: 228 failed with a heap-limit error at 12-16 MiB. With the lines
+/// freed it passes (measured down to 10 MiB).
 #[test]
 fn stress_evacuation_frees_blocks_in_the_same_collection() {
-    for (file, limit) in [
-        ("tests/harness/228_bc34x_meta_body_memoisation.eu", "14"),
-        ("tests/harness/gc/gc_004_fragmentation.eu", "10"),
-    ] {
-        let out = stress_run_under_limit(file, limit);
-        assert!(
-            out.status.success(),
-            "{file} failed under EU_GC_STRESS at {limit} MiB: evacuated blocks \
-             are not freed until the next collection \
-             (HeapState::release_evacuated_lines)\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
+    assert_stress_passes_under_limit("tests/harness/228_bc34x_meta_body_memoisation.eu", "14");
+}
+
+/// As above, for a heap fragmented by deep recursions:
+/// `gc_004_fragmentation.eu` failed under `EU_GC_STRESS` at 10 MiB.
+#[test]
+fn stress_evacuation_compacts_fragmented_heap_under_limit() {
+    assert_stress_passes_under_limit("tests/harness/gc/gc_004_fragmentation.eu", "10");
 }
