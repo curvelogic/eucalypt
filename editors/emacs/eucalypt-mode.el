@@ -159,6 +159,9 @@ Set via file-local variables, e.g.:
      ;; T-strings (ZDT / zoned date-time literals — no interpolation)
      (t_string) @font-lock-constant-face
      (t_string_content) @font-lock-constant-face
+     ;; S-strings (type-data literals — opaque, no interpolation)
+     (s_string) @font-lock-string-face
+     (s_string_content) @font-lock-string-face
      ;; Brace escapes ({{ and }} in plain/raw strings)
      (brace_escape) @font-lock-escape-face)
 
@@ -335,12 +338,13 @@ Set via file-local variables, e.g.:
 
 (defun eucalypt-mode--syntax-propertize (start end)
   "Mark string delimiters with string-fence syntax between START and END.
-Uses tree-sitter to find string nodes (string, c_string, r_string)
+Uses tree-sitter to find string nodes (string, c_string, r_string,
+t_string, s_string)
 and applies syntax class 15 (string fence) to the opening and closing
 quote characters.  This allows `syntax-ppss' to detect string context
 without relying on the buffer syntax table."
   (let ((root (treesit-buffer-root-node)))
-    (dolist (type '("string" "c_string" "r_string" "t_string"))
+    (dolist (type '("string" "c_string" "r_string" "t_string" "s_string"))
       (dolist (node (treesit-query-capture
                      root
                      (format "((%s) @s)" type)

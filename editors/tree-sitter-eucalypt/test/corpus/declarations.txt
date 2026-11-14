@@ -1467,9 +1467,9 @@ range[lo, hi]: hi - lo
         (identifier)))))
 
 ================================================================================
-Juxtaposed block-parameter head after a value (eu-ioz21.7: without the
-scanner's `name{...}:` lookahead, `m{x: px}` joins the previous soup and
-`: px` becomes a symbol)
+Juxtaposed block-parameter head after a value (eu-ioz21.7: while a
+symbol's name could follow whitespace, `m{x: px}` joined the previous soup
+and `: px` became a symbol)
 ================================================================================
 
 a: x
