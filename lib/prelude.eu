@@ -2008,18 +2008,18 @@ cal: {
 ##
 
 ` { export: :suppress
-    doc: "Functions for working with sets of primitive values (numbers, strings, symbols)." }
+    doc: "Functions for working with sets of primitive values (numbers, strings, symbols) and lists of them." }
 set: {
 
-  ` { doc: "`set.of(xs)` - create a set from list `xs` of primitive values, in one pass (duplicates removed)."
+  ` { doc: "`set.of(xs)` - create a set from list `xs` of primitive values or lists of them, in one pass (duplicates removed)."
       type: s"[a] → any" }
   of: '__SET.OF'
 
-  ` { doc: "`set.from-list(xs)` - alias of `set.of`: create a set from list `xs` of primitive values."
+  ` { doc: "`set.from-list(xs)` - alias of `set.of`: create a set from list `xs` of primitive values or lists of them."
       type: s"[a] → any" }
   from-list: of
 
-  ` { doc: "`set.to-list(s)` - return sorted list of elements in set `s`."
+  ` { doc: "`set.to-list(s)` - return sorted list of elements in set `s`: numbers, then strings, then symbols, then lists."
       type: s"any → [a]" }
   to-list: '__SET.TO_LIST'
 

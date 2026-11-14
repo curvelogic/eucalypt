@@ -1,2 +1,2 @@
-` "eu-oaz72.32: a non-primitive element in set.from-list raises the typed error set.add raises, not a bare panic."
-result: [1, [2]] set.from-list
+` "eu-oaz72.32: an element that cannot be a set element in set.from-list raises the typed error set.add raises, not a bare panic. Lists are elements (eu-oaz72.21), so the bad element is a list holding a block."
+result: [1, [2, {a: 1}]] set.from-list

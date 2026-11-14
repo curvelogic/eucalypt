@@ -312,8 +312,8 @@ map: __MAP
 
 ```eu,notest
 # Named aliases in unit metadata
-{ types: { Point: "{x: number, y: number}"
-           Person: "{name: string, age: number, email: string | null, ..}" } }
+{ types: { Point: s"{x: number, y: number}"
+           Person: s"{name: string, age: number, email: string | null, ..}" } }
 
 # Alias using binding name (shorthand — `:type-def` or `type-def: true`)
 ` :type-def
@@ -827,8 +827,10 @@ Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
 ### 3.2a Sets and Vecs
 
 Build a collection from a list with `of`; `from-list` is an alias of it
-(the same function), pairing with `to-list`. Elements must be primitives
-(numbers, strings, symbols).
+(the same function), pairing with `to-list`. Vec elements must be
+primitives (numbers, strings, symbols); set elements may also be lists of
+them, keyed as dict keys are (`[[1, 2]] set.of set.contains?([1, 2])` is
+true), ordered after scalars.
 
 ```
 s: [3, 1, 3, 2] set.of           # set of 1, 2, 3 (alias: set.from-list)

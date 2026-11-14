@@ -6423,9 +6423,11 @@ mod tests {
     /// heap blocks (string elements interleaved with unrooted fillers), with
     /// the containers reachable only through a bif frame.
     fn native_containers_fixture(heap: &Heap) -> NativeContainers {
+        use crate::eval::memory::dict::Dict;
         use crate::eval::memory::ndarray::{self, HeapNdArray};
-        use crate::eval::memory::set::{sort_dedup, HeapSet, Primitive};
+        use crate::eval::memory::set::{HeapSet, Primitive};
         use crate::eval::memory::string::HeapString;
+        use crate::eval::memory::symbol::SymbolPool;
         use crate::eval::memory::vec::HeapVec;
 
         let view = MutatorHeapView::new(heap);
@@ -6447,9 +6449,9 @@ mod tests {
             .alloc(HeapVec::from_slice(&view, &elems).unwrap())
             .unwrap()
             .as_ptr();
-        let sorted = sort_dedup(&view, elems);
+        let pool = SymbolPool::new();
         let set = view
-            .alloc(HeapSet::from_sorted(&view, &sorted).unwrap())
+            .alloc(HeapSet::from_elements(&Dict::new(view, &pool), elems).unwrap())
             .unwrap()
             .as_ptr();
         let flat: Vec<f64> = (0..600).map(|i| i as f64).collect();
@@ -6466,6 +6468,15 @@ mod tests {
             vec,
             arr,
         }
+    }
+
+    /// The address of a set's root tree node (its storage, which an
+    /// evacuating collection moves).
+    fn set_root_addr(
+        view: &MutatorHeapView<'_>,
+        set: RefPtr<crate::eval::memory::set::HeapSet>,
+    ) -> usize {
+        view.scoped(set).root().map_or(0, |p| p.as_ptr() as usize)
     }
 
     /// Assert the fixture's containers read back intact.
@@ -6489,7 +6500,11 @@ mod tests {
         }
         let s = view.scoped(set);
         assert_eq!(s.len(), 128);
-        for (i, e) in s.elements()[64..].iter().enumerate() {
+        let pool = crate::eval::memory::symbol::SymbolPool::new();
+        let d = crate::eval::memory::dict::Dict::new(view, &pool);
+        d.check_invariants(s.root())
+            .expect("set tree intact across GC");
+        for (i, e) in s.elements(&d)[64..].iter().enumerate() {
             assert_eq!(
                 e.str_in(&view),
                 Some(format!("elem-{i:03}").as_str()),
@@ -6527,7 +6542,7 @@ mod tests {
         let old_backings = {
             let view = MutatorHeapView::new(&heap);
             [
-                view.scoped(set).elements().as_ptr() as usize,
+                set_root_addr(&view, set),
                 view.scoped(vec).elements().as_ptr() as usize,
                 view.scoped(arr).shape().as_ptr() as usize,
                 view.scoped(arr).view().as_ptr() as usize,
@@ -6574,7 +6589,7 @@ mod tests {
         assert_native_containers_intact(&heap, set, vec, arr);
         let view = MutatorHeapView::new(&heap);
         let new_backings = [
-            view.scoped(set).elements().as_ptr() as usize,
+            set_root_addr(&view, set),
             view.scoped(vec).elements().as_ptr() as usize,
             view.scoped(arr).shape().as_ptr() as usize,
             view.scoped(arr).view().as_ptr() as usize,
@@ -6636,7 +6651,7 @@ mod tests {
                 )
                 .unwrap();
             let old = [
-                view.scoped(set).elements().as_ptr() as usize,
+                set_root_addr(&view, set),
                 view.scoped(vec).elements().as_ptr() as usize,
                 view.scoped(arr).view().as_ptr() as usize,
             ];
@@ -6663,7 +6678,7 @@ mod tests {
             _ => panic!("env frame slots changed shape"),
         };
         let new_backings = [
-            view.scoped(set).elements().as_ptr() as usize,
+            set_root_addr(&view, set),
             view.scoped(vec).elements().as_ptr() as usize,
             view.scoped(arr).view().as_ptr() as usize,
         ];
@@ -6684,7 +6699,9 @@ mod tests {
         // blocks holding their backing arrays.
         use crate::eval::machine::metrics::ThreadOccupation;
         use crate::eval::memory::collect::collect;
+        use crate::eval::memory::dict::Dict;
         use crate::eval::memory::set::{HeapSet, Primitive};
+        use crate::eval::memory::symbol::SymbolPool;
 
         let mut heap = Heap::new();
         let mut clock = Clock::default();
@@ -6695,8 +6712,10 @@ mod tests {
             let elems: Vec<Primitive> = (0..1000)
                 .map(|i| Primitive::Num((i as f64).into()))
                 .collect();
+            let pool = SymbolPool::new();
+            let d = Dict::new(view, &pool);
             for _ in 0..200 {
-                view.alloc(HeapSet::from_sorted(&view, &elems).unwrap())
+                view.alloc(HeapSet::from_elements(&d, elems.clone()).unwrap())
                     .unwrap();
             }
             root

@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error[EU-EVAL-TYPE]: a function cannot be a set element: set elements must be numbers, strings or symbols
+error[EU-EVAL-TYPE]: a function cannot be a set element: set elements must be numbers, strings or symbols, or lists of them
   ┌─ tests/harness/errors/241_oaz72_32_set_of_function.eu:2:19
   │
 2 │ result: [(_ + 1)] set.from-list

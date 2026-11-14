@@ -581,3 +581,42 @@ Recorded as built; none changes an agreed choice.
   `(number, :d)`) under the §9 `assoc`; the loosened `assoc` no longer
   does. `cons([2, :d], [[3, :c]])` still warns; the fix belongs to the
   checker (eu-oaz72.127).
+
+## 15. Implementation notes (PR 5)
+
+Recorded as built; none changes an agreed choice.
+
+- **A header over the tree.** `Native::Set` keeps its shape,
+  `RefPtr<HeapSet>`, and `HeapSet` becomes a one-field header
+  `{ root: Tree }` over `DictNode`s whose values are an inert unit
+  (`Native::Num(0)`, no heap pointer, so set values need no tracing and no
+  per-element allocation). Every set operation allocates a fresh header, so
+  set `=` (identity, choice 12) behaves exactly as before — `s set.add(x)`
+  for a member, and two separately built empty sets, are still unequal to
+  their inputs — and the GC entry points for `Native::Set`
+  (`scan_native`/`update_native`, the machine's `Ref::V` arms) are
+  unchanged: they already push the header, whose `scan` now marks and
+  pushes the root node and whose `scan_and_update` rewrites it.
+- **Operations.** `add` (a member keeps the tree as it is), `remove` and
+  `contains?` are `Dict::insert`/`delete`/`lookup`; `size` reads the root's
+  weight; `of` sorts, deduplicates (first occurrence kept) and builds
+  bottom-up; `to-list` and rendering walk in order. `union` is
+  `union_with` keeping `a`'s key; `intersect` and `diff` are new join-based
+  tree operations (`Dict::intersect`, `Dict::difference`, recursion bounded
+  by the second tree's height). `sample` keeps its draws — a partial
+  Fisher–Yates over ranks — but records only swapped positions and finds
+  each rank with `Dict::nth`, so it is O(k log n) rather than O(n).
+- **Elements.** Elements are numbers, strings, symbols and lists of them
+  (OPEN 8, accepted), keyed as dict keys are. The element wrappers and
+  `set.of` deep-force with `seqKey`; scalars convert through `Primitive`
+  (still the vec element type), lists become `DictKey::List` (nested at
+  most 32 deep). Error decision: anything else is still eu-oaz72.64's
+  `InvalidElement`, a list holding a bad value is described as "a list
+  holding a block", the set message lists "or lists of them", and
+  `set.contains?` returns false for such values. `to-list` boxes list
+  elements as cons-lists, and rendering emits them as nested sequences.
+- **Visible change.** Symbols now order by name (OPEN 2), not by intern
+  order, so `set.to-list` of a set holding several symbols may come back in
+  a different order; numbers and strings are unchanged. Numbers were
+  already exact in sets (eu-oaz72.5).
+- Measurements: `docs/superpowers/reports/2026-11-14-sets-on-dict-benchmarks.md`.

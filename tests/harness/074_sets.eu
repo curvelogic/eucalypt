@@ -168,6 +168,109 @@ exact-checks: {
   ]
 }
 
+` "Sets on tree nodes (eu-oaz72.21) — add, remove and membership on larger
+sets, symbols ordered by name, join-based algebra, fresh results and
+rank-based sampling"
+
+tree-checks: {
+  n: 2000
+
+  ` "multiples of 3 below 6000"
+  big: range(0, n) map(* 3) set.from-list
+
+  ` "multiples of 2 below 4000; the multiples of 6 below 4000 (667 of them) are shared with `big`"
+  evens: range(0, n) map(* 2) set.from-list
+
+  ` "`big` built by adding its elements one at a time, largest first"
+  added: foldl(_0 set.add(_1), ∅, range(0, n) map(* 3) reverse)
+
+  ` "`big` with every odd multiple of 3 removed"
+  removed: foldl(_0 set.remove(_1), big, range(0, n) filter(_ % 2 = 1) map(* 3))
+
+  ` "`:zz` is interned before `:aa`, so an order by intern id would differ from the order by name"
+  first-zz: :zz
+
+  mixed: [:zz, "b", 2, :aa, "a", 1.5, :mm] set.from-list
+
+  ` "fifty elements drawn with the random monad"
+  drawn: set.sample(50, big, random.stream(42)).value
+
+  trues: [
+    (big set.size) = n,
+    (added set.size) = n,
+    (removed set.size) = n / 2,
+    (big set.add(3) set.size) = n,
+    (big set.remove(1) set.size) = n,
+    big set.contains?(5997),
+    not(big set.contains?(5998)),
+    not(removed set.contains?(3)),
+    removed set.contains?(6),
+    (added set.to-list) = (big set.to-list),
+    (mixed set.to-list) = [1.5, 2, "a", "b", :aa, :mm, :zz],
+    (mixed set.add(:bb) set.to-list) = [1.5, 2, "a", "b", :aa, :bb, :mm, :zz],
+    (mixed set.remove(:mm) set.to-list) = [1.5, 2, "a", "b", :aa, :zz],
+    (removed set.to-list take(3)) = [0, 6, 12],
+    (big set.intersect(evens) set.size) = 667,
+    (big set.intersect(evens) set.to-list take(3)) = [0, 6, 12],
+    (big set.diff(evens) set.size) = n - 667,
+    (big set.diff(evens) set.to-list take(3)) = [3, 9, 15],
+    (evens set.diff(big) set.size) = n - 667,
+    (big set.union(evens) set.size) = n + n - 667,
+    (big set.union(∅) set.size) = n,
+    (∅ set.intersect(big) set.size) = 0,
+    (big set.diff(big) set.size) = 0,
+    # `=` on sets is identity, and every operation returns a fresh set
+    not((big set.add(3)) = big),
+    not((big set.remove(1)) = big),
+    not(∅ = (∅ set.add(1) set.remove(1))),
+    (drawn set.size) = 50,
+    (drawn set.diff(big) set.size) = 0,
+    # fixed floats fix the draws of the partial Fisher-Yates over ranks:
+    # [0.5, 0.5] picks rank 1000, then rank 1000 again, which the first
+    # draw swapped with rank 0
+    (big set.sample-raw([0.5, 0.0, 0.999, 0.25]) set.to-list) = [3, 1506, 3000, 5994],
+    (big set.sample-raw([0.5, 0.5]) set.to-list) = [0, 3000],
+    (big set.sample-raw(range(0, n + 5) map(-> 0.5)) set.size) = n,
+    (∅ set.sample-raw([0.5]) set.size) = 0
+  ]
+}
+
+` "List elements (eu-oaz72.21, design note OPEN 8): an element may be a list of elements, keyed as dict keys are; lists order after scalars, lexicographically"
+
+list-checks: {
+
+  ` "grid points as `[x, y]` pairs, with a duplicate and an element computed from thunks"
+  points: [[2, 1], [1, 2], [1 + 0, 2], [0, 5]] set.from-list
+
+  ` "a set mixing scalars, lists, an empty list and a nested list"
+  mixed: [[1, [2]], :a, [], 3, [1, 2], "s"] set.from-list
+
+  trues: [
+    (points set.size) = 3,
+    (points set.to-list) = [[0, 5], [1, 2], [2, 1]],
+    points set.contains?([1, 2]),
+    points set.contains?([2 * 1, 1]),
+    not(points set.contains?([2, 2])),
+    not(points set.contains?([1])),
+    not(points set.contains?(1)),
+    not(points set.contains?([1, {x: 1}])),
+    ([0, 5] ∈ points),
+    (points set.add([1, 1]) set.to-list) = [[0, 5], [1, 1], [1, 2], [2, 1]],
+    (points set.add([1, 2]) set.size) = 3,
+    (points set.add([3 - 1, 1]) set.size) = 3,
+    (points set.remove([1, 2]) set.to-list) = [[0, 5], [2, 1]],
+    (points set.remove([9, 9]) set.size) = 3,
+    (foldl(_0 set.add(_1), ∅, [[1, 2], [0, 5], [2, 1], [0, 5]]) set.to-list) = (points set.to-list),
+    (mixed set.to-list) = [3, "s", :a, [], [1, 2], [1, [2]]],
+    mixed set.contains?([1, [2]]),
+    not(mixed set.contains?([1, [3]])),
+    (points set.union([[9, 9]] set.from-list) set.size) = 4,
+    (points set.intersect([[1, 2], [7, 7]] set.from-list) set.to-list) = [[1, 2]],
+    (points set.diff([[1, 2]] set.from-list) set.to-list) = [[0, 5], [2, 1]],
+    (points render-as(:json) parse-as(:json)) = [[0, 5], [1, 2], [2, 1]]
+  ]
+}
+
 pass: [
   construction-checks.trues all-true?,
   empty-checks.trues all-true?,
@@ -179,7 +282,9 @@ pass: [
   computed-checks.trues all-true?,
   operator-checks.trues all-true?,
   churn-checks.trues all-true?,
-  exact-checks.trues all-true?
+  exact-checks.trues all-true?,
+  tree-checks.trues all-true?,
+  list-checks.trues all-true?
 ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)

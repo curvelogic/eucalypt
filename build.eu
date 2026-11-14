@@ -59,7 +59,7 @@ build: {
 ` {target: :version
    format: :text
    doc: "version number for the current build"}
-new-version: "{version.major}.{version.minor}.{version.patch}+{build.number str.of}"
+new-version: "{version.major}.{version.minor}.{version.patch}+{build.number}"
 
 ` {target: :build-meta
    doc: "build metadata to embed as resource in binary"}

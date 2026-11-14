@@ -668,15 +668,14 @@ pub fn dict_arg(
     }
 }
 
-/// Return a set from intrinsic, copying `sorted` (already sorted and
-/// deduplicated) into the heap.
+/// Return a set over the element tree `root` (a fresh header, so set
+/// `=`, which compares by identity, sees a new set).
 pub fn machine_return_set(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    sorted: &[crate::eval::memory::set::Primitive],
+    root: crate::eval::memory::dict::Tree,
 ) -> Result<(), ExecutionError> {
-    let set = HeapSet::from_sorted(&view, sorted)?;
-    let ptr = view.alloc(set)?.as_ptr();
+    let ptr = view.alloc(HeapSet::new(root))?.as_ptr();
     machine.return_native(view, Native::Set(ptr))
 }
 
