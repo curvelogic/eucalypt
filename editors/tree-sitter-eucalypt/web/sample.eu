@@ -9,4 +9,4 @@ checks: {
   trues: [ quadruple(4) = 16 ]
 }
 
-RESULT: __IF(checks.trues all-true?, :PASS, :FAIL)
+RESULT: checks.trues all-true? then(:PASS, :FAIL)
