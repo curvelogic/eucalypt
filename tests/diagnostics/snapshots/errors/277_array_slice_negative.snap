@@ -1,14 +1,14 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/277_array_slice_negative
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/277_array_slice_negative.eu
-prelude-modes: divergent
+prelude-modes: identical
 
-=== blob prelude ===
+=== both prelude modes ===
 exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/277_array_slice_negative.eu:2:4
+primary: user tests/harness/errors/277_array_slice_negative.eu:2:40
 help-lines: 0
 note-lines: 0
 secondary-labels: 1
@@ -19,34 +19,12 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: negative array index or dimension: -1 — array indices and dimensions must be non-negative
-  ┌─ tests/harness/errors/277_array_slice_negative.eu:2:4
+  ┌─ tests/harness/errors/277_array_slice_negative.eu:2:40
   │
 2 │ r: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.slice(0, -1)
-  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ --- called from here
-  │
-  = while evaluating (outermost first):
-    - r at 277_array_slice_negative.eu:2:40
-
-=== --source-prelude ===
-exit: 1
-errors: 1
-warnings: 0
-code: -
-primary: user tests/harness/errors/277_array_slice_negative.eu:2:4
-help-lines: 0
-note-lines: 0
-secondary-labels: 1
-trace-frames: 1
-trace-user-frames: 1
-trace-prelude-frames: 0
-prelude-excerpt-lines: 0
-rust-panic: no
---- stderr ---
-error: negative array index or dimension: -1 — array indices and dimensions must be non-negative
-  ┌─ tests/harness/errors/277_array_slice_negative.eu:2:4
-  │
-2 │ r: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.slice(0, -1)
-  │    ^^^                                 --- called from here
+  │                                        ^^^^^^^^^^^^^^^^
+  │                                        │
+  │                                        called from here
   │
   = while evaluating (outermost first):
     - r at 277_array_slice_negative.eu:2:40

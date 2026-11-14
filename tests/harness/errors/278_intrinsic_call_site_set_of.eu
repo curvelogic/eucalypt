@@ -1,0 +1,5 @@
+` "Two consecutive integers as a vec: annotated user code that the bad element is computed by."
+pair(n): [n, n + 1] vec.of
+
+` "set.from-list rejects the vec element: the error points at this call, not at pair's body."
+result: [1, pair(1)] set.from-list

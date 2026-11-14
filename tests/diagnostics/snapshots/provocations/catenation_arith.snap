@@ -8,10 +8,10 @@ exit: 1
 errors: 1
 warnings: 0
 code: EU-EVAL-TYPE
-primary: user tests/diagnostics/corpus/catenation_arith.eu:2:7
+primary: user tests/diagnostics/corpus/catenation_arith.eu:2:19
 help-lines: 0
 note-lines: 1
-secondary-labels: 1
+secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
 trace-prelude-frames: 0
@@ -19,10 +19,10 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
-  ┌─ tests/diagnostics/corpus/catenation_arith.eu:2:7
+  ┌─ tests/diagnostics/corpus/catenation_arith.eu:2:19
   │
 2 │ n: xs foldl(+, 0) + 1
-  │       ^^^^^^^^^^^ - called from here
+  │                   ^
   │
   = a function value cannot be used directly here; it must first be called with all of its remaining arguments
   = while evaluating (outermost first):

@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/278_intrinsic_call_site_set_of
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/278_intrinsic_call_site_set_of.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/278_intrinsic_call_site_set_of.eu:5:22
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected set, found vec
+  ┌─ tests/harness/errors/278_intrinsic_call_site_set_of.eu:5:22
+  │
+5 │ result: [1, pair(1)] set.from-list
+  │                      ^^^
+  │
+  = while evaluating (outermost first):
+    - result at 278_intrinsic_call_site_set_of.eu:5:22
