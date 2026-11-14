@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/241_oaz72_32_set_of_function.eu:2:9
+primary: user tests/harness/errors/241_oaz72_32_set_of_function.eu:2:19
 help-lines: 1
 note-lines: 0
 secondary-labels: 0
@@ -20,10 +20,10 @@ rust-panic: no
 --- stderr ---
 error: expected a primitive value but found expected native value
   help: this can occur when a function or structured value appears where a primitive (number, string, etc.) was expected
-  ┌─ tests/harness/errors/241_oaz72_32_set_of_function.eu:2:9
+  ┌─ tests/harness/errors/241_oaz72_32_set_of_function.eu:2:19
   │
 2 │ result: [(_ + 1)] set.from-list
-  │         ^^^^^^^^^
+  │                   ^^^
   │
   = while evaluating (outermost first):
     - result at 241_oaz72_32_set_of_function.eu:2:19

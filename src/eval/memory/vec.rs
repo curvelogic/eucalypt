@@ -82,15 +82,14 @@ impl HeapVec {
 mod tests {
     use super::*;
     use crate::eval::memory::{heap::Heap, mutator::MutatorHeapView};
-    use ordered_float::OrderedFloat;
 
     fn num(n: f64) -> Primitive {
-        Primitive::Num(OrderedFloat(n))
+        Primitive::Num(n.into())
     }
 
     fn val(p: Option<Primitive>) -> Option<f64> {
         p.map(|p| match p {
-            Primitive::Num(n) => n.into_inner(),
+            Primitive::Num(n) => n.as_f64(),
             _ => panic!("not a number"),
         })
     }

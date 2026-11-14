@@ -278,6 +278,17 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(dict::DictDissoc));
     rt.add(Box::new(dict::DictContains));
     rt.add(Box::new(dict::DictSize));
+    rt.add(Box::new(dict::DictKeys));
+    rt.add(Box::new(dict::DictValues));
+    rt.add(Box::new(dict::DictMin));
+    rt.add(Box::new(dict::DictMax));
+    rt.add(Box::new(dict::DictPopMin));
+    rt.add(Box::new(dict::DictPopMax));
+    rt.add(Box::new(dict::DictRange));
+    rt.add(Box::new(dict::DictUpdate));
+    rt.add(Box::new(dict::DictUpdateStrict));
+    rt.add(Box::new(dict::DictMergeWith));
+    rt.add(Box::new(dict::DictToBlock));
     rt.prepare(source_map);
     Box::new(rt)
 }

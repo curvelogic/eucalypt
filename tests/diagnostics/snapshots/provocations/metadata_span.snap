@@ -8,27 +8,23 @@ exit: 1
 errors: 1
 warnings: 0
 code: EU-EVAL-TYPE
-primary: user tests/diagnostics/corpus/metadata_span.eu:3:1
+primary: user tests/diagnostics/corpus/metadata_span.eu:2:27
 help-lines: 0
 note-lines: 1
 secondary-labels: 2
-trace-frames: 1
-trace-user-frames: 1
+trace-frames: 0
+trace-user-frames: 0
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error[EU-EVAL-TYPE]: type mismatch: expected number, found string "2"
-  ┌─ tests/diagnostics/corpus/metadata_span.eu:3:1
+  ┌─ tests/diagnostics/corpus/metadata_span.eu:2:27
   │
 2 │ scale(factor, xs): xs map(* factor)
-  │ -----------------------------------
+  │ --------------------------^--------
   │ │                     │
   │ │                     called from here
   │ called from here
-3 │ doubled(xs): scale("2", xs)
-  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = to convert a string to a number, use 'num', e.g. 's num'
-  = while evaluating (outermost first):
-    - doubled at metadata_span.eu:3:1

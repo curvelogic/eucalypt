@@ -515,6 +515,14 @@ and each is computed at most once.
 | `d dict.assoc(k, v)` / `d dict.dissoc(k)` | New dict with `k` set / removed (O(log n)) |
 | `d dict.contains?(k)` / `d dict.size` | Holds `k`? / number of entries |
 | `d dict.to-list` | `[key, value]` pairs in key order |
+| `d dict.keys` / `d dict.values` | Keys / values in key order |
+| `d dict.min` / `d dict.max` | `[key, value]` for the least / greatest key; an error if empty |
+| `d dict.pop-min` / `d dict.pop-max` | `[key, value, rest]`; with keys `[priority, item]`, a priority queue |
+| `d dict.range(lo, hi)` | Sub-dict of keys `lo ≤ k < hi` |
+| `d dict.update(k, f, default)` | Map `k` to `f(old)`, `old` defaulting to `default` (lazy) |
+| `d dict.update-strict(k, f, default)` | As `update`, evaluating `f(old)` now: `d dict.update-strict(k, + 1, 0)` counts |
+| `b dict.merge-with(f, a)` | Union; `f(va, vb)` where both hold a key (lazy; `merge-with-strict` evaluates it) |
+| `b dict.from-block` / `d dict.to-block` | Block to dict (symbol keys) / dict to block (string, symbol and number keys) |
 
 Keys order numbers < strings < symbols < lists; `1` and `1.0` are the same
 key. A dict cannot be rendered yet: convert it with `dict.to-list` first.

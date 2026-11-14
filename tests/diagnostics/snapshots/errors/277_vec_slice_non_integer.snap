@@ -11,7 +11,7 @@ code: -
 primary: user tests/harness/errors/277_vec_slice_non_integer.eu:2:23
 help-lines: 0
 note-lines: 0
-secondary-labels: 1
+secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
 trace-prelude-frames: 0
@@ -22,9 +22,7 @@ error: vec.slice to 2.5 must be an integer
   ┌─ tests/harness/errors/277_vec_slice_non_integer.eu:2:23
   │
 2 │ r: vec.of[10, 20, 30] vec.slice(0, 2.5)
-  │    ------------------ ^^^^^^^^^^^^^^^^^
-  │    │
-  │    called from here
+  │                       ^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
     - r at 277_vec_slice_non_integer.eu:2:23
@@ -37,7 +35,7 @@ code: -
 primary: user tests/harness/errors/277_vec_slice_non_integer.eu:2:23
 help-lines: 0
 note-lines: 0
-secondary-labels: 2
+secondary-labels: 1
 trace-frames: 1
 trace-user-frames: 1
 trace-prelude-frames: 0
@@ -48,10 +46,9 @@ error: vec.slice to 2.5 must be an integer
   ┌─ tests/harness/errors/277_vec_slice_non_integer.eu:2:23
   │
 2 │ r: vec.of[10, 20, 30] vec.slice(0, 2.5)
-  │    ---                ^^^^^^^^^^^^^^^^^
-  │    │                  │
-  │    │                  called from here
-  │    called from here
+  │                       ^^^^^^^^^^^^^^^^^
+  │                       │
+  │                       called from here
   │
   = while evaluating (outermost first):
     - r at 277_vec_slice_non_integer.eu:2:23

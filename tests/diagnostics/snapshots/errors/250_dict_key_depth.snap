@@ -8,28 +8,24 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/250_dict_key_depth.eu:5:9
+primary: user tests/harness/errors/250_dict_key_depth.eu:5:20
 help-lines: 0
 note-lines: 1
-secondary-labels: 1
-trace-frames: 2
-trace-user-frames: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: invalid dict key: list keys may be nested at most 32 deep
-  ┌─ tests/harness/errors/250_dict_key_depth.eu:5:9
+  ┌─ tests/harness/errors/250_dict_key_depth.eu:5:20
   │
-2 │ nest(n, x): (n = 0) then(x, nest(n - 1, [x]))
-  │                - called from here
-  ·
 5 │ result: dict.empty dict.assoc(nest(33, 1), :v) dict.size
-  │         ^^^^
+  │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = dict keys are numbers, strings, symbols, or lists of those (nested at most 32 deep)
   = while evaluating (outermost first):
-    - nest at 250_dict_key_depth.eu:2:1
     - result at 250_dict_key_depth.eu:5:48
 
 === --source-prelude ===
@@ -37,26 +33,22 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/250_dict_key_depth.eu:5:48
+primary: user tests/harness/errors/250_dict_key_depth.eu:5:20
 help-lines: 0
 note-lines: 1
-secondary-labels: 1
-trace-frames: 2
-trace-user-frames: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: invalid dict key: list keys may be nested at most 32 deep
-  ┌─ tests/harness/errors/250_dict_key_depth.eu:5:48
+  ┌─ tests/harness/errors/250_dict_key_depth.eu:5:20
   │
-2 │ nest(n, x): (n = 0) then(x, nest(n - 1, [x]))
-  │                - called from here
-  ·
 5 │ result: dict.empty dict.assoc(nest(33, 1), :v) dict.size
-  │                                                ^^^^
+  │                    ^^^^
   │
   = dict keys are numbers, strings, symbols, or lists of those (nested at most 32 deep)
   = while evaluating (outermost first):
-    - nest at 250_dict_key_depth.eu:2:1
     - result at 250_dict_key_depth.eu:5:48

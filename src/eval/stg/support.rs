@@ -507,9 +507,7 @@ pub fn set_primitive_to_native(prim: &crate::eval::memory::set::Primitive) -> Na
     use crate::eval::memory::set::Primitive as SetPrim;
     match prim {
         SetPrim::Num(n) => {
-            let num = serde_json::Number::from_f64(n.into_inner())
-                .unwrap_or_else(|| serde_json::Number::from(0));
-            Native::Num(num)
+            Native::Num(n.to_number().unwrap_or_else(|| serde_json::Number::from(0)))
         }
         SetPrim::Str(s) => Native::Str(*s),
         SetPrim::Sym(id) => Native::Sym(*id),

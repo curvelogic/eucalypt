@@ -1112,6 +1112,61 @@ lazy_static! {
             ty: function(vec![dict_type(), num()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 208
+            name: "DICT.KEYS",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 209
+            name: "DICT.VALUES",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 210
+            name: "DICT.MIN",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 211
+            name: "DICT.MAX",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 212
+            name: "DICT.POP_MIN",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 213
+            name: "DICT.POP_MAX",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 214
+            name: "DICT.RANGE",
+            ty: function(vec![any(), any(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 215
+            name: "DICT.UPDATE",
+            ty: function(vec![any(), any(), any(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![0, 3],
+    },
+    Intrinsic { // 216
+            name: "DICT.UPDATE_STRICT",
+            ty: function(vec![any(), any(), any(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![0, 3],
+    },
+    Intrinsic { // 217
+            name: "DICT.MERGE_WITH",
+            ty: function(vec![any(), dict_type(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![1, 2],
+    },
+    Intrinsic { // 218
+            name: "DICT.TO_BLOCK",
+            ty: function(vec![dict_type(), block()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

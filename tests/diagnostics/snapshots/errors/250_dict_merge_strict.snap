@@ -1,0 +1,60 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/250_dict_merge_strict
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_merge_strict.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_merge_strict.eu:2:13
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: combined
+  ┌─ tests/harness/errors/250_dict_merge_strict.eu:2:13
+  │
+2 │ boom(a, b): panic("combined")
+  │             ^^^^^^^^^^^^^^^^^
+3 │
+4 │ result: dict.merge-with-strict(boom, dict.of[[1, 1]], dict.of[[1, 2]]) dict.size
+  │         -------------------------------------------------------------- called from here
+  │
+  = while evaluating (outermost first):
+    - result at 250_dict_merge_strict.eu:4:72
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_merge_strict.eu:2:13
+help-lines: 0
+note-lines: 0
+secondary-labels: 2
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: combined
+  ┌─ tests/harness/errors/250_dict_merge_strict.eu:2:13
+  │
+2 │ boom(a, b): panic("combined")
+  │             ^^^^^^^^^^^^^^^^^
+3 │
+4 │ result: dict.merge-with-strict(boom, dict.of[[1, 1]], dict.of[[1, 2]]) dict.size
+  │         -------------------------------------------------------------- ---- called from here
+  │         │
+  │         called from here
+  │
+  = while evaluating (outermost first):
+    - result at 250_dict_merge_strict.eu:4:72

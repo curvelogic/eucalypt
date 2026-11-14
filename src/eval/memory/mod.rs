@@ -14,6 +14,7 @@ pub mod lob;
 pub mod mark;
 pub mod mutator;
 pub mod ndarray;
+pub mod number;
 pub mod set;
 pub mod string;
 pub mod symbol;
