@@ -22,15 +22,15 @@ const pagePath = "/editors/tree-sitter-eucalypt/web/index.html";
 // sources covering doc metadata, unicode operators, anaphora, sections,
 // juxtaposed calls and string interpolation.
 //
-// None declares a non-ASCII name after the first in a block: the native
-// scanner's iswalpha() runs in the C locale, where such a name is not a
-// letter, so the native CLI mis-parses those files (tests/harness/054_qsort.eu
-// is one) while the WASM build, whose iswalpha() is Unicode-aware, does not.
+// tests/harness/054_qsort.eu declares several Greek names in one block: the
+// native scanner once classified identifier characters with the C locale and
+// mis-parsed it, while the WASM build did not (eu-ioz21.9).
 const SAMPLES = [
   null,
   "tests/harness/093_cons_operator.eu",
   "tests/harness/094_juxtaposed_call.eu",
   "tests/harness/128_parse_args.eu",
+  "tests/harness/054_qsort.eu",
   "examples/aoc25/day01.eu",
 ];
 
