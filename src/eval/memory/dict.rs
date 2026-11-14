@@ -743,6 +743,35 @@ impl<'a> Dict<'a> {
         Ok(below_hi)
     }
 
+    /// The union of `a` and `b`. Where both hold equal keys, `a`'s key is
+    /// kept (an equal key keeps the stored key, as [`Dict::insert`]) and the
+    /// value is `combine(a_value, b_value)`. Join-based (split `a` at `b`'s
+    /// root, recurse, link): O(m log(n/m + 1)) for sizes m ≤ n, and the
+    /// recursion depth is bounded by `b`'s height.
+    pub fn union_with<F>(&self, a: Tree, b: Tree, combine: &mut F) -> Result<Tree, ExecutionError>
+    where
+        F: FnMut(&BcValue, &BcValue) -> Result<BcValue, ExecutionError>,
+    {
+        let Some(bp) = b else {
+            return Ok(a);
+        };
+        if a.is_none() {
+            return Ok(b);
+        }
+        let bn = self.node(bp);
+        let (l, found, r) = self.split(a, &bn.key)?;
+        let left = self.union_with(l, bn.left, combine)?;
+        let right = self.union_with(r, bn.right, combine)?;
+        let (key, value) = match found {
+            Some(f) => {
+                let fnode = self.node(f);
+                (fnode.key, combine(&fnode.value, &bn.value)?)
+            }
+            None => (bn.key, bn.value.clone()),
+        };
+        self.link(left, key, value, right)
+    }
+
     /// Build a perfectly balanced tree from entries in strictly increasing
     /// key order. O(n).
     pub fn build_sorted(&self, entries: &[Entry]) -> Result<Tree, ExecutionError> {
@@ -1109,6 +1138,74 @@ mod tests {
         assert!(d.range(t, &int(20), &int(10)).unwrap().is_none());
         assert!(d.range(t, &int(20), &int(20)).unwrap().is_none());
         assert_eq!(d.size(d.range(t, &int(-100), &int(10_000)).unwrap()), 500);
+    }
+
+    /// `union_with` keeps every key once, keeps `a`'s key where keys are
+    /// equal, combines `a`'s value with `b`'s (in that order) only on
+    /// collisions, and keeps the balance invariant for unequal sizes.
+    #[test]
+    fn union_with_combines_collisions() {
+        let heap = Heap::new();
+        let pool = SymbolPool::new();
+        let d = Dict::new(MutatorHeapView::new(&heap), &pool);
+        for (na, nb) in [
+            (0, 0),
+            (0, 7),
+            (7, 0),
+            (1, 300),
+            (300, 1),
+            (200, 300),
+            (37, 41),
+        ] {
+            // a holds the even keys below 2·na; b holds multiples of 3 below
+            // 3·nb, as floats (equal to, but not the same key as, a's ints).
+            let mut a: Tree = None;
+            for i in shuffled(na) {
+                a = d.insert(a, int(i * 2), val(i * 2)).unwrap();
+            }
+            let mut b: Tree = None;
+            for i in shuffled(nb) {
+                b = d.insert(b, float((i * 3) as f64), val(i * 3)).unwrap();
+            }
+            let mut calls = 0;
+            let u = d
+                .union_with(a, b, &mut |va, vb| {
+                    calls += 1;
+                    Ok(val(val_of(va) * 1000 + val_of(vb)))
+                })
+                .unwrap();
+            d.check_invariants(u).unwrap();
+            let mut expected: Vec<(i64, i64)> = Vec::new();
+            let mut collisions = 0;
+            for k in 0..(2 * na).max(3 * nb) {
+                let (in_a, in_b) = (k % 2 == 0 && k < 2 * na, k % 3 == 0 && k < 3 * nb);
+                match (in_a, in_b) {
+                    (true, true) => {
+                        collisions += 1;
+                        expected.push((k, k * 1000 + k))
+                    }
+                    (true, false) | (false, true) => expected.push((k, k)),
+                    _ => {}
+                }
+            }
+            let got: Vec<(i64, i64)> = d
+                .entries(u)
+                .iter()
+                .map(|(k, v)| (k.to_number().unwrap().as_f64().unwrap() as i64, val_of(v)))
+                .collect();
+            assert_eq!(got, expected, "union of {na} and {nb}");
+            assert_eq!(calls, collisions);
+            // On a collision the stored key is a's (an int, not b's float).
+            for (k, _) in d.entries(u) {
+                let n = k.to_number().unwrap().as_f64().unwrap() as i64;
+                if n % 2 == 0 && n < 2 * na {
+                    assert!(
+                        matches!(k, DictKey::Num(ExactNum::Int(_))),
+                        "key {n} should be a's"
+                    );
+                }
+            }
+        }
     }
 
     /// `link` and `merge` keep the balance invariant for every pair of

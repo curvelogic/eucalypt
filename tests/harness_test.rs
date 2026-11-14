@@ -643,6 +643,18 @@ pub fn test_bench_022_hof_fold() {
     run_test(&opts("bench/022_hof_fold.eu"));
 }
 
+// Dict workloads (eu-oaz72.21): Dijkstra with a dict as the priority queue,
+// and counting by key over 75 blinks of stone splitting.
+#[test]
+pub fn test_bench_023_dict_dijkstra() {
+    run_test(&opts("bench/023_dict_dijkstra.eu"));
+}
+
+#[test]
+pub fn test_bench_024_dict_counting() {
+    run_test(&opts("bench/024_dict_counting.eu"));
+}
+
 #[test]
 pub fn test_harness_071() {
     run_test(&opts("071_sorting_lists.eu"));
@@ -3192,14 +3204,21 @@ pub fn test_236_oaz72_36_constructor_field_sharing() {
 
 /// Dicts (eu-oaz72.21). Every target must pass; in addition a lazy dict
 /// value lives in a memoising cell, so three reads of it — through `get`,
-/// `get-or` and `to-list`, from several dict versions sharing the cell — must
-/// cost about one fold, not three, and a dict threaded through a loop must
-/// not retain its earlier versions.
+/// `get-or` and `to-list`, from several dict versions sharing the cell, and
+/// for values built by `update` and `merge-with` — must cost about one fold,
+/// not three, and a dict threaded through a loop must not retain its earlier
+/// versions.
 #[test]
 pub fn test_250_dict() {
     let file = "250_dict.eu";
     let fold = ticks_with_demand_analysis(file, "fold");
-    for target in ["of-shared", "assoc-shared", "to-list-shared"] {
+    for target in [
+        "of-shared",
+        "assoc-shared",
+        "to-list-shared",
+        "update-shared",
+        "merge-shared",
+    ] {
         let shared = ticks_with_demand_analysis(file, target);
         assert!(
             shared * 2 < fold * 3,
@@ -3235,6 +3254,20 @@ pub fn test_250_dict() {
         peak < 2500,
         "assoc-chain-lists peaked at {peak} heap blocks: earlier dict versions are \
          being retained by stored list values (eu-oaz72.70)"
+    );
+    // The same for `dict.update`: the new value's application is built over
+    // a fresh frame `[f, old]`, not the caller's frame, which holds the
+    // previous version.
+    let peak = stat(
+        file,
+        "update-chain",
+        &["--heap-limit-mib", "64"],
+        "Peak Blocks",
+    );
+    assert!(
+        peak < 2500,
+        "update-chain peaked at {peak} heap blocks: earlier dict versions are being \
+         retained by updated values (eu-oaz72.21)"
     );
     run_test(&opts(file));
 }
@@ -3665,6 +3698,36 @@ pub fn test_error_250_dict_value_cycle() {
 /// eu-oaz72.21: dict operations reject a value that is not a dict.
 pub fn test_error_250_dict_not_a_dict() {
     run_error_test(&error_opts("250_dict_not_a_dict.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: `dict.pop-min` of an empty dict is an error naming the operation.
+pub fn test_error_250_dict_pop_empty() {
+    run_error_test(&error_opts("250_dict_pop_empty.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: `dict.to-block` rejects a list key, naming it.
+pub fn test_error_250_dict_to_block_list_key() {
+    run_error_test(&error_opts("250_dict_to_block_list_key.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: `dict.to-block` rejects two keys naming the same block entry.
+pub fn test_error_250_dict_to_block_collision() {
+    run_error_test(&error_opts("250_dict_to_block_collision.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: `dict.update-strict` evaluates the new value when it stores it.
+pub fn test_error_250_dict_update_strict() {
+    run_error_test(&error_opts("250_dict_update_strict.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: `dict.merge-with-strict` evaluates each combined value when it stores it.
+pub fn test_error_250_dict_merge_strict() {
+    run_error_test(&error_opts("250_dict_merge_strict.eu"));
 }
 
 #[test]

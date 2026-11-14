@@ -1,0 +1,62 @@
+"Dijkstra benchmark (dict as priority queue, design note
+docs/superpowers/plans/2026-11-12-dict-design.md §7 and §10 item 3).
+Shortest path across a synthetic 141 by 141 grid from [0, 0] to
+[140, 140], moving to the four neighbours, paying the weight of each cell
+entered: ((7x + 13y + xy) mod 9) + 1. The queue is a dict keyed by
+`[distance, [x, y]]` (unique, so no sequence number is needed), taken in
+order with `dict.pop-min`; best distances are a dict keyed by `[x, y]`.
+Stale queue entries are skipped when popped.
+
+Expected distance computed independently (Python, heapq): 1085."
+
+` "the side of the grid"
+n: 141
+
+` "a distance longer than any path"
+far: 1000000000
+
+` "the target cell"
+goal: [n - 1, n - 1]
+
+` "the weight of the cell `[x, y]`"
+weight([x, y]): (7 * x + 13 * y + x * y) % 9 + 1
+
+` "true if the cell `[x, y]` is on the grid"
+inside?([x, y]): x >= 0 ∧ x < n ∧ y >= 0 ∧ y < n
+
+` "the cells next to `[x, y]` on the grid"
+neighbours([x, y]): [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] filter(inside?)
+
+` "the cost of entering cell `c` from a cell at distance `d`"
+via(d, c): d + weight(c)
+
+` "true if entering cell `c` at distance `d` beats its best distance so far in `dist`"
+better?(d, dist, c): via(d, c) < (dist dict.get-or(c, far))
+
+` "queue cell `c`, entered from a cell at distance `d`"
+push(d, queue, c): queue dict.assoc([via(d, c), c], null)
+
+` "record the distance of cell `c`, entered from a cell at distance `d`"
+record(d, dist, c): dist dict.assoc(c, via(d, c))
+
+` "take the nearest queued cell and continue the search from it"
+search(queue, dist): queue dict.pop-min visit(dist)
+
+` "visit cell `c` at distance `d`, with `rest` still queued: a stale entry (`c` already reached by a shorter path) relaxes nothing"
+visit(dist, [[d, c], v, rest]): {
+  fresh: d <= (dist dict.get-or(c, far))
+  improved: fresh then(c neighbours filter(better?(d, dist)), [])
+}.((c = goal) then(d, search(improved foldl(push(d), rest), improved foldl(record(d), dist))))
+
+` :suppress
+start-queue: dict.of[[[0, [0, 0]], null]]
+
+` :suppress
+start-dist: dict.of[[[0, 0], 0]]
+
+` { target: :bench-dict-dijkstra
+    verify: ["default-expectation"] }
+bench-dict-dijkstra: {
+  distance: search(start-queue, start-dist)
+  RESULT: (distance = 1085) then(:PASS, :FAIL)
+}

@@ -1048,6 +1048,17 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "DICT.DISSOC" => Some("dict.dissoc"),
         "DICT.CONTAINS" => Some("dict.contains?"),
         "DICT.SIZE" => Some("dict.size"),
+        "DICT.KEYS" => Some("dict.keys"),
+        "DICT.VALUES" => Some("dict.values"),
+        "DICT.MIN" => Some("dict.min"),
+        "DICT.MAX" => Some("dict.max"),
+        "DICT.POP_MIN" => Some("dict.pop-min"),
+        "DICT.POP_MAX" => Some("dict.pop-max"),
+        "DICT.RANGE" => Some("dict.range"),
+        "DICT.UPDATE" => Some("dict.update"),
+        "DICT.UPDATE_STRICT" => Some("dict.update-strict"),
+        "DICT.MERGE_WITH" => Some("dict.merge-with"),
+        "DICT.TO_BLOCK" => Some("dict.to-block"),
 
         // Lookup error path
         "LOOKUP_FAIL" => Some("lookup"),

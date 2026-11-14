@@ -10,7 +10,7 @@
 //!
 //! See `docs/superpowers/plans/2026-11-12-dict-design.md`.
 
-use std::convert::TryInto;
+use std::{collections::HashMap, convert::TryInto};
 
 use crate::{
     common::sourcemap::Smid,
@@ -18,7 +18,8 @@ use crate::{
         emit::Emitter,
         error::ExecutionError,
         machine::intrinsic::{
-            AbiClosure, CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
+            AbiClosure, CallGlobal1, CallGlobal2, CallGlobal3, CallGlobal4, IntrinsicMachine,
+            StgIntrinsic,
         },
         memory::{
             dict::{Dict, DictKey, DictKeyList, Entry, Tree},
@@ -33,7 +34,7 @@ use super::{
     force::{SeqDictPairs, SeqKey},
     support::{dict_arg, machine_return_bool, machine_return_num},
     syntax::{
-        dsl::{app_bif, force, lambda, local, lref},
+        dsl::{app, app_bif, data, force, lambda, let_, local, lref, no_index, thunk},
         LambdaForm,
     },
 };
@@ -533,3 +534,551 @@ impl StgIntrinsic for DictSize {
 }
 
 impl CallGlobal1 for DictSize {}
+
+/// The dict `tree` as a value (for `pop-*`'s `rest`).
+fn dict_value(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    tree: Tree,
+) -> Result<AbiClosure, ExecutionError> {
+    machine.native_value(view, Native::Dict(tree))
+}
+
+/// A wrapper that forces the dict (the only argument) and calls the
+/// intrinsic.
+fn dict_only_wrapper(index: usize) -> LambdaForm {
+    let bif: u8 = index.try_into().unwrap();
+    lambda(
+        1, // [d]
+        force(local(0), app_bif(bif, vec![lref(0)])),
+    )
+}
+
+/// DICT.KEYS(d) — the keys in key order.
+pub struct DictKeys;
+
+impl StgIntrinsic for DictKeys {
+    fn name(&self) -> &str {
+        "DICT.KEYS"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        dict_only_wrapper(self.index())
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let items = {
+            let m: &dyn IntrinsicMachine = machine;
+            let tree = dict_arg(m, view, &args[0])?;
+            let d = Dict::new(view, m.symbol_pool());
+            let mut keys = Vec::with_capacity(d.size(tree) as usize);
+            d.for_each(tree, |n| keys.push(n.key()));
+            keys.iter()
+                .map(|k| key_value(m, view, k))
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        machine.return_closure_list(view, items)
+    }
+}
+
+impl CallGlobal1 for DictKeys {}
+
+/// DICT.VALUES(d) — the (lazy) values in key order.
+pub struct DictValues;
+
+impl StgIntrinsic for DictValues {
+    fn name(&self) -> &str {
+        "DICT.VALUES"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        dict_only_wrapper(self.index())
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let items = {
+            let m: &dyn IntrinsicMachine = machine;
+            let tree = dict_arg(m, view, &args[0])?;
+            let d = Dict::new(view, m.symbol_pool());
+            let mut values = Vec::with_capacity(d.size(tree) as usize);
+            d.for_each(tree, |n| values.push(AbiClosure::Byte(n.value().clone())));
+            values
+        };
+        machine.return_closure_list(view, items)
+    }
+}
+
+impl CallGlobal1 for DictValues {}
+
+/// Which end of the dict an extremum intrinsic reads.
+#[derive(Clone, Copy)]
+enum End {
+    Min,
+    Max,
+}
+
+/// The shared body of `DICT.MIN`, `DICT.MAX`, `DICT.POP_MIN` and
+/// `DICT.POP_MAX`: `[k, v]`, or `[k, v, rest]` when `pop`.
+fn extremum(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    args: &[Ref],
+    end: End,
+    pop: bool,
+    what: &str,
+) -> Result<(), ExecutionError> {
+    let items = {
+        let m: &dyn IntrinsicMachine = machine;
+        let tree = dict_arg(m, view, &args[0])?;
+        let d = Dict::new(view, m.symbol_pool());
+        let empty = || ExecutionError::EmptyDict(m.annotation(), what.to_string());
+        let (node, rest) = if pop {
+            let popped = match end {
+                End::Min => d.delete_min(tree)?,
+                End::Max => d.delete_max(tree)?,
+            };
+            let (node, rest) = popped.ok_or_else(empty)?;
+            (node, Some(rest))
+        } else {
+            let node = match end {
+                End::Min => d.min(tree),
+                End::Max => d.max(tree),
+            };
+            (node.ok_or_else(empty)?, None)
+        };
+        let n = d.node(node);
+        let mut items = vec![
+            key_value(m, view, &n.key())?,
+            AbiClosure::Byte(n.value().clone()),
+        ];
+        if let Some(rest) = rest {
+            items.push(dict_value(m, view, rest)?);
+        }
+        items
+    };
+    machine.return_closure_list(view, items)
+}
+
+/// DICT.MIN(d) — `[k, v]` for the least key; an error if `d` is empty.
+pub struct DictMin;
+
+impl StgIntrinsic for DictMin {
+    fn name(&self) -> &str {
+        "DICT.MIN"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        dict_only_wrapper(self.index())
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        extremum(machine, view, args, End::Min, false, "dict.min")
+    }
+}
+
+impl CallGlobal1 for DictMin {}
+
+/// DICT.MAX(d) — `[k, v]` for the greatest key; an error if `d` is empty.
+pub struct DictMax;
+
+impl StgIntrinsic for DictMax {
+    fn name(&self) -> &str {
+        "DICT.MAX"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        dict_only_wrapper(self.index())
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        extremum(machine, view, args, End::Max, false, "dict.max")
+    }
+}
+
+impl CallGlobal1 for DictMax {}
+
+/// DICT.POP_MIN(d) — `[k, v, rest]` for the least key; an error if `d` is
+/// empty.
+pub struct DictPopMin;
+
+impl StgIntrinsic for DictPopMin {
+    fn name(&self) -> &str {
+        "DICT.POP_MIN"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        dict_only_wrapper(self.index())
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        extremum(machine, view, args, End::Min, true, "dict.pop-min")
+    }
+}
+
+impl CallGlobal1 for DictPopMin {}
+
+/// DICT.POP_MAX(d) — `[k, v, rest]` for the greatest key; an error if `d`
+/// is empty.
+pub struct DictPopMax;
+
+impl StgIntrinsic for DictPopMax {
+    fn name(&self) -> &str {
+        "DICT.POP_MAX"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        dict_only_wrapper(self.index())
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        extremum(machine, view, args, End::Max, true, "dict.pop-max")
+    }
+}
+
+impl CallGlobal1 for DictPopMax {}
+
+/// DICT.RANGE(lo, hi, d) — the sub-dict of entries with `lo ≤ k < hi`
+/// (empty when `hi ≤ lo`).
+pub struct DictRange;
+
+impl StgIntrinsic for DictRange {
+    fn name(&self) -> &str {
+        "DICT.RANGE"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let bif: u8 = self.index().try_into().unwrap();
+        lambda(
+            3, // [lo hi d]
+            force(
+                SeqKey.global(lref(0)),
+                // [flo] [lo hi d]
+                force(
+                    SeqKey.global(lref(2)),
+                    // [fhi] [flo] [lo hi d]
+                    force(
+                        local(4),
+                        // [fd] [fhi] [flo] [lo hi d]
+                        app_bif(bif, vec![lref(2), lref(1), lref(0)]),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let tree = {
+            let m: &dyn IntrinsicMachine = machine;
+            let lo = key_arg(m, view, &args[0])?;
+            let hi = key_arg(m, view, &args[1])?;
+            let tree = dict_arg(m, view, &args[2])?;
+            Dict::new(view, m.symbol_pool()).range(tree, &lo, &hi)?
+        };
+        return_dict(machine, view, tree)
+    }
+}
+
+impl CallGlobal3 for DictRange {}
+
+/// DICT.UPDATE(k, f, default, d) — `d` with `k` mapped to the lazy value
+/// `f(old)`, where `old` is the value at `k`, or `default` if `d` does not
+/// hold `k`. The application is built over a fresh frame `[f, old]`, so the
+/// stored value does not keep the caller's frame (and the previous dict)
+/// alive, and it lives in a memoising cell.
+pub struct DictUpdate;
+
+impl StgIntrinsic for DictUpdate {
+    fn name(&self) -> &str {
+        "DICT.UPDATE"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        key_dict_wrapper(self.index(), 4)
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let tree = {
+            let m: &dyn IntrinsicMachine = machine;
+            let key = key_arg(m, view, &args[0])?;
+            let tree = dict_arg(m, view, &args[3])?;
+            let d = Dict::new(view, m.symbol_pool());
+            let old = match d.lookup(tree, &key) {
+                Some(p) => AbiClosure::Byte(d.node(p).value().clone()),
+                None => m.memo_cell(view, m.resolve_closure(view, &args[2])?)?,
+            };
+            let f = m.memo_cell(view, m.resolve_closure(view, &args[1])?)?;
+            let applied = m.apply1_thunk(view, f, old)?;
+            let AbiClosure::Byte(value) = m.memo_cell(view, applied)?;
+            d.insert(tree, key, value)?
+        };
+        return_dict(machine, view, tree)
+    }
+}
+
+impl CallGlobal4 for DictUpdate {}
+
+/// DICT.UPDATE_STRICT(k, f, default, d) — as `DICT.UPDATE`, but the new
+/// value `f(old)` is evaluated (to WHNF) before it is stored. The wrapper
+/// forces it; `execute` then stores the evaluated value as `DICT.ASSOC`
+/// does, with arguments `[forced key, value, forced dict]`.
+pub struct DictUpdateStrict;
+
+impl StgIntrinsic for DictUpdateStrict {
+    fn name(&self) -> &str {
+        "DICT.UPDATE_STRICT"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let bif: u8 = self.index().try_into().unwrap();
+        let get_or: u8 = DictGetOr.index().try_into().unwrap();
+        lambda(
+            4, // [k f default d]
+            force(
+                SeqKey.global(lref(0)),
+                // [fk] [k f default d]
+                force(
+                    local(4),
+                    // [fd] [fk] [k f default d]
+                    //  0    1    2 3 4       5
+                    let_(
+                        vec![thunk(app_bif(get_or, vec![lref(1), lref(4), lref(0)]))],
+                        // [old] [fd] [fk] [k f default d]
+                        //  0     1    2    3 4 5       6
+                        force(
+                            app(lref(4), vec![lref(0)]),
+                            // [new] [old] [fd] [fk] [k f default d]
+                            //  0     1     2    3    4 5 6       7
+                            app_bif(bif, vec![lref(3), lref(0), lref(2)]),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        DictAssoc.execute(machine, view, emitter, args)
+    }
+}
+
+impl CallGlobal4 for DictUpdateStrict {}
+
+/// DICT.MERGE_WITH(f, a, b) — the union of `a` and `b`; where both hold a
+/// key, `a`'s key is kept and the value is the lazy `f(a_value, b_value)`,
+/// built over a fresh frame and stored in a memoising cell.
+pub struct DictMergeWith;
+
+impl StgIntrinsic for DictMergeWith {
+    fn name(&self) -> &str {
+        "DICT.MERGE_WITH"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let bif: u8 = self.index().try_into().unwrap();
+        lambda(
+            3, // [f a b]
+            force(
+                local(1),
+                // [fa] [f a b]
+                force(
+                    local(3),
+                    // [fb] [fa] [f a b]
+                    app_bif(bif, vec![lref(2), lref(1), lref(0)]),
+                ),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let tree = {
+            let m: &dyn IntrinsicMachine = machine;
+            let a = dict_arg(m, view, &args[1])?;
+            let b = dict_arg(m, view, &args[2])?;
+            let f = m.memo_cell(view, m.resolve_closure(view, &args[0])?)?;
+            Dict::new(view, m.symbol_pool()).union_with(a, b, &mut |va, vb| {
+                let applied = m.apply2_thunk(
+                    view,
+                    f.clone(),
+                    AbiClosure::Byte(va.clone()),
+                    AbiClosure::Byte(vb.clone()),
+                )?;
+                let AbiClosure::Byte(value) = m.memo_cell(view, applied)?;
+                Ok(value)
+            })?
+        };
+        return_dict(machine, view, tree)
+    }
+}
+
+impl CallGlobal3 for DictMergeWith {}
+
+/// DICT.TO_BLOCK(d) — a block of the entries in key order: a symbol key
+/// names its entry, a string key the symbol with its text, a number key the
+/// symbol with its rendered text; a list key, or two keys naming the same
+/// entry, is an error. Returns the block's list of pairs; the wrapper wraps
+/// it as a block.
+pub struct DictToBlock;
+
+impl StgIntrinsic for DictToBlock {
+    fn name(&self) -> &str {
+        "DICT.TO_BLOCK"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let bif: u8 = self.index().try_into().unwrap();
+        lambda(
+            1, // [d]
+            force(
+                local(0),
+                // [fd] [d]
+                force(
+                    app_bif(bif, vec![lref(0)]),
+                    // [pairs] [fd] [d]
+                    data(DataConstructor::Block.tag(), vec![lref(0), no_index()]),
+                ),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        // Block key names first (interning needs the machine mutably), then
+        // the pairs.
+        let (names, values) = {
+            let m: &dyn IntrinsicMachine = machine;
+            let tree = dict_arg(m, view, &args[0])?;
+            let d = Dict::new(view, m.symbol_pool());
+            let mut names = Vec::with_capacity(d.size(tree) as usize);
+            let mut values = Vec::with_capacity(d.size(tree) as usize);
+            let mut keys = Vec::with_capacity(d.size(tree) as usize);
+            let mut error = None;
+            d.for_each(tree, |n| {
+                let key = n.key();
+                let name = match key {
+                    DictKey::Num(_) => Some(render_key(m, view, &key)),
+                    DictKey::Str(_) => key.str_in(&view).map(str::to_string),
+                    DictKey::Sym(id) => Some(m.symbol_pool().resolve(id).to_string()),
+                    DictKey::List(_) => None,
+                };
+                match name {
+                    Some(name) => {
+                        names.push(name);
+                        keys.push(key);
+                        values.push(n.value().clone());
+                    }
+                    None => {
+                        if error.is_none() {
+                            error = Some(ExecutionError::DictKeyNotBlockKey(
+                                m.annotation(),
+                                render_key(m, view, &key),
+                            ));
+                        }
+                    }
+                }
+            });
+            if let Some(e) = error {
+                return Err(e);
+            }
+            // Two keys naming the same entry (`"x"` and `:x`, `1` and
+            // `"1"`) are an error, as for rendering (design note §8,
+            // OPEN 5): a block holds each key once.
+            let mut seen: HashMap<&str, DictKey> = HashMap::with_capacity(names.len());
+            for (name, key) in names.iter().zip(&keys) {
+                if let Some(first) = seen.insert(name.as_str(), *key) {
+                    return Err(ExecutionError::DictBlockKeyCollision(
+                        m.annotation(),
+                        render_key(m, view, &first),
+                        render_key(m, view, key),
+                        name.clone(),
+                    ));
+                }
+            }
+            (names, values)
+        };
+        let ids: Vec<_> = names
+            .iter()
+            .map(|n| machine.symbol_pool_mut().intern(n))
+            .collect();
+        let items = {
+            let m: &dyn IntrinsicMachine = machine;
+            let mut items = Vec::with_capacity(ids.len());
+            for (id, value) in ids.into_iter().zip(values) {
+                let key = m.native_value(view, Native::Sym(id))?;
+                items.push(m.data_value(
+                    view,
+                    DataConstructor::BlockPair.tag(),
+                    &[key, AbiClosure::Byte(value)],
+                )?);
+            }
+            items
+        };
+        machine.return_closure_list(view, items)
+    }
+}
+
+impl CallGlobal1 for DictToBlock {}

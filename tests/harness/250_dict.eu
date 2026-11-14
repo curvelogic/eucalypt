@@ -1,11 +1,14 @@
 {
   title: "250 dict: persistent ordered dictionaries"
   doc: "Dict construction, lookup, persistent update, key equality and order,
+        ordered operations (min, max, pops, range), update, merge, block
+        conversion,
         laziness and memoisation of values (eu-oaz72.21; design in
         docs/superpowers/plans/2026-11-12-dict-design.md). Each target
         computes `ok` from its checks. The tick and peak-heap gates in
         `tests/harness_test.rs` run the `fold`, `*-shared`, `merged-*`,
-        `assoc-chain` and `assoc-chain-lists` targets."
+        `assoc-chain`, `assoc-chain-lists`, `update-*` and `merge-shared`
+        targets."
 }
 
 ` "the target computes the right value"
@@ -155,6 +158,153 @@ api: {
 }
 
 #
+# Ordered operations, update and merge, block conversion
+#
+
+` "a function whose value must never be needed"
+never(x): panic("never")
+
+` "a function of two values whose value must never be needed"
+never2(a, b): panic("never")
+
+` "the pair of `b` and `a`, to show argument order"
+ba(a, b): [b, a]
+
+` { target: :ordered-ops
+    verify: [:passes] }
+ordered-ops: {
+  ` :suppress
+  d: dict.of[[3, "c"], [1, "a"], [:s, "e"], [2, "b"], ["k", "d"]]
+
+  ` "keys and values in key order"
+  keys-values: [
+    (d dict.keys) = [1, 2, 3, "k", :s],
+    (d dict.values) = ["a", "b", "c", "d", "e"],
+    (dict.empty dict.keys) = [],
+    (dict.empty dict.values) = [],
+    (dict.of[[1, never(0)]] dict.values count) = 1
+  ]
+
+  ` :suppress
+  popped: d dict.pop-min
+
+  ` :suppress
+  top: d dict.pop-max
+
+  ` "min, max, pop-min and pop-max; the original is unchanged"
+  extremes: [
+    (d dict.min) = [1, "a"],
+    (d dict.max) = [:s, "e"],
+    (popped first) = 1,
+    (popped second) = "a",
+    ((popped !! 2) dict.keys) = [2, 3, "k", :s],
+    ((top !! 2) dict.keys) = [1, 2, 3, "k"],
+    (top first) = :s,
+    (d dict.size) = 5,
+    (dict.of[[[2, :x], 1], [[1, :z], 2]] dict.min) = [[1, :z], 2],
+    (dict.of[[7, never(0)]] dict.pop-min count) = 3,
+    (dict.of[[7, :x]] dict.pop-max) !! 2 dict.empty?
+  ]
+
+  ` :suppress
+  pq: dict.of[[[5, :e], 0], [[1, :a], 0], [[3, :c], 0], [[1, :b], 0]]
+
+  ` "the item of each priority-queue entry, in the order `pop-min` takes them"
+  drain(q): (q dict.empty?) then([], { e: q dict.pop-min }.(cons(e first second, drain(e !! 2))))
+
+  ` "a dict keyed by `[priority, item]` is a priority queue"
+  queue: [
+    (pq drain) = [:a, :b, :c, :e],
+    (pq dict.assoc([2, :d], 0) dict.dissoc([3, :c]) drain) = [:a, :b, :d, :e]
+  ]
+
+  ` "the entry mapping `n` to itself"
+  self-entry(n): [n, n]
+
+  ` :suppress
+  nums: range(0, 20) map(self-entry) dict.of
+
+  ` "range is half-open: `lo ≤ k < hi`; empty when `hi ≤ lo`"
+  ranges: [
+    (nums dict.range(5, 9) dict.keys) = [5, 6, 7, 8],
+    (nums dict.range(4.5, 7.5) dict.keys) = [5, 6, 7],
+    (nums dict.range(-10, 2) dict.keys) = [0, 1],
+    (nums dict.range(18, 100) dict.keys) = [18, 19],
+    nums dict.range(9, 5) dict.empty?,
+    nums dict.range(5, 5) dict.empty?,
+    (d dict.range(3, :a) dict.keys) = [3, "k"],
+    (d dict.range("", [0]) dict.keys) = ["k", :s],
+    (dict.of[[[1, 0], 1], [[1, 5], 2], [[2, 0], 3]] dict.range([1, 1], [2]) dict.values) = [2],
+    (nums dict.range(5, 9) dict.get(6)) = 6,
+    (nums dict.range(5, 9) dict.size) = 4,
+    (nums dict.size) = 20
+  ]
+
+  ` :suppress
+  counts: "abracadabra" str.letters foldl(count-step, dict.empty)
+
+  ` "count one occurrence of `c` in `acc`"
+  count-step(acc, c): acc dict.update(c, + 1, 0)
+
+  ` :suppress
+  strict-counts: "abracadabra" str.letters foldl(strict-step, dict.empty)
+
+  ` "count one occurrence of `c` in `acc`, strictly"
+  strict-step(acc, c): acc dict.update-strict(c, + 1, 0)
+
+  ` "update applies `f` to the value or the default; the result is lazy and the key kept"
+  updates: [
+    (counts dict.to-list) = [["a", 5], ["b", 2], ["c", 1], ["d", 1], ["r", 2]],
+    (strict-counts dict.to-list) = (counts dict.to-list),
+    (d dict.update(1, str.to-upper, "z") dict.get(1)) = "A",
+    (d dict.update(9, str.to-upper, "z") dict.get(9)) = "Z",
+    (d dict.update(2, never, "z") dict.size) = 5,
+    (d dict.update(9, never, "z") dict.size) = 6,
+    (d dict.update(1, never, never(0)) dict.get(3)) = "c",
+    (dict.of[[1, :a]] dict.update(1.0, str.of, 0) dict.keys head str.of) = "1",
+    (dict.of[[1, never(0)]] dict.update-strict(1, const(:x), 0) dict.get(1)) = :x,
+    (d dict.get(1)) = "a"
+  ]
+
+  ` :suppress
+  a: dict.of[[1, "a1"], [2, "a2"], [3, "a3"]]
+
+  ` :suppress
+  b: dict.of[[2.0, "b2"], [3, "b3"], [4, "b4"]]
+
+  ` "merge-with is a union applying `f` to `a`'s value then `b`'s on collisions; it keeps `a`'s key"
+  merges: [
+    (dict.merge-with(ba, a, b) dict.to-list) = [[1, "a1"], [2, ["b2", "a2"]], [3, ["b3", "a3"]], [4, "b4"]],
+    (dict.merge-with-strict(ba, a, b) dict.to-list) = (dict.merge-with(ba, a, b) dict.to-list),
+    (dict.merge-with(never2, a, b) dict.size) = 4,
+    (dict.merge-with(never2, a, dict.empty) dict.to-list) = (a dict.to-list),
+    (dict.merge-with(never2, dict.empty, b) dict.to-list) = (b dict.to-list),
+    (dict.merge-with(+, nums, nums) dict.values) = (range(0, 20) map(* 2)),
+    (dict.merge-with(+, dict.of[[1, 1]], dict.of[[1.0, 2]]) dict.keys head str.of) = "1",
+    (dict.merge-with(+, dict.of[[1.0, 1]], dict.of[[1, 2]]) dict.keys head str.of) = "1.0",
+    (dict.merge-with-strict(never2, a, dict.of[[9, 0]]) dict.size) = 4,
+    (a dict.merge-with(ba, b) dict.get(2)) = ["a2", "b2"]
+  ]
+
+  ` :suppress
+  blk: { x: 1, y: never(0), z: "s" }
+
+  ` "from-block and to-block convert in key order; to-block names number and string keys by their text"
+  blocks: [
+    (blk dict.from-block dict.keys) = [:x, :y, :z],
+    (blk dict.from-block dict.get(:z)) = "s",
+    (blk dict.from-block dict.to-block).x = 1,
+    (blk dict.from-block dict.to-block keys) = [:x, :y, :z],
+    (dict.of[[2, :b], [1.5, :a], ["k", :c]] dict.to-block keys) = [sym("1.5"), sym("2"), :k],
+    (dict.of[["k", 1]] dict.to-block).k = 1,
+    (dict.empty dict.to-block) = {},
+    (counts dict.to-block).a = 5
+  ]
+
+  ok: [keys-values, extremes, queue, ranges, updates, merges, blocks] concat all-true?
+}
+
+#
 # Memoisation: a lazy value is computed at most once, however many dict
 # versions share it. `fold` is the cost of one evaluation; each `*-shared`
 # target reads a value three times and must cost about the same.
@@ -217,6 +367,27 @@ merged-shared: {
   ok: y = [199990003, 199990003, 199990003]
 }
 
+` "an expensive function of one value"
+expensive(x): range(0, 20000) foldl(+, x)
+
+` { target: :update-shared
+    verify: [:passes] }
+update-shared: {
+  ` :suppress
+  d: dict.of[[:k, 0]] dict.update(:k, expensive, 0)
+  y: [d dict.get(:k), d dict.assoc(:j, 1) dict.get(:k), d dict.to-list head second]
+  ok: y = [199990000, 199990000, 199990000]
+}
+
+` { target: :merge-shared
+    verify: [:passes] }
+merge-shared: {
+  ` :suppress
+  d: dict.merge-with(combine, dict.of[[:k, 1]], dict.of[[:k, 2]])
+  y: [d dict.get(:k), d dict.dissoc(:j) dict.get(:k), d dict.values head]
+  ok: y = [199990003, 199990003, 199990003]
+}
+
 #
 # Retention: each version of a dict threaded through a loop must become
 # garbage once the next is built. The gate bounds `assoc-chain`'s peak heap.
@@ -245,4 +416,15 @@ assoc-chain-lists: {
   ` :suppress
   d: chain-lists(0, dict.empty)
   ok: (d dict.size) = 1001 ∧ (d dict.get(999)) = [49999, [49999, :x], "s"] ∧ (d dict.get(0)) = [49000, [49000, :x], "s"]
+}
+
+` "thread a dict through `chain-n` steps of a lazy update and an assoc; the condition reads the updated value at each step"
+chain-updates(i, acc): (i = chain-n ∨ (acc dict.get(:n)) < 0) then(acc, chain-updates(i + 1, acc dict.update(:n, + 1, 0) dict.assoc(i % 1000, i)))
+
+` { target: :update-chain
+    verify: [:passes] }
+update-chain: {
+  ` :suppress
+  d: chain-updates(0, dict.of[[:n, 0]])
+  ok: (d dict.get(:n)) = 50000 ∧ (d dict.size) = 1001 ∧ (d dict.get(999)) = 49999
 }

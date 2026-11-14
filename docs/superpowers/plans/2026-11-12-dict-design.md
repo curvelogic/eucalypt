@@ -509,3 +509,32 @@ Recorded as built; none changes an agreed choice.
 - **Rendering** is PR 4; until then a dict reaching output raises
   `DictNotRenderable`, pointing at `dict.to-list`. Dict arguments are typed
   `any` in prelude signatures until PR 4 adds `dict(k, v)`.
+
+## 13. Implementation notes (PR 3)
+
+Recorded as built; none changes an agreed choice.
+
+- **Merge** is `Dict::union_with`, the join-based union of §2 (split `a`
+  at `b`'s root, recurse, `link`). Where both dicts hold equal keys, `a`'s
+  key is kept (choice 6, `a` being the dict merged into) and the value is
+  `f(va, vb)`.
+- **Lazy combined values.** `update` and `merge-with` build `f(old)` and
+  `f(va, vb)` with `apply1_thunk`/`apply2_thunk` (a fresh frame `[f, args]`
+  over the root env) and store them through `memo_cell`, which cells them
+  (§5), so each is computed at most once and none keeps the caller's frame,
+  or the previous dict, alive. A function value that itself closes over the
+  caller's frame (a section such as `+ i` over a loop variable) still pins
+  that frame: §12's remaining limit.
+- **Strict variants** (OPEN 7). `update-strict` is an STG wrapper that
+  forces `f(old)` before storing it with `assoc`'s code, so the value is
+  stored evaluated. `merge-with-strict` is prelude: a fold of `b`'s entries
+  into `a`, using `update-strict` where `a` holds the key. The measurements
+  that motivate them are in
+  `docs/superpowers/reports/2026-11-13-dict-ordered-ops-benchmarks.md`.
+- **Edge cases**: `range` with `hi ≤ lo` is the empty dict; `min`, `max`,
+  `pop-min` and `pop-max` of an empty dict raise `EmptyDict` ("dict.pop-min
+  of an empty dict"); `to-block` names an entry by a symbol key, by a string
+  key's text, or by a number key's rendered text, and raises
+  `DictKeyNotBlockKey` for a list key and `DictBlockKeyCollision` for two
+  keys that name the same entry (`"x"` and `:x`, `1` and `"1"`), the
+  rule §8 and OPEN 5 set for rendering.

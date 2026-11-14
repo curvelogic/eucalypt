@@ -1189,6 +1189,18 @@ pub enum ExecutionError {
     /// yet; eu-oaz72.21 PR 4).
     #[error("cannot render a dict")]
     DictNotRenderable(Smid),
+    /// `dict.min`, `dict.max`, `dict.pop-min` or `dict.pop-max` (named by
+    /// `.1`) of a dict with no entries.
+    #[error("{1} of an empty dict")]
+    EmptyDict(Smid, String),
+    /// `dict.to-block` of a dict with a key that cannot name a block entry
+    /// (a list key); `.1` renders the key.
+    #[error("dict key {1} cannot be a block key")]
+    DictKeyNotBlockKey(Smid, String),
+    /// `dict.to-block` of a dict with two keys that name the same block
+    /// entry: `(first key, second key, entry name)`.
+    #[error("dict keys {1} and {2} both name block key '{3}'")]
+    DictBlockKeyCollision(Smid, String, String, String),
     #[error("head requires a list, found {1}")]
     HeadOfNonList(Smid, String),
     #[error("tail requires a list, found {1}")]
@@ -1281,6 +1293,9 @@ impl HasSmid for ExecutionError {
             ExecutionError::BadDictKey(s, _) => *s,
             ExecutionError::BadDictPair(s, _) => *s,
             ExecutionError::DictNotRenderable(s) => *s,
+            ExecutionError::EmptyDict(s, _) => *s,
+            ExecutionError::DictKeyNotBlockKey(s, _) => *s,
+            ExecutionError::DictBlockKeyCollision(s, _, _, _) => *s,
             ExecutionError::HeadOfNonList(s, _) => *s,
             ExecutionError::TailOfNonList(s, _) => *s,
             ExecutionError::HeadOfEmptyList(s) => *s,
@@ -1692,6 +1707,24 @@ impl ExecutionError {
                 vec![
                     "dict keys are numbers, strings, symbols, or lists of those (nested at \
                      most 32 deep)"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::EmptyDict(_, _) => {
+                vec!["test the dict with 'dict.empty?(d)' first".to_string()]
+            }
+            ExecutionError::DictKeyNotBlockKey(_, _) => {
+                vec![
+                    "block keys are symbols: 'dict.to-block' accepts string, symbol and \
+                     number keys"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::DictBlockKeyCollision(_, _, _, _) => {
+                vec![
+                    "a block holds each key once: 'dict.to-block' names an entry by a \
+                     string key's text and a number key's rendered text, so keys such as \
+                     \"x\" and :x, or 1 and \"1\", collide"
                         .to_string(),
                 ]
             }
