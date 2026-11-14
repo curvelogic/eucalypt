@@ -29,6 +29,9 @@
 | `mod(a, b)` | Floor modulus; same as `a % b` |
 | `quot(a, b)` | Truncation division; rounds toward zero |
 | `rem(a, b)` | Truncation remainder; result has same sign as dividend |
+| `mulmod(a, b, m)` | `a * b` modulo `m`, exact for all 64-bit integers (computed in 128 bits); result in `[0, m)` |
+| `powmod(b, e, m)` | `b` raised to the power `e` modulo `m`, exact for all 64-bit integers; `e` must be non-negative; result in `[0, m)` |
+| `modinv(a, m)` | The inverse of `a` modulo `m`: `x` in `[0, m)` with `mulmod(a, x, m) = 1`; an error when `a` and `m` are not coprime |
 | `sum(l)` | Sum a list of numbers |
 | `product(l)` | Multiply a list of numbers |
 | `max(l, r)` | Return max of `l` and `r` by `>` |

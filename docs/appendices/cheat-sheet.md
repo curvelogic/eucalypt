@@ -449,6 +449,7 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
+| `mulmod(a, b, m)` / `powmod(b, e, m)` / `modinv(a, m)` | Exact modular arithmetic for 64-bit integers; result in `[0, m)` |
 | `even?` / `odd?` | Do **not** exist — use `2 ∣ x` / `2 ∤ x` (U+2223 divides, not `\|`) or `x % 2 = 0` |
 
 ### Lenses (`lens.eu`)

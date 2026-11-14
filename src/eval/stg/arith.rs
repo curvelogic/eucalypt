@@ -9,7 +9,9 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
-        machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
+        machine::intrinsic::{
+            CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
+        },
         memory::{
             mutator::MutatorHeapView,
             number::ExactNum,
@@ -1006,6 +1008,199 @@ impl StgIntrinsic for Rem {
 }
 
 impl CallGlobal2 for Rem {}
+
+// ── Modular arithmetic (eu-oaz72.24) ─────────────────────────────────
+//
+// `mulmod`, `powmod` and `modinv` take i64 operands and moduli and compute
+// in i128, so `a * b % m` and modular exponentiation are exact across the
+// whole i64 range: both factors are reduced into [0, m) first, so their
+// product is below 2^126. Results are the non-negative residue in [0, m).
+
+/// Extract an i64 operand for a modular-arithmetic intrinsic, rejecting
+/// floats and integers outside the i64 range.
+fn modular_operand(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+    function: &str,
+    role: &str,
+) -> Result<i128, ExecutionError> {
+    let n = num_arg(machine, view, arg)?;
+    n.as_i64().map(i128::from).ok_or_else(|| {
+        ExecutionError::ModularArithmetic(
+            machine.annotation(),
+            format!(
+                "{function} requires integer arguments in the 64-bit signed range, \
+                 but the {role} is {n}"
+            ),
+        )
+    })
+}
+
+/// Extract a modulus, which must be a positive integer.
+fn modular_modulus(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+    function: &str,
+) -> Result<i128, ExecutionError> {
+    let m = modular_operand(machine, view, arg, function, "modulus")?;
+    if m <= 0 {
+        return Err(ExecutionError::ModularArithmetic(
+            machine.annotation(),
+            format!(
+                "{function} requires a positive modulus, but the modulus is {m}\n  \
+                 help: the result of {function} lies in [0, m), so m must be at least 1"
+            ),
+        ));
+    }
+    Ok(m)
+}
+
+/// `a * b mod m` for `0 <= a, b < m <= i64::MAX`: exact in i128.
+fn mulmod_i128(a: i128, b: i128, m: i128) -> i128 {
+    (a * b) % m
+}
+
+/// `b ^ e mod m` by square-and-multiply, for `e >= 0` and `m >= 1`.
+fn powmod_i128(b: i128, mut e: i128, m: i128) -> i128 {
+    let mut base = b.rem_euclid(m);
+    let mut acc = 1 % m;
+    while e > 0 {
+        if e & 1 == 1 {
+            acc = mulmod_i128(acc, base, m);
+        }
+        base = mulmod_i128(base, base, m);
+        e >>= 1;
+    }
+    acc
+}
+
+/// Inverse of `a` modulo `m >= 1` by the extended Euclidean algorithm:
+/// `Ok(x)` with `0 <= x < m` and `a * x = 1 (mod m)`, or `Err(gcd)` when
+/// `gcd(a, m) != 1` and no inverse exists.
+fn modinv_i128(a: i128, m: i128) -> Result<i128, i128> {
+    let (mut r0, mut r1) = (a.rem_euclid(m), m);
+    let (mut s0, mut s1) = (1i128, 0i128);
+    while r1 != 0 {
+        let q = r0 / r1;
+        (r0, r1) = (r1, r0 - q * r1);
+        (s0, s1) = (s1, s0 - q * s1);
+    }
+    // r0 = gcd(a mod m, m); for m = 1 every value is invertible (to 0).
+    if r0 == 1 || m == 1 {
+        Ok(s0.rem_euclid(m))
+    } else {
+        Err(r0)
+    }
+}
+
+/// Return an i128 residue in [0, m) with m <= i64::MAX as a number.
+fn return_residue(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    r: i128,
+) -> Result<(), ExecutionError> {
+    // A residue lies in [0, m) and m <= i64::MAX, so this cannot fail.
+    let r = i64::try_from(r).map_err(|_| {
+        ExecutionError::Panic(
+            machine.annotation(),
+            format!("modular residue {r} out of the i64 range"),
+        )
+    })?;
+    machine_return_num(machine, view, Number::from(r))
+}
+
+/// MULMOD(a, b, m) - `a * b mod m`, exact for all i64 operands
+pub struct MulMod;
+
+impl StgIntrinsic for MulMod {
+    fn name(&self) -> &str {
+        "MULMOD"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let a = modular_operand(machine, view, &args[0], "mulmod", "first factor")?;
+        let b = modular_operand(machine, view, &args[1], "mulmod", "second factor")?;
+        let m = modular_modulus(machine, view, &args[2], "mulmod")?;
+        let r = mulmod_i128(a.rem_euclid(m), b.rem_euclid(m), m);
+        return_residue(machine, view, r)
+    }
+}
+
+impl CallGlobal3 for MulMod {}
+
+/// POWMOD(b, e, m) - `b ^ e mod m` for `e >= 0`, exact for all i64 operands
+pub struct PowMod;
+
+impl StgIntrinsic for PowMod {
+    fn name(&self) -> &str {
+        "POWMOD"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let b = modular_operand(machine, view, &args[0], "powmod", "base")?;
+        let e = modular_operand(machine, view, &args[1], "powmod", "exponent")?;
+        let m = modular_modulus(machine, view, &args[2], "powmod")?;
+        if e < 0 {
+            return Err(ExecutionError::ModularArithmetic(
+                machine.annotation(),
+                format!(
+                    "powmod requires a non-negative exponent, but the exponent is {e}\n  \
+                     help: for b^-k mod m, use powmod(modinv(b, m), k, m)"
+                ),
+            ));
+        }
+        let r = powmod_i128(b, e, m);
+        return_residue(machine, view, r)
+    }
+}
+
+impl CallGlobal3 for PowMod {}
+
+/// MODINV(a, m) - the inverse of `a` modulo `m`, an error if none exists
+pub struct ModInv;
+
+impl StgIntrinsic for ModInv {
+    fn name(&self) -> &str {
+        "MODINV"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let a = modular_operand(machine, view, &args[0], "modinv", "value")?;
+        let m = modular_modulus(machine, view, &args[1], "modinv")?;
+        match modinv_i128(a, m) {
+            Ok(r) => return_residue(machine, view, r),
+            Err(g) => Err(ExecutionError::ModularArithmetic(
+                machine.annotation(),
+                format!(
+                    "{a} has no inverse modulo {m}, because gcd({a}, {m}) = {g}\n  \
+                     help: modinv(a, m) exists only when a and m are coprime"
+                ),
+            )),
+        }
+    }
+}
+
+impl CallGlobal2 for ModInv {}
 
 /// Extract an i64 from a Number, accepting integer-valued floats
 /// (which arise from intrinsics like `sort-nums` that convert via f64).

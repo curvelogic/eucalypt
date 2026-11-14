@@ -3327,6 +3327,13 @@ pub fn test_241_oaz72_32_set_vec_of() {
     run_test(&opts("241_oaz72_32_set_vec_of.eu"));
 }
 
+/// mulmod, powmod and modinv are exact across the i64 range and normalise
+/// negative operands into [0, m) (eu-oaz72.24).
+#[test]
+pub fn test_291_oaz72_24_modular_arithmetic() {
+    run_test(&opts("291_oaz72_24_modular_arithmetic.eu"));
+}
+
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
@@ -5382,4 +5389,24 @@ pub fn test_error_289_vec_of_function_element() {
 #[test]
 pub fn test_error_290_set_of_random_stream_element() {
     run_error_test(&error_opts("290_set_of_random_stream_element.eu"));
+}
+
+#[test]
+pub fn test_error_291_modinv_not_invertible() {
+    run_error_test(&error_opts("291_modinv_not_invertible.eu"));
+}
+
+#[test]
+pub fn test_error_291_modulus_not_positive() {
+    run_error_test(&error_opts("291_modulus_not_positive.eu"));
+}
+
+#[test]
+pub fn test_error_291_powmod_negative_exponent() {
+    run_error_test(&error_opts("291_powmod_negative_exponent.eu"));
+}
+
+#[test]
+pub fn test_error_291_modular_non_integer() {
+    run_error_test(&error_opts("291_modular_non_integer.eu"));
 }

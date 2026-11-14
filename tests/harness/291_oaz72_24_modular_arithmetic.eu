@@ -1,0 +1,98 @@
+#!/usr/bin/env eu
+# eu-oaz72.24: mulmod, powmod and modinv compute in i128 internally, so
+# they are exact for any 64-bit operands and moduli, and they return the
+# non-negative residue in [0, m). Expected values were computed with
+# Python's arbitrary-precision integers.
+#
+# Each group is a list of checks; RESULT is computed from every one of
+# them, so any failing check fails the test.
+
+# Largest 64-bit signed integer, smallest, and the largest prime below 2^63.
+i64-max: 9223372036854775807
+i64-min: -9223372036854775807 - 1
+p: 9223372036854775783
+
+` "mulmod: small cases; in a pipeline the catenated value is the modulus"
+mulmod-basic: [
+  mulmod(3, 4, 5) = 2,
+  mulmod(0, 12345, 7) = 0,
+  mulmod(6, 7, 1) = 0,
+  (5 mulmod(3, 4)) = 2
+]
+
+` "mulmod at the 2^63 boundary: the products overflow 64 bits"
+mulmod-boundary: [
+  mulmod(i64-max, i64-max, p) = 576,
+  mulmod(i64-min, i64-min, p) = 625,
+  mulmod(i64-min, i64-max, p) = 9223372036854775183,
+  mulmod(i64-max, i64-max - 1, i64-max) = 0,
+  mulmod(i64-min, 3, i64-max) = 9223372036854775804,
+  mulmod(1000000007, 119315717514047, 4611686018427388039) = 2177680503639253321
+]
+
+` "negative operands are normalised into [0, m)"
+normalised: [
+  mulmod(-1, 1, 7) = 6,
+  mulmod(-3, -4, 5) = 2,
+  mulmod(-3, 4, 5) = 3,
+  powmod(-2, 3, 5) = 2,
+  powmod(-1, 2, 7) = 1,
+  modinv(-3, 7) = 2,
+  mulmod(i64-min, 1, 10) = 2
+]
+
+` "powmod: small cases, zero exponent, modulus 1"
+powmod-basic: [
+  powmod(2, 10, 1000) = 24,
+  powmod(5, 0, 13) = 1,
+  powmod(0, 0, 13) = 1,
+  powmod(0, 5, 13) = 0,
+  powmod(5, 0, 1) = 0,
+  powmod(7, 123, 1) = 0,
+  powmod(3, 1000000000000, 1000000007) = 570188345
+]
+
+` "powmod at the 2^63 boundary"
+powmod-boundary: [
+  powmod(i64-max - 1, i64-max - 1, i64-max) = 1,
+  powmod(2, i64-max - 1, p) = 16777216,
+  powmod(i64-min, 3, p) = 9223372036854760158,
+  powmod(3, 4611686018427387904, p) = 9223372036853181460
+]
+
+` "Fermat: a^(p-1) = 1 mod a prime p"
+fermat: [
+  powmod(2, p - 1, p) = 1,
+  powmod(i64-max, p - 1, p) = 1,
+  powmod(123456789, 1000000006, 1000000007) = 1
+]
+
+` "modinv: inverses, checked by multiplying back"
+modinv-basic: [
+  modinv(3, 7) = 5,
+  modinv(1, 2) = 1,
+  modinv(5, 1) = 0,
+  modinv(10, 7) = 5,
+  modinv(123456789, 1000000000000037) = 380542628562952,
+  mulmod(123456789, modinv(123456789, 1000000000000037), 1000000000000037) = 1
+]
+
+` "modinv at the 2^63 boundary"
+modinv-boundary: [
+  modinv(i64-max - 1, i64-max) = 9223372036854775806,
+  modinv(i64-min, p) = 8116567392432202689,
+  modinv(2, p) = 4611686018427387892,
+  mulmod(i64-min, modinv(i64-min, p), p) = 1,
+  mulmod(i64-max, modinv(i64-max, p), p) = 1
+]
+
+RESULT: [
+  mulmod-basic,
+  mulmod-boundary,
+  normalised,
+  powmod-basic,
+  powmod-boundary,
+  fermat,
+  modinv-basic,
+  modinv-boundary
+] concat all-true? then(:PASS, :FAIL)

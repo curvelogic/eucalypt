@@ -1372,6 +1372,7 @@ These **do exist** and are commonly available:
 - `str.starts-with?(re, s)` — true if `s` starts with regex match
 - `str.ends-with?(re, s)` — true if `s` ends with regex match
 - `abs(n)` — absolute value
+- `mulmod(a, b, m)`, `powmod(b, e, m)`, `modinv(a, m)` — exact modular arithmetic for 64-bit integers (no overflow from `a * b % m`); result in `[0, m)`
 - `str.to-upper(s)` / `str.to-lower(s)` — case conversion (not `str.upper` / `str.lower`)
 
 ### 5.12 str.split-on Uses Regex, Not Literal Strings

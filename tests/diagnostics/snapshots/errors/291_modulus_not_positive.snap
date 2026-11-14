@@ -1,0 +1,26 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/291_modulus_not_positive
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/291_modulus_not_positive.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/291_modulus_not_positive.eu:2:4
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: modular arithmetic: mulmod requires a positive modulus, but the modulus is 0
+  help: the result of mulmod lies in [0, m), so m must be at least 1
+  ┌─ tests/harness/errors/291_modulus_not_positive.eu:2:4
+  │
+2 │ x: mulmod(2, 3, 0)
+  │    ^^^^^^^^^^^^^^^

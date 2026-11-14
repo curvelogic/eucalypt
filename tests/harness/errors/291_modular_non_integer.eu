@@ -1,0 +1,2 @@
+# eu-oaz72.24: modular arithmetic takes integers, not floats
+x: powmod(2.5, 2, 7)

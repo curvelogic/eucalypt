@@ -1,0 +1,2 @@
+# eu-oaz72.24: powmod takes a non-negative exponent
+x: powmod(2, -1, 7)
