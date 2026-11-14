@@ -148,6 +148,26 @@ churn-checks: {
   ]
 }
 
+` "Exact integers — elements above 2^53 keep their identity and digits"
+
+exact-checks: {
+  big: 9007199254740992
+  pair: [big, big + 1] set.from-list
+  trues: [
+    not((big + 1) ∈ (∅ set.add(big))),
+    (∅ set.add(big) set.add(big + 1) set.size) = 2,
+    (pair set.to-list) = [big, big + 1],
+    (pair set.to-list map(str.of)) = ["9007199254740992", "9007199254740993"],
+    (pair set.remove(big) set.to-list) = [big + 1],
+    (pair set.union([big + 2] set.from-list) set.size) = 3,
+    (pair set.intersect([big + 1] set.from-list) set.to-list) = [big + 1],
+    (pair render-as(:json)) = ([big, big + 1] render-as(:json)),
+    ([18446744073709551615, 18446744073709551614] set.from-list set.size) = 2,
+    ([-9007199254740993, -9007199254740992] set.from-list set.size) = 2,
+    ([1, 1.0, 2.5] set.from-list set.size) = 2
+  ]
+}
+
 pass: [
   construction-checks.trues all-true?,
   empty-checks.trues all-true?,
@@ -158,7 +178,8 @@ pass: [
   render-checks.trues all-true?,
   computed-checks.trues all-true?,
   operator-checks.trues all-true?,
-  churn-checks.trues all-true?
+  churn-checks.trues all-true?,
+  exact-checks.trues all-true?
 ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)

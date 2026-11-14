@@ -1,0 +1,26 @@
+# String literals and interpolation
+
+name: "eucalypt"
+n: 42
+point: { x: 1 y: 2 }
+
+plain: "hello, world"
+interpolated: "hello, {name}!"
+formatted: "{n:%06d} items"
+dotted: "x is {point.x}"
+spaced: "{ name } padded"
+escaped-braces: "{{literal}} and {name}"
+escape-then-target: "{{{name}}}"
+closing-run: "{name}}}"
+string-anaphora: [1, 2, 3] map("item {}")
+numbered-anaphora: "{1}, {0}"
+raw: r"^\d+ {n}$"
+raw-escaped: r"{{\w}}"
+c-string: c"tab\there\n"
+c-string-braces: c"\{literal\}"
+c-string-interpolated: c"{name}: \}"
+c-string-quote: c"say \"hi\""
+datetime: t"2024-03-15T14:30:00Z"
+type-data: s"string → null"
+multi-line: "first line
+second line"
