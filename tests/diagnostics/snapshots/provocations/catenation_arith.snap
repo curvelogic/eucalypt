@@ -10,7 +10,7 @@ warnings: 0
 code: EU-EVAL-TYPE
 primary: user tests/diagnostics/corpus/catenation_arith.eu:2:19
 help-lines: 0
-note-lines: 1
+note-lines: 2
 secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
@@ -24,6 +24,7 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
 2 │ n: xs foldl(+, 0) + 1
   │                   ^
   │
+  = note: 'xs foldl(+, 0) + 1' was read as 'xs (foldl(+, 0) + 1)'; parenthesise the pipeline: '(xs foldl(+, 0)) + 1'
   = a function value cannot be used directly here; it must first be called with all of its remaining arguments
   = while evaluating (outermost first):
     - n at catenation_arith.eu:2:19

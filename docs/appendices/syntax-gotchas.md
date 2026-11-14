@@ -93,10 +93,20 @@ m: xs foldl(+, 0)
 n: m + 1
 ```
 
-**Error Messages**:
-- `cannot return function into case table without default` — the `+`
-  intrinsic receives a function (the partial application) instead of a
-  number.
+**Error Messages**: the error is raised at the operator — `type mismatch:
+expected number, found a function` when it receives the partial
+application, or `tried to call a number as a function` when its result is
+called with the pipeline. Either way it carries a note stating the parse,
+for example:
+
+```
+note: 'xs foldl(+, 0) + 1' was read as 'xs (foldl(+, 0) + 1)'; parenthesise the pipeline: '(xs foldl(+, 0)) + 1'
+```
+
+The note appears only when the operator expression was written without
+parentheses as a pipeline step. Inside an expression-anaphor lambda, such
+as `map(_ nth(0) = 1)`, it states the parse but suggests no parentheses:
+`(_ nth(0))` would make the parentheses the anaphor's scope.
 
 **Rule of thumb**: If a pipeline result feeds into an infix operator,
 always use parentheses around the pipeline or bind it to a name first.

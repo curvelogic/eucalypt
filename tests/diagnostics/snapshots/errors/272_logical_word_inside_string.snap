@@ -10,7 +10,7 @@ warnings: 0
 code: -
 primary: user tests/harness/errors/272_logical_word_inside_string.eu:5:21
 help-lines: 1
-note-lines: 1
+note-lines: 2
 secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
@@ -25,6 +25,7 @@ error: tried to call a false as a function
 5 │ r: cells vec.nth(i) = "S and T"
   │                     ^
   │
+  = note: 'cells vec.nth(i) = "S and T"' was read as 'cells (vec.nth(i) = "S and T")'; parenthesise the pipeline: '(cells vec.nth(i)) = "S and T"'
   = note: the value called here is the result of '='
   = while evaluating (outermost first):
     - r at 272_logical_word_inside_string.eu:5:21

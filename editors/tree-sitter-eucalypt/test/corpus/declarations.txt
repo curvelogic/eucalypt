@@ -177,6 +177,39 @@ emoji: c"\U0001F600"
           (c_escape_sequence))))))
 
 ================================================================================
+C-string escaped brace and lone close brace (eu-oaz72.114)
+================================================================================
+
+a: c"\{lit}"
+b: c"\{ {n}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (c_string
+          (c_escape_sequence)
+          (c_string_content)
+          (c_string_content)))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (c_string
+          (c_escape_sequence)
+          (c_string_content)
+          (interpolation
+            content: (interpolation_content
+              (soup
+                (name
+                  (identifier))))))))))
+
+================================================================================
 Raw string literal
 ================================================================================
 

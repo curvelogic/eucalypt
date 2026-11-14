@@ -320,6 +320,25 @@ mod tests {
         );
     }
 
+    /// A context capture (declaration, symbol, parameter, metadata key)
+    /// overrides the general capture of the same node: in highlights.scm
+    /// the later pattern wins, so the general ones must come first.
+    #[test]
+    fn contexts_override_general_captures() {
+        let h = EuHighlighter::new().unwrap();
+        let html = h
+            .render("value: :count\nnorm({x y}): x\n` { doc: \"d\" }\nk: 1\n")
+            .unwrap();
+        // `value` and `count` are prelude names, but here a declaration
+        // and a symbol
+        assert!(html.contains("<span class=\"ts-property\">value</span>"));
+        assert!(html.contains(
+            "<span class=\"ts-constant\">:</span><span class=\"ts-constant\">count</span>"
+        ));
+        assert!(html.contains("<span class=\"ts-parameter\">y</span>"));
+        assert!(html.contains("<span class=\"ts-attribute\">doc</span>"));
+    }
+
     #[test]
     fn function_calls_are_not_bold() {
         assert!(stylesheet().contains(

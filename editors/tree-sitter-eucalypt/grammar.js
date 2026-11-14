@@ -408,6 +408,7 @@ module.exports = grammar({
         $.c_string_content,
         $.interpolation,
         $.c_escape_sequence,
+        $._c_lone_close_brace,
       )),
       '"',
     ),
@@ -510,6 +511,10 @@ module.exports = grammar({
     // escape.
     _lone_close_brace: $ => alias('}', $.string_content),
     _r_lone_close_brace: $ => alias('}', $.r_string_content),
+    // In a c-string every unescaped '}' outside an interpolation is literal
+    // text ('}}' is not an escape there), as in the Rowan c-string lexer:
+    // c"\{lit}" is "{lit}" (eu-oaz72.114).
+    _c_lone_close_brace: $ => alias('}', $.c_string_content),
 
     // Brace escapes for plain and raw strings ({{ and }})
     brace_escape: $ => choice(
