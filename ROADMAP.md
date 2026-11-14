@@ -973,7 +973,7 @@ The surviving cross-unit and surface work that lets 1.0 be declared and frozen.
   system (W18). Both 0.17+. (BV5-cache's *whole-program* cache — a hit only when the
   entire input set is byte-identical — did not ship standalone; per the 2026-08-11
   assessment it is re-scoped to its reusable part, the serialisation/invalidation
-  envelope, built as **milestone 1 of CU2** — eu-lb0r, 0.16+.)
+  envelope, built as **milestone 1 of CU2** — eu-lb0r, 0.17+.)
 - **W5 Conformance, property tests & fuzzing (continue to the 1.0 bar).** The golden
   corpus + properties + fuzzers — and now the **proof that every BV phase changes
   nothing observable** (the dual-engine conformance the corpus was built for). Bar:
@@ -1142,7 +1142,7 @@ sequencing.)*
 | **BV1** | Threaded interpreter; code out of the GC heap *(shipped — default engine; Phase-4 collapse shipped 0.15, eu-oufc)* | 0.12 |
 | **eu-oufc** | Phase-4 collapse: delete the HeapSyn tree-walk machine, its `EU_HEAPSYN`/`EU_BYTECODE` selectors and the bc/hs differential-testing infrastructure; trim `GcScannable`'s HeapSyn impls *(shipped — gated on the eu-7oshh A/B study confirming parity or a bytecode win everywhere that mattered)* | 0.15 |
 | **BV5** | Embedded bytecode prelude *(shipped, dual-form)* | 0.12 |
-| **BV5-cache** | Content-hash whole-program unit cache (spec `#953`; spec refresh required before build — eu-lb0r) | 0.16+ *(re-scoped: serialisation envelope, milestone 1 of CU2 — eu-lb0r)* |
+| **BV5-cache** | Content-hash whole-program unit cache (spec `#953`; spec refresh required before build — eu-lb0r) | 0.17+ *(re-scoped: serialisation envelope, milestone 1 of CU2 — eu-lb0r)* |
 | **T0** | Tier-0 gate artefacts: measurement protocol + canonical suite + results ledger + `xtask engine-ab` (eu-2sa6.6); clean-room re-baseline, source-vs-source and blob-vs-blob (eu-2sa6.7) *(gates all further engine work — transition review §7)* | 0.13 |
 | **BV-spike** | Pre-decode spike: hand-rolled pre-decoded inner loop for `drop_cons` hot opcodes, falsification experiment and decision point (eu-2sa6.9) | 0.13 |
 | **BV2** | Side tables for annotations *(absorbed — delivered inside the pre-decoded IR, eu-2sa6.13; residue spike NO-GO, eu-2sa6.1 closed — see §10.6 and the 2026-08-11 assessment)* | 0.13.1 |
@@ -1170,7 +1170,7 @@ sequencing.)*
 | **DX0** | Diagnostics substrate + evaluation harness (structured diagnostics, error codes, invariant CI gate, golden snapshots, AI fixer/critic) — eu-1tkk.7 | 0.14 |
 | **DX1** | Location correctness (metadata-in-span, user call-site attribution, wrong-noun, eu-m93j, panic-guard) | 0.14 |
 | **DX2** | Blame annotations + curated user-anchored trace | 0.14 |
-| **DX3** | Laziness-surviving cause-trace *(spike-gated; may slip to 0.15)* | 0.14 → 0.15 |
+| **DX3** | Laziness-surviving cause-trace *(spike-gated; did not ship in 0.14 or 0.15)* | 0.17+ |
 | **W18** | Module & package system (git, content-addressed) | 0.17+ |
 | **CU1** | Separate unit compilation — defer merge (per-unit incremental prerequisite) | 0.17+ |
 | **CU2** | Per-unit incremental cache (`edit one file → fast recompile`) | 0.17+ |

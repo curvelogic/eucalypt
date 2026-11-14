@@ -4,8 +4,8 @@ All notable changes to eucalypt are documented here.
 
 ## [Unreleased]
 
-Changes since 0.15.0, to ship as 0.16.0: the Advent of Code 2026 preparation
-work (eu-oaz72) and editor highlighting consolidation (eu-ioz21).
+Changes since 0.15.0, to ship as 0.16.0: mainly the Advent of Code 2026
+preparation work (eu-oaz72) and editor highlighting consolidation (eu-ioz21).
 
 ### Added
 
