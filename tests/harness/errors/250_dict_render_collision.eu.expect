@@ -1,0 +1,2 @@
+exit: 1
+stderr: "dict keys 1 and .1. both render as mapping key '1'"

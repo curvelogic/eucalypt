@@ -1,0 +1,8 @@
+{ doc: "dict.get-or's result type includes the default's type: passing a string-defaulted lookup on a dict of numbers to a string function warns with the union (eu-oaz72.21; the signature parenthesises (v | d), since | binds looser than →)." }
+
+` { type: "string → string" }
+shout(s): s str.to-upper
+
+looked: dict.of[[:a, 1]] dict.get-or(:b, "x") shout
+
+result: looked
