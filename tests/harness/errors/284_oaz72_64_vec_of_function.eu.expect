@@ -1,0 +1,2 @@
+exit: 1
+stderr: "(?s)a function cannot be a vec element: vec elements must be numbers, strings or symbols.*errors[/\\]284_oaz72_64_vec_of_function\.eu:2:22"
