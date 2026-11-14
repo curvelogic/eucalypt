@@ -1042,12 +1042,12 @@ impl<'text> Parser<'text> {
 
     /// Parse the content inside an interpolation {...}
     ///
-    /// Returns true when the content is a dotted lookup with no first name
-    /// (`{..}`, `{.x}`): desugaring reports that as an invalid string
+    /// Returns true when the content is a dotted lookup with no name in it
+    /// at all (`{..}`): desugaring reports that as an invalid string
     /// interpolation, so the parser does not report its leftovers too.
     fn parse_string_interpolation_content(&mut self) -> bool {
         self.add_trivia();
-        let mut reported_later = false;
+        let mut parsed_name = false;
 
         // Check if we have dotted references by looking ahead
         let has_dots = self
@@ -1068,8 +1068,7 @@ impl<'text> Parser<'text> {
                 self.sink().start_node(NAME);
                 self.sink().token(STRING_INTERPOLATION_TARGET, len);
                 self.sink().finish_node(); // end NAME
-            } else {
-                reported_later = true;
+                parsed_name = true;
             }
             self.add_trivia();
 
@@ -1091,6 +1090,7 @@ impl<'text> Parser<'text> {
                         self.sink().start_node(NAME);
                         self.sink().token(STRING_INTERPOLATION_TARGET, tgt_len);
                         self.sink().finish_node(); // end NAME
+                        parsed_name = true;
                         self.add_trivia();
                     } else {
                         // Malformed - dot without following target
@@ -1130,7 +1130,7 @@ impl<'text> Parser<'text> {
             }
             self.add_trivia();
         }
-        reported_later
+        has_dots && !parsed_name
     }
 }
 
@@ -2686,6 +2686,8 @@ UNIT@0..105
             ("x: \"{a.b c}\"\n", "c"),
             ("x: \"{x:.2f}\"\n", ".2f"),
             ("x: \"{x:a:b}\"\n", ":b"),
+            ("x: \"{.x y}\"\n", "y"),
+            ("x: \"{.x:.2f}\"\n", ".2f"),
         ] {
             let parse = parse_unit(src);
             assert_eq!(parse.syntax_node().text().to_string(), src);

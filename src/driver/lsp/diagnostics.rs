@@ -175,11 +175,6 @@ fn error_message(error: &ParseError) -> String {
 /// Convert a Rowan `TextRange` to an LSP `Range` using the source text
 /// for line/column mapping.
 pub fn text_range_to_lsp_range(source: &str, range: TextRange) -> Range {
-    debug_assert!(
-        usize::from(range.end()) <= source.len(),
-        "tree range {range:?} extends past the end of the source ({} bytes)",
-        source.len()
-    );
     let line_index = LineIndex::new(source);
     line_index.range(range)
 }

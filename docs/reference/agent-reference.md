@@ -312,8 +312,8 @@ map: __MAP
 
 ```eu,notest
 # Named aliases in unit metadata
-{ types: { Point: "{x: number, y: number}"
-           Person: "{name: string, age: number, email: string | null, ..}" } }
+{ types: { Point: s"{x: number, y: number}"
+           Person: s"{name: string, age: number, email: string | null, ..}" } }
 
 # Alias using binding name (shorthand — `:type-def` or `type-def: true`)
 ` :type-def

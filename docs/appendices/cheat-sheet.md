@@ -649,7 +649,7 @@ double(x): x * 2
 
 ```eu,notest
 # In unit metadata
-{ types: { Person: "{name: string, age: number, ..}" } }
+{ types: { Person: s"{name: string, age: number, ..}" } }
 
 # Via type-def: on a canonical instance
 ` { type-def: "Point" }

@@ -1133,7 +1133,7 @@ cover a lot of GADT territory in practice.
 **The motivating use case.** A discriminated union:
 
 ```
-{ types: { Result: "{ok: a} | {err: string}" } }
+{ types: { Result: s"{ok: a} | {err: string}" } }
 ```
 
 To use this safely you want, in each branch, to know whether you have

@@ -4,6 +4,14 @@ use crate::syntax::rowan::kind::SyntaxKind::{self, *};
 use codespan::{ByteIndex, ByteOffset, Span};
 use std::{iter::Peekable, str::Chars};
 
+/// The end of a format specifier starting at `start` in `text`: the next
+/// `}` or `:`, less any trailing whitespace, which is not part of it.
+fn format_spec_end(text: &str, start: ByteIndex) -> ByteIndex {
+    let rest = &text[start.to_usize()..];
+    let raw_len = rest.find(['}', ':']).unwrap_or(rest.len());
+    start + ByteOffset(rest[..raw_len].trim_end().len() as i64)
+}
+
 /// String pattern lexer for parsing string interpolation
 /// This lexer preserves all source information for lossless parsing
 pub struct StringPatternLexer<'text> {
@@ -115,11 +123,9 @@ impl<'text> StringPatternLexer<'text> {
     /// The specifier runs to the next `}` or `:` but stops before any
     /// trailing whitespace, which the next call emits as trivia: in
     /// `"{ s : up }"` the specifier is `up`, not `up `. Whitespace inside
-    /// the specifier (the printf space flag in `%  d`) is kept.
+    /// the specifier (the printf space flag in `% d`) is kept.
     fn format_content(&mut self, start: ByteIndex) -> (SyntaxKind, Span, &'text str) {
-        let rest = &self.text[start.to_usize()..];
-        let raw_len = rest.find(['}', ':']).unwrap_or(rest.len());
-        let end = start + ByteOffset(rest[..raw_len].trim_end().len() as i64);
+        let end = format_spec_end(self.text, start);
         while self.position < end {
             self.bump();
         }
@@ -331,11 +337,9 @@ impl<'text> CStringPatternLexer<'text> {
     /// The specifier runs to the next `}` or `:` but stops before any
     /// trailing whitespace, which the next call emits as trivia: in
     /// `"{ s : up }"` the specifier is `up`, not `up `. Whitespace inside
-    /// the specifier (the printf space flag in `%  d`) is kept.
+    /// the specifier (the printf space flag in `% d`) is kept.
     fn format_content(&mut self, start: ByteIndex) -> (SyntaxKind, Span, &'text str) {
-        let rest = &self.text[start.to_usize()..];
-        let raw_len = rest.find(['}', ':']).unwrap_or(rest.len());
-        let end = start + ByteOffset(rest[..raw_len].trim_end().len() as i64);
+        let end = format_spec_end(self.text, start);
         while self.position < end {
             self.bump();
         }
