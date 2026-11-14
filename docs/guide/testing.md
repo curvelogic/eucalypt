@@ -116,6 +116,21 @@ to write a test as a single file, then you can omit the test targets.
 Eucalypt will use a `main` target or run the entire file as usual and
 then validate the result (looking for a `RESULT` key, by default).
 
+## Running several files
+
+`eu test` accepts any number of files and directories and tests every
+one, in the order given. A directory contributes each test file in it,
+in name order; with no arguments the current directory is tested.
+
+```sh
+eu test parsing.eu solver.eu tests/
+```
+
+Each file is analysed and run on its own, as if tested alone, but the
+run is one suite: one report covers every test, and `eu test` exits
+non-zero if any test in any file fails. If the inputs contain no test
+files at all, `eu test` reports an error and exits non-zero.
+
 ## Other formats
 
 In test mode, eucalypt processes the test subject to generate output
