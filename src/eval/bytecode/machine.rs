@@ -18,7 +18,7 @@ use smallvec::SmallVec;
 
 use crate::common::sourcemap::Smid;
 use crate::eval::emit::{Emitter, NullEmitter};
-use crate::eval::error::ExecutionError;
+use crate::eval::error::{ExecutionError, NOT_VALUE_FUNCTION_APPLICATION};
 use crate::eval::machine::intrinsic::{AbiClosure, IntrinsicMachine, StgIntrinsic};
 use crate::eval::machine::metrics::{Clock, Metrics, ThreadOccupation};
 use crate::eval::machine::vm::interrupted;
@@ -146,7 +146,7 @@ fn not_value_description(op: Option<Op>, code: &[u8], pc: &mut usize) -> &'stati
             Ok(DataConstructor::Block) => "a block",
             _ => "a data constructor",
         },
-        Some(Op::App) | Some(Op::DirectApp) => "a function application",
+        Some(Op::App) | Some(Op::DirectApp) => NOT_VALUE_FUNCTION_APPLICATION,
         Some(Op::Bif) => "an intrinsic function call",
         Some(Op::Case) => "a case expression",
         Some(Op::Let) | Some(Op::LetRec) => "a let binding",

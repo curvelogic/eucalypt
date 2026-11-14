@@ -1,0 +1,4 @@
+exit: 1
+stderr: "found a function"
+# a section, not a lone anaphor: no note about the identity function (eu-oaz72.132)
+stderr-absent: "identity function"
