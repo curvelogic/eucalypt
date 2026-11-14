@@ -321,7 +321,8 @@ impl CallGlobal1 for NumParse {}
 /// leading zeros. Fixed-width numeric fields are common in data, and a
 /// leading zero never means octal here: the digits are always read as
 /// decimal. Only the integer part (after an optional `-`) is touched;
-/// anything else the grammar rejects is still rejected.
+/// anything else the grammar rejects is still rejected, including a
+/// radix prefix such as `0x`, `0o` or `0b` (`"00x1f"` → `"0x1f"`).
 fn strip_leading_zeros(s: &str) -> Cow<'_, str> {
     let (sign, digits) = match s.strip_prefix('-') {
         Some(rest) => ("-", rest),
@@ -644,6 +645,7 @@ mod tests {
             ("", ""),
             ("-", "-"),
             ("0x1f", "0x1f"),
+            ("00x1f", "0x1f"),
             ("+07", "+07"),
             (" 07", " 07"),
         ] {
