@@ -55,9 +55,25 @@ nested: {
 }
 
 
+` "Padded format specifiers: whitespace around the specifier is not part of
+it, so `{{ s : up }}` applies `up`, not `up ` (eu-oaz72.50)."
+padded-spec: {
+  s: "hi"
+  n: 42
+  up(v): v str.to-upper
+
+  truths: [
+    "{ s : up }" = "HI",
+    "{s:up  }" = "HI",
+    c"{ s : up }\t" = c"HI\t",
+    "[{ n : %-4d }]" = "[42  ]",
+    "{ n :%04d }" = "0042"
+  ]
+}
 
 ` :suppress
 pass: (interpolation.truths ++
+       padded-spec.truths ++
        lambdafied.truths ++
        mixed.truths ++
        escapes.truths ++

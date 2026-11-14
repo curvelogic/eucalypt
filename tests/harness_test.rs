@@ -5219,3 +5219,10 @@ pub fn test_error_278_intrinsic_call_site_set_of() {
 pub fn test_error_278_intrinsic_call_site_vec_of() {
     run_error_test(&error_opts("278_intrinsic_call_site_vec_of.eu"));
 }
+
+/// Leftover tokens in a closed string interpolation are a parse error,
+/// not dropped: `{ a b }` used to evaluate as `{a}` (eu-oaz72.50).
+#[test]
+pub fn test_error_279_interpolation_two_names() {
+    run_error_test(&error_opts("279_interpolation_two_names.eu"));
+}

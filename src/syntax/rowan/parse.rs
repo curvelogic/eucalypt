@@ -981,16 +981,22 @@ impl<'text> Parser<'text> {
                         // means the format spec or dotted path was merely malformed,
                         // not truly unclosed) or the end of the enclosing string.
                         let mut found_close = false;
+                        // The range of the non-trivia tokens left over, if any.
+                        let mut leftover: Option<TextRange> = None;
                         while let Some((k, stray_text)) = self.peek() {
                             let stray_len = TextSize::of(stray_text);
                             if k == CLOSE_BRACE {
                                 // A closing brace is present; consume it and stop.
-                                // This handles malformed-but-closed interpolations
-                                // such as `{x:.2f}` where the parser cannot parse
-                                // the full format spec.
+                                // The interpolation is closed but malformed —
+                                // `{a b}`, `{x:.2f}` — so the tokens left over
+                                // are reported rather than silently dropped.
                                 self.next();
                                 self.sink().token(CLOSE_BRACE, stray_len);
                                 found_close = true;
+                                if let Some(range) = leftover {
+                                    self.errors
+                                        .push(ParseError::InvalidStringInterpolation { range });
+                                }
                                 break;
                             }
                             if k == STRING_LITERAL_CONTENT
@@ -1002,6 +1008,11 @@ impl<'text> Parser<'text> {
                                 // Stop before the end of the string — these
                                 // will be consumed by the outer loop.
                                 break;
+                            }
+                            if !k.is_trivial() {
+                                let at =
+                                    TextRange::at(self.token_start_at(self.next_token), stray_len);
+                                leftover = Some(leftover.map_or(at, |r| r.cover(at)));
                             }
                             self.next();
                             self.sink().token(k, stray_len);
@@ -1110,6 +1121,7 @@ impl<'text> Parser<'text> {
                 self.sink().token(STRING_FORMAT_SPEC, spec_len);
                 self.sink().finish_node();
             }
+            self.add_trivia();
         }
     }
 }
@@ -2652,6 +2664,54 @@ UNIT@0..105
         assert_eq!(
             interp.target().and_then(|t| t.value()).as_deref(),
             Some("a")
+        );
+    }
+
+    /// Tokens left over in a closed interpolation are an error, not
+    /// silently dropped: `"{ a b }"` used to read as `{a}`.
+    #[test]
+    fn string_interpolation_leftover_tokens_are_an_error() {
+        for (src, leftover) in [
+            ("x: \"{ a b }\"\n", "b"),
+            ("x: \"{a b c}\"\n", "b c"),
+            ("x: c\"{ a b }\"\n", "b"),
+            ("x: \"{a.b c}\"\n", "c"),
+            ("x: \"{x:.2f}\"\n", ".2f"),
+            ("x: \"{x:a:b}\"\n", ":b"),
+        ] {
+            let parse = parse_unit(src);
+            assert_eq!(parse.syntax_node().text().to_string(), src);
+            match &parse.errors()[..] {
+                [crate::syntax::rowan::ParseError::InvalidStringInterpolation { range }] => {
+                    assert_eq!(&src[*range], leftover, "range for {src:?}")
+                }
+                errs => panic!("expected one invalid interpolation error for {src:?}: {errs:?}"),
+            }
+        }
+        for src in [
+            "x: \"{ a }\"\n",
+            "x: \"{ a.b.c }\"\n",
+            "x: \"{ s : up }\"\n",
+            "x: \"{ n : %03d }\"\n",
+            "x: c\"{ n : %03d }\\n\"\n",
+        ] {
+            let parse = parse_unit(src);
+            assert!(parse.errors().is_empty(), "{src:?}: {:?}", parse.errors());
+        }
+    }
+
+    /// A padded format specifier excludes its trailing whitespace.
+    #[test]
+    fn string_format_spec_is_trimmed() {
+        let parse = parse_unit("x: \"{ s : up }\"\n");
+        let interp = parse
+            .syntax_node()
+            .descendants()
+            .find_map(crate::syntax::rowan::ast::StringInterpolation::cast)
+            .expect("interpolation");
+        assert_eq!(
+            interp.format_spec().and_then(|f| f.value()).as_deref(),
+            Some("up")
         );
     }
 

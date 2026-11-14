@@ -446,6 +446,7 @@ fn parse_error_range(error: &rowan::ParseError) -> Option<::rowan::TextRange> {
         PE::ReservedCharacter { range } => Some(*range),
         PE::EmptyExpression { range } => Some(*range),
         PE::UnclosedStringInterpolation { range } => Some(*range),
+        PE::InvalidStringInterpolation { range } => Some(*range),
         PE::InvalidZdtLiteral { range, .. } => Some(*range),
         PE::InvalidDoubleColon { range } => Some(*range),
         PE::UnclosedBracketExpr { range } => Some(*range),

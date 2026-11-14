@@ -242,7 +242,7 @@
       "match": "\\{\\{|\\}\\}"
     },
     "interpolation": {
-      "comment": "{target}, {a.b}, { x }, {0}, {} and {x:%spec}; a target runs to whitespace, '}', ':' or '.'.",
+      "comment": "{target}, {a.b}, { x }, {0}, {} and {x:%spec}; a target runs to whitespace, '}', ':' or '.'; whitespace around a spec is not part of it.",
       "name": "meta.interpolation.eucalypt",
       "begin": "\\{",
       "end": "\\}",
@@ -258,7 +258,7 @@
       },
       "patterns": [
         {
-          "match": "(:)([^}]*)",
+          "match": "(:)\\s*([^}]*[^}\\s])?",
           "captures": {
             "1": {
               "name": "punctuation.separator.format-spec.eucalypt"

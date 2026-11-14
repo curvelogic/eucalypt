@@ -6,6 +6,7 @@
 
 use crate::common::sourcemap::SourceMap;
 use crate::core::typecheck::error::TypeWarning;
+use crate::syntax::rowan::kind::SyntaxNode;
 use crate::syntax::rowan::ParseError;
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use rowan::TextRange;
@@ -116,6 +117,7 @@ fn error_range(error: &ParseError) -> TextRange {
         | ParseError::ReservedCharacter { range }
         | ParseError::EmptyExpression { range }
         | ParseError::UnclosedStringInterpolation { range }
+        | ParseError::InvalidStringInterpolation { range }
         | ParseError::InvalidZdtLiteral { range, .. }
         | ParseError::InvalidDoubleColon { range }
         | ParseError::UnclosedBracketExpr { range }
@@ -149,6 +151,9 @@ fn error_message(error: &ParseError) -> String {
         ParseError::UnclosedStringInterpolation { .. } => {
             "unclosed string interpolation (missing closing brace)".to_string()
         }
+        ParseError::InvalidStringInterpolation { .. } => {
+            "unexpected content in string interpolation".to_string()
+        }
         ParseError::InvalidZdtLiteral { .. } => "invalid ZDT literal".to_string(),
         ParseError::InvalidDoubleColon { .. } => {
             "'::' is not valid syntax; use ':' for declarations".to_string()
@@ -170,8 +175,24 @@ fn error_message(error: &ParseError) -> String {
 /// Convert a Rowan `TextRange` to an LSP `Range` using the source text
 /// for line/column mapping.
 pub fn text_range_to_lsp_range(source: &str, range: TextRange) -> Range {
+    debug_assert!(
+        usize::from(range.end()) <= source.len(),
+        "tree range {range:?} extends past the end of the source ({} bytes)",
+        source.len()
+    );
     let line_index = LineIndex::new(source);
     line_index.range(range)
+}
+
+/// Check that a syntax tree is lossless for `source`: its text length must
+/// equal the source length, or slicing the source with tree ranges is
+/// wrong (or panics) — a debug-build guard on the parser's invariant.
+pub(super) fn debug_assert_lossless(source: &str, root: &SyntaxNode) {
+    debug_assert_eq!(
+        usize::from(root.text_range().len()),
+        source.len(),
+        "syntax tree length differs from source length"
+    );
 }
 
 /// Line/column index for converting byte offsets to LSP positions.
@@ -300,6 +321,29 @@ fn floor_char_boundary(s: &str, pos: usize) -> usize {
 mod tests {
     use super::*;
     use crate::syntax::rowan::parse_unit;
+
+    #[test]
+    fn lossless_guard_accepts_tree_of_its_source() {
+        let source = "x: \"{ a b }\"\ny: \"{ s : up }\"\n";
+        debug_assert_lossless(source, &parse_unit(source).syntax_node());
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "syntax tree length differs from source length")]
+    fn lossless_guard_rejects_tree_of_other_source() {
+        debug_assert_lossless("x: 1\n", &parse_unit("x: 12\n").syntax_node());
+    }
+
+    #[test]
+    fn invalid_interpolation_is_a_diagnostic() {
+        let source = "x: \"{ a b }\"\n";
+        let parse = parse_unit(source);
+        let diags = diagnostics_from_parse_errors(source, parse.errors());
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].range.start.character, 8);
+        assert_eq!(diags[0].range.end.character, 9);
+    }
 
     #[test]
     fn no_errors_for_valid_source() {
