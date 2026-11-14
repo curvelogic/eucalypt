@@ -366,8 +366,19 @@ Fails, rather than prompting, if the location does not resolve to a file."
           (with-current-buffer (eucalypt-test--visit remote)
             (should (file-remote-p default-directory))
             (eucalypt-test--wait (eucalypt-run nil))
-            (should (equal (mapcar #'car (eucalypt-list-targets buffer-file-name))
-                           '("bar" "foo")))
+            ;; The stderr file must be named remotely: TRAMP writes a
+            ;; local name on the local host, where it is never read.
+            (let* ((dests nil)
+                   (orig (symbol-function 'process-file))
+                   (targets
+                    (cl-letf (((symbol-function 'process-file)
+                               (lambda (prog infile dest &rest rest)
+                                 (push dest dests)
+                                 (apply orig prog infile dest rest))))
+                      (eucalypt-list-targets buffer-file-name))))
+              (should (equal (mapcar #'car targets) '("bar" "foo")))
+              (should (= (length dests) 1))
+              (should (file-remote-p (cadr (car dests)))))
             (let ((buf (eucalypt-test--compile-command #'eucalypt-check
                                                        "*eucalypt check*")))
               (with-current-buffer buf
