@@ -9,6 +9,12 @@ on:
       - 'tests/harness/**/*.eu'
       - 'examples/aoc25/**/*.eu'
       - 'scripts/check-tree-sitter-corpus.py'
+      - 'editors/vscode/**'
+      - 'editors/emacs/**'
+      - 'editors/test-fixtures/**'
+      - 'src/driver/lsp/**'
+      - 'scripts/check-highlighting-consistency.js'
+      - 'scripts/check-emacs-mode.sh'
       - '.github/workflows/tree-sitter.yaml'
   push:
     branches: [master]
@@ -19,6 +25,12 @@ on:
       - 'tests/harness/**/*.eu'
       - 'examples/aoc25/**/*.eu'
       - 'scripts/check-tree-sitter-corpus.py'
+      - 'editors/vscode/**'
+      - 'editors/emacs/**'
+      - 'editors/test-fixtures/**'
+      - 'src/driver/lsp/**'
+      - 'scripts/check-highlighting-consistency.js'
+      - 'scripts/check-emacs-mode.sh'
       - '.github/workflows/tree-sitter.yaml'
   workflow_dispatch:
 
@@ -59,3 +71,71 @@ jobs:
 
       - name: Run corpus-parse divergence check
         run: python3 scripts/check-tree-sitter-corpus.py
+
+  highlighting-consistency:
+    # TextMate and tree-sitter highlighting compared against the rowan
+    # parser's LSP semantic tokens (eu-ioz21.1, PR #1197). Any disagreement
+    # outside editors/test-fixtures/highlighting/consistency-allowlist.json
+    # fails the job.
+    name: Highlighting consistency (eu-ioz21.1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Build eu (the LSP server is the reference highlighter)
+        run: cargo build --release --bin eu
+
+      - name: Install VS Code extension dependencies (vscode-textmate)
+        run: npm ci
+        working-directory: editors/vscode
+
+      - name: Install tree-sitter CLI
+        run: npm ci
+        working-directory: editors/tree-sitter-eucalypt
+
+      - name: Run highlighting consistency check
+        run: node scripts/check-highlighting-consistency.js --eu target/release/eu
+
+  emacs-mode:
+    # eucalypt-mode's tree-sitter queries compile against the grammar and
+    # fontify the corpus at every font-lock level (eu-oaz72.7, PR #1188).
+    # --require turns a missing Emacs 29+/tree-sitter or compiler into a
+    # failure rather than a skip.
+    name: Emacs mode query check (eu-oaz72.7)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install Emacs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y emacs-nox
+
+      - name: Run Emacs mode query check
+        run: scripts/check-emacs-mode.sh --require
+
+  vscode-tests:
+    # The VS Code extension's own tests (TextMate grammar and prelude-name
+    # tests); they ran in no CI job before (noted in PR #1192).
+    name: VS Code extension tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: editors/vscode
+
+      - name: Run tests
+        run: npm test
+        working-directory: editors/vscode
