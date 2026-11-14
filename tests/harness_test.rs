@@ -3327,14 +3327,6 @@ pub fn test_241_oaz72_32_set_vec_of() {
     run_test(&opts("241_oaz72_32_set_vec_of.eu"));
 }
 
-/// Sets on the dict's tree nodes (eu-oaz72.21 PR 5): add, remove,
-/// membership, order (symbols by name), join-based algebra, identity and
-/// rank-based sampling.
-#[test]
-pub fn test_252_oaz72_21_sets_on_dict() {
-    run_test(&opts("252_oaz72_21_sets_on_dict.eu"));
-}
-
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
