@@ -606,11 +606,15 @@ Recorded as built; none changes an agreed choice.
   by the second tree's height). `sample` keeps its draws — a partial
   Fisher–Yates over ranks — but records only swapped positions and finds
   each rank with `Dict::nth`, so it is O(k log n) rather than O(n).
-- **Elements.** Elements stay numbers, strings and symbols: `Primitive`
-  (still the vec element type) converts to `DictKey`, and the element error
-  of eu-oaz72.64 (`InvalidElement`) is unchanged. List elements (OPEN 8,
-  accepted) are left to a follow-up: they need the element wrappers to
-  deep-force with `seqKey` and an error decision for them.
+- **Elements.** Elements are numbers, strings, symbols and lists of them
+  (OPEN 8, accepted), keyed as dict keys are. The element wrappers and
+  `set.of` deep-force with `seqKey`; scalars convert through `Primitive`
+  (still the vec element type), lists become `DictKey::List` (nested at
+  most 32 deep). Error decision: anything else is still eu-oaz72.64's
+  `InvalidElement`, a list holding a bad value is described as "a list
+  holding a block", the set message lists "or lists of them", and
+  `set.contains?` returns false for such values. `to-list` boxes list
+  elements as cons-lists, and rendering emits them as nested sequences.
 - **Visible change.** Symbols now order by name (OPEN 2), not by intern
   order, so `set.to-list` of a set holding several symbols may come back in
   a different order; numbers and strings are unchanged. Numbers were
