@@ -4024,6 +4024,13 @@ pub fn test_189_r9oy_union_as_spec() {
     run_test(&opts("189_r9oy_union_as_spec.eu"));
 }
 
+/// eu-oaz72.114 — an escaped brace at the start of a c-string literal run
+/// was read as an unescaped one, so `c"\{ {n}"` failed to parse.
+#[test]
+pub fn test_260_oaz72_114_cstring_escaped_brace() {
+    run_test(&opts("260_oaz72_114_cstring_escaped_brace.eu"));
+}
+
 /// eu-odkp — regression test for XML import silently dropping entity /
 /// character references in text content (and splitting the surrounding
 /// text into separate trimmed nodes) since the quick-xml 0.25→0.41 bump.
