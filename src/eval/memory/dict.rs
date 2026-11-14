@@ -1199,7 +1199,10 @@ mod tests {
             for (k, _) in d.entries(u) {
                 let n = k.to_number().unwrap().as_f64().unwrap() as i64;
                 if n % 2 == 0 && n < 2 * na {
-                    assert!(matches!(k, DictKey::Int(_)), "key {n} should be a's");
+                    assert!(
+                        matches!(k, DictKey::Num(ExactNum::Int(_))),
+                        "key {n} should be a's"
+                    );
                 }
             }
         }

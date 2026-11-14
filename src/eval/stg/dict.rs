@@ -1020,9 +1020,7 @@ impl StgIntrinsic for DictToBlock {
             d.for_each(tree, |n| {
                 let key = n.key();
                 let name = match key {
-                    DictKey::Int(_) | DictKey::UInt(_) | DictKey::Float(_) => {
-                        Some(render_key(m, view, &key))
-                    }
+                    DictKey::Num(_) => Some(render_key(m, view, &key)),
                     DictKey::Str(_) => key.str_in(&view).map(str::to_string),
                     DictKey::Sym(id) => Some(m.symbol_pool().resolve(id).to_string()),
                     DictKey::List(_) => None,
