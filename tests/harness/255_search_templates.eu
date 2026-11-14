@@ -1,11 +1,9 @@
-#!/usr/bin/env eu
-# eu-oaz72.16: the breadth-first search and Dijkstra templates of the
-# Advent of Code cookbook (docs/guide/advent-of-code.md), copied from it,
-# on grids small enough to run in the harness. The Dijkstra queue is a dict
-# keyed by [priority, seq] (eu-oaz72.22). Expected values were computed
-# independently (a Python BFS and a heapq Dijkstra).
-#
-# RESULT is computed from every check, so a wrong distance fails the test.
+{ doc: "Gates the breadth-first search and Dijkstra templates of the Advent of
+Code cookbook (docs/guide/advent-of-code.md, bead eu-oaz72.16), copied from
+it, on grids small enough to run in the harness. The Dijkstra queue is a dict
+keyed by [priority, seq] (eu-oaz72.22). Expected values were computed
+independently, with a Python BFS and a heapq Dijkstra. RESULT is computed
+from every check, so a wrong distance fails the test." }
 
 ` "a distance longer than any path"
 far: 1000000000
@@ -45,8 +43,6 @@ dijkstra(moves, goal?, start): {
   ]
 }.(search(push([dict.empty, 0, dict.empty], [0, start])))
 
-# --- BFS on a maze -----------------------------------------------------------
-
 ` :suppress
 maze: ["S..#....", "#.##.##.", "...#..#.", ".#...#E."]
 
@@ -65,8 +61,6 @@ maze-moves([x, y]): [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] filter(open
 bfs-steps: bfs(maze-moves, = [6, 3], [0, 0])
 bfs-start: bfs(maze-moves, = [0, 0], [0, 0])
 bfs-walled: bfs(maze-moves, = [3, 0], [0, 0])
-
-# --- Dijkstra on a weighted grid -------------------------------------------
 
 ` "the side of the grid"
 n: 12
@@ -87,8 +81,7 @@ costed(c): [weight(c), c]
 unit(c): [1, c]
 
 weighted: dijkstra(around ; map(costed), = [n - 1, n - 1], [0, 0])
-# Every step costs 1, so many queued entries share a priority; [d, seq]
-# keys keep them apart.
+` "every step costs 1, so many queued entries share a priority; the [d, seq] keys keep them apart"
 uniform: dijkstra(around ; map(unit), = [n - 1, n - 1], [0, 0])
 unreachable: dijkstra(around ; map(unit), = [n, n], [0, 0])
 

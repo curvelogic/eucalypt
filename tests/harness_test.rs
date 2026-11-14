@@ -3331,8 +3331,8 @@ pub fn test_241_oaz72_32_set_vec_of() {
 /// (eu-oaz72.16), with the Dijkstra queue a dict keyed by `[priority, seq]`
 /// (eu-oaz72.22).
 #[test]
-pub fn test_255_oaz72_16_aoc_search() {
-    run_test(&opts("255_oaz72_16_aoc_search.eu"));
+pub fn test_255_search_templates() {
+    run_test(&opts("255_search_templates.eu"));
 }
 
 /// Ticks reported by `-S` for one target of a harness file, run with demand

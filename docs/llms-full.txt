@@ -10016,7 +10016,7 @@ Some habits that pay:
   appending one item at a time with `++` is quadratic.
 - **Parse once.** Bind the parsed input to a name inside the part's
   function rather than parsing inside a loop.
-- **Use `dict.update-strict`** (and `merge-with-strict`) in a loop that
+- **Use `dict.update-strict`** (and `dict.merge-with-strict`) in a loop that
   counts, so the counts do not build up as chains of unevaluated sums.
 - **Parallelise independent work** with `par-map`, `par-sum`, `par-max`,
   `par-min` and `par-concat`, which give the same answer as their
