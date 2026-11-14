@@ -1600,6 +1600,10 @@ pub struct Heap {
     /// Whether the last collection left more blocks held than the limit
     /// tolerates (see [`Heap::enforce_footprint_limit`], eu-oaz72.73).
     over_footprint_limit: std::cell::Cell<bool>,
+    /// Bytes (header + payload, after size rounding) handed out by the
+    /// allocator since the heap was created. Read by the `--profile`
+    /// attribution (eu-oaz72.37); one add per allocation, never reset.
+    bytes_allocated: std::cell::Cell<u64>,
 }
 
 /// Minimum allocation volume between collections: 32 MiB (eu-oaz72.4).
@@ -2368,6 +2372,7 @@ impl Heap {
             gc_growth_factor: std::cell::Cell::new(GC_GROWTH_FACTOR),
             footprint_trigger_blocks: std::cell::Cell::new(usize::MAX),
             over_footprint_limit: std::cell::Cell::new(false),
+            bytes_allocated: std::cell::Cell::new(0),
         }
     }
 
@@ -2396,6 +2401,7 @@ impl Heap {
                 0,
             )),
             over_footprint_limit: std::cell::Cell::new(false),
+            bytes_allocated: std::cell::Cell::new(0),
         }
     }
 
@@ -2436,6 +2442,12 @@ impl Heap {
         // SAFETY: `ptr` is a heap allocation with an AllocHeader prefix;
         // the header is only read.
         size_of::<AllocHeader>() + unsafe { header.as_ref() }.length() as usize
+    }
+
+    /// Total bytes allocated since the heap was created (header + payload,
+    /// after size rounding), for the `--profile` attribution.
+    pub fn bytes_allocated(&self) -> u64 {
+        self.bytes_allocated.get()
     }
 
     /// Bytes counted live by the current (or last) mark phase.
@@ -2749,6 +2761,8 @@ impl Heap {
     /// Ultra-fast allocation counter update (minimal overhead for hot path)
     fn update_allocation_counters_fast(&self, size_bytes: usize, size_class: SizeClass) {
         let _ = (&size_bytes, &size_class);
+        self.bytes_allocated
+            .set(self.bytes_allocated.get() + size_bytes as u64);
         // Only update counters in debug builds or with gc-telemetry feature
         #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
         {

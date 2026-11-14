@@ -31,6 +31,9 @@ pub use predecode::*;
 mod machine;
 pub use machine::*;
 
+mod profile;
+pub use profile::*;
+
 #[cfg(test)]
 mod differential;
 

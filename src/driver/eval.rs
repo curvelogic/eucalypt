@@ -622,6 +622,9 @@ impl<'a> Executor<'a> {
                     heap_mib,
                     stg_settings.test_mode,
                 )?;
+                if opt.profile() {
+                    m.enable_profiler(opt.profile_folded().is_some());
+                }
                 let t_exec = Instant::now();
                 let ret = m.run(None);
                 stats
@@ -670,7 +673,32 @@ impl<'a> Executor<'a> {
                 // available.
                 collect_bytecode_stats(&m, stats);
 
-                let diagnostics = m.take_diagnostics();
+                let mut diagnostics = m.take_diagnostics();
+
+                // `--profile` (eu-oaz72.37): report even on error, like -S,
+                // so an interrupted or failing run still shows where its
+                // time went.
+                if let Some(profiler) = m.profiler() {
+                    Self::register_prelude_source(
+                        self.prelude_blob.is_some(),
+                        &mut self.files,
+                        &mut self.source_map,
+                    );
+                    diagnostics.push(profiler.report(
+                        &self.source_map,
+                        &self.files,
+                        opt.profile_top(),
+                    ));
+                    if let Some(path) = opt.profile_folded() {
+                        let folded = profiler.folded_report(&self.source_map, &self.files);
+                        if let Err(e) = std::fs::write(path, folded) {
+                            diagnostics.push(format!(
+                                "warning: could not write folded stacks to {}: {e}",
+                                path.display()
+                            ));
+                        }
+                    }
+                }
                 Self::flush_diagnostics(&mut self.err, diagnostics);
 
                 result
@@ -769,9 +797,25 @@ impl<'a> Executor<'a> {
     /// A no-op on the source-compiled path (no blob) and after the first
     /// call.
     fn ensure_prelude_source_registered(&mut self) {
+        Self::register_prelude_source(
+            self.prelude_blob.is_some(),
+            &mut self.files,
+            &mut self.source_map,
+        );
+    }
+
+    /// [`Self::ensure_prelude_source_registered`] over explicit fields, for
+    /// a caller that holds another field borrowed (the `--profile` report,
+    /// rendered while the output emitter still borrows `self.out`).
+    fn register_prelude_source(
+        has_blob: bool,
+        files: &mut SimpleFiles<String, String>,
+        source_map: &mut SourceMap,
+    ) {
+        let _ = (has_blob, &files, &source_map);
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if self.prelude_blob.is_none() || self.source_map.has_prelude_file() {
+            if !has_blob || source_map.has_prelude_file() {
                 return;
             }
             let resources = crate::driver::resources::Resources::default();
@@ -779,8 +823,8 @@ impl<'a> Executor<'a> {
                 return;
             };
             let name = crate::syntax::input::Locator::Resource("prelude".to_string()).to_string();
-            let file_id = self.files.add(name, text.clone());
-            self.source_map.set_prelude_file(file_id);
+            let file_id = files.add(name, text.clone());
+            source_map.set_prelude_file(file_id);
         }
     }
 
