@@ -320,7 +320,7 @@
     },
     "number": {
       "comment": "Integer or decimal; a '-' directly before a digit is part of the literal, as in the lexer.",
-      "name": "constant.numeric.eucalypt",
+      "name": "variable.other.eucalypt",
       "match": "-?[0-9]+(?:\\.[0-9]*)?"
     },
     "metadata-block": {
