@@ -1,0 +1,30 @@
+{ doc: "Typical dict code checks clean against the dict(k, v) prelude signatures (eu-oaz72.21, design note §9): counting with update-strict, lookups, keys and values, and destructuring pop-min's (k, v, dict(k, v)) result as a priority queue." }
+
+` { type: "dict(string, number) → string → dict(string, number)" }
+count(d, w): d dict.update-strict(w, + 1, 0)
+
+` { type: "dict(string, number)" }
+counts: ["a", "b", "a"] foldl(count, dict.empty)
+
+` { type: "[number]" }
+tallies: counts dict.values
+
+` { type: "number" }
+total: counts dict.values foldl(+, 0)
+
+` { type: "[string]" }
+words: counts dict.keys
+
+` { type: "number" }
+a-count: counts dict.get-or("a", 0)
+
+` { type: "dict([number], number)" }
+queue: dict.of[[[3, 1], 10], [[1, 2], 20]]
+
+` { type: "([number], number, dict([number], number)) → number" }
+score([k, v, rest]): v + (rest dict.size)
+
+` { type: "dict([number], number) → number" }
+nearest(q): q dict.pop-min score
+
+result: [tallies, total, words, a-count, nearest(queue), counts dict.contains?("b")]

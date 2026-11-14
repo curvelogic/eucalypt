@@ -1,0 +1,9 @@
+{ doc: "A dict's value type flows through dict.get: annotating a lookup of a dict(number, string) as a number warns (eu-oaz72.21, design note §9)." }
+
+` { type: "dict(number, string)" }
+names: dict.of[[1, "one"], [2, "two"]]
+
+` { type: "number" }
+first: names dict.get(1)
+
+result: first

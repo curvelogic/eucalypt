@@ -1,0 +1,3 @@
+{ doc: "dict.update's second argument must be a function of the old value or default: passing a string warns (eu-oaz72.21; the signature parenthesises ((v | d) → w), since | binds looser than →)." }
+
+result: dict.of[[1, "a"]] dict.update(1, "nf", "z")

@@ -6,7 +6,7 @@ prelude-modes: divergent
 === blob prelude ===
 exit: 1
 errors: 1
-warnings: 0
+warnings: 1
 code: -
 primary: user tests/harness/errors/250_dict_bad_pair_computed.eu:2:9
 help-lines: 0
@@ -18,11 +18,19 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/250_dict_bad_pair_computed.eu:2:16
+  │
+2 │ result: dict.of[range(0, 4)] dict.size
+  │                ^^^^^^^^^^^^^ expected [(a, b)], found [[number]]
+
 error: invalid dict entry: expected a [key, value] pair, found a list of at least 3 elements
   ┌─ tests/harness/errors/250_dict_bad_pair_computed.eu:2:9
   │
 2 │ result: dict.of[range(0, 4)] dict.size
   │         ^^^^^^^^^^^^^^^^^^^^
+  │                │
+  │                expected [(a, b)], found [[number]]
   │
   = while evaluating (outermost first):
     - result at 250_dict_bad_pair_computed.eu:2:30
@@ -30,7 +38,7 @@ error: invalid dict entry: expected a [key, value] pair, found a list of at leas
 === --source-prelude ===
 exit: 1
 errors: 1
-warnings: 0
+warnings: 1
 code: -
 primary: user tests/harness/errors/250_dict_bad_pair_computed.eu:2:9
 help-lines: 0
@@ -42,11 +50,17 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/250_dict_bad_pair_computed.eu:2:16
+  │
+2 │ result: dict.of[range(0, 4)] dict.size
+  │                ^^^^^^^^^^^^^ expected [(a, b)], found [[number]]
+
 error: invalid dict entry: expected a [key, value] pair, found a list of at least 3 elements
   ┌─ tests/harness/errors/250_dict_bad_pair_computed.eu:2:9
   │
 2 │ result: dict.of[range(0, 4)] dict.size
-  │         ^^^^
+  │         ^^^^   ------------- expected [(a, b)], found [[number]]
   │
   = while evaluating (outermost first):
     - result at 250_dict_bad_pair_computed.eu:2:30

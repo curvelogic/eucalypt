@@ -1,0 +1,2 @@
+` "a dict whose number key 1 and string key 1 render as the same mapping key is an error naming both."
+result: dict.of[[1, :a], ["1", :b]]

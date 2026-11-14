@@ -1,0 +1,28 @@
+{ doc: "Valid dict code whose keys, defaults or updated values differ in type from the dict's own checks clean (eu-oaz72.21 round 2): a null default to get-or, a range with bounds of another kind, assoc of a new key type onto dict.empty and from-block, update and update-strict that change the value type, and contains?/dissoc of an absent key of another type." }
+
+nums: dict.of[[:a, 1]]
+
+missing: nums dict.get-or(:b, null)
+
+mixed: dict.of[[3, :x], ["k", :y], [:s, :z]]
+
+window: mixed dict.range(3, :a) dict.keys
+
+built: dict.empty dict.assoc(:k, 1) dict.assoc(:j, "s")
+
+blocky: { x: 1 } dict.from-block dict.assoc("x", 2)
+
+restrung: dict.of[[1, :a]] dict.update(1.0, str.of, 0)
+
+forced: dict.of[[1, 0]] dict.update-strict(1, const(:x), 0)
+
+queue: dict.of[[[1, :c], 1]] dict.assoc([2, :d], 0) dict.dissoc[3, :c]
+
+absent: [nums dict.contains?("x"), nums dict.dissoc(9) dict.size]
+
+result: [lengthened, missing, window, built dict.size, blocky dict.size, restrung dict.values, forced dict.get(1), queue dict.size, absent]
+
+` { type: "dict(number, string) → number" }
+lengths(d): d dict.values map(str.len) foldl(+, 0)
+
+lengthened: dict.of[[1, "ab"]] dict.update(2, str.of, "cde") lengths

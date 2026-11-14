@@ -1125,7 +1125,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "EMIT0" | "EMITx" | "EMITT" | "EMITF" | "EMIT[" | "EMIT]" | "EMIT{" | "EMIT}" | "EMIT<"
         | "EMIT>" | "EMITTAGx" | "EMITTAG[" | "EMITTAG{" | "NV.EMIT[*]" | "NV.EMIT{*}"
         | "Emit.RenderKV" | "RENDER" | "RENDER_ITEMS" | "RENDER_BLOCK_ITEMS" | "RENDER_KV"
-        | "RENDER_DOC" => None,
+        | "RENDER_DOC" | "DICT.RENDER_VIEW" => None,
         // Boolean / saturation / internal control
         "AND" | "OR" | "SATURATED" => None,
         // Internal block/list helpers

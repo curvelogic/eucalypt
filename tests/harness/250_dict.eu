@@ -2,7 +2,7 @@
   title: "250 dict: persistent ordered dictionaries"
   doc: "Dict construction, lookup, persistent update, key equality and order,
         ordered operations (min, max, pops, range), update, merge, block
-        conversion,
+        conversion, rendering,
         laziness and memoisation of values (eu-oaz72.21; design in
         docs/superpowers/plans/2026-11-12-dict-design.md). Each target
         computes `ok` from its checks. The tick and peak-heap gates in
@@ -302,6 +302,41 @@ ordered-ops: {
   ]
 
   ok: [keys-values, extremes, queue, ranges, updates, merges, blocks] concat all-true?
+}
+
+#
+# Rendering: a dict renders as a mapping in key order, its entries named
+# as by `dict.to-block` (design note §8).
+#
+
+` "the dict `rendering` renders, with every kind of key"
+mixed: dict.of[[2, 20], ["x", c"s\"q"], [:y, [1, 2]], [0.5, dict.empty], [1, { a: true }]]
+
+` { target: :rendering
+    verify: [:passes] }
+rendering: {
+  ` "mapping output in each format, keys in key order"
+  formats: [
+    (mixed render-as(:json)) = c"\{\n  \"0.5\": \{\},\n  \"1\": \{\n    \"a\": true\n  \},\n  \"2\": 20,\n  \"x\": \"s\\\"q\",\n  \"y\": [\n    1,\n    2\n  ]\n\}\n",
+    (mixed render-as(:edn)) = c"\{:0.5 \{\} :1 \{:a true\} :2 20 :x \"s\\\"q\" :y [1 2]\}\n",
+    (dict.of[[:b, 1], ["a", 2]] render-as(:yaml)) = c"---\na: 2\nb: 1\n",
+    (dict.of[[3, 1]] render-as(:toml)) = c"3 = 1\n\n",
+    (dict.empty render-as(:json)) = c"\{\}\n"
+  ]
+
+  ` "a dict inside a block or a list renders in place, and carries a render tag as a block does"
+  nested: [
+    ({ d: dict.of[[:k, [dict.of[[1, :v]]]]] } render-as(:edn)) = c"\{:d \{:k [\{:1 :v\}]\}\}\n",
+    ([dict.of[[:a, 2]] // { tag: "!t" }] render-as(:yaml)) = ([{ a: 2 } // { tag: "!t" }] render-as(:yaml))
+  ]
+
+  ` "a rendered value is computed once, and a dict renders the same as its block"
+  values: [
+    (mixed dict.to-block render-as(:json)) = (mixed render-as(:json)),
+    (dict.of[[:a, 1 + 1]] dict.assoc(:b, 3 * 3) render-as(:edn)) = c"\{:a 2 :b 9\}\n"
+  ]
+
+  ok: [formats, nested, values] concat all-true?
 }
 
 #

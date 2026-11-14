@@ -538,3 +538,46 @@ Recorded as built; none changes an agreed choice.
   `DictKeyNotBlockKey` for a list key and `DictBlockKeyCollision` for two
   keys that name the same entry (`"x"` and `:x`, `1` and `"1"`), the
   rule §8 and OPEN 5 set for rendering.
+
+## 14. Implementation notes (PR 4)
+
+Recorded as built; none changes an agreed choice.
+
+- **Render view.** `DICT.RENDER_VIEW(x)` returns the dict's entries as a
+  list of block pairs, not a `Block`, and returns unit (not `x`) for any
+  other value: the wrapper's fallback cases on the result, rendering a list
+  as a mapping and sending unit to `EmitNative(x)`, which keeps `x` in its
+  environment. The block render branch is one helper (`render_mapping`)
+  used by the `Block` arm and both list arms, so a dict carries a render
+  tag as a block does. The intrinsic is internal render machinery and is
+  filtered from traces.
+- **Naming and errors.** `dict.to-block` and rendering share one naming
+  function (`entry_names`); rendering raises its own errors,
+  `DictKeyNotRenderable` (list key) and `DictRenderKeyCollision`, whose
+  hints point at `dict.to-list`. `DictNotRenderable` remains for a dict
+  reaching an emitter directly, which the render wrapper no longer allows.
+- **Typing.** `dict(k, v)` is `App(App(Con("dict"), k), v)`, beside
+  `Lens`/`Traversal`; `dict` is a type keyword, so, like `set`, it cannot
+  be a record field name in a type string. The `Dict(T)` rename (OPEN 9)
+  is not in this PR.
+- **Signatures beyond §9 (round 2).** Signatures must not warn on valid
+  code, and a dict may hold keys and values of mixed types, so the
+  arguments that need not match the dict's types are loosened: `get-or`
+  is `any → d → dict(k, v) → (v | d)`; `assoc` is
+  `j → w → dict(k, v) → dict(k | j, v | w)`; `update`/`update-strict` are
+  `j → ((v | d) → w) → d → dict(k, v) → dict(k | j, v | w)`; `range`'s
+  bounds and the key of `dissoc` and `contains?` are `any`. `get`,
+  `to-list`, `min` and `pop-min` stay as §9 gives them.
+  `eu check --strict tests/harness/250_dict.eu` is a test.
+- **Render error location.** A render error comes from the render
+  machinery, which has no annotation, so `DictKeyNotRenderable` and
+  `DictRenderKeyCollision` carry no source location: the machine's current
+  or last annotation is whatever user code ran last, unrelated to the
+  dict. A location for them would need the dict to carry its construction
+  Smid, a change to the GC-traced dict layout left out of this PR.
+- **Known checker limit.** A literal symbol inside a tuple is not widened
+  when a type variable is instantiated, so `pq dict.assoc([2, :d], 0)` on
+  a dict built from `[[3, :c], …]` warns (`(number, :c)` against
+  `(number, :d)`) under the §9 `assoc`; the loosened `assoc` no longer
+  does. `cons([2, :d], [[3, :c]])` still warns; the fix belongs to the
+  checker (eu-oaz72.127).
