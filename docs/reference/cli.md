@@ -33,7 +33,8 @@ eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
 ### Subcommands
 
 - `run` (default) - Evaluate eucalypt code
-- `test` - Run tests
+- `test` - Run tests in each file or directory given (the current
+  directory if none); see [Testing](../guide/testing.md#running-several-files)
 - `check` - Type-check eucalypt source files
 - `doc` - Extract documentation from eucalypt source files
 - `dump` - Dump intermediate representations

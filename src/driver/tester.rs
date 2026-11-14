@@ -16,18 +16,33 @@ use webbrowser;
 
 use super::statistics::{Statistics, Timings};
 
-/// Main entry point for `eu -T` - analyse for test plan, execute and report
+/// Main entry point for `eu test` - analyse for test plan, execute and report
+///
+/// Every input is tested, in the order given: a directory contributes
+/// each test file in it, a file contributes itself. With no inputs the
+/// current directory is tested. All plans run as one suite with one
+/// report, and the exit code is non-zero if any test fails.
 pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
-    let input = opt.explicit_inputs().last().unwrap_or(&cwd);
-    let path = resolve_input(opt, input)?;
+    let inputs = if opt.explicit_inputs().is_empty() {
+        vec![cwd]
+    } else {
+        opt.explicit_inputs().to_vec()
+    };
     let run_id = Uuid::new_v4().hyphenated().to_string();
 
-    let plans = if path.is_dir() {
-        directory_plans(opt, &run_id, &path)?
-    } else {
-        vec![load_plan(opt, &run_id, &path)?]
-    };
+    let mut plans = vec![];
+    for input in inputs {
+        let path = resolve_input(opt, &input)?;
+        if path.is_dir() {
+            plans.extend(directory_plans(opt, &run_id, &path)?);
+        } else {
+            // Analyse each file on its own, not over the merged core of
+            // every input.
+            let file_opts = opt.clone().with_explicit_inputs(vec![input]);
+            plans.push(load_plan(&file_opts, &run_id, &path)?);
+        }
+    }
 
     run_plans(opt, plans.as_slice())
 }
@@ -124,8 +139,8 @@ fn stdout_ok(result: std::io::Result<()>) -> std::io::Result<()> {
     }
 }
 
-/// Resolve the one and only input to determine if we are running a
-/// single test or a suite.
+/// Resolve an input to a path, to determine whether it is a single
+/// test file or a directory suite.
 pub fn resolve_input(opt: &EucalyptOptions, input: &Input) -> Result<PathBuf, EucalyptError> {
     if let Locator::Fs(path) = input.locator() {
         for libdir in opt.lib_path() {
