@@ -32,6 +32,7 @@ use super::{
 
 use regex::Regex;
 use serde_json::Number;
+use std::borrow::Cow;
 
 /// Get (or store and get) regex from machine rcache
 ///
@@ -299,7 +300,7 @@ impl StgIntrinsic for NumParse {
     ) -> Result<(), ExecutionError> {
         let string = str_arg(machine, view, &args[0])?;
 
-        if let Ok(num) = str::parse::<Number>(&string) {
+        if let Ok(num) = str::parse::<Number>(strip_leading_zeros(&string).as_ref()) {
             machine_return_num(machine, view, num)
         } else {
             Err(ExecutionError::BadNumberFormat(
@@ -311,6 +312,32 @@ impl StgIntrinsic for NumParse {
 }
 
 impl CallGlobal1 for NumParse {}
+
+/// Drop redundant leading zeros from the integer part of a decimal
+/// number string, keeping at least one digit: `"07"` → `"7"`,
+/// `"-007.5"` → `"-7.5"`, `"00"` → `"0"`.
+///
+/// `num` parses with `serde_json::Number`, whose JSON grammar rejects
+/// leading zeros. Fixed-width numeric fields are common in data, and a
+/// leading zero never means octal here: the digits are always read as
+/// decimal. Only the integer part (after an optional `-`) is touched;
+/// anything else the grammar rejects is still rejected, including a
+/// radix prefix such as `0x`, `0o` or `0b` (`"00x1f"` → `"0x1f"`).
+fn strip_leading_zeros(s: &str) -> Cow<'_, str> {
+    let (sign, digits) = match s.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", s),
+    };
+    let int_len = digits.bytes().take_while(u8::is_ascii_digit).count();
+    let zeros = digits.bytes().take_while(|&b| b == b'0').count();
+    // Keep the last digit of the integer part even when it is a zero.
+    let strip = zeros.min(int_len.saturating_sub(1));
+    if strip == 0 {
+        Cow::Borrowed(s)
+    } else {
+        Cow::Owned(format!("{sign}{}", &digits[strip..]))
+    }
+}
 
 /// FMT(obj, fmtstring) - format an object using platform fmt
 /// only supports number right now
@@ -599,6 +626,31 @@ mod tests {
             Box::new(Add),
             Box::new(Panic),
         ])
+    }
+
+    // ── NUMPARSE leading zeros ────────────────────────────────────
+
+    #[test]
+    fn test_strip_leading_zeros() {
+        for (input, expected) in [
+            ("07", "7"),
+            ("-07", "-7"),
+            ("00", "0"),
+            ("-00", "-0"),
+            ("007.5", "7.5"),
+            ("000e5", "0e5"),
+            ("0", "0"),
+            ("0.5", "0.5"),
+            ("10", "10"),
+            ("", ""),
+            ("-", "-"),
+            ("0x1f", "0x1f"),
+            ("00x1f", "0x1f"),
+            ("+07", "+07"),
+            (" 07", " 07"),
+        ] {
+            assert_eq!(strip_leading_zeros(input), expected, "input {input:?}");
+        }
     }
 
     // ── STR wrapper tests ─────────────────────────────────────────
