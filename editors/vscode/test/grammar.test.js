@@ -24,6 +24,8 @@ const CASES = {
     ["dotted", ".", "keyword.operator.accessor"],
     ["dotted", "x", "variable.other.interpolation"],
     ["spaced", "name", "variable.other.interpolation"],
+    ["spaced-format", "n", "variable.other.interpolation"],
+    ["spaced-format", "%06d", "string.other.format-spec"],
     ["escaped-braces", "{{", "constant.character.escape"],
     ["escaped-braces", "}}", "constant.character.escape"],
     ["escape-then-target", "{{", "constant.character.escape"],

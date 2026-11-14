@@ -7,6 +7,7 @@ use crate::eval::{
     machine::intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
     memory::{
         self,
+        dict::{Dict, DictKey},
         mutator::MutatorHeapView,
         ndarray::HeapNdArray,
         set::{HeapSet, Primitive as SetPrimitive},
@@ -99,7 +100,8 @@ fn set_primitive_to_render_primitive(
     }
 }
 
-/// Emit a set as a sorted sequence of scalars
+/// Emit a set as a sorted sequence: scalars, and nested sequences for
+/// list elements.
 fn emit_set(
     machine: &dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
@@ -113,9 +115,30 @@ fn emit_set(
         emitter,
         Event::OutputSequenceStart(metadata.clone()),
     )?;
-    for elem in set.elements() {
-        let prim = set_primitive_to_render_primitive(elem, machine, view);
-        emit_scalar(machine, emitter, &RenderMetadata::empty(), &prim)?;
+    for key in set.elements(&Dict::new(view, machine.symbol_pool())) {
+        emit_set_element(machine, view, emitter, &key)?;
+    }
+    emit_event(machine, emitter, Event::OutputSequenceEnd)
+}
+
+/// Emit one set element: a scalar, or a sequence for a list element.
+fn emit_set_element(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    emitter: &mut dyn Emitter,
+    key: &DictKey,
+) -> Result<(), ExecutionError> {
+    if let Some(prim) = key.to_primitive() {
+        let prim = set_primitive_to_render_primitive(&prim, machine, view);
+        return emit_scalar(machine, emitter, &RenderMetadata::empty(), &prim);
+    }
+    emit_event(
+        machine,
+        emitter,
+        Event::OutputSequenceStart(RenderMetadata::empty()),
+    )?;
+    for k in key.list_in(&view).unwrap_or_default() {
+        emit_set_element(machine, view, emitter, k)?;
     }
     emit_event(machine, emitter, Event::OutputSequenceEnd)
 }

@@ -144,8 +144,33 @@ in a code review.
 
 ## Sets
 
-Sets are unordered collections of unique values, provided by the
-`set` namespace.
+Sets are collections of unique numbers, strings and symbols, and lists
+of them (such as `[x, y]` grid points), provided by the `set` namespace. A set is held as a persistent balanced tree (the
+same structure as a [dict](dicts.md)), so `set.add`, `set.remove` and
+`set.contains?` take time logarithmic in the set's size, `set.size` is
+constant, and each new set shares most of its structure with the old
+one. `set.to-list` returns the elements in order: numbers first (by
+value), then strings, then symbols (by name), then lists (element by
+element, a shorter list first when one is a prefix of the other). List
+elements are compared exactly as [dict](dicts.md) keys are.
+
+```sh
+eu -e '[[2, 1], [1, 2], [1, 2]] set.of set.add([0, 5]) set.to-list'
+```
+
+```yaml
+- - 0
+  - 5
+- - 1
+  - 2
+- - 2
+  - 1
+```
+
+An element that is neither a number, string or symbol nor a list of
+them — a block, a boolean, a function, or a list holding one — is an
+error in `set.of`, `set.add` and `set.remove`, and simply not a member
+for `set.contains?`.
 
 ### Creating Sets
 

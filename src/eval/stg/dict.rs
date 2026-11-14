@@ -174,7 +174,7 @@ fn render_key(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, key: &D
 
 /// Convert a stored key back to a eucalypt value: boxed scalars, and
 /// cons-lists for list keys.
-fn key_value(
+pub(crate) fn key_value(
     machine: &dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     key: &DictKey,

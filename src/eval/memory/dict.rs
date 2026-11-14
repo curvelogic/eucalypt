@@ -79,6 +79,17 @@ impl DictKey {
         }
     }
 
+    /// The scalar key as a set/vec element (`None` for a list key).
+    pub fn to_primitive(&self) -> Option<super::set::Primitive> {
+        use super::set::Primitive;
+        match self {
+            DictKey::Num(n) => Some(Primitive::Num(*n)),
+            DictKey::Str(p) => Some(Primitive::Str(*p)),
+            DictKey::Sym(id) => Some(Primitive::Sym(*id)),
+            DictKey::List(_) => None,
+        }
+    }
+
     /// Rank of the key's type in the cross-type order.
     fn type_rank(&self) -> u8 {
         match self {
@@ -772,6 +783,61 @@ impl<'a> Dict<'a> {
         self.link(left, key, value, right)
     }
 
+    /// The intersection of `a` and `b`: the entries of `a` whose keys `b`
+    /// also holds (`a`'s key and value kept). Join-based, as
+    /// [`Dict::union_with`]; the recursion depth is bounded by `b`'s height.
+    pub fn intersect(&self, a: Tree, b: Tree) -> Result<Tree, ExecutionError> {
+        let (Some(_), Some(bp)) = (a, b) else {
+            return Ok(None);
+        };
+        let bn = self.node(bp);
+        let (l, found, r) = self.split(a, &bn.key)?;
+        let left = self.intersect(l, bn.left)?;
+        let right = self.intersect(r, bn.right)?;
+        match found {
+            Some(f) => {
+                let fnode = self.node(f);
+                self.link(left, fnode.key, fnode.value.clone(), right)
+            }
+            None => self.merge(left, right),
+        }
+    }
+
+    /// The difference `a - b`: the entries of `a` whose keys `b` does not
+    /// hold. Join-based; the recursion depth is bounded by `b`'s height.
+    pub fn difference(&self, a: Tree, b: Tree) -> Result<Tree, ExecutionError> {
+        let Some(bp) = b else {
+            return Ok(a);
+        };
+        if a.is_none() {
+            return Ok(None);
+        }
+        let bn = self.node(bp);
+        let (l, _, r) = self.split(a, &bn.key)?;
+        let left = self.difference(l, bn.left)?;
+        let right = self.difference(r, bn.right)?;
+        self.merge(left, right)
+    }
+
+    /// The node of rank `i` (0-based, in key order), if `i` is in range.
+    /// O(log n).
+    pub fn nth(&self, t: Tree, mut i: u64) -> Option<RefPtr<DictNode>> {
+        let mut cur = t;
+        while let Some(p) = cur {
+            let n = self.node(p);
+            let sl = self.size(n.left);
+            match i.cmp(&sl) {
+                Ordering::Less => cur = n.left,
+                Ordering::Equal => return Some(p),
+                Ordering::Greater => {
+                    i -= sl + 1;
+                    cur = n.right;
+                }
+            }
+        }
+        None
+    }
+
     /// Build a perfectly balanced tree from entries in strictly increasing
     /// key order. O(n).
     pub fn build_sorted(&self, entries: &[Entry]) -> Result<Tree, ExecutionError> {
@@ -1138,6 +1204,69 @@ mod tests {
         assert!(d.range(t, &int(20), &int(10)).unwrap().is_none());
         assert!(d.range(t, &int(20), &int(20)).unwrap().is_none());
         assert_eq!(d.size(d.range(t, &int(-100), &int(10_000)).unwrap()), 500);
+    }
+
+    /// `intersect` and `difference` agree with a model for unequal sizes,
+    /// keep `a`'s keys and values, and keep the balance invariant; `nth`
+    /// finds every rank.
+    #[test]
+    fn intersect_difference_and_nth() {
+        let heap = Heap::new();
+        let pool = SymbolPool::new();
+        let d = Dict::new(MutatorHeapView::new(&heap), &pool);
+        for (na, nb) in [
+            (0, 0),
+            (0, 7),
+            (7, 0),
+            (1, 300),
+            (300, 1),
+            (200, 300),
+            (37, 41),
+        ] {
+            // a: even keys below 2·na (ints); b: multiples of 3 below 3·nb
+            // (floats, equal to but not the same key as a's ints).
+            let mut a: Tree = None;
+            for i in shuffled(na) {
+                a = d.insert(a, int(i * 2), val(i * 2)).unwrap();
+            }
+            let mut b: Tree = None;
+            for i in shuffled(nb) {
+                b = d.insert(b, float((i * 3) as f64), val(-1)).unwrap();
+            }
+            let i = d.intersect(a, b).unwrap();
+            let x = d.difference(a, b).unwrap();
+            d.check_invariants(i).unwrap();
+            d.check_invariants(x).unwrap();
+            let in_b = |k: i64| k % 3 == 0 && k < 3 * nb;
+            let a_keys: Vec<i64> = (0..na).map(|k| k * 2).collect();
+            let want_i: Vec<(i64, i64)> = a_keys
+                .iter()
+                .filter(|k| in_b(**k))
+                .map(|k| (*k, *k))
+                .collect();
+            let want_x: Vec<(i64, i64)> = a_keys
+                .iter()
+                .filter(|k| !in_b(**k))
+                .map(|k| (*k, *k))
+                .collect();
+            let got = |t: Tree| -> Vec<(i64, i64)> {
+                d.entries(t)
+                    .iter()
+                    .map(|(k, v)| {
+                        // a's keys are kept: ints, never b's floats.
+                        assert!(matches!(k, DictKey::Num(ExactNum::Int(_))));
+                        (int_of(k), val_of(v))
+                    })
+                    .collect()
+            };
+            assert_eq!(got(i), want_i, "intersect {na} {nb}");
+            assert_eq!(got(x), want_x, "difference {na} {nb}");
+            for (r, k) in a_keys.iter().enumerate() {
+                let n = d.nth(a, r as u64).expect("rank in range");
+                assert_eq!(int_of(&d.node(n).key()), *k);
+            }
+            assert!(d.nth(a, na as u64).is_none());
+        }
     }
 
     /// `union_with` keeps every key once, keeps `a`'s key where keys are

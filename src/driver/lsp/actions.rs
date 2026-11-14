@@ -23,7 +23,7 @@ use rowan::ast::AstNode;
 use rowan::WalkEvent;
 use std::collections::HashMap;
 
-use super::diagnostics::text_range_to_lsp_range;
+use super::diagnostics::{debug_assert_lossless, text_range_to_lsp_range};
 use super::symbol_table::SymbolTable;
 
 /// Compute code actions for the given range of a document.
@@ -36,6 +36,7 @@ pub fn code_actions(
     warnings: &[TypeWarning],
     source_map: &SourceMap,
 ) -> Vec<CodeAction> {
+    debug_assert_lossless(source, root);
     let mut actions = Vec::new();
 
     // Deprecation quick-fix actions (driven by type warnings, not tokens)
