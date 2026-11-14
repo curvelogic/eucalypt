@@ -166,11 +166,10 @@
 (declaration
   (declaration_head
     [(identifier) (quoted_identifier)] @function
-    (parameter_list)))
+    [(parameter_list) (block_param) (list_param)]))
 
-; Operator declarations
-(operator_declaration
-  (operator) @operator)
+; Operator declarations: the operator keeps its general @operator capture;
+; every operand is a parameter
 (operator_declaration
   (identifier) @parameter)
 
@@ -212,17 +211,17 @@
   (block
     (declaration
       (declaration_head
-        (identifier) @attribute))))
+        [(identifier) (quoted_identifier)] @attribute))))
 (block_metadata
   (block
     (declaration
       (declaration_head
-        (identifier) @attribute))))
+        [(identifier) (quoted_identifier)] @attribute))))
 (unit_metadata
   (block
     (declaration
       (declaration_head
-        (identifier) @attribute))))
+        [(identifier) (quoted_identifier)] @attribute))))
 
 ; Docstrings — string-valued metadata (aliased to docstring by grammar)
 (docstring) @comment.documentation

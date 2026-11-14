@@ -378,8 +378,10 @@ const CAPTURE_LINE =
   /^\s+pattern:\s*(\d+), capture: \d+ - ([\w.]+), start: \((\d+), (\d+)\), end: \((\d+), (\d+)\)/;
 
 // Paints each file with the highlights.scm captures: an inner capture
-// overrides an enclosing one and, of two captures of the same node, the
-// later pattern wins. highlights.scm is written for that convention
+// overrides an enclosing one and, of two captures of the same extent, the
+// later pattern wins. This approximates tree-sitter-highlight; it does not
+// model the highlighter dropping a whole multi-capture match when a later
+// pattern claims one of its nodes (see the note atop highlights.scm). highlights.scm is written for that convention
 // (Neovim's): its specific patterns (`@function` heads, prelude
 // `@keyword`s, metadata's `@attribute` backtick) follow the general ones
 // they refine.
@@ -545,9 +547,11 @@ function parseArgs(argv) {
     throw new Error(`--only takes textmate or tree-sitter, not ${opts.only}`);
   }
   if (!opts.eu) {
+    // The more recently built of the release and debug binaries.
     opts.eu = ["release", "debug"]
       .map((p) => path.join(ROOT, "target", p, "eu"))
-      .find((p) => fs.existsSync(p));
+      .filter((p) => fs.existsSync(p))
+      .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
     if (!opts.eu) throw new Error("no eu binary in target/: build one or pass --eu");
   }
   return opts;

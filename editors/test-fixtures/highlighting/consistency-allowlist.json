@@ -95,8 +95,18 @@
     {
       "highlighter": "tree-sitter",
       "kind": "mismatch",
-      "rowan": "*",
+      "rowan": "name",
       "other": "punctuation",
+      "text": "[\\p{L}_•$?][\\p{L}\\p{N}_$?!*\\-]*",
+      "reason": "uncaptured names inside a bracket expression (⟦ xs ⟧:, ‹element(...) _value›) inherit the whole bracket_expr's @punctuation.special",
+      "ref": "follow-up: name the bracket delimiters in grammar.js"
+    },
+    {
+      "highlighter": "tree-sitter",
+      "kind": "mismatch",
+      "rowan": "declaration",
+      "other": "punctuation",
+      "text": "[\\p{L}_•$?][\\p{L}\\p{N}_$?!*\\-]*",
       "reason": "uncaptured names inside a bracket expression (⟦ xs ⟧:, ‹element(...) _value›) inherit the whole bracket_expr's @punctuation.special",
       "ref": "follow-up: name the bracket delimiters in grammar.js"
     },

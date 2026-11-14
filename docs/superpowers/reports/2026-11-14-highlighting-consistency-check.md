@@ -20,9 +20,12 @@ the other highlighter does not paint wholly with the same coarse class
 (`mismatch`), and a lexical or declaration run the other highlighter
 paints where rowan has no token (`missing`).
 
-Tree-sitter captures are applied as `tree-sitter-highlight` 0.25 (used
-by `cargo xtask highlight-html`) applies them: the inner node wins, and
-for the same node the later pattern wins. Files in
+Tree-sitter captures are applied approximately as `tree-sitter-highlight`
+0.25 (used by `cargo xtask highlight-html`) applies them: the inner node
+wins, and for the same extent the later pattern wins. The script does not
+model the highlighter dropping a whole multi-capture match when a later
+pattern claims one of its nodes; the xtask test covers the cases where
+that mattered. Files in
 `editors/tree-sitter-eucalypt/test/corpus-expected-failures.txt` are not
 compared with tree-sitter. Over 420 files the run takes about 3 s.
 
@@ -48,7 +51,7 @@ pattern winning:
 
 ## Accepted differences
 
-`editors/test-fixtures/highlighting/consistency-allowlist.json` holds 13
+`editors/test-fixtures/highlighting/consistency-allowlist.json` holds 14
 rules: rowan defects filed as eu-oaz72.115 (block-in-call declarations
 as parameters, operator-declaration operands as declarations,
 block-destructuring parameters as metadata, `s"..."` without a token);
@@ -68,7 +71,8 @@ changes, listed below.
   breaks `⌈ [f: lists] ⌉:` in `097_idiot_brackets.eu`, which parses only
   through this defect and needs cons patterns in bracket declaration
   heads (GLR conflicts). 38 files are allow-listed for tree-sitter
-  wholesale until then.
+  wholesale until then; among them `098_juxtaposed_definitions.eu`, so
+  the juxtaposed-parameter captures are checked only on the fixtures.
 - **Bracket delimiters** are anonymous regex tokens, so the query can only
   capture the whole `bracket_expr`: its delimiters cannot be `@operator`
   and uncaptured names inside it are `@punctuation.special`. Aliasing
