@@ -3,7 +3,7 @@
 - **Status:** Plan of record (owner decisions to 2026-11-12)
 - **Date:** 2026-11-12
 - **Epic:** eu-oaz72 (with eu-ioz21 for grammar consolidation)
-- **Roadmap:** [`ROADMAP.md`](../../../ROADMAP.md) §6.3 (0.15) and Pillar DS
+- **Roadmap:** [`ROADMAP.md`](../../../ROADMAP.md) §6.3 (0.16) and Pillar DS
 
 The beads are the source of truth for scope and acceptance criteria. This
 document records the shape of the work — lanes, order, constraints and the
@@ -17,8 +17,8 @@ searches that run in bounded memory, a sorted dictionary that doubles as a
 priority queue, and documentation and editor tooling good enough to work in
 daily under time pressure.
 
-- **0.15 is deferred** (owner decision 2026-11-11) to carry this work; the
-  single-engine change already on master ships with it.
+- **This work targets 0.16.0**, the release after 0.15.0 (2026-10-17, the
+  single-engine release).
 - **No fallbacks.** This is plan A only. If it fails, we reconsider then;
   no contingency branches are built in advance.
 - Acceptance for the epic: every P0/P1 child closed before 1 December; the

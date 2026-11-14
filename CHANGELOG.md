@@ -4,6 +4,9 @@ All notable changes to eucalypt are documented here.
 
 ## [Unreleased]
 
+Changes since 0.15.0, to ship as 0.16.0: mainly the Advent of Code 2026
+preparation work (eu-oaz72) and editor highlighting consolidation (eu-ioz21).
+
 ### Added
 
 - **Lists as set elements (eu-oaz72.21)** — a set element may now be a list of numbers, strings and symbols (nested lists included), such as an `[x, y]` grid point: `[[2, 1], [1, 2]] set.of set.add([0, 5]) set.contains?([1, 2])` is `true`. Lists are keyed exactly as dict keys are, order after every scalar (element by element, a prefix first), and render as nested sequences. A list holding anything else (a block, say) is still an error, now reported as "a list holding a block cannot be a set element".
@@ -40,7 +43,7 @@ All notable changes to eucalypt are documented here.
 - **Tree-sitter highlighting of declarations, symbols and metadata keys (eu-ioz21.1)** — in `highlights.scm` a later pattern wins for a node, but general captures came after the contexts they should yield to, so a declaration named like a prelude function (`value:`, `count:`) was styled as a keyword, a symbol's colon as punctuation (and `:count`'s name as a keyword), and the metadata backtick, quoted declaration names (`'quoted key':`), block-destructuring and juxtaposed parameters (`f({x y}):`, `f[a, b]:`) and the keys of metadata blocks went unstyled or styled as plain declarations. The query is reordered general-first and covers those forms; the operator of an operator declaration is now an operator, as in VS Code and the LSP. This changes `cargo xtask highlight-html` output and any editor using the query.
 - **`eu test a.eu b.eu` now tests every file it is given (eu-oaz72.45)** — it used to test only the last input and silently ignore the rest, so a failing file named earlier went unreported and the run could exit 0. Each file or directory given is now tested in order as one suite, with one report, and the exit code is non-zero if any test fails. `eu test` on a directory with no test files now reports `no test files found` instead of panicking.
 
-## [0.15.0] - Unreleased
+## [0.15.0] - 2026-10-17
 
 Eucalypt 0.15 is the single-engine release. The bytecode engine has been the
 default since 0.12; the legacy HeapSyn tree-walk engine it replaced is now
