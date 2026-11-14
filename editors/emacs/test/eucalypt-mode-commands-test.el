@@ -22,6 +22,8 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'tramp)
+(require 'tramp-sh)
 (require 'eucalypt-mode)
 
 (defconst eucalypt-test--stub
@@ -33,8 +35,10 @@ log=\"$EUCALYPT_STUB_LOG\"
   if [ \"$1\" = eu@- ]; then printf 'stdin=%s\\n' \"$(tr '\\n' '|')\"; fi
   printf 'end\\n'; } >> \"$log\"
 if [ -n \"$NO_COLOR\" ]; then red=''; off=''; else red=$(printf '\\033[31m'); off=$(printf '\\033[0m'); fi
+case \"$*\" in *slow*) sleep 1; printf 'late\\n'; exit 0 ;; esac
 case \"$1\" in
   list-targets)
+    if [ \"$2\" = broken.eu ]; then printf 'boom\\n' >&2; exit 1; fi
     printf 'Available targets\\n\\n'
     printf ' - bar [path: bar]  \\n'
     printf ' - foo (as: json) [path: foo]  the foo\\n'
@@ -213,6 +217,43 @@ Fails, rather than prompting, if the location does not resolve to a file."
       (should (equal (eucalypt-test--args (nth 1 calls)) '("m.eu" "-t" "foo")))
       (should (equal (cdr (assoc "cwd" (nth 1 calls))) (directory-file-name dir))))))
 
+(ert-deftest eucalypt-test-run-target-format ()
+  "A target's `(as: FMT)' sets the output mode unless the arguments choose one."
+  (eucalypt-test--with-stub
+    (with-current-buffer (eucalypt-test--visit dir)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "foo")))
+        (eucalypt-test--wait (call-interactively #'eucalypt-run-target)))
+      (with-current-buffer eucalypt--command-output-buffer
+        (should (eq major-mode 'js-mode)))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "bar")))
+        (eucalypt-test--wait (call-interactively #'eucalypt-run-target)))
+      (with-current-buffer eucalypt--command-output-buffer
+        (should (eq major-mode 'text-mode))))))
+
+(ert-deftest eucalypt-test-list-targets-options-and-errors ()
+  "Listing targets ignores run options and reports eu's error output."
+  (eucalypt-test--with-stub
+    (let ((eucalypt-eu-global-opts "-j"))
+      (should (equal (mapcar #'car (eucalypt-list-targets
+                                    (expand-file-name "m.eu" dir)))
+                     '("bar" "foo"))))
+    (let ((err (should-error (eucalypt-list-targets
+                              (expand-file-name "broken.eu" dir)))))
+      (should (string-search "boom" (error-message-string err))))))
+
+(ert-deftest eucalypt-test-run-replaces-previous-run ()
+  "A new run stops one still in progress, which then writes nothing."
+  (eucalypt-test--with-stub
+    (with-current-buffer (eucalypt-test--visit dir)
+      (let ((slow (eucalypt-evaluate "slow")))
+        (eucalypt-test--wait (eucalypt-run nil))
+        (should-not (process-live-p slow))))
+    (sleep-for 1.2)
+    (with-current-buffer eucalypt--command-output-buffer
+      (should (equal (buffer-string) "a: 1\n")))))
+
 (ert-deftest eucalypt-test-evaluate ()
   "`eucalypt-evaluate' passes `-e EXPR' after the file."
   (eucalypt-test--with-stub
@@ -252,10 +293,16 @@ Fails, rather than prompting, if the location does not resolve to a file."
           (should (string-search "m...PASS" (buffer-string)))
           (should-not (string-search "\e[" (buffer-string))))
         (should (equal (eucalypt-test--goto-first-error buf)
-                       (cons (expand-file-name "m.eu" dir) 2)))))
+                       (cons (expand-file-name "m.eu" dir) 2)))
+        ;; `g' runs it again, still without colour.
+        (with-current-buffer buf
+          (recompile)
+          (eucalypt-test--wait (get-buffer-process buf))
+          (should-not (string-search "\e[" (buffer-string))))))
     (let ((calls (eucalypt-test--log log)))
       (should (equal (mapcar #'eucalypt-test--args calls)
-                     '(("test" "m.eu") ("check" "m.eu"))))
+                     '(("test" "m.eu") ("test" "m.eu")
+                       ("check" "m.eu") ("check" "m.eu"))))
       (dolist (call calls)
         (should (equal (cdr (assoc "cwd" call)) (directory-file-name dir)))
         (should (equal (cdr (assoc "no_color" call)) "1"))))))
@@ -286,6 +333,50 @@ Fails, rather than prompting, if the location does not resolve to a file."
     (should (= (length (eucalypt-test--log log)) 3))
     (with-current-buffer eucalypt--command-error-buffer
       (should (= (how-many "unresolved variable" (point-min) (point-max)) 1)))))
+
+(defun eucalypt-test--add-mock-method ()
+  "Add a TRAMP `mock' method that runs a local shell, as TRAMP's tests do."
+  (unless (assoc "mock" tramp-methods)
+    (add-to-list
+     'tramp-methods
+     `("mock"
+       (tramp-login-program ,tramp-default-remote-shell)
+       (tramp-login-args (("-i")))
+       (tramp-remote-shell ,tramp-default-remote-shell)
+       (tramp-remote-shell-args ("-c"))
+       (tramp-connection-timeout 10)))))
+
+(ert-deftest eucalypt-test-remote-file ()
+  "Over TRAMP, the commands run `eu' on the remote host in the file's directory."
+  :tags '(tramp)
+  (eucalypt-test--with-stub
+    (eucalypt-test--add-mock-method)
+    ;; Name `eu' bare and put it only on the remote path, so it must be
+    ;; looked for on the remote host.
+    (let* ((tramp-verbose 0)
+           (remote (concat "/mock::" dir))
+           (eucalypt-eu-command (file-name-nondirectory stub))
+           (tramp-remote-path (cons (file-name-directory stub)
+                                    tramp-remote-path)))
+      (unwind-protect
+          (with-current-buffer (eucalypt-test--visit remote)
+            (should (file-remote-p default-directory))
+            (eucalypt-test--wait (eucalypt-run nil))
+            (should (equal (mapcar #'car (eucalypt-list-targets buffer-file-name))
+                           '("bar" "foo")))
+            (let ((buf (eucalypt-test--compile-command #'eucalypt-check
+                                                       "*eucalypt check*")))
+              (with-current-buffer buf
+                (should (string-search "m...PASS" (buffer-string))))))
+        (tramp-cleanup-all-connections)))
+    (let ((calls (eucalypt-test--log log)))
+      (should (equal (mapcar #'eucalypt-test--args calls)
+                     '(("m.eu") ("list-targets" "m.eu") ("check" "m.eu"))))
+      (dolist (call calls)
+        (should (equal (cdr (assoc "cwd" call)) (directory-file-name dir)))
+        (should (equal (cdr (assoc "no_color" call)) "1"))))
+    (with-current-buffer eucalypt--command-output-buffer
+      (should (equal (buffer-string) "a: 1\n")))))
 
 (ert-deftest eucalypt-test-requires-file ()
   "The file commands refuse a buffer that visits no file."

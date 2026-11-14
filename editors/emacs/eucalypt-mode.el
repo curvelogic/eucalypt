@@ -390,12 +390,17 @@ without relying on the buffer syntax table."
 (defvar eucalypt-evaluate-history nil
   "Minibuffer history for `eucalypt-evaluate'.")
 
+(defvar eucalypt--targets nil
+  "The targets `eucalypt-run-target' last listed.")
+
 (defvar eucalypt-target-history nil
   "Minibuffer history for `eucalypt-run-target'.")
 
 (defun eucalypt--executable ()
-  "Return the `eu' executable, signalling an error if it cannot be found."
-  (or (executable-find eucalypt-eu-command)
+  "Return the `eu' executable, signalling an error if it cannot be found.
+When `default-directory' is remote, `eu' is looked for on that host and
+its name is returned local to it."
+  (or (executable-find eucalypt-eu-command t)
       (error "Cannot find `%s' executable" eucalypt-eu-command)))
 
 (defun eucalypt--global-args ()
@@ -411,11 +416,12 @@ without relying on the buffer syntax table."
                      (list opts))
              " "))
 
-(defun eucalypt--infer-output-format-from-args (args)
+(defun eucalypt--infer-output-format-from-args (args &optional default)
   "Infer the output format from the argument list ARGS.
 Recognises `-j', `--json', `-x FMT', `-xFMT', `--export FMT' and
-`--export=FMT'; anything else, file names included, is ignored."
-  (let ((format 'yaml))
+`--export=FMT'; anything else, file names included, is ignored.
+Without any of these, the format is DEFAULT, or `yaml'."
+  (let ((format (or default 'yaml)))
     (while args
       (let ((arg (pop args)))
         (cond
@@ -551,33 +557,38 @@ FILE is named relative to its own directory."
    (read-shell-command
     "Run eu with: " (mapconcat #'shell-quote-argument args " "))))
 
-(defun eucalypt--start (args directory)
+(defun eucalypt--start (args directory &optional format)
   "Run `eu' with ARGS in DIRECTORY, rendering stdout and errors.
 Standard output goes to `eucalypt--command-output-buffer' in a mode
-for its format; standard error goes to `eucalypt--command-error-buffer'
-in `eucalypt-compilation-mode'.  Returns the process."
-  (let* ((exe (eucalypt--executable))
-         (format (eucalypt--infer-output-format-from-args args))
+for its FORMAT (a symbol; by default inferred from ARGS); standard
+error goes to `eucalypt--command-error-buffer' in
+`eucalypt-compilation-mode'.  A run still in progress is stopped
+first.  DIRECTORY may be remote.  Returns the process."
+  (when (process-live-p eucalypt--last-process)
+    (set-process-sentinel eucalypt--last-process #'ignore)
+    (delete-process eucalypt--last-process))
+  (let* ((default-directory directory)
+         (exe (eucalypt--executable))
+         (format (or format (eucalypt--infer-output-format-from-args args)))
          (out (eucalypt--reset-buffer eucalypt--command-output-buffer directory))
          (err (eucalypt--reset-buffer eucalypt--command-error-buffer directory))
-         (default-directory directory)
          (process-environment (append eucalypt--command-environment
-                                      process-environment))
-         (stderr (make-pipe-process :name "eu-stderr" :buffer err
-                                    :noquery t :sentinel #'ignore)))
+                                      process-environment)))
     (setq eucalypt--last-process
           (make-process
            :name "eu"
            :buffer out
            :command (cons exe args)
-           :stderr stderr
+           :stderr err
            :noquery t
            :connection-type 'pipe
+           :file-handler t
            :sentinel
            (lambda (proc _event)
              (unless (process-live-p proc)
                ;; Let the stderr pipe drain before reading it.
-               (while (accept-process-output stderr 0.05))
+               (when-let ((stderr (get-buffer-process err)))
+                 (while (accept-process-output stderr 0.05)))
                (when (buffer-live-p out)
                  (with-current-buffer out
                    (funcall (eucalypt--select-output-mode format))
@@ -625,26 +636,33 @@ Each entry is (NAME . PLIST), with :format and :doc keys."
     (nreverse targets)))
 
 (defun eucalypt-list-targets (file)
-  "Return the targets FILE defines, as `eucalypt--parse-targets' does."
-  (let ((default-directory (eucalypt--file-directory file))
-        (process-environment (append eucalypt--command-environment
-                                     process-environment)))
-    (with-temp-buffer
-      (let ((status (apply #'process-file (eucalypt--executable) nil
-                           (list t nil) nil
-                           (append (eucalypt--global-args)
-                                   (list "list-targets"
-                                         (file-name-nondirectory file))))))
-        (unless (eql status 0)
-          (error "eu list-targets failed (status %s)" status))
-        (eucalypt--parse-targets (buffer-string))))))
+  "Return the targets FILE defines, as `eucalypt--parse-targets' does.
+`eucalypt-eu-global-opts' are run options, so they are not passed."
+  (let* ((default-directory (eucalypt--file-directory file))
+         (process-environment (append eucalypt--command-environment
+                                      process-environment))
+         (errfile (make-nearby-temp-file "eu-list-targets")))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((status (process-file (eucalypt--executable) nil
+                                      (list t (file-local-name errfile)) nil
+                                      "list-targets"
+                                      (file-name-nondirectory file))))
+            (unless (eql status 0)
+              (error "eu list-targets failed (status %s): %s" status
+                     (with-temp-buffer
+                       (insert-file-contents errfile)
+                       (string-trim (buffer-string)))))
+            (eucalypt--parse-targets (buffer-string))))
+      (delete-file errfile))))
 
 (defun eucalypt-run-target (target &optional prefix)
   "Run `eu' on the visited file, rendering TARGET.
 Interactively, complete TARGET from `eu list-targets'.  With PREFIX
 argument, edit the arguments first."
   (interactive
-   (let* ((targets (eucalypt-list-targets (eucalypt--file)))
+   (let* ((targets (setq eucalypt--targets
+                         (eucalypt-list-targets (eucalypt--file))))
           (annotate (lambda (name)
                       (let ((doc (plist-get (cdr (assoc name targets)) :doc)))
                         (if (and doc (not (string-empty-p doc)))
@@ -658,9 +676,14 @@ argument, edit the arguments first."
                               'eucalypt-target-history))
            current-prefix-arg)))
   (let* ((file (eucalypt--file))
-         (args (eucalypt--run-args file "-t" target)))
-    (eucalypt--start (if prefix (eucalypt--edit-args args) args)
-                     (eucalypt--file-directory file))))
+         (args (eucalypt--run-args file "-t" target))
+         (args (if prefix (eucalypt--edit-args args) args))
+         ;; A target's own `format' sets its output format unless the
+         ;; arguments choose one.
+         (as (plist-get (cdr (assoc target eucalypt--targets)) :format)))
+    (eucalypt--start args (eucalypt--file-directory file)
+                     (eucalypt--infer-output-format-from-args
+                      args (and as (intern as))))))
 
 (defun eucalypt-evaluate (expression &optional prefix)
   "Evaluate EXPRESSION with `eu -e' against the visited file.
@@ -675,7 +698,9 @@ With PREFIX argument, edit the arguments first."
 
 (defun eucalypt--compile (subcommand prefix)
   "Run `eu SUBCOMMAND' on the visited file in `eucalypt-compilation-mode'.
-With PREFIX, edit the command first.  Returns the compilation buffer."
+With PREFIX, edit the command first.  Returns the compilation buffer.
+`eucalypt-eu-global-opts' and `eucalypt-eu-file-opts' are run options
+and inputs, so they are not passed."
   (let* ((file (eucalypt--file))
          (default-directory (eucalypt--file-directory file))
          (command (mapconcat #'shell-quote-argument
@@ -683,8 +708,10 @@ With PREFIX, edit the command first.  Returns the compilation buffer."
                                    (file-name-nondirectory file))
                              " "))
          (command (if prefix (read-shell-command "Command: " command) command))
-         (process-environment (append eucalypt--command-environment
-                                      process-environment)))
+         ;; `compilation-start' keeps this in the buffer, so `recompile'
+         ;; (`g') runs with it too.
+         (compilation-environment (append eucalypt--command-environment
+                                          compilation-environment)))
     (compilation-start command #'eucalypt-compilation-mode
                        (lambda (_mode) (format "*eucalypt %s*" subcommand)))))
 

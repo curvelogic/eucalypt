@@ -46,7 +46,15 @@ errors in `*Eucalypt Errors*`. `eucalypt-test` and `eucalypt-check` run in
 `*eucalypt test*` and `*eucalypt check*`; `g` there runs them again. All of
 these buffers use `eucalypt-compilation-mode`, so each `┌─ FILE:LINE:COL`
 location is clickable and `next-error` (`M-g n`) visits it. `eu` runs with
-`NO_COLOR=1`, so no ANSI escape codes appear.
+`NO_COLOR=1`, so no ANSI escape codes appear. A run started before the
+last one has finished is stopped.
+
+`eucalypt-eu-global-opts` and `eucalypt-eu-file-opts` (below) apply to
+`eucalypt-run`, `-run-target` and `-evaluate`; `eu test`, `eu check` and
+`eu list-targets` get the file alone. A target with a `format` in its
+metadata sets the output buffer's mode unless the arguments choose one.
+On a remote file (TRAMP), these commands run `eu` on the remote host,
+found on its path; the render commands below run locally.
 
 To render text that is not saved to a file:
 
