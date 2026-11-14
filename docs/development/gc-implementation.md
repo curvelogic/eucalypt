@@ -175,6 +175,37 @@ after a collection.
 
 `EU_GC_STRESS=1` instead evacuates every unpinned block on every collection.
 
+### Verifying forwarding (`EU_GC_VERIFY`, eu-oaz72.136)
+
+Because evacuated lines are freed in the collection that evacuates them, a
+pointer the update phase misses — one an object's `scan` reports but its
+`scan_and_update` does not rewrite — is a use-after-free as soon as the
+line is reused. `EU_GC_VERIFY` catches it at marking. Every scan site marks
+a heap object before pushing it, and only pushed objects are evacuated, so
+an object this collection forwards is always marked with the current mark
+state; any other forwarded header is an old copy reached through a stale
+pointer.
+
+| Level | Where | Panics when marking meets |
+|---|---|---|
+| 1 | Mark phase and post-mark re-traversal of a non-evacuating collection | any forwarded header |
+| 1 | Mark phase and post-mark re-traversal of an evacuating collection | a forwarded header not marked by this collection (forwarded by an earlier one) |
+| 2 | After the update phase, before `release_evacuated_lines` frees the old copies: a traversal from the roots with a private visited set (heap marks, line maps and live bytes untouched) | any forwarded header |
+
+The panic names the pointer, its type and the forwarding target. The level-2
+traversal catches the miss in the collection that makes it, while the old
+copy is intact; the level-1 checks catch a stale pointer that survives into
+a later collection, until its old copy's header is overwritten.
+
+With `EU_GC_VERIFY` unset (and no `EU_GC_POISON`), the cost is nil beyond a
+flag test: each `CollectorHeapView` computes once whether any debug check
+is on, `mark` tests that flag where it used to test `EU_GC_POISON`, and the
+check bodies are out of line. `mark_raw_bytes` and `mark_array` gain the
+same one-flag test; no extra pass runs.
+
+*Implementation*: `ForwardingCheck`, `CollectorHeapView::debug_mark` and
+`verify_no_forwarded_references` in `src/eval/memory/collect.rs`.
+
 ### No Emergency Collection
 
 **Critical limitation**: Allocation failures cause panics rather than triggering emergency collection:
