@@ -399,6 +399,23 @@ pub struct HeapState {
     /// a live object's lines unprotected from lazy sweep. Large objects
     /// once arrived here on every mark (eu-y6fx); tests assert it stays 0.
     mark_misses: usize,
+    /// Line marks made in evacuation candidate blocks during the current
+    /// evacuating collection (eu-oaz72.108). Present only between
+    /// [`HeapState::begin_evacuation_record`] and
+    /// [`HeapState::release_evacuated_lines`].
+    evacuation_record: Option<EvacuationRecord>,
+}
+
+/// The candidate blocks of an evacuating collection and every region
+/// (header address, bytes) its mark phase marked in them (eu-oaz72.108).
+///
+/// Once the update phase has run, the regions whose header is forwarded
+/// hold only old copies, so their lines can be freed in the same
+/// collection rather than at the next one.
+#[derive(Debug, Default)]
+struct EvacuationRecord {
+    bases: BlockBaseSet,
+    regions: Vec<(usize, usize)>,
 }
 
 /// Hasher for block base addresses (multiples of `BLOCK_SIZE_BYTES`): a
@@ -482,6 +499,7 @@ impl HeapState {
             lines_since_gc: 0,
             line_map_index: HashMap::default(),
             mark_misses: 0,
+            evacuation_record: None,
         }
     }
 
@@ -502,6 +520,67 @@ impl HeapState {
             .enumerate()
             .map(|(n, block)| (n + 2, block));
         fixed.chain(listed)
+    }
+
+    /// Every bump block the heap holds, mutably, in no particular order.
+    fn bump_blocks_mut(&mut self) -> impl Iterator<Item = &mut BumpBlock> {
+        self.head
+            .iter_mut()
+            .chain(self.overflow.iter_mut())
+            .chain(self.rest.iter_mut())
+            .chain(self.unswept.iter_mut())
+            .chain(self.recycled.iter_mut())
+    }
+
+    /// Start recording the line marks made in the blocks at `bases`, the
+    /// candidates of the evacuating collection about to mark
+    /// (eu-oaz72.108).
+    pub fn begin_evacuation_record(&mut self, bases: BlockBaseSet) {
+        self.evacuation_record = Some(EvacuationRecord {
+            bases,
+            regions: Vec::new(),
+        });
+    }
+
+    /// Redraw each candidate block's line map from the regions the mark
+    /// phase marked in it, leaving out those that were evacuated
+    /// (eu-oaz72.108), and stop recording. Returns the number of regions
+    /// kept.
+    ///
+    /// The mark phase line-marks an object before it is evacuated, so
+    /// without this a candidate block's old copies kept its lines until
+    /// the next collection: the block was freed a collection late, and
+    /// that collection's analysis picked it again. Call it after the
+    /// update phase, when no pointer to an old copy remains. A region
+    /// whose header is not forwarded — an object never evacuated (not
+    /// reached as a heap object, in a pinned block, or with no target
+    /// space) — keeps its lines.
+    pub fn release_evacuated_lines(&mut self) -> usize {
+        let Some(record) = self.evacuation_record.take() else {
+            return 0;
+        };
+        for block in self.bump_blocks_mut() {
+            if record.bases.contains(&block.base_address()) {
+                block.reset_region_marks();
+            }
+        }
+        let mut kept = 0;
+        for (addr, bytes) in record.regions {
+            // SAFETY: `addr` is the AllocHeader of an allocation marked by
+            // this collection's mark phase in a candidate block. The block
+            // is still held, and nothing is allocated into candidate blocks
+            // during a collection (evacuation copies go to fresh target
+            // blocks), so the header is intact. Single-threaded,
+            // stop-the-world collection.
+            let header = unsafe { &*(addr as *const AllocHeader) };
+            if !header.is_forwarded() {
+                // SAFETY: `addr` came from a non-null header pointer.
+                let ptr = unsafe { NonNull::new_unchecked(addr as *mut u8) };
+                self.mark_region_in_block(ptr, bytes);
+                kept += 1;
+            }
+        }
+        kept
     }
 
     /// The bump block at `index` in [`HeapState::indexed_bump_blocks`].
@@ -1022,6 +1101,12 @@ impl HeapState {
     /// the region spanning `bytes` lines.
     pub fn mark_region_in_block(&mut self, ptr: NonNull<u8>, bytes: usize) {
         let base = bump::block_base_of(ptr);
+
+        if let Some(record) = &mut self.evacuation_record {
+            if record.bases.contains(&base) {
+                record.regions.push((ptr.as_ptr() as usize, bytes));
+            }
+        }
 
         if let Some(head) = &mut self.head {
             if head.base_address() == base {
@@ -2487,6 +2572,24 @@ impl Heap {
         heap_state.bump_allocate_in_target(size)
     }
 
+    /// Record the line marks the coming mark phase makes in the candidate
+    /// blocks at `bases` (eu-oaz72.108). See
+    /// [`HeapState::release_evacuated_lines`].
+    pub fn begin_evacuation_record(&self, bases: BlockBaseSet) {
+        // SAFETY: Mutable access during stop-the-world collection.
+        let heap_state = unsafe { &mut *self.state.get() };
+        heap_state.begin_evacuation_record(bases);
+    }
+
+    /// Free the lines of evacuated objects' old copies in this collection
+    /// (eu-oaz72.108). Call after the update phase. Returns the number of
+    /// candidate-block regions kept because their object was not evacuated.
+    pub fn release_evacuated_lines(&self) -> usize {
+        // SAFETY: Mutable access during stop-the-world collection.
+        let heap_state = unsafe { &mut *self.state.get() };
+        heap_state.release_evacuated_lines()
+    }
+
     /// Finalise evacuation: move evacuation blocks into rest.
     ///
     /// Called after the update phase of an evacuating collection.
@@ -3651,6 +3754,18 @@ impl Heap {
             }
         }
         None
+    }
+
+    /// Marked lines of the bump block at `base_address`, whichever list
+    /// holds it, or `None` if the heap holds no such block.
+    #[cfg(test)]
+    pub fn bump_block_marked_lines(&self, base_address: usize) -> Option<usize> {
+        // SAFETY: Read-only access during test, single-threaded.
+        let heap_state = unsafe { &*self.state.get() };
+        heap_state
+            .indexed_bump_blocks()
+            .find(|(_, block)| block.base_address() == base_address)
+            .map(|(_, block)| block.stats().2)
     }
 
     /// Provide read-only access to the underlying HeapState for
