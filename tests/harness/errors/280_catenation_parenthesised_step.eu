@@ -2,4 +2,4 @@ cells: vec.of["a", "S"]
 i: 1
 
 ` "A comparison written in parentheses as the pipeline step is called by catenation: what was written is what was parsed, so no parse note is shown (eu-oaz72.29)"
-r: cells (vec.nth(i) = "S") //=> true
+r: cells (vec.nth(i) = "S")

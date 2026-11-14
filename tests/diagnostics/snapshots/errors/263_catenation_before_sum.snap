@@ -10,7 +10,7 @@ warnings: 0
 code: -
 primary: user tests/harness/errors/263_catenation_before_sum.eu:5:11
 help-lines: 1
-note-lines: 1
+note-lines: 2
 secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
@@ -25,6 +25,7 @@ error: tried to call a number as a function
 5 │ r: x f(1) + 1
   │           ^
   │
+  = note: 'x f(1) + 1' was read as 'x (f(1) + 1)'; parenthesise the pipeline: '(x f(1)) + 1'
   = note: the value called here is the result of '+'
   = while evaluating (outermost first):
     - r at 263_catenation_before_sum.eu:5:11
