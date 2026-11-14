@@ -189,6 +189,42 @@ PR. Where release machinery is a workflow holding write access or a
 secret, or a script such a workflow runs, the owner-merges row above
 applies.
 
+## Review rounds
+
+This section sets the review round limit that the reviewer's definition
+defers to; it replaces that definition's default rather than competing with
+it as a stricter or looser rule. A PR gets two review rounds, the first
+review and one re-review, and then at most one **confirm review**. When
+round 2 still finds blocking items, its reviewer sends the PR back as in
+round 1 and posts no owner hold. Once the author has pushed fixes, a fresh
+`rig-review` runs the confirm review on the new head; its verdict line reads
+`rig-review round 3 (confirm): <verdict> at <head SHA>`:
+
+- **Scope.** It checks that each blocking finding raised in round 2 is
+  fixed, in round 2's verdict and, where a second independent review ran,
+  in that review too. It also reviews the diff between round 2's head and
+  the new head; if that head is no longer an ancestor (a rebase, a
+  force-push), it compares the PR's own changes at the two heads (as `git
+  range-diff` does), and anything master brought in is out of scope. It
+  is not a new open-ended review: anything else is out of scope this
+  round. CI on the new head is read first, as in every round.
+- **Two reviewers where two are required.** Where this file requires a
+  second independent review (the *Sensitive areas* rows that say so, and
+  an API specified in advance), the confirm round is two fresh `rig-review`s,
+  each forming its verdict without reading the other's.
+- **Pass.** If every round-2 blocker is fixed, nothing the fix commits
+  changed is blocking, and CI on the new head is green, an agent may merge
+  under this file as usual.
+- **Escalate.** If a round-2 blocker is still open (unfixed, or disputed
+  rather than fixed), or the confirm review finds a new blocking item, the
+  confirm reviewer (each of them, where there are two) posts one comment
+  listing each open blocker for the owner, with the hold "Do not merge —
+  owner review", and leaves the PR open. No further round runs.
+
+Unchanged: a PR this file reserves for the owner still goes to the owner
+after any pass, and an explicit hold still binds every agent and is
+released only by the owner (*Owner review filter*).
+
 ## Merging
 
 Method: merge commit, to `master` only.
