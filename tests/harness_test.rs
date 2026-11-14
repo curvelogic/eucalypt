@@ -5288,9 +5288,23 @@ pub fn test_error_281_assignment_style_in_expression() {
     run_error_test(&error_opts("281_assignment_style_in_expression.eu"));
 }
 
+/// The argument of a function whose body is its parameter keeps its own
+/// location, so the pipeline-step note is shown (eu-oaz72.133).
+#[test]
+pub fn test_error_282_catenation_step_identity_argument() {
+    run_error_test(&error_opts("282_catenation_step_identity_argument.eu"));
+}
+
+/// No pipeline-step note when the function comes from an operator's right
+/// operand (eu-oaz72.133).
+#[test]
+pub fn test_error_283_catenation_function_from_right() {
+    run_error_test(&error_opts("283_catenation_function_from_right.eu"));
+}
+
 /// Leftover tokens in a closed string interpolation are a parse error,
 /// not dropped: `{ a b }` used to evaluate as `{a}` (eu-oaz72.50).
 #[test]
-pub fn test_error_282_interpolation_two_names() {
-    run_error_test(&error_opts("282_interpolation_two_names.eu"));
+pub fn test_error_284_interpolation_two_names() {
+    run_error_test(&error_opts("284_interpolation_two_names.eu"));
 }
