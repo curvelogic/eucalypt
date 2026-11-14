@@ -754,7 +754,10 @@ impl CallGlobal1 for Floor {}
 /// POW(base, exp) - raise base to the power exp
 ///
 /// For integer base and non-negative integer exponent, returns an
-/// integer result. Otherwise uses f64 arithmetic via powf.
+/// integer result, raising a numeric range (overflow) error when the
+/// result is out of range, as `ADD` and `MUL` do. A float result only
+/// when an operand is a float, or for a negative integer exponent
+/// (whose result is not in general an integer); these use f64 powf.
 pub struct Pow;
 
 impl StgIntrinsic for Pow {
@@ -772,18 +775,27 @@ impl StgIntrinsic for Pow {
         let base = num_arg(machine, view, &args[0])?;
         let exp = num_arg(machine, view, &args[1])?;
 
-        // Integer base with non-negative integer exponent: integer result
-        if let (Some(b), Some(e)) = (base.as_i64(), exp.as_u64()) {
-            if let Some(result) = checked_int_pow(b, e) {
-                return machine_return_num(machine, view, Number::from(result));
-            }
-        } else if let (Some(b), Some(e)) = (base.as_u64(), exp.as_u64()) {
-            if let Some(result) = b.checked_pow(e.try_into().unwrap_or(u32::MAX)) {
-                return machine_return_num(machine, view, Number::from(result));
+        // Integer base with non-negative integer exponent: integer
+        // result or overflow error, never a silent float.
+        if !base.is_f64() {
+            if let Some(e) = exp.as_u64() {
+                let result = match (base.as_i64(), base.as_u64()) {
+                    (Some(b), _) => checked_int_pow(b, e).map(Number::from),
+                    (None, Some(b)) => checked_uint_pow(b, e).map(Number::from),
+                    (None, None) => None,
+                };
+                return match result {
+                    Some(n) => machine_return_num(machine, view, n),
+                    None => Err(ExecutionError::NumericRangeError(
+                        machine.annotation(),
+                        base,
+                        exp,
+                    )),
+                };
             }
         }
 
-        // Fall back to f64
+        // Float operand or negative integer exponent: f64 arithmetic
         if let (Some(b), Some(e)) = (base.as_f64(), exp.as_f64()) {
             let result = b.powf(e);
             if let Some(ret) = Number::from_f64(result) {
@@ -814,10 +826,17 @@ impl StgIntrinsic for Pow {
 
 /// Integer exponentiation with overflow checking
 fn checked_int_pow(base: i64, exp: u64) -> Option<i64> {
-    if exp > u32::MAX as u64 {
-        return None;
+    match base {
+        // Bases whose powers never grow, whatever the exponent
+        0 | 1 => Some(if exp == 0 { 1 } else { base }),
+        -1 => Some(if exp.is_multiple_of(2) { 1 } else { -1 }),
+        _ => base.checked_pow(u32::try_from(exp).ok()?),
     }
-    base.checked_pow(exp as u32)
+}
+
+/// Exponentiation of a base above `i64::MAX` with overflow checking
+fn checked_uint_pow(base: u64, exp: u64) -> Option<u64> {
+    base.checked_pow(u32::try_from(exp).ok()?)
 }
 
 impl CallGlobal2 for Pow {}

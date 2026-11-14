@@ -153,6 +153,21 @@ Precedence can be specified as:
 Associativity can be `:left`, `:right`, or omitted (defaults to
 `:left`).
 
+## Integer Overflow
+
+Integers are signed 64-bit. When `+`, `-`, `*` or `^` on two such integers
+gives a result outside that range, evaluation stops with a `numeric overflow` error
+pointing at the operator, rather than losing precision:
+
+```eu,notest
+a: 2 ^ 62    # 4611686018427387904, an integer
+b: 2.0 ^ 63  # a float, as an operand is a float
+c: 2 ^ 63    # error: numeric overflow
+```
+
+An integer raised to a negative integer power, such as `2 ^ (0 - 1)`, is
+a float (`0.5`).
+
 ## The Assertion Operators
 
 Two special operators are provided for testing:

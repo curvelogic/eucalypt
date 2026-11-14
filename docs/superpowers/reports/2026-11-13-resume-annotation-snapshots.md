@@ -28,8 +28,8 @@ from" pointer, and several snapshots relied on it.
 
 ## Changed snapshots
 
-`tests/diagnostics/DIVERGENCE.md` goes from 61 of 274 fixtures diverging
-between blob and source prelude to 59 of 279. "Old" and "new" are the
+`tests/diagnostics/DIVERGENCE.md` goes from 61 of 276 fixtures diverging (master at the last merge)
+between blob and source prelude to 59 of 281. "Old" and "new" are the
 primary location (`line:column`), the same in both prelude modes unless
 marked.
 

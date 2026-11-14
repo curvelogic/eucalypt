@@ -32,6 +32,19 @@ tests: {
   large-int: {
     a: pow(10, 10) //= 10000000000
   }
+
+  int-range: {
+    a: (2 ^ 62) str.of //= "4611686018427387904"
+    b: ((-2) ^ 63) str.of //= "-9223372036854775808"
+    c: (3 ^ 39) str.of //= "4052555153018976267"
+    d: (1 ^ 9999999999) str.of //= "1"
+    e: ((-1) ^ 9999999999) str.of //= "-1"
+  }
+
+  float-operand: {
+    a: (2.0 ^ 62) str.of //= "4.611686018427388e+18"
+    b: (2 ^ 62.0) str.of //= "4.611686018427388e+18"
+  }
 }
 
 RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)
