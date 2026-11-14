@@ -2480,6 +2480,10 @@ label: '99'
 > sum: x + y
 > result: "{sum}"
 > ```
+>
+> Anything else inside the braces — a second name, as in `"{ a b }"` —
+> is a parse error. Whitespace around the name and the format
+> specifier is ignored: `"{ n : %06d }"` is `"{n:%06d}"`.
 
 ## Escaping Braces
 
@@ -9588,15 +9592,17 @@ When steps cost different amounts, use Dijkstra's algorithm with a
 priority queue. A [dict](dicts.md) is the priority queue: its entries are
 kept in key order, `dict.assoc` pushes and `dict.pop-min` takes the entry
 with the least key. Key the queue by `[priority, seq]`, where `seq` is a
-counter that makes every key unique, and store the state as the value; the
-state can then be anything, and two states at the same distance never
-collide.
+counter that makes every key unique, and store the state as the value: the
+queue then orders entries by two numbers alone, and two states at the same
+distance never collide.
 
 The template below threads `[queue, seq, dist]` through the search, where
 `dist` is a dict of the best distance found for each state. Rather than
 finding a queued entry and lowering its priority when a shorter path turns
-up, it pushes a new entry and skips stale ones as they are popped. As for
-`bfs`, `moves(s)` describes the puzzle, here as `[cost, next]` pairs. The
+up, it pushes a new entry and skips stale ones as they are popped. Because
+`dist` is keyed by state, a state must be a valid dict key: a number,
+string, symbol or list of those. As for `bfs`, `moves(s)` describes the
+puzzle, here as `[cost, next]` pairs. The
 example is a 141 × 141 grid, the size of a typical AoC map, where entering
 a cell costs its weight:
 
@@ -14247,8 +14253,8 @@ map: __MAP
 
 ```eu,notest
 # Named aliases in unit metadata
-{ types: { Point: "{x: number, y: number}"
-           Person: "{name: string, age: number, email: string | null, ..}" } }
+{ types: { Point: s"{x: number, y: number}"
+           Person: s"{name: string, age: number, email: string | null, ..}" } }
 
 # Alias using binding name (shorthand — `:type-def` or `type-def: true`)
 ` :type-def
@@ -18164,7 +18170,7 @@ double(x): x * 2
 
 ```eu,notest
 # In unit metadata
-{ types: { Person: "{name: string, age: number, ..}" } }
+{ types: { Person: s"{name: string, age: number, ..}" } }
 
 # Via type-def: on a canonical instance
 ` { type-def: "Point" }
