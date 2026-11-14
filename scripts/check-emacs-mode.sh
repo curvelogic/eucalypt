@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
-# Check that eucalypt-mode's tree-sitter queries compile against the current
-# grammar in editors/tree-sitter-eucalypt, and that the mode fontifies a
-# corpus at every font-lock level without a query error.
+# Run eucalypt-mode's batch checks:
+#
+# 1. the ERT tests of its eu commands (run, target, evaluate, test, check,
+#    render), which drive a stub eu and need no network, grammar or build.
+#    Set EU to a real eu binary to also run the tests tagged `real-eu'.
+# 2. that the mode's tree-sitter queries compile against the current
+#    grammar in editors/tree-sitter-eucalypt, and that the mode fontifies a
+#    corpus at every font-lock level without a query error.
 #
 # Usage: scripts/check-emacs-mode.sh [--require] [FILE.eu...]
 #
-# FILEs default to examples/aoc25/*.eu. Requires Emacs 29+ built with
-# tree-sitter and a C compiler (the grammar is compiled from the checked-in
-# src/parser.c and src/scanner.c into a temporary directory). When either
-# is missing the check is skipped with exit 0, or fails with exit 2 under
-# --require (use that in CI, where the tools must be present).
+# FILEs default to examples/aoc25/*.eu. Requires Emacs 29+; step 2 also
+# needs tree-sitter support and a C compiler (the grammar is compiled from
+# the checked-in src/parser.c and src/scanner.c into a temporary
+# directory). When a requirement is missing the remaining checks are
+# skipped with exit 0, or fail with exit 2 under --require (use that in
+# CI, where the tools must be present).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,10 +34,17 @@ skip() {
 EMACS="${EMACS:-emacs}"
 CC="${CC:-cc}"
 command -v "$EMACS" >/dev/null 2>&1 || skip "emacs not found (set EMACS)"
+"$EMACS" --batch -Q --eval '(kill-emacs (if (>= emacs-major-version 29) 0 1))' \
+  >/dev/null 2>&1 || skip "$EMACS is not Emacs 29+"
+
+EUCALYPT_TEST_EU="${EU:-}" "$EMACS" --batch -Q \
+  -L "$root/editors/emacs" \
+  -l "$root/editors/emacs/test/eucalypt-mode-commands-test.el" \
+  -f ert-run-tests-batch-and-exit </dev/null
+
 command -v "$CC" >/dev/null 2>&1 || skip "C compiler not found (set CC)"
-"$EMACS" --batch -Q --eval \
-  '(kill-emacs (if (and (>= emacs-major-version 29) (treesit-available-p)) 0 1))' \
-  >/dev/null 2>&1 || skip "$EMACS is not Emacs 29+ with tree-sitter support"
+"$EMACS" --batch -Q --eval '(kill-emacs (if (treesit-available-p) 0 1))' \
+  >/dev/null 2>&1 || skip "$EMACS lacks tree-sitter support"
 
 grammar="$root/editors/tree-sitter-eucalypt"
 tmp="$(mktemp -d)"

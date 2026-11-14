@@ -5288,6 +5288,20 @@ pub fn test_error_281_assignment_style_in_expression() {
     run_error_test(&error_opts("281_assignment_style_in_expression.eu"));
 }
 
+/// A lone anaphor argument makes the argument the identity function, and
+/// the error states it (eu-oaz72.132).
+#[test]
+pub fn test_error_286_lone_anaphor_argument() {
+    run_error_test(&error_opts("286_lone_anaphor_argument.eu"));
+}
+
+/// An anaphoric section passed where a value is wanted gets no
+/// lone-anaphor note (eu-oaz72.132).
+#[test]
+pub fn test_error_287_anaphoric_section_argument() {
+    run_error_test(&error_opts("287_anaphoric_section_argument.eu"));
+}
+
 /// The argument of a function whose body is its parameter keeps its own
 /// location, so the pipeline-step note is shown (eu-oaz72.133).
 #[test]
@@ -5303,11 +5317,16 @@ pub fn test_error_283_catenation_function_from_right() {
 }
 
 #[test]
-pub fn test_error_284_oaz72_64_vec_of_block() {
-    run_error_test(&error_opts("284_oaz72_64_vec_of_block.eu"));
+pub fn test_error_288_vec_of_block_element() {
+    run_error_test(&error_opts("288_vec_of_block_element.eu"));
 }
 
 #[test]
-pub fn test_error_284_oaz72_64_vec_of_function() {
-    run_error_test(&error_opts("284_oaz72_64_vec_of_function.eu"));
+pub fn test_error_289_vec_of_function_element() {
+    run_error_test(&error_opts("289_vec_of_function_element.eu"));
+}
+
+#[test]
+pub fn test_error_290_set_of_random_stream_element() {
+    run_error_test(&error_opts("290_set_of_random_stream_element.eu"));
 }

@@ -838,6 +838,89 @@ fn unexpected_function_notes() -> Vec<String> {
     ]
 }
 
+/// The note stating that an argument is a lone anaphor (eu-oaz72.132),
+/// for an error whose primary label is a juxtaposed call that cook gave
+/// an argument consisting of one expression anaphor and nothing else:
+/// `nth(_)` passes `nth` the identity function.
+///
+/// Shown only when the error says a function arrived where a value was
+/// wanted, and only when the label is exactly that call.
+fn lone_anaphor_note(
+    inner: &ExecutionError,
+    primary: Option<(usize, codespan::Span)>,
+    source_map: &SourceMap,
+    files: &SimpleFiles<String, String>,
+) -> Option<String> {
+    let shape = match inner {
+        ExecutionError::TypeMismatch(_, detail) => {
+            matches!(detail.1, IntrinsicType::Function(..))
+        }
+        ExecutionError::UnexpectedFunction(..) | ExecutionError::CannotReturnFunToCase(..) => true,
+        ExecutionError::NotValue(_, context) => context == "a function application",
+        _ => false,
+    };
+    if !shape {
+        return None;
+    }
+    let (file, span) = primary?;
+    let call = source_map.lone_anaphor_call(file, span)?;
+    let source: &str = codespan_reporting::files::Files::source(files, file).ok()?;
+    let text = |smid: Smid| -> Option<String> {
+        let info = source_map.source_info_for_smid(smid)?;
+        if info.file? != file {
+            return None;
+        }
+        let span = info.span?;
+        let text = source.get(span.start().to_usize()..span.end().to_usize())?;
+        // On one line; whitespace within a line, as in a string, is kept.
+        Some(if text.contains('\n') {
+            text.split_whitespace().collect::<Vec<_>>().join(" ")
+        } else {
+            text.to_string()
+        })
+    };
+    let whole = text(call.call)?;
+    let anaphors = call
+        .anaphors
+        .iter()
+        .map(|(_, smid)| text(*smid).map(|t| format!("'{t}'")))
+        .collect::<Option<Vec<_>>>()?;
+    let positions: Vec<String> = call
+        .anaphors
+        .iter()
+        .map(|(i, _)| (i + 1).to_string())
+        .collect();
+    let and = |items: &[String]| match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [init @ .., last] => format!("{} and {last}", init.join(", ")),
+    };
+    let fact = match (call.arity, anaphors.len()) {
+        (1, _) => format!(
+            "{} is the whole argument, so the argument is the identity function",
+            anaphors[0]
+        ),
+        (_, 1) => format!(
+            "{} is the whole of argument {}, so that argument is the identity function",
+            anaphors[0], positions[0]
+        ),
+        _ => format!(
+            "{} are the whole of arguments {}, so each of those arguments is the identity \
+             function",
+            and(&anaphors),
+            and(&positions)
+        ),
+    };
+    let bounds = if call.arity == 1 {
+        "parentheses"
+    } else {
+        "commas and parentheses"
+    };
+    Some(format!(
+        "note: in '{whole}', {fact}: an expression anaphor's scope ends at the {bounds} round it"
+    ))
+}
+
 /// Format a "not callable" error message with the actual type of value found
 fn format_not_callable(actual_type: &str) -> String {
     if actual_type.is_empty() {
@@ -1855,6 +1938,11 @@ impl ExecutionError {
             _ => vec![],
         };
         if let Some(note) = catenation {
+            notes.insert(0, note);
+        }
+        if let Some(note) =
+            files.and_then(|f| lone_anaphor_note(inner, primary_file_span, source_map, f))
+        {
             notes.insert(0, note);
         }
         if notes.is_empty() {

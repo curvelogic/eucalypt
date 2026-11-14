@@ -510,6 +510,12 @@ pub fn native_to_element(
         Native::Num(n) => Ok(SetPrim::from_number(n)),
         Native::Str(s) => Ok(SetPrim::Str(*s)),
         Native::Sym(id) => Ok(SetPrim::Sym(*id)),
+        Native::Prng(_) => Err(invalid_element(
+            smid,
+            collection,
+            "a random number stream".to_string(),
+        )),
+        Native::Producer(_) => Err(invalid_element(smid, collection, "a stream".to_string())),
         _ => Err(invalid_element(
             smid,
             collection,
