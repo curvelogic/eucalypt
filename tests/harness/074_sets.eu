@@ -235,6 +235,42 @@ tree-checks: {
   ]
 }
 
+` "List elements (eu-oaz72.21, design note OPEN 8): an element may be a list of elements, keyed as dict keys are; lists order after scalars, lexicographically"
+
+list-checks: {
+
+  ` "grid points as `[x, y]` pairs, with a duplicate and an element computed from thunks"
+  points: [[2, 1], [1, 2], [1 + 0, 2], [0, 5]] set.from-list
+
+  ` "a set mixing scalars, lists, an empty list and a nested list"
+  mixed: [[1, [2]], :a, [], 3, [1, 2], "s"] set.from-list
+
+  trues: [
+    (points set.size) = 3,
+    (points set.to-list) = [[0, 5], [1, 2], [2, 1]],
+    points set.contains?([1, 2]),
+    points set.contains?([2 * 1, 1]),
+    not(points set.contains?([2, 2])),
+    not(points set.contains?([1])),
+    not(points set.contains?(1)),
+    not(points set.contains?([1, {x: 1}])),
+    ([0, 5] ∈ points),
+    (points set.add([1, 1]) set.to-list) = [[0, 5], [1, 1], [1, 2], [2, 1]],
+    (points set.add([1, 2]) set.size) = 3,
+    (points set.add([3 - 1, 1]) set.size) = 3,
+    (points set.remove([1, 2]) set.to-list) = [[0, 5], [2, 1]],
+    (points set.remove([9, 9]) set.size) = 3,
+    (foldl(_0 set.add(_1), ∅, [[1, 2], [0, 5], [2, 1], [0, 5]]) set.to-list) = (points set.to-list),
+    (mixed set.to-list) = [3, "s", :a, [], [1, 2], [1, [2]]],
+    mixed set.contains?([1, [2]]),
+    not(mixed set.contains?([1, [3]])),
+    (points set.union([[9, 9]] set.from-list) set.size) = 4,
+    (points set.intersect([[1, 2], [7, 7]] set.from-list) set.to-list) = [[1, 2]],
+    (points set.diff([[1, 2]] set.from-list) set.to-list) = [[0, 5], [2, 1]],
+    (points render-as(:json) parse-as(:json)) = [[0, 5], [1, 2], [2, 1]]
+  ]
+}
+
 pass: [
   construction-checks.trues all-true?,
   empty-checks.trues all-true?,
@@ -247,7 +283,8 @@ pass: [
   operator-checks.trues all-true?,
   churn-checks.trues all-true?,
   exact-checks.trues all-true?,
-  tree-checks.trues all-true?
+  tree-checks.trues all-true?,
+  list-checks.trues all-true?
 ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)

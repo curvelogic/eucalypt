@@ -6,6 +6,7 @@ All notable changes to eucalypt are documented here.
 
 ### Added
 
+- **Lists as set elements (eu-oaz72.21)** — a set element may now be a list of numbers, strings and symbols (nested lists included), such as an `[x, y]` grid point: `[[2, 1], [1, 2]] set.of set.add([0, 5]) set.contains?([1, 2])` is `true`. Lists are keyed exactly as dict keys are, order after every scalar (element by element, a prefix first), and render as nested sequences. A list holding anything else (a block, say) is still an error, now reported as "a list holding a block cannot be a set element".
 - **Divides operators `∣` and `∤` (eu-oaz72.68)** — `n ∣ m` is `true` when `n` divides `m` (`m % n = 0`), so `3 ∣ 12` is `true` and `xs filter(3 ∣ _)` keeps the multiples of 3; `n ∤ m` is its negation. Both sit at the precedence of `=`, so `a + b ∣ c * d` groups as `(a + b) ∣ (c * d)`. A zero divisor fails as `%` does. Note `∣` is U+2223, not `|`.
 - **Tree-sitter grammar for the browser (eu-ioz21.5)** — `editors/tree-sitter-eucalypt/tree-sitter-eucalypt.wasm` is a WebAssembly build of the grammar for `web-tree-sitter`, committed next to `queries/highlights.scm` so each eucalypt tag carries a matching pair, with `wasm-manifest.json` recording the grammar, ABI, tree-sitter, emscripten and `web-tree-sitter` versions it was built and checked with. `npm run build-wasm` rebuilds it reproducibly, a cargo test fails if the grammar sources change without a rebuild, and `web/index.html` is a minimal highlighting page. See the grammar's README, "Browser use (WASM)".
 

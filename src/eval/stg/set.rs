@@ -4,7 +4,9 @@
 //! construction, membership, mutation, and set algebra. A set is a header
 //! over the dict's persistent ordered tree (`memory::set::HeapSet`), so add,
 //! remove and membership are O(log n) and each operation shares the
-//! untouched parts of its input.
+//! untouched parts of its input. Elements are numbers, strings, symbols
+//! and lists of elements (design note OPEN 8), keyed exactly as dict keys
+//! are.
 
 use std::{collections::HashMap, convert::TryInto};
 
@@ -14,12 +16,12 @@ use crate::{
         emit::Emitter,
         error::ExecutionError,
         machine::intrinsic::{
-            CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic,
+            AbiClosure, CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic,
         },
         memory::{
-            dict::{Dict, Tree},
+            dict::{Dict, DictKey, DictKeyList, Tree},
             mutator::MutatorHeapView,
-            set::{set_unit, HeapSet, Primitive},
+            set::{set_unit, HeapSet},
             syntax::Ref,
         },
         stg::tags::DataConstructor,
@@ -28,55 +30,122 @@ use crate::{
 };
 
 use super::{
-    force::SeqList,
+    dict::{key_value, MAX_KEY_DEPTH},
+    force::SeqKey,
     support::{
-        arg_to_element, closure_to_element, data_list_arg, machine_return_bool, machine_return_num,
-        machine_return_set, native_to_element, resolve_native_unboxing, set_arg,
-        set_primitive_to_native,
+        closure_to_element, data_list_arg, machine_return_bool, machine_return_num,
+        machine_return_set, native_to_element, set_arg,
     },
     syntax::{
-        dsl::{app_bif, case, force, lambda, local, lref},
+        dsl::{app_bif, force, lambda, local, lref},
         LambdaForm,
     },
 };
 
-/// Create a wrapper for a 2-arg set intrinsic that deeply forces arg 0
-/// (the element) and forces arg 1 (the set).
-///
-/// The standard `force` only evaluates to WHNF, which for a computed
-/// number leaves `BoxedNumber(thunk)` — the inner thunk is not
-/// evaluated. This wrapper adds case branches for all box types to
-/// force the inner value before calling the intrinsic.
+/// Create a wrapper for a 2-arg set intrinsic that forces arg 1 (the set)
+/// and deep-forces arg 0 (the element) with `seqKey`, the dict's key
+/// forcing: a boxed scalar comes back forced and unboxed, and a list is
+/// rebuilt with every element deep-forced, so a list element (design note
+/// OPEN 8) reaches `execute` fully evaluated. Anything else arrives at
+/// WHNF, for `execute` to reject.
 fn element_set_wrapper(index: usize) -> LambdaForm {
     let bif_index: u8 = index.try_into().unwrap();
-
-    // After force(set) + case(element) + force(inner):
-    //   env = [forced_inner][inner][forced_set][element, set]
-    //   element at lref(0), set at lref(2)
-    let bif_box = app_bif(bif_index, vec![lref(0), lref(2)]);
-    let force_inner = force(local(0), bif_box);
-
-    // After force(set) + fallback(element):
-    //   env = [forced_element][forced_set][element, set]
-    //   element at lref(0), set at lref(1)
-    let bif_fallback = app_bif(bif_index, vec![lref(0), lref(1)]);
-
     lambda(
         2, // [element, set]
         force(
-            local(1), // force set
-            case(
-                local(1), // case on element (shifted by 1 due to force)
-                vec![
-                    (DataConstructor::BoxedNumber.tag(), force_inner.clone()),
-                    (DataConstructor::BoxedSymbol.tag(), force_inner.clone()),
-                    (DataConstructor::BoxedString.tag(), force_inner.clone()),
-                    (DataConstructor::BoxedZdt.tag(), force_inner),
-                ],
-                bif_fallback,
+            local(1),
+            // [forced_set] [element, set]
+            force(
+                SeqKey.global(lref(1)),
+                // [forced_element] [forced_set] [element, set]
+                app_bif(bif_index, vec![lref(0), lref(1)]),
             ),
         ),
     )
+}
+
+/// The deepest nesting accepted in a list element, as for dict keys.
+const MAX_ELEMENT_DEPTH: usize = MAX_KEY_DEPTH;
+
+/// Convert an evaluated (deep-forced) set element to its key: a number,
+/// string or symbol, or a list of elements (design note OPEN 8).
+///
+/// Anything else raises [`ExecutionError::InvalidElement`] at the
+/// intrinsic's call site. A list holding something else is described as
+/// such ("a list holding a block").
+fn closure_to_set_key(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    item: &AbiClosure,
+) -> Result<DictKey, ExecutionError> {
+    match list_element_key(machine, view, item, 0)? {
+        Some(Ok(key)) => Ok(key),
+        Some(Err(found)) => Err(ExecutionError::InvalidElement(
+            machine.annotation(),
+            Box::new((IntrinsicType::Set, found)),
+        )),
+        None => Ok(closure_to_element(machine, view, item, &IntrinsicType::Set)?.to_key()),
+    }
+}
+
+/// The key of `item` when it is a list: `None` when it is not a list,
+/// `Some(Err(description))` when the list cannot be an element. Never
+/// forces.
+fn list_element_key(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    item: &AbiClosure,
+    depth: usize,
+) -> Result<Option<Result<DictKey, String>>, ExecutionError> {
+    let is_list = |machine: &dyn IntrinsicMachine, v: &AbiClosure| {
+        let tag = machine.data_tag(view, v);
+        tag == Some(DataConstructor::ListCons.tag()) || tag == Some(DataConstructor::ListNil.tag())
+    };
+    if !is_list(machine, item) {
+        return Ok(None);
+    }
+    if depth >= MAX_ELEMENT_DEPTH {
+        return Ok(Some(Err(format!(
+            "a list nested more than {MAX_ELEMENT_DEPTH} deep"
+        ))));
+    }
+    let smid = machine.annotation();
+    let malformed =
+        || ExecutionError::Panic(smid, "malformed cons cell in set element".to_string());
+    let mut elements = Vec::new();
+    let mut cur = item.clone();
+    while machine.data_tag(view, &cur) == Some(DataConstructor::ListCons.tag()) {
+        let head = machine.data_field(view, &cur, 0).ok_or_else(malformed)?;
+        let key = match list_element_key(machine, view, &head, depth + 1)? {
+            Some(Ok(key)) => key,
+            Some(Err(found)) => return Ok(Some(Err(found))),
+            None => match closure_to_element(machine, view, &head, &IntrinsicType::Set) {
+                Ok(prim) => prim.to_key(),
+                Err(ExecutionError::InvalidElement(_, b)) => {
+                    return Ok(Some(Err(format!("a list holding {}", b.1))))
+                }
+                Err(e) => return Err(e),
+            },
+        };
+        elements.push(key);
+        cur = machine.data_field(view, &cur, 1).ok_or_else(malformed)?;
+    }
+    Ok(Some(Ok(DictKey::List(DictKeyList::alloc(
+        &view, &elements,
+    )?))))
+}
+
+/// [`closure_to_set_key`] for an intrinsic argument.
+fn arg_to_set_key(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+) -> Result<DictKey, ExecutionError> {
+    if let Ok(native) = machine.resolve_native(view, arg) {
+        return Ok(native_to_element(machine.annotation(), &native, &IntrinsicType::Set)?.to_key());
+    }
+    let closure = machine.resolve_closure(view, arg)?;
+    closure_to_set_key(machine, view, &closure)
 }
 
 /// SET.EMPTY — return an empty set
@@ -110,11 +179,12 @@ impl StgIntrinsic for SetOf {
 
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         let bif_index: u8 = self.index().try_into().unwrap();
-        // Deep-force the list so all elements are at WHNF before execute()
+        // Deep-force the list and every element with `seqKey`, so list
+        // elements arrive fully evaluated.
         lambda(
             1, // [list]
             force(
-                SeqList.global(lref(0)),
+                SeqKey.global(lref(0)),
                 // [forced_list] [list]
                 app_bif(bif_index, vec![lref(0)]),
             ),
@@ -130,26 +200,21 @@ impl StgIntrinsic for SetOf {
     ) -> Result<(), ExecutionError> {
         // Each element raises the same error SET.ADD raises for it.
         let items = data_list_arg(machine, view, args[0].clone())?;
-        let mut primitives = Vec::with_capacity(items.len());
+        let mut keys = Vec::with_capacity(items.len());
         for item in &items {
-            primitives.push(closure_to_element(
-                machine,
-                view,
-                item,
-                &IntrinsicType::Set,
-            )?);
+            keys.push(closure_to_set_key(machine, view, item)?);
         }
         // One sort + dedup and a bottom-up build: O(n log n), not n
         // repeated insertions.
-        let root =
-            HeapSet::from_elements(&Dict::new(view, machine.symbol_pool()), primitives)?.root();
+        let root = HeapSet::from_keys(&Dict::new(view, machine.symbol_pool()), keys)?.root();
         machine_return_set(machine, view, root)
     }
 }
 
 impl CallGlobal1 for SetOf {}
 
-/// SET.TO_LIST — convert a set to a sorted list of boxed values
+/// SET.TO_LIST — convert a set to a sorted list of boxed values (and
+/// lists, for list elements)
 pub struct SetToList;
 
 impl StgIntrinsic for SetToList {
@@ -169,31 +234,11 @@ impl StgIntrinsic for SetToList {
         // allocations below.
         let sorted = set.elements(&Dict::new(view, machine.symbol_pool()));
 
-        // Box each element and assemble the (sorted) list via the neutral ABI.
+        // Box each element (a cons-list for a list element) and assemble
+        // the sorted list via the neutral ABI.
         let mut items = Vec::with_capacity(sorted.len());
         for key in &sorted {
-            let (box_tag, native) = match key.to_primitive() {
-                Some(prim @ Primitive::Num(_)) => (
-                    DataConstructor::BoxedNumber.tag(),
-                    set_primitive_to_native(&prim),
-                ),
-                Some(prim @ Primitive::Str(_)) => (
-                    DataConstructor::BoxedString.tag(),
-                    set_primitive_to_native(&prim),
-                ),
-                Some(prim @ Primitive::Sym(_)) => (
-                    DataConstructor::BoxedSymbol.tag(),
-                    set_primitive_to_native(&prim),
-                ),
-                None => {
-                    return Err(ExecutionError::Panic(
-                        machine.annotation(),
-                        "unexpected element type in set".to_string(),
-                    ))
-                }
-            };
-            let boxed = machine.native_value(view, native)?;
-            items.push(machine.data_value(view, box_tag, &[boxed])?);
+            items.push(key_value(machine, view, key)?);
         }
 
         machine.return_closure_list(view, items)
@@ -221,7 +266,7 @@ impl StgIntrinsic for SetAdd {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let key = arg_to_element(machine, view, &args[0], &IntrinsicType::Set)?.to_key();
+        let key = arg_to_set_key(machine, view, &args[0])?;
         let root = set_arg(machine, view, &args[1])?.root();
         let d = Dict::new(view, machine.symbol_pool());
         // A member leaves the tree as it is. The header is always fresh,
@@ -256,7 +301,7 @@ impl StgIntrinsic for SetRemove {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let key = arg_to_element(machine, view, &args[0], &IntrinsicType::Set)?.to_key();
+        let key = arg_to_set_key(machine, view, &args[0])?;
         let root = set_arg(machine, view, &args[1])?.root();
         // Always a fresh header, even when `key` is not a member (see
         // SET.ADD).
@@ -269,8 +314,8 @@ impl CallGlobal2 for SetRemove {}
 
 /// SET.CONTAINS — check if an element is in a set
 ///
-/// Returns false for non-primitive values (lists, blocks, etc.) since
-/// they can never be set members.
+/// Returns false for values that can never be set members (blocks,
+/// functions, lists holding them, ...).
 pub struct SetContains;
 
 impl StgIntrinsic for SetContains {
@@ -289,19 +334,19 @@ impl StgIntrinsic for SetContains {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        // Non-primitive values (lists, blocks, etc.) can never be set
-        // members, so return false rather than erroring.
-        let native = match resolve_native_unboxing(machine, view, &args[0]) {
-            Ok(n) => n,
-            Err(_) => return machine_return_bool(machine, view, false),
-        };
-        let prim = match native_to_element(machine.annotation(), &native, &IntrinsicType::Set) {
-            Ok(p) => p,
-            Err(_) => return machine_return_bool(machine, view, false),
+        // A value that cannot be an element (a block, a function, a list
+        // holding one, ...) is never a member, so return false rather than
+        // erroring.
+        let key = match arg_to_set_key(machine, view, &args[0]) {
+            Ok(k) => k,
+            Err(ExecutionError::InvalidElement(..)) => {
+                return machine_return_bool(machine, view, false)
+            }
+            Err(e) => return Err(e),
         };
         let root = set_arg(machine, view, &args[1])?.root();
         let found = Dict::new(view, machine.symbol_pool())
-            .lookup(root, &prim.to_key())
+            .lookup(root, &key)
             .is_some();
         machine_return_bool(machine, view, found)
     }

@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: EU-EVAL-TYPE
-primary: user tests/harness/errors/241_oaz72_32_set_of_non_primitive.eu:2:18
+primary: user tests/harness/errors/241_oaz72_32_set_of_non_primitive.eu:2:26
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -18,11 +18,11 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error[EU-EVAL-TYPE]: a list cannot be a set element: set elements must be numbers, strings or symbols
-  ┌─ tests/harness/errors/241_oaz72_32_set_of_non_primitive.eu:2:18
+error[EU-EVAL-TYPE]: a list holding a block cannot be a set element: set elements must be numbers, strings or symbols, or lists of them
+  ┌─ tests/harness/errors/241_oaz72_32_set_of_non_primitive.eu:2:26
   │
-2 │ result: [1, [2]] set.from-list
-  │                  ^^^
+2 │ result: [1, [2, {a: 1}]] set.from-list
+  │                          ^^^
   │
   = while evaluating (outermost first):
-    - result at 241_oaz72_32_set_of_non_primitive.eu:2:18
+    - result at 241_oaz72_32_set_of_non_primitive.eu:2:26

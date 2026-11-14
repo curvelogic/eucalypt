@@ -147,7 +147,7 @@ pub fn set_unit() -> BcValue {
     BcValue::Native(Native::Num(Number::from(0)))
 }
 
-/// A set of primitive values: a header over a persistent weight-balanced
+/// A set of primitive values and lists of them: a header over a persistent weight-balanced
 /// tree of [`DictNode`](super::dict::DictNode)s whose keys are the
 /// elements and whose values are [`set_unit`] (design note §6).
 ///
@@ -193,10 +193,14 @@ impl HeapSet {
     /// Build a set from elements in any order, with duplicates (an equal
     /// element keeps the first occurrence).
     pub fn from_elements(d: &Dict<'_>, elems: Vec<Primitive>) -> Result<Self, ExecutionError> {
-        let entries = elems
-            .into_iter()
-            .map(|e| (e.to_key(), set_unit()))
-            .collect();
+        Self::from_keys(d, elems.into_iter().map(Primitive::to_key).collect())
+    }
+
+    /// Build a set from element keys in any order, with duplicates (an
+    /// equal element keeps the first occurrence). Keys may be lists (design
+    /// note OPEN 8).
+    pub fn from_keys(d: &Dict<'_>, keys: Vec<DictKey>) -> Result<Self, ExecutionError> {
+        let entries = keys.into_iter().map(|k| (k, set_unit())).collect();
         let sorted = d.sort_last_wins(entries);
         Ok(HeapSet::new(d.build_sorted(&sorted)?))
     }

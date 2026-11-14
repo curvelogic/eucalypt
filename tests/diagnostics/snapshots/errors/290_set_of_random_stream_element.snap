@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error[EU-EVAL-TYPE]: a random number stream cannot be a set element: set elements must be numbers, strings or symbols
+error[EU-EVAL-TYPE]: a random number stream cannot be a set element: set elements must be numbers, strings or symbols, or lists of them
   ┌─ tests/harness/errors/290_set_of_random_stream_element.eu:2:21
   │
 2 │ result: [io.random] set.of
