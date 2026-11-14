@@ -93,22 +93,46 @@ pub struct Cooker<'smap> {
 /// `Expr::Operator(_, _, _, body)` where `body` is `ErrPseudoCat`.
 /// This splits the atom list at those operators, discarding the
 /// catenation markers themselves.
-fn split_at_cat_operators(atoms: &[RcExpr]) -> Vec<Vec<RcExpr>> {
-    let mut groups: Vec<Vec<RcExpr>> = Vec::new();
-    let mut current: Vec<RcExpr> = Vec::new();
-    for atom in atoms {
+/// Each atom's extent (see `shunt::shunt`) is split with it.
+fn split_at_cat_operators(
+    atoms: &[RcExpr],
+    extents: &[shunt::Written],
+) -> Vec<(Vec<RcExpr>, Vec<shunt::Written>)> {
+    let mut groups: Vec<(Vec<RcExpr>, Vec<shunt::Written>)> = Vec::new();
+    let mut current: (Vec<RcExpr>, Vec<shunt::Written>) = (Vec::new(), Vec::new());
+    for (atom, extent) in atoms.iter().zip(extents) {
         if is_cat_operator(atom) {
-            if !current.is_empty() {
+            if !current.0.is_empty() {
                 groups.push(std::mem::take(&mut current));
             }
         } else {
-            current.push(atom.clone());
+            current.0.push(atom.clone());
+            current.1.push(*extent);
         }
     }
-    if !current.is_empty() {
+    if !current.0.is_empty() {
         groups.push(current);
     }
     groups
+}
+
+/// An atom as written (see `shunt::shunt`). `HasSmid` gives an anaphor no
+/// location, but each anaphor carries the `Smid` of its token.
+fn written(expr: &RcExpr) -> shunt::Written {
+    match &*expr.inner {
+        Expr::ExprAnaphor(s, _) => shunt::Written {
+            smid: *s,
+            anaphor: true,
+        },
+        Expr::BlockAnaphor(s, _) => shunt::Written {
+            smid: *s,
+            anaphor: false,
+        },
+        _ => shunt::Written {
+            smid: expr.smid(),
+            anaphor: false,
+        },
+    }
 }
 
 /// Check whether an expression is a catenation operator wrapper.
@@ -220,17 +244,21 @@ impl<'smap> Cooker<'smap> {
             subcooked?
         };
 
+        // Each atom's extent is its `Smid` as written, before cooking
+        // (eu-oaz72.29): see `shunt::shunt`.
+        let extents: Vec<shunt::Written> = filled.iter().map(written).collect();
+
         let cooked = if bracket {
             // Split at catenation operators, shunt each group, collect as List
-            let groups = split_at_cat_operators(&atoms);
+            let groups = split_at_cat_operators(&atoms, &extents);
             let mut items = Vec::new();
-            for group in groups {
-                items.push(shunt::shunt(group, self.source_map)?);
+            for (group, group_extents) in groups {
+                items.push(shunt::shunt(group, group_extents, self.source_map)?);
             }
             let smid = exprs.first().map(|e| e.smid()).unwrap_or_default();
             RcExpr::from(Expr::List(smid, items))
         } else {
-            shunt::shunt(atoms, self.source_map)?
+            shunt::shunt(atoms, extents, self.source_map)?
         };
 
         if wrap_lambda {
