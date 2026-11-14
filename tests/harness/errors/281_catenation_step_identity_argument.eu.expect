@@ -1,0 +1,3 @@
+exit: 1
+# located at the `=` (line 5, column 19), not the call, and the parse is stated (eu-oaz72.133)
+stderr: "(?s)281_catenation_step_identity_argument\.eu:5:19.*note: 'xs nth\(0\) = 1' was read as 'xs \(nth\(0\) = 1\)'; parenthesise the pipeline: '\(xs nth\(0\)\) = 1'"

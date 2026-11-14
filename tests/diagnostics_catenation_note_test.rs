@@ -17,6 +17,8 @@ use std::process::Command;
 const PRELUDE: &str = "\
 (l <+> r): l + r
 f(a): a + 0
+same(a): a
+k: 1
 xs: [1, 2, 3]
 xss: [[1], [2]]
 ";
@@ -231,6 +233,72 @@ fn not_shown_without_the_parse() {
     ] {
         assert_no_note(expr);
     }
+}
+
+/// The function may come from an operator's right operand
+/// (eu-oaz72.133): parenthesising the pipeline would fix nothing, so no
+/// note is shown. A literal step head is never the function; a right
+/// operand that is a call may be a partial application.
+#[test]
+fn not_shown_when_function_may_come_from_the_right() {
+    for expr in [
+        "xs 1 + nth(0) = 1",
+        "xs 1 + 2 = 3",
+        "xs 1 = nth(0)",
+        "xs [1] ++ nth(0)",
+        "xs \"a\" ++ tail",
+        "xs 2 * nth(0) + 1 = 3",
+        "xs k + nth(0) = 1",
+        "xs nth(0) + nth(1)",
+        "xs nth(0) = (k + 1)",
+    ] {
+        assert_no_note(expr);
+    }
+}
+
+/// A plain name on the right is taken to be data (eu-oaz72.133).
+#[test]
+fn name_on_the_right() {
+    assert_note(
+        "xs nth(0) = k",
+        &parse_note("xs nth(0) = k", "xs (nth(0) = k)", "(xs nth(0)) = k"),
+    );
+    assert_note(
+        "xs nth(0) + k = 2",
+        &parse_note(
+            "xs nth(0) + k = 2",
+            "xs (nth(0) + k = 2)",
+            "(xs nth(0)) + k = 2",
+        ),
+    );
+}
+
+/// A comment between the atoms is not quoted (eu-oaz72.133).
+#[test]
+fn comment_not_quoted() {
+    assert_note(
+        "xs # the list\n  nth(0) = 1",
+        &parse_note("xs nth(0) = 1", "xs (nth(0) = 1)", "(xs nth(0)) = 1"),
+    );
+    // `#` inside a string is not a comment.
+    assert_note(
+        "xs \"#\" nth(0) = 1",
+        &parse_note(
+            "xs \"#\" nth(0) = 1",
+            "xs \"#\" (nth(0) = 1)",
+            "(xs \"#\" nth(0)) = 1",
+        ),
+    );
+}
+
+/// The argument of a function whose body is its parameter keeps its own
+/// location, so the note is shown there (eu-oaz72.133).
+#[test]
+fn argument_of_identity_function() {
+    assert_note(
+        "same(xs nth(0) = 1)",
+        &parse_note("xs nth(0) = 1", "xs (nth(0) = 1)", "(xs nth(0)) = 1"),
+    );
 }
 
 /// A legitimate operator step, `c f ∘ g`, is not an error.
