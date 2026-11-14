@@ -243,6 +243,36 @@ pub struct SourceMap {
     /// through `source` like any other) and until the first diagnostic on
     /// the blob path, where the prelude source is not otherwise loaded.
     prelude_file: Option<usize>,
+    /// Infix-operator applications that cook made the *function* operand of
+    /// a catenation, keyed by the operator's own span (eu-oaz72.29).
+    ///
+    /// `c nth(i) = 2` cooks to `(nth(i) = 2)(c)`: `=` binds tighter than
+    /// catenation, so the whole operator expression became the pipeline
+    /// step. Only an operator expression written without parentheses in
+    /// the source is recorded. A runtime error raised at one of these spans
+    /// because a function was called or received there states the parse.
+    catenation_operands: HashMap<(usize, Span), CatenationOperand>,
+}
+
+/// The source extents of a catenation whose function operand is an
+/// unparenthesised infix-operator expression (eu-oaz72.29).
+///
+/// Each extent is a pair of atom `Smid`s (first and last atom of the soup
+/// it covers), so that an atom written in parentheses can be widened over
+/// them when the text is rendered.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatenationOperand {
+    /// The pipeline the step was applied to: `c` in `c nth(i) = 2`.
+    pub pipeline: (Smid, Smid),
+    /// The operator expression that became the step: `nth(i) = 2`.
+    pub step: (Smid, Smid),
+    /// The last atom of the operator expression's leftmost operand
+    /// (`nth(i)`), where the pipeline would end if parenthesised.
+    pub step_head_end: Smid,
+    /// Whether the pipeline holds an expression anaphor (`_ nth(0) = 1`).
+    /// Parentheses round it would scope the anaphor to them, so no
+    /// parenthesisation is suggested.
+    pub pipeline_has_anaphor: bool,
 }
 
 impl SourceMap {
@@ -525,6 +555,28 @@ impl SourceMap {
             }
             _ => diag,
         }
+    }
+
+    /// Record that the infix-operator application at `operator` (an
+    /// unparenthesised operator expression) is the function operand of a
+    /// catenation (eu-oaz72.29). Nothing is recorded when `operator` has no
+    /// source location.
+    pub fn record_catenation_operand(&mut self, operator: Smid, operand: CatenationOperand) {
+        if let Some(SourceInfo {
+            file: Some(file),
+            span: Some(span),
+            ..
+        }) = self.source_info_for_smid(operator)
+        {
+            let key = (*file, *span);
+            self.catenation_operands.insert(key, operand);
+        }
+    }
+
+    /// The catenation whose function operand is the operator expression at
+    /// `file`/`span`, if cook recorded one (eu-oaz72.29).
+    pub fn catenation_operand(&self, file: usize, span: Span) -> Option<&CatenationOperand> {
+        self.catenation_operands.get(&(file, span))
     }
 
     /// Mark a file ID as belonging to a resource (e.g. the prelude, a stdlib

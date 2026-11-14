@@ -1,5 +1,5 @@
 //! Logic for resolving operator precedences
-use crate::common::sourcemap::{HasSmid, SourceMap};
+use crate::common::sourcemap::{CatenationOperand, HasSmid, Smid, SourceMap};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
 
@@ -9,26 +9,107 @@ use crate::core::expr::*;
 /// `source_map` is the map the exprs' `Smid`s index into; it is used to
 /// mint whole-call spans for the applications formed here
 /// (see [`Shunter::form_apply`]).
-pub fn shunt(exprs: Vec<RcExpr>, source_map: &mut SourceMap) -> Result<RcExpr, CoreError> {
-    Shunter::new(exprs, source_map).shunt()
+///
+/// `extents` holds, for each of `exprs`, the atom as it was written,
+/// before it was cooked: a parenthesised group cooks to an application
+/// stamped with its operator's `Smid`, but as written it is the whole
+/// group. Extents are used only to record catenations whose
+/// function operand is an unparenthesised operator expression
+/// (eu-oaz72.29).
+pub fn shunt(
+    exprs: Vec<RcExpr>,
+    extents: Vec<Written>,
+    source_map: &mut SourceMap,
+) -> Result<RcExpr, CoreError> {
+    Shunter::new(exprs, extents, source_map).shunt()
+}
+
+/// An atom as it was written, before cooking (eu-oaz72.29).
+#[derive(Clone, Copy, Debug)]
+pub struct Written {
+    /// The atom's location.
+    pub smid: Smid,
+    /// Whether the atom is an expression anaphor (`_`, `_0`, …).
+    pub anaphor: bool,
+}
+
+/// The source extent of an expression on the shunter's output stack, as
+/// atom `Smid`s (eu-oaz72.29).
+#[derive(Clone, Copy)]
+struct Extent {
+    /// The first atom of the expression.
+    first: Smid,
+    /// The last atom of the expression.
+    last: Smid,
+    /// The last atom of the expression's leftmost operand: the expression
+    /// itself unless it is an infix-operator application.
+    head_end: Smid,
+    /// Whether the expression is an infix-operator application formed by
+    /// this shunt — that is, written without parentheses round it. A
+    /// parenthesised group is a nested soup, cooked before it gets here,
+    /// so it arrives as a single atom.
+    infix: bool,
+    /// Whether an expression anaphor of this soup is among its atoms.
+    anaphor: bool,
+}
+
+impl Written {
+    fn operator(smid: Smid) -> Self {
+        Written {
+            smid,
+            anaphor: false,
+        }
+    }
+}
+
+/// An expression on the output stack with its extent.
+type Entry = (RcExpr, Extent);
+
+impl Extent {
+    fn atom(written: Written) -> Self {
+        Extent {
+            first: written.smid,
+            last: written.smid,
+            head_end: written.smid,
+            infix: false,
+            anaphor: written.anaphor,
+        }
+    }
+
+    /// A leaf spanning the extents `left` to `right`.
+    fn span(left: &Extent, right: &Extent) -> Self {
+        Extent {
+            first: left.first,
+            last: right.last,
+            head_end: right.last,
+            infix: false,
+            anaphor: left.anaphor || right.anaphor,
+        }
+    }
 }
 
 /// Shunting algorithm state
 ///
 /// Input stream, output stream, ops stack and error state.
 struct Shunter<'smap> {
-    input: Vec<RcExpr>,
-    output: Vec<RcExpr>,
+    input: Vec<(RcExpr, Written)>,
+    output: Vec<(RcExpr, Extent)>,
     ops: Vec<RcExpr>,
     error: Option<CoreError>,
     source_map: &'smap mut SourceMap,
 }
 
 impl<'smap> Shunter<'smap> {
-    pub fn new(mut exprs: Vec<RcExpr>, source_map: &'smap mut SourceMap) -> Self {
-        exprs.reverse();
+    pub fn new(
+        exprs: Vec<RcExpr>,
+        extents: Vec<Written>,
+        source_map: &'smap mut SourceMap,
+    ) -> Self {
+        debug_assert_eq!(exprs.len(), extents.len());
+        let mut input: Vec<(RcExpr, Written)> = exprs.into_iter().zip(extents).collect();
+        input.reverse();
         Shunter {
-            input: exprs,
+            input,
             output: vec![],
             ops: vec![],
             error: None,
@@ -52,7 +133,7 @@ impl<'smap> Shunter<'smap> {
         match self.error {
             Some(e) => Err(e),
             None => {
-                if let Some(result) = self.output.pop() {
+                if let Some((result, _)) = self.output.pop() {
                     Ok(result)
                 } else {
                     panic!("shunting ended with empty output")
@@ -61,16 +142,22 @@ impl<'smap> Shunter<'smap> {
         }
     }
 
-    fn pop_next(&mut self) -> Option<RcExpr> {
+    fn pop_next(&mut self) -> Option<(RcExpr, Written)> {
         self.input.pop()
     }
 
     fn peek_next(&mut self) -> Option<&RcExpr> {
-        self.input.last()
+        self.input.last().map(|(e, _)| e)
     }
 
+    /// Push back a filler synthesised by `fill`: it was not written, so
+    /// its extent is its own `Smid`.
     fn push_back(&mut self, expr: RcExpr) {
-        self.input.push(expr);
+        let written = Written {
+            smid: expr.smid(),
+            anaphor: false,
+        };
+        self.input.push((expr, written));
     }
 
     fn push_op(&mut self, op: RcExpr) {
@@ -85,11 +172,11 @@ impl<'smap> Shunter<'smap> {
         self.ops.last()
     }
 
-    fn pop_one_output(&mut self) -> Option<RcExpr> {
+    fn pop_one_output(&mut self) -> Option<(RcExpr, Extent)> {
         self.output.pop()
     }
 
-    fn pop_two_output(&mut self) -> Option<(RcExpr, RcExpr)> {
+    fn pop_two_output(&mut self) -> Option<(Entry, Entry)> {
         if self.output.len() >= 2 {
             let a = self.pop_one_output().unwrap();
             let b = self.pop_one_output().unwrap();
@@ -99,8 +186,8 @@ impl<'smap> Shunter<'smap> {
         }
     }
 
-    fn push_output(&mut self, expr: RcExpr) {
-        self.output.push(expr)
+    fn push_output(&mut self, expr: RcExpr, extent: Extent) {
+        self.output.push((expr, extent))
     }
 
     /// Seat the operator comfortably at the top of the operator
@@ -174,9 +261,9 @@ impl<'smap> Shunter<'smap> {
 
     fn apply_op(&mut self, op: RcExpr) {
         match &*op.inner {
-            Expr::Operator(_, f, _, expr) => match f.arity() {
-                0 => self.apply_zero(expr.clone()),
-                1 => self.apply_one(expr.clone()),
+            Expr::Operator(smid, f, _, expr) => match f.arity() {
+                0 => self.apply_zero(expr.clone(), *smid),
+                1 => self.apply_one(expr.clone(), *smid, *f),
                 2 => self.apply_two(expr.clone()),
                 _ => unreachable!(),
             },
@@ -184,23 +271,60 @@ impl<'smap> Shunter<'smap> {
         }
     }
 
-    fn apply_zero(&mut self, expr: RcExpr) {
-        self.push_output(expr)
+    fn apply_zero(&mut self, expr: RcExpr, op_smid: Smid) {
+        self.push_output(expr, Extent::atom(Written::operator(op_smid)))
     }
 
-    fn apply_one(&mut self, expr: RcExpr) {
-        if let Some(operand) = self.pop_one_output() {
+    fn apply_one(&mut self, expr: RcExpr, op_smid: Smid, fixity: Fixity) {
+        if let Some((operand, ext)) = self.pop_one_output() {
+            let op = Extent::atom(Written::operator(op_smid));
+            let extent = if fixity == Fixity::UnaryPostfix {
+                Extent::span(&ext, &op)
+            } else {
+                Extent::span(&op, &ext)
+            };
             let applied = self.form_apply(expr, &[operand]);
-            self.push_output(applied)
+            self.push_output(applied, extent)
         } else {
             self.error = Some(CoreError::TooFewOperands(expr.smid()))
         }
     }
 
     fn apply_two(&mut self, expr: RcExpr) {
-        if let Some((right, left)) = self.pop_two_output() {
+        if let Some(((right, rext), (left, lext))) = self.pop_two_output() {
+            let extent = if expr.is_pseudocall() || expr.is_pseudodot() {
+                Extent::span(&lext, &rext)
+            } else if expr.is_pseudocat() {
+                if rext.infix {
+                    // `x a op b`: the operator expression `a op b`, written
+                    // without parentheses, became the pipeline step applied
+                    // to `x` (eu-oaz72.29). The catenation's application is
+                    // stamped with the operator application's `Smid`
+                    // (`form_apply`), which is where a runtime error from
+                    // calling its result, or from the operator receiving a
+                    // function, is raised.
+                    self.source_map.record_catenation_operand(
+                        right.smid(),
+                        CatenationOperand {
+                            pipeline: (lext.first, lext.last),
+                            step: (rext.first, rext.last),
+                            step_head_end: rext.head_end,
+                            pipeline_has_anaphor: lext.anaphor,
+                        },
+                    );
+                }
+                Extent::span(&lext, &rext)
+            } else {
+                Extent {
+                    first: lext.first,
+                    last: rext.last,
+                    head_end: lext.head_end,
+                    infix: true,
+                    anaphor: lext.anaphor || rext.anaphor,
+                }
+            };
             let applied = self.form_apply(expr, &[left, right]);
-            self.push_output(applied)
+            self.push_output(applied, extent)
         } else {
             self.error = Some(CoreError::TooFewOperands(expr.smid()))
         }
@@ -267,12 +391,12 @@ impl<'smap> Shunter<'smap> {
 
     /// One step of the shunting algo
     fn shunt1(&mut self) {
-        if let Some(expr) = self.pop_next() {
+        if let Some((expr, extent)) = self.pop_next() {
             self.insert_fill(&expr);
             if expr.inner.is_operator() {
                 self.seat_op(expr);
             } else {
-                self.push_output(expr);
+                self.push_output(expr, Extent::atom(extent));
             }
         } else {
             self.clear_ops();
