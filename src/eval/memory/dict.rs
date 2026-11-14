@@ -815,8 +815,8 @@ impl<'a> Dict<'a> {
         let bn = self.node(bp);
         let (l, _, r) = self.split(a, &bn.key)?;
         let left = self.difference(l, bn.left)?;
-        let _right = self.difference(r, bn.right)?;
-        self.merge(left, None)
+        let right = self.difference(r, bn.right)?;
+        self.merge(left, right)
     }
 
     /// The node of rank `i` (0-based, in key order), if `i` is in range.
