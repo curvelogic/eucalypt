@@ -1,58 +1,16 @@
 ; Tree-sitter highlights for Eucalypt
 ; For use with Emacs tree-sitter mode and other editors
-
-; Comments
-(comment) @comment
-
-; Literals
-(number) @number
-
-; Plain strings
-(string) @string
-(string_content) @string
-
-; C-strings (with C-style escape processing) - entire literal including prefix
-(c_string) @string
-(c_string_content) @string
-(c_escape_sequence) @string.escape
-(c_string "c\"" @string)
-(c_string "\"" @string)
-
-; Raw strings (explicit raw, no escape processing) - entire literal including prefix
-(r_string) @string
-(r_string_content) @string
-(r_string "r\"" @string)
-(r_string "\"" @string)
-
-; T-strings (ZDT / zoned date-time literals) - no interpolation, no escapes
-(t_string) @string.special
-(t_string_content) @string.special
-(t_string "t\"" @string.special)
-(t_string "\"" @string.special)
-
-; Symbols
-(symbol
-  ":" @constant
-  (identifier) @constant)
-(symbol
-  ":" @constant
-  (quoted_identifier) @constant)
-
-; String interpolation (works in all string types)
-(interpolation
-  "{" @punctuation.special
-  "}" @punctuation.special)
-(interpolation_content) @variable
-(format_spec) @string.special
-
-; Brace escapes in plain and raw strings
-(brace_escape) @string.escape
-
-; Anaphora (special variables)
-(anaphor) @variable.special
-
-; Operators
-(operator) @operator
+;
+; Precedence: of two captures of the same node, the LATER pattern wins
+; (the Neovim convention), and an inner node's capture overrides an
+; enclosing node's. So general captures (punctuation, calls, prelude
+; names) come first and the contexts that refine them (symbols,
+; declarations, parameters, metadata) after.
+; scripts/check-highlighting-consistency.js applies these captures the
+; same way when it compares them with the LSP's semantic tokens.
+; A pattern that captures several nodes must also follow every pattern
+; that captures one of those nodes alone: tree-sitter-highlight drops the
+; whole earlier match when a later pattern claims one of its nodes.
 
 ; Punctuation
 ":" @punctuation.delimiter
@@ -64,45 +22,6 @@
 "{" @punctuation.bracket
 "}" @punctuation.bracket
 "`" @punctuation.special
-
-; Declaration heads - property name
-(declaration
-  (declaration_head
-    (identifier) @property))
-
-; Declaration heads - function name with parameters
-(declaration
-  (declaration_head
-    (identifier) @function
-    (parameter_list)))
-
-; Operator declarations
-(operator_declaration
-  (identifier) @parameter
-  (operator) @function
-  (identifier) @parameter)
-
-; Function parameters — simple identifiers
-(parameter_list
-  (identifier) @parameter)
-
-; Destructuring parameters — block pattern field names (renamed/nested
-; fields, e.g. `{x: a}` or `{outer: {inner}}`). The field name is always
-; the FIRST child; the value may be a plain identifier (rename) or a
-; nested block/list/cons pattern, so it isn't matched positionally here —
-; the list_pattern/cons_pattern/block_pattern_field rules below cover any
-; identifiers nested inside it.
-(block_pattern_field
-  .
-  (identifier) @parameter)
-
-; Destructuring parameters — list pattern element names
-(list_pattern
-  (identifier) @parameter)
-
-; Destructuring parameters — cons pattern head and tail names
-(cons_pattern
-  (identifier) @parameter)
 
 ; Idiot bracket expressions — highlight the bracket delimiters distinctively
 (bracket_expr) @punctuation.special
@@ -172,6 +91,59 @@
     "dbg"
     "eu" "io" "cal" "iosm"))
 
+; Comments
+(comment) @comment
+
+; Literals
+(number) @number
+
+; Plain strings
+(string) @string
+(string_content) @string
+
+; C-strings (with C-style escape processing) - entire literal including prefix
+(c_string) @string
+(c_string_content) @string
+(c_escape_sequence) @string.escape
+(c_string "c\"" @string)
+(c_string "\"" @string)
+
+; Raw strings (explicit raw, no escape processing) - entire literal including prefix
+(r_string) @string
+(r_string_content) @string
+(r_string "r\"" @string)
+(r_string "\"" @string)
+
+; T-strings (ZDT / zoned date-time literals) - no interpolation, no escapes
+(t_string) @string.special
+(t_string_content) @string.special
+(t_string "t\"" @string.special)
+(t_string "\"" @string.special)
+
+; Symbols
+(symbol
+  ":" @constant
+  (identifier) @constant)
+(symbol
+  ":" @constant
+  (quoted_identifier) @constant)
+
+; String interpolation (works in all string types)
+(interpolation
+  "{" @punctuation.special
+  "}" @punctuation.special)
+(interpolation_content) @variable
+(format_spec) @string.special
+
+; Brace escapes in plain and raw strings
+(brace_escape) @string.escape
+
+; Anaphora (special variables)
+(anaphor) @variable.special
+
+; Operators
+(operator) @operator
+
 ; Namespaced prelude functions (`ns.member`), matched as a whole so that a
 ; bare `set` (e.g. `arr.set` or a user name) is not styled as a keyword.
 ; Every capture here is a highlight name: an `@_` capture on a node would
@@ -185,9 +157,71 @@
   (#eq? @operator ".")
   (#any-of? @keyword "set" "vec" "of" "from-list"))
 
+; Declaration heads - property name
+(declaration
+  (declaration_head
+    [(identifier) (quoted_identifier)] @property))
+
+; Declaration heads - function name with parameters
+(declaration
+  (declaration_head
+    [(identifier) (quoted_identifier)] @function
+    [(parameter_list) (block_param) (list_param)]))
+
+; Operator declarations: the operator keeps its general @operator capture;
+; every operand is a parameter
+(operator_declaration
+  (identifier) @parameter)
+
+; Function parameters — simple identifiers
+(parameter_list
+  (identifier) @parameter)
+
+; Juxtaposed parameters — f{x y}:, f[a, b]: and f[h : t]:
+(block_param
+  (identifier) @parameter)
+(list_param
+  (identifier) @parameter)
+
+; Destructuring parameters — block pattern shorthand fields (`{x y}`) and
+; renamed or nested fields (`{x: a}` binds field x
+; as a; `{outer: {inner}}` destructures further): both the field name and
+; a plain bound name are parameters; the list_pattern/cons_pattern rules
+; below cover identifiers nested deeper.
+(block_pattern
+  (identifier) @parameter)
+(block_pattern_field
+  (identifier) @parameter)
+
+; Destructuring parameters — list pattern element names
+(list_pattern
+  (identifier) @parameter)
+
+; Destructuring parameters — cons pattern head and tail names
+(cons_pattern
+  (identifier) @parameter)
+
 ; Metadata
 (metadata
   "`" @attribute)
+
+; Keys of a metadata block: ` { doc: ... }, { {doc: ...} x: 1 } and a
+; unit's leading { import: ... } block
+(metadata
+  (block
+    (declaration
+      (declaration_head
+        [(identifier) (quoted_identifier)] @attribute))))
+(block_metadata
+  (block
+    (declaration
+      (declaration_head
+        [(identifier) (quoted_identifier)] @attribute))))
+(unit_metadata
+  (block
+    (declaration
+      (declaration_head
+        [(identifier) (quoted_identifier)] @attribute))))
 
 ; Docstrings — string-valued metadata (aliased to docstring by grammar)
 (docstring) @comment.documentation
@@ -201,28 +235,28 @@
   (block
     (declaration
       (declaration_head
-        (identifier) @_key)
+        (identifier) @attribute)
       (soup
         (literal (string) @comment.documentation))))
-  (#eq? @_key "doc"))
+  (#eq? @attribute "doc"))
 
 (metadata
   (block
     (declaration
       (declaration_head
-        (identifier) @_key)
+        (identifier) @attribute)
       (soup
         (literal (c_string) @comment.documentation))))
-  (#eq? @_key "doc"))
+  (#eq? @attribute "doc"))
 
 (metadata
   (block
     (declaration
       (declaration_head
-        (identifier) @_key)
+        (identifier) @attribute)
       (soup
         (literal (r_string) @comment.documentation))))
-  (#eq? @_key "doc"))
+  (#eq? @attribute "doc"))
 
 ; Doc values inside block-valued block metadata
 ; Matches: { {doc: "text", ...} x: 1 }
@@ -230,28 +264,28 @@
   (block
     (declaration
       (declaration_head
-        (identifier) @_key)
+        (identifier) @attribute)
       (soup
         (literal (string) @comment.documentation))))
-  (#eq? @_key "doc"))
+  (#eq? @attribute "doc"))
 
 (block_metadata
   (block
     (declaration
       (declaration_head
-        (identifier) @_key)
+        (identifier) @attribute)
       (soup
         (literal (c_string) @comment.documentation))))
-  (#eq? @_key "doc"))
+  (#eq? @attribute "doc"))
 
 (block_metadata
   (block
     (declaration
       (declaration_head
-        (identifier) @_key)
+        (identifier) @attribute)
       (soup
         (literal (r_string) @comment.documentation))))
-  (#eq? @_key "doc"))
+  (#eq? @attribute "doc"))
 
 ; Doc values inside block-valued unit metadata
 ; Matches: { doc: "text", ... } at file level (bare block at top of file)
@@ -259,25 +293,25 @@
   (block
     (declaration
       (declaration_head
-        (identifier) @_key)
+        (identifier) @attribute)
       (soup
         (literal (string) @comment.documentation))))
-  (#eq? @_key "doc"))
+  (#eq? @attribute "doc"))
 
 (unit_metadata
   (block
     (declaration
       (declaration_head
-        (identifier) @_key)
+        (identifier) @attribute)
       (soup
         (literal (c_string) @comment.documentation))))
-  (#eq? @_key "doc"))
+  (#eq? @attribute "doc"))
 
 (unit_metadata
   (block
     (declaration
       (declaration_head
-        (identifier) @_key)
+        (identifier) @attribute)
       (soup
         (literal (r_string) @comment.documentation))))
-  (#eq? @_key "doc"))
+  (#eq? @attribute "doc"))
