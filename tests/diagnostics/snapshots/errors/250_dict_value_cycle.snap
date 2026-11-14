@@ -12,8 +12,8 @@ primary: user tests/harness/errors/250_dict_value_cycle.eu:3:19
 help-lines: 0
 note-lines: 2
 secondary-labels: 1
-trace-frames: 3
-trace-user-frames: 3
+trace-frames: 2
+trace-user-frames: 2
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -29,7 +29,6 @@ error: infinite loop detected: binding refers to itself
   = a binding that references itself directly or indirectly creates an infinite loop
   = use a function parameter instead of self-reference, or break the cycle
   = while evaluating (outermost first):
-    - d at 250_dict_value_cycle.eu:3:4
     - result at 250_dict_value_cycle.eu:6:11
     - d at 250_dict_value_cycle.eu:3:32
 
@@ -42,8 +41,8 @@ primary: user tests/harness/errors/250_dict_value_cycle.eu:3:19
 help-lines: 0
 note-lines: 2
 secondary-labels: 1
-trace-frames: 3
-trace-user-frames: 3
+trace-frames: 2
+trace-user-frames: 2
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -59,6 +58,5 @@ error: infinite loop detected: binding refers to itself
   = a binding that references itself directly or indirectly creates an infinite loop
   = use a function parameter instead of self-reference, or break the cycle
   = while evaluating (outermost first):
-    - d at 250_dict_value_cycle.eu:3:4
     - result at 250_dict_value_cycle.eu:6:11
     - d at 250_dict_value_cycle.eu:3:32

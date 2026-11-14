@@ -11,7 +11,7 @@ code: -
 primary: user tests/harness/errors/277_vec_nth_negative.eu:2:19
 help-lines: 0
 note-lines: 0
-secondary-labels: 1
+secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
 trace-prelude-frames: 0
@@ -22,9 +22,7 @@ error: vec.nth index -1 out of range: vec indices start at 0
   ┌─ tests/harness/errors/277_vec_nth_negative.eu:2:19
   │
 2 │ r: vec.of[10, 20] vec.nth(-1)
-  │    -------------- ^^^^^^^^^^^
-  │    │
-  │    called from here
+  │                   ^^^^^^^^^^^
   │
   = while evaluating (outermost first):
     - r at 277_vec_nth_negative.eu:2:19
@@ -37,7 +35,7 @@ code: -
 primary: user tests/harness/errors/277_vec_nth_negative.eu:2:19
 help-lines: 0
 note-lines: 0
-secondary-labels: 2
+secondary-labels: 1
 trace-frames: 1
 trace-user-frames: 1
 trace-prelude-frames: 0
@@ -48,10 +46,9 @@ error: vec.nth index -1 out of range: vec indices start at 0
   ┌─ tests/harness/errors/277_vec_nth_negative.eu:2:19
   │
 2 │ r: vec.of[10, 20] vec.nth(-1)
-  │    ---            ^^^^^^^^^^^
-  │    │              │
-  │    │              called from here
-  │    called from here
+  │                   ^^^^^^^^^^^
+  │                   │
+  │                   called from here
   │
   = while evaluating (outermost first):
     - r at 277_vec_nth_negative.eu:2:19
