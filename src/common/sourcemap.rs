@@ -316,6 +316,14 @@ impl SourceMap {
             .and_then(|i| self.source.get(i))
     }
 
+    /// Whether `smid` is a valid source annotation this map has no entry
+    /// for: one minted outside it — on the blob path, an annotation inside
+    /// the pre-compiled prelude, whose source info the blob does not carry
+    /// (eu-oaz72.37 labels these in profiles).
+    pub fn is_unmapped(&self, smid: Smid) -> bool {
+        smid.as_global_slot().is_none() && smid.get().is_some_and(|i| self.info_at(i).is_none())
+    }
+
     /// Reserve the index range occupied by a *foreign* `Smid` space, so
     /// that nothing this `SourceMap` mints can collide with one, and
     /// nothing already in that space can resolve here (eu-r4647).
@@ -874,6 +882,26 @@ impl SourceMap {
             .or_else(source_snippet)?;
 
         Some((name, location))
+    }
+
+    /// A one-line description of `smid` for profiles (eu-oaz72.37): the
+    /// trace-entry name followed by `at file:line:col` for a user site or
+    /// `(library)` for a bundled-library one. A long source-snippet name is
+    /// truncated to 60 characters. `None` when the smid resolves to
+    /// nothing a user can recognise (internal machinery).
+    pub fn describe_smid(&self, smid: Smid, files: &SimpleFiles<String, String>) -> Option<String> {
+        let (name, location) = self.resolve_trace_entry(smid, files)?;
+        let name = if name.chars().count() > 60 {
+            let cut: String = name.chars().take(59).collect();
+            format!("{cut}…")
+        } else {
+            name
+        };
+        Some(match location {
+            Some(TraceLocation::Site(loc)) => format!("{name} at {loc}"),
+            Some(TraceLocation::Resource(res)) => format!("{name} ({res})"),
+            None => name,
+        })
     }
 
     /// Format a stack / environment trace

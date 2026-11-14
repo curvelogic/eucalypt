@@ -1045,7 +1045,9 @@ fn modular_operand(
     if let Some(i) = whole_i64(&n) {
         return Ok(i128::from(i));
     }
-    let fractional = n.as_f64().is_some_and(|f| f.fract() != 0.0 || !f.is_finite());
+    let fractional = n
+        .as_f64()
+        .is_some_and(|f| f.fract() != 0.0 || !f.is_finite());
     let problem = if fractional {
         "a whole number"
     } else {

@@ -3334,6 +3334,14 @@ pub fn test_291_modular_arithmetic() {
     run_test(&opts("291_modular_arithmetic.eu"));
 }
 
+/// The BFS and Dijkstra templates of the Advent of Code cookbook
+/// (eu-oaz72.16), with the Dijkstra queue a dict keyed by `[priority, seq]`
+/// (eu-oaz72.22).
+#[test]
+pub fn test_255_search_templates() {
+    run_test(&opts("255_search_templates.eu"));
+}
+
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
@@ -5404,21 +5412,21 @@ pub fn test_error_291_modinv_not_invertible() {
 }
 
 #[test]
-pub fn test_error_291_modulus_not_positive() {
-    run_error_test(&error_opts("291_modulus_not_positive.eu"));
+pub fn test_error_292_modulus_not_positive() {
+    run_error_test(&error_opts("292_modulus_not_positive.eu"));
 }
 
 #[test]
-pub fn test_error_291_powmod_negative_exponent() {
-    run_error_test(&error_opts("291_powmod_negative_exponent.eu"));
+pub fn test_error_293_powmod_negative_exponent() {
+    run_error_test(&error_opts("293_powmod_negative_exponent.eu"));
 }
 
 #[test]
-pub fn test_error_291_modular_non_integer() {
-    run_error_test(&error_opts("291_modular_non_integer.eu"));
+pub fn test_error_294_modular_non_integer() {
+    run_error_test(&error_opts("294_modular_non_integer.eu"));
 }
 
 #[test]
-pub fn test_error_291_modular_out_of_range() {
-    run_error_test(&error_opts("291_modular_out_of_range.eu"));
+pub fn test_error_295_modular_out_of_range() {
+    run_error_test(&error_opts("295_modular_out_of_range.eu"));
 }
