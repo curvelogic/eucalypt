@@ -1,0 +1,5 @@
+` "Two names in one string interpolation are an error, not read as the
+first name alone: `{{ a b }}` used to evaluate as `{{a}}` (eu-oaz72.50)."
+a: 1
+b: 2
+greeting: "{ a b }"

@@ -122,6 +122,7 @@
         "lib/lens.eu",
         "lib/markup.eu",
         "lib/state.eu",
+        "tests/harness/024_interpolation.eu",
         "tests/harness/036_takes_and_drops.eu",
         "tests/harness/039_tags.eu",
         "tests/harness/041_numeric_formats.eu",
