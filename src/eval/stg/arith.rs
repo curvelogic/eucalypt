@@ -12,6 +12,7 @@ use crate::{
         machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
         memory::{
             mutator::MutatorHeapView,
+            number::ExactNum,
             syntax::{Native, Ref},
         },
     },
@@ -519,24 +520,19 @@ fn arithmetic_wrapper(index: usize) -> LambdaForm {
     binary_wrapper(index)
 }
 
-/// Ordering comparison between two numbers, trying i64, u64, then f64
-/// representations. Returns the `std::cmp::Ordering` or an error if
-/// the numbers cannot be compared.
+/// Ordering comparison between two numbers by exact value, agreeing
+/// with set, vec and dict key order ([`ExactNum`]). Returns an error if
+/// either is NaN, which has no place in the numeric order.
 fn num_ord(smid: Smid, x: &Number, y: &Number) -> Result<std::cmp::Ordering, ExecutionError> {
-    if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-        Ok(l.cmp(&r))
-    } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-        Ok(l.cmp(&r))
-    } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-        l.partial_cmp(&r)
-            .ok_or_else(|| ExecutionError::NumericDomainError(smid, x.clone(), y.clone()))
-    } else {
-        Err(ExecutionError::NumericDomainError(
+    let is_nan = |n: &Number| n.as_f64().is_some_and(f64::is_nan);
+    if is_nan(x) || is_nan(y) {
+        return Err(ExecutionError::NumericDomainError(
             smid,
             x.clone(),
             y.clone(),
-        ))
+        ));
     }
+    Ok(ExactNum::from_number(x).cmp(&ExactNum::from_number(y)))
 }
 
 /// Polymorphic ordered comparison. Dispatches on native type, computes
