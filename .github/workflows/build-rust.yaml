@@ -378,6 +378,26 @@ jobs:
         env:
           EU_PREDECODE: "0"
 
+  test-byte-dispatch-blob:
+    # The blob-mode half of the byte-dispatch soak (eu-oaz72.102). The job
+    # above runs with no `lib/prelude.blob` (it is gitignored), so the
+    # byte-dispatch side of a blob-only fix — e.g. LookupLit's Update of a
+    # Global thunk (PR #1184) — was exercised by no CI job. This one builds
+    # the blob first, as released binaries do, and runs the same harness.
+    name: Byte-dispatch + blob harness (soak baseline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Generate prelude blob
+        run: cargo run --package xtask -- prelude-compile
+      - name: Build release binary
+        run: cargo build --release
+      - name: Run harness on byte-dispatch + blob path
+        run: ./target/release/eu test --allow-io tests/harness
+        env:
+          EU_PREDECODE: "0"
+
   test-aarch64-sequential:
     name: Sequential harness (aarch64 release)
     runs-on: ubuntu-24.04-arm
