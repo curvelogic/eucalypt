@@ -3733,9 +3733,21 @@ pub fn test_error_250_dict_bad_pair_computed() {
 }
 
 #[test]
-/// eu-oaz72.21: a dict reaching output is a clear error until dict rendering lands.
+/// eu-oaz72.21: a dict with a list key cannot render, and the error names the key.
 pub fn test_error_250_dict_render() {
     run_error_test(&error_opts("250_dict_render.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: two dict keys rendering as the same mapping key is an error naming both.
+pub fn test_error_250_dict_render_collision() {
+    run_error_test(&error_opts("250_dict_render_collision.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: a dict render error carries no stale source location.
+pub fn test_error_250_dict_render_location() {
+    run_error_test(&error_opts("250_dict_render_location.eu"));
 }
 
 #[test]
@@ -4677,6 +4689,47 @@ pub fn test_typecheck_115_deprecated_prelude_member() {
     run_typecheck_test("115_deprecated_prelude_member.eu");
 }
 
+#[test]
+pub fn test_typecheck_116_dict_typed_no_warning() {
+    run_typecheck_test("116_dict_typed_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_118_dict_mixed_types_no_warning() {
+    run_typecheck_test("118_dict_mixed_types_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_119_dict_update_non_function_warns() {
+    run_typecheck_test("119_dict_update_non_function_warns.eu");
+}
+
+#[test]
+pub fn test_typecheck_120_dict_get_or_default_in_result() {
+    run_typecheck_test("120_dict_get_or_default_in_result.eu");
+}
+
+/// The dict prelude signatures must not warn on valid dict code: the
+/// dict harness test checks clean under `eu check --strict`
+/// (eu-oaz72.21 round 2).
+#[test]
+pub fn test_250_dict_checks_clean_strict() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", "--strict", "tests/harness/250_dict.eu"])
+        .output()
+        .expect("failed to run eu check");
+    assert!(
+        output.status.success(),
+        "eu check --strict tests/harness/250_dict.eu warned:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+pub fn test_typecheck_117_dict_typed_value_mismatch_warns() {
+    run_typecheck_test("117_dict_typed_value_mismatch_warns.eu");
+}
+
 // ── eu doc tests ──────────────────────────────────────────────────────────────
 
 /// `eu doc` on a documented fixture produces Markdown with the expected content.
@@ -5314,4 +5367,19 @@ pub fn test_error_282_catenation_step_identity_argument() {
 #[test]
 pub fn test_error_283_catenation_function_from_right() {
     run_error_test(&error_opts("283_catenation_function_from_right.eu"));
+}
+
+#[test]
+pub fn test_error_288_vec_of_block_element() {
+    run_error_test(&error_opts("288_vec_of_block_element.eu"));
+}
+
+#[test]
+pub fn test_error_289_vec_of_function_element() {
+    run_error_test(&error_opts("289_vec_of_function_element.eu"));
+}
+
+#[test]
+pub fn test_error_290_set_of_random_stream_element() {
+    run_error_test(&error_opts("290_set_of_random_stream_element.eu"));
 }

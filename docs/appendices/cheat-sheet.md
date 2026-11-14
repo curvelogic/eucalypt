@@ -525,7 +525,10 @@ and each is computed at most once.
 | `b dict.from-block` / `d dict.to-block` | Block to dict (symbol keys) / dict to block (string, symbol and number keys) |
 
 Keys order numbers < strings < symbols < lists; `1` and `1.0` are the same
-key. A dict cannot be rendered yet: convert it with `dict.to-list` first.
+key. A dict renders as a mapping in key order, each key as its text; a list
+key, or two keys with the same text (`1` and `"1"`), is an error — render
+`dict.to-list` instead. Typed `dict(k, v)` (bare `dict` is `dict(any, any)`).
+See the [Dicts guide](../guide/dicts.md).
 
 ### Arrays (`arr` namespace)
 

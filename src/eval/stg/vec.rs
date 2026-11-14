@@ -14,13 +14,14 @@ use crate::eval::{
         syntax::{Native, Ref},
     },
     stg::tags::DataConstructor,
+    types::IntrinsicType,
 };
 
 use super::{
     force::{SeqList, SeqNumList},
     support::{
-        collect_num_list, data_list_arg, machine_return_num, machine_return_vec,
-        native_to_set_primitive, resolve_native_unboxing, set_primitive_to_native, vec_arg,
+        closure_to_element, collect_num_list, data_list_arg, machine_return_num,
+        machine_return_vec, resolve_native_unboxing, set_primitive_to_native, vec_arg,
     },
     syntax::{
         dsl::{app_bif, force, lambda, lref},
@@ -104,15 +105,16 @@ impl StgIntrinsic for VecOf {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         // The wrapper has deep-forced the spine, so walk it via the neutral
-        // list ABI and read each element's native primitive with `value_native`.
-        let smid = machine.annotation();
+        // list ABI and convert each element, raising the shared element error.
         let items = data_list_arg(machine, view, args[0].clone())?;
         let mut primitives = Vec::with_capacity(items.len());
         for item in &items {
-            let native = machine.value_native(view, item).ok_or_else(|| {
-                ExecutionError::Panic(smid, "non-primitive value in vec construction".to_string())
-            })?;
-            primitives.push(native_to_set_primitive(smid, &native)?);
+            primitives.push(closure_to_element(
+                machine,
+                view,
+                item,
+                &IntrinsicType::Vec,
+            )?);
         }
 
         machine_return_vec(machine, view, &primitives)

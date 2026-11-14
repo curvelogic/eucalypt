@@ -6,7 +6,7 @@ prelude-modes: divergent
 === blob prelude ===
 exit: 1
 errors: 1
-warnings: 0
+warnings: 1
 code: EU-EVAL-TYPE
 primary: user tests/harness/errors/250_dict_not_a_dict.eu:2:16
 help-lines: 0
@@ -18,11 +18,19 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/250_dict_not_a_dict.eu:2:9
+  │
+2 │ result: {a: 1} dict.get(:a)
+  │         ^^^^^^ expected dict(symbol, a), found {a: number, ..}
+
 error[EU-EVAL-TYPE]: type mismatch: expected dict, found {}
   ┌─ tests/harness/errors/250_dict_not_a_dict.eu:2:16
   │
 2 │ result: {a: 1} dict.get(:a)
-  │                ^^^^^^^^^^^^
+  │         ------ ^^^^^^^^^^^^
+  │         │
+  │         expected dict(symbol, a), found {a: number, ..}
   │
   = while evaluating (outermost first):
     - result at 250_dict_not_a_dict.eu:2:16
@@ -30,7 +38,7 @@ error[EU-EVAL-TYPE]: type mismatch: expected dict, found {}
 === --source-prelude ===
 exit: 1
 errors: 1
-warnings: 0
+warnings: 1
 code: EU-EVAL-TYPE
 primary: user tests/harness/errors/250_dict_not_a_dict.eu:2:16
 help-lines: 0
@@ -42,11 +50,19 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/250_dict_not_a_dict.eu:2:9
+  │
+2 │ result: {a: 1} dict.get(:a)
+  │         ^^^^^^ expected dict(symbol, a), found {a: number, ..}
+
 error[EU-EVAL-TYPE]: type mismatch: expected dict, found {}
   ┌─ tests/harness/errors/250_dict_not_a_dict.eu:2:16
   │
 2 │ result: {a: 1} dict.get(:a)
-  │                ^^^^
+  │         ------ ^^^^
+  │         │
+  │         expected dict(symbol, a), found {a: number, ..}
   │
   = while evaluating (outermost first):
     - result at 250_dict_not_a_dict.eu:2:16

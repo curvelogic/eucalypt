@@ -1565,6 +1565,10 @@ pub struct Heap {
     ///
     /// Checked once at construction to avoid a per-collection env-var lookup.
     gc_stress: bool,
+    /// GC verification level (`EU_GC_VERIFY`), cached at construction so a
+    /// test can force the checks on one heap without the process-global
+    /// environment variable (eu-oaz72.136).
+    gc_verify_level: u8,
     /// Emergency collection state tracking
     emergency_state: UnsafeCell<EmergencyState>,
     /// GC performance metrics and telemetry
@@ -2353,6 +2357,7 @@ impl Heap {
             limit: None,
             mark_state: false,
             gc_stress: std::env::var("EU_GC_STRESS").as_deref() == Ok("1"),
+            gc_verify_level: super::gc_debug::verify_level(),
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
@@ -2378,6 +2383,7 @@ impl Heap {
             limit: Some(block_limit),
             mark_state: false,
             gc_stress: std::env::var("EU_GC_STRESS").as_deref() == Ok("1"),
+            gc_verify_level: super::gc_debug::verify_level(),
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
@@ -3587,6 +3593,19 @@ impl Heap {
     #[cfg(test)]
     pub fn gc_stress(&self) -> bool {
         self.gc_stress
+    }
+
+    /// The GC verification level this heap's collections run at: the
+    /// `EU_GC_VERIFY` level when the heap was made (0 when unset).
+    pub fn gc_verify_level(&self) -> u8 {
+        self.gc_verify_level
+    }
+
+    /// Force this heap's GC verification level, whatever `EU_GC_VERIFY`
+    /// says (test-only).
+    #[cfg(test)]
+    pub fn set_gc_verify_level(&mut self, level: u8) {
+        self.gc_verify_level = level;
     }
 
     /// Return the number of unswept blocks (for test diagnostics)

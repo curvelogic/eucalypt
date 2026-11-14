@@ -875,7 +875,11 @@ new value, so no chain of unevaluated additions builds up.
 
 Order across types: numbers < strings < symbols (by name) < lists
 (lexicographic). `dict.of` keeps the first of equal keys and the last value.
-A dict cannot be rendered yet; render `dict.to-list` instead.
+A dict renders as a mapping in key order (number keys as their rendered
+text, string keys as their text, symbol keys as their name); a list key, or
+two keys with the same text (`1` and `"1"`), is an error, so render
+`dict.to-list` for those. Type: `dict(k, v)`, bare `dict` = `dict(any, any)`;
+not the block type `Dict(T)`.
 
 ### 3.3 String Functions (str namespace)
 

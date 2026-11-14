@@ -1,2 +1,2 @@
 exit: 1
-stderr: "expected a primitive value but found non-boxed constructor"
+stderr: "(?s)a list cannot be a set element: set elements must be numbers, strings or symbols.*errors[/\\]241_oaz72_32_set_of_non_primitive\.eu:2:18"

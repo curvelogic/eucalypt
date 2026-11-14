@@ -1137,6 +1137,18 @@ pub enum ExecutionError {
     UnexpectedFunction(Smid, &'static str /* expected kind, e.g. "number" */),
     #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
+    /// A value that cannot be stored in a set or vec was given as an
+    /// element (to `set.of`, `set.add`, `set.remove` or `vec.of`).
+    ///
+    /// Carries the collection type (`Set` or `Vec`) and a description of
+    /// the rejected element, e.g. "a list". The message names the element
+    /// as the problem, so a set given as a set element no longer reads as
+    /// the contradictory "expected set, found set" (eu-oaz72.74).
+    #[error(
+        "{} cannot be a {} element: {} elements must be numbers, strings or symbols",
+        .1.1, .1.0, .1.0
+    )]
+    InvalidElement(Smid, Box<(IntrinsicType, String)>),
     #[error("bad regex: {}\n  help: the pattern '{}' is not a valid regular expression", .1.1, .1.0)]
     BadRegex(Smid, Box<(String, String)>),
     #[error("{}", format_bad_datetime_components(&.1.0, &.1.1, &.1.2, &.1.3, &.1.4, &.1.5, &.1.6))]
@@ -1308,10 +1320,19 @@ pub enum ExecutionError {
     /// `.1` describes it.
     #[error("invalid dict entry: expected a [key, value] pair, found {1}")]
     BadDictPair(Smid, String),
-    /// A dict reached an output format (dict rendering is not implemented
-    /// yet; eu-oaz72.21 PR 4).
+    /// A dict reached an emitter directly rather than through the render
+    /// wrapper, which renders dicts as mappings (design note §8). Not
+    /// expected from a user program.
     #[error("cannot render a dict")]
     DictNotRenderable(Smid),
+    /// A dict being rendered holds a list key, which no output format's
+    /// mapping key can represent; `.1` renders the key.
+    #[error("cannot render dict key {1}: rendered mapping keys are strings, numbers or symbols")]
+    DictKeyNotRenderable(Smid, String),
+    /// A dict being rendered holds two keys that render as the same mapping
+    /// key: `(first key, second key, rendered key)`.
+    #[error("dict keys {1} and {2} both render as mapping key '{3}'")]
+    DictRenderKeyCollision(Smid, String, String, String),
     /// `dict.min`, `dict.max`, `dict.pop-min` or `dict.pop-max` (named by
     /// `.1`) of a dict with no entries.
     #[error("{1} of an empty dict")]
@@ -1381,6 +1402,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::LookupOnFunction(s, _) => *s,
             ExecutionError::UnexpectedFunction(s, _) => *s,
             ExecutionError::NotValue(s, _) => *s,
+            ExecutionError::InvalidElement(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
             ExecutionError::UnrepresentableValue(s, _, _) => *s,
             ExecutionError::UnrenderableShape(s, _, _) => *s,
@@ -1416,6 +1438,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::BadDictKey(s, _) => *s,
             ExecutionError::BadDictPair(s, _) => *s,
             ExecutionError::DictNotRenderable(s) => *s,
+            ExecutionError::DictKeyNotRenderable(s, _) => *s,
+            ExecutionError::DictRenderKeyCollision(s, _, _, _) => *s,
             ExecutionError::EmptyDict(s, _) => *s,
             ExecutionError::DictKeyNotBlockKey(s, _) => *s,
             ExecutionError::DictBlockKeyCollision(s, _, _, _) => *s,
@@ -1485,6 +1509,17 @@ impl ExecutionError {
                 (e.as_ref(), trace.0.as_slice(), trace.1.as_slice(), trace.2)
             }
             other => (other, [].as_slice(), [].as_slice(), Smid::default()),
+        };
+
+        // A dict render error is raised from the render machinery, which has
+        // no annotation of its own: the machine's last annotation is then
+        // whatever user code ran last, unrelated to the dict being rendered
+        // (eu-oaz72.21). Never fall back to it for these errors; no location
+        // is better than a wrong one.
+        let last_annotation = match inner {
+            ExecutionError::DictKeyNotRenderable(..)
+            | ExecutionError::DictRenderKeyCollision(..) => Smid::default(),
+            _ => last_annotation,
         };
 
         // Determine the best primary source location:
@@ -1859,6 +1894,22 @@ impl ExecutionError {
                         .to_string(),
                 ]
             }
+            ExecutionError::DictKeyNotRenderable(_, _) => {
+                vec![
+                    "a dict renders as a mapping, so its keys must be numbers, strings or \
+                     symbols; render 'dict.to-list(d)' to output [key, value] pairs instead"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::DictRenderKeyCollision(_, _, _, _) => {
+                vec![
+                    "a mapping holds each key once: a dict renders a string key as its text \
+                     and a number key as its rendered text, so keys such as \"x\" and :x, or \
+                     1 and \"1\", collide; render 'dict.to-list(d)' to output [key, value] \
+                     pairs instead"
+                        .to_string(),
+                ]
+            }
             ExecutionError::ListIndexOutOfBounds(_, _) => {
                 vec![
                     "use 'nth(n, list)' only when you know the list has at least n+1 elements"
@@ -2068,6 +2119,8 @@ impl ExecutionError {
             // ("even NoBranchForDataTag ... is deliberately left uncoded");
             // decided and added after investigation by eu-1tkk.7.44.
             ExecutionError::NoBranchForDataTag(..) => Some("EU-EVAL-TYPE"),
+            // A value of the wrong type given as a set or vec element.
+            ExecutionError::InvalidElement(..) => Some("EU-EVAL-TYPE"),
             ExecutionError::ContractViolation(..) => Some("EU-EVAL-CONTRACT"),
             ExecutionError::UnrepresentableValue(..) => Some("EU-RENDER-UNREPRESENTABLE"),
             ExecutionError::UnrenderableShape(..) => Some("EU-RENDER-SHAPE"),

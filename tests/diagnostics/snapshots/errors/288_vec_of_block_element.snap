@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/288_vec_of_block_element
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/288_vec_of_block_element.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/288_vec_of_block_element.eu:2:21
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: a block cannot be a vec element: vec elements must be numbers, strings or symbols
+  ┌─ tests/harness/errors/288_vec_of_block_element.eu:2:21
+  │
+2 │ result: [1, {a: 1}] vec.of
+  │                     ^^^
+  │
+  = while evaluating (outermost first):
+    - result at 288_vec_of_block_element.eu:2:21

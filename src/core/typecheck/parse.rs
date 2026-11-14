@@ -16,6 +16,7 @@
 //! primary     ::= 'number' | 'string' | 'symbol' | 'bool' | 'null'
 //!              | 'datetime' | 'any' | 'top' | 'never'
 //!              | 'set' | 'vec' | 'array'
+//!              | 'dict' ( '(' type ',' type ')' )?   # ordered dict → App(App(Con("dict"), K), V); bare = dict(any, any)
 //!              | LOWER_IDENT                        # type variable (Star kind)
 //!              | '"' STRING '"'                     # literal string type
 //!              | '[' type ']'                       # list sugar → App(Con("List"), T)
@@ -92,6 +93,9 @@ enum Token {
     Lens,
     Traversal,
     Dict,
+    /// `dict` — the ordered dict, `dict(k, v)` (distinct from the block
+    /// type `Dict(T)`).
+    OrdDict,
     NonEmpty,
     // Identifiers (type variables and record field names)
     Ident(String),
@@ -304,6 +308,7 @@ impl<'a> Lexer<'a> {
                     "forall" => Token::Forall,
                     "IO" => Token::Io,
                     "Dict" => Token::Dict,
+                    "dict" => Token::OrdDict,
                     "Lens" => Token::Lens,
                     "Traversal" => Token::Traversal,
                     "NonEmpty" => Token::NonEmpty,
@@ -583,6 +588,7 @@ impl<'a> Parser<'a> {
                 | Token::Lens
                 | Token::Traversal
                 | Token::Dict
+                | Token::OrdDict
                 | Token::NonEmpty
                 | Token::Ident(_)
                 | Token::LBracket
@@ -622,6 +628,19 @@ impl<'a> Parser<'a> {
                 let inner = self.parse_type()?;
                 self.expect(&Token::RParen)?;
                 Ok(Type::dict(inner))
+            }
+            Token::OrdDict => {
+                // `dict` `(` type `,` type `)`, or bare `dict` = `dict(any, any)`
+                if self.peek()? == &Token::LParen {
+                    self.advance()?;
+                    let k = self.parse_type()?;
+                    self.expect(&Token::Comma)?;
+                    let v = self.parse_type()?;
+                    self.expect(&Token::RParen)?;
+                    Ok(Type::ordered_dict(k, v))
+                } else {
+                    Ok(Type::ordered_dict(Type::Any, Type::Any))
+                }
             }
             Token::NonEmpty => {
                 // `NonEmpty` `(` `[` type `]` `)`
@@ -753,6 +772,7 @@ impl<'a> Parser<'a> {
                     Token::Forall => "forall".to_string(),
                     Token::Io => "IO".to_string(),
                     Token::Dict => "Dict".to_string(),
+                    Token::OrdDict => "dict".to_string(),
                     Token::Lens => "Lens".to_string(),
                     Token::Traversal => "Traversal".to_string(),
                     Token::NonEmpty => "NonEmpty".to_string(),
@@ -1660,6 +1680,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_ordered_dict() {
+        assert_eq!(
+            parse_type("dict([number], string)").unwrap(),
+            Type::ordered_dict(Type::list(Type::Number), Type::String)
+        );
+        // Bare `dict` is `dict(any, any)`.
+        assert_eq!(
+            parse_type("dict").unwrap(),
+            Type::ordered_dict(Type::Any, Type::Any)
+        );
+        assert_eq!(
+            parse_type("dict → number").unwrap(),
+            Type::Function(
+                Box::new(Type::ordered_dict(Type::Any, Type::Any)),
+                Box::new(Type::Number)
+            )
+        );
+        // `dict` and the block type `Dict` stay distinct.
+        assert_ne!(
+            parse_type("dict(string, number)").unwrap(),
+            parse_type("Dict(number)").unwrap()
+        );
+        assert!(parse_type("dict(number)").is_err());
+    }
+
+    #[test]
     fn parse_lens() {
         assert_eq!(
             parse_type("Lens({..}, any)").unwrap(),
@@ -1807,6 +1853,11 @@ mod tests {
     #[test]
     fn roundtrip_lens() {
         roundtrip("Lens({..}, any)");
+    }
+
+    #[test]
+    fn roundtrip_ordered_dict() {
+        roundtrip("dict(k, v) → (k, v, dict(k, v))");
     }
 
     #[test]

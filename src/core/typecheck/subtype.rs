@@ -353,8 +353,9 @@ fn is_app_subtype(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
     // Two-arg: Lens/Traversal
     if let (Some((sn, sa, sb)), Some((tn, ta, tb))) = (s.as_applied_two(), t.as_applied_two()) {
         match (sn, tn) {
-            // Lens(A, B) <: Lens(A', B') — covariant in both
-            ("Lens", "Lens") | ("Traversal", "Traversal") => {
+            // Lens(A, B) <: Lens(A', B') — covariant in both; so is the
+            // persistent dict(K, V), which has no mutation hazard.
+            ("Lens", "Lens") | ("Traversal", "Traversal") | ("dict", "dict") => {
                 return is_subtype_co(sa, ta, assumed) && is_subtype_co(sb, tb, assumed);
             }
             // Lens(A, B) <: Traversal(A', B')
@@ -1073,6 +1074,31 @@ mod tests {
         let s = traversal(Type::Never, Type::Never);
         let t = traversal(Type::Number, Type::String);
         assert!(is_subtype(&s, &t));
+    }
+
+    #[test]
+    fn ordered_dict_covariant() {
+        let s = Type::ordered_dict(Type::Number, Type::Never);
+        let t = Type::ordered_dict(Type::Number, Type::String);
+        assert!(is_subtype(&s, &t));
+        assert!(!is_subtype(&t, &s));
+        assert!(is_subtype(
+            &Type::ordered_dict(Type::LiteralSymbol("a".into()), Type::Number),
+            &Type::ordered_dict(Type::Symbol, Type::Number)
+        ));
+        assert!(!is_subtype(
+            &Type::ordered_dict(Type::String, Type::Number),
+            &Type::ordered_dict(Type::Number, Type::Number)
+        ));
+        // Not the block type `Dict(T)`, nor a set.
+        assert!(!is_subtype(
+            &Type::ordered_dict(Type::String, Type::Number),
+            &Type::dict(Type::Number)
+        ));
+        assert!(!is_subtype(
+            &Type::ordered_dict(Type::Any, Type::Any),
+            &Type::Set
+        ));
     }
 
     #[test]
