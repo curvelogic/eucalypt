@@ -3330,8 +3330,8 @@ pub fn test_241_oaz72_32_set_vec_of() {
 /// mulmod, powmod and modinv are exact across the i64 range and normalise
 /// negative operands into [0, m) (eu-oaz72.24).
 #[test]
-pub fn test_291_oaz72_24_modular_arithmetic() {
-    run_test(&opts("291_oaz72_24_modular_arithmetic.eu"));
+pub fn test_291_modular_arithmetic() {
+    run_test(&opts("291_modular_arithmetic.eu"));
 }
 
 /// Ticks reported by `-S` for one target of a harness file, run with demand
@@ -5416,4 +5416,9 @@ pub fn test_error_291_powmod_negative_exponent() {
 #[test]
 pub fn test_error_291_modular_non_integer() {
     run_error_test(&error_opts("291_modular_non_integer.eu"));
+}
+
+#[test]
+pub fn test_error_291_modular_out_of_range() {
+    run_error_test(&error_opts("291_modular_out_of_range.eu"));
 }

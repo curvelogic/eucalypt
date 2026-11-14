@@ -1016,8 +1016,24 @@ impl CallGlobal2 for Rem {}
 // whole i64 range: both factors are reduced into [0, m) first, so their
 // product is below 2^126. Results are the non-negative residue in [0, m).
 
+/// The value of `n` as an i64 if it is a whole number in the i64 range,
+/// whether stored as an integer or as a float such as `7.0`, as the bitwise
+/// operations accept (see `require_i64`).
+fn whole_i64(n: &Number) -> Option<i64> {
+    if let Some(i) = n.as_i64() {
+        Some(i)
+    } else if let Some(u) = n.as_u64() {
+        i64::try_from(u).ok()
+    } else {
+        // 2^63 is exactly representable and is the first float past i64::MAX.
+        n.as_f64()
+            .filter(|f| f.fract() == 0.0 && *f >= -(2f64.powi(63)) && *f < 2f64.powi(63))
+            .map(|f| f as i64)
+    }
+}
+
 /// Extract an i64 operand for a modular-arithmetic intrinsic, rejecting
-/// floats and integers outside the i64 range.
+/// fractional numbers and numbers outside the i64 range.
 fn modular_operand(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
@@ -1026,11 +1042,11 @@ fn modular_operand(
     role: &str,
 ) -> Result<i128, ExecutionError> {
     let n = num_arg(machine, view, arg)?;
-    n.as_i64().map(i128::from).ok_or_else(|| {
+    whole_i64(&n).map(i128::from).ok_or_else(|| {
         ExecutionError::ModularArithmetic(
             machine.annotation(),
             format!(
-                "{function} requires integer arguments in the 64-bit signed range, \
+                "{function} requires whole numbers in the 64-bit signed range, \
                  but the {role} is {n}"
             ),
         )

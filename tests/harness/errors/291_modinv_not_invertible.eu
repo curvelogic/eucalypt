@@ -1,2 +1,2 @@
-# eu-oaz72.24: 6 and 9 share the factor 3, so 6 has no inverse modulo 9
+` "eu-oaz72.24: 6 and 9 share the factor 3, so 6 has no inverse modulo 9"
 x: modinv(6, 9)

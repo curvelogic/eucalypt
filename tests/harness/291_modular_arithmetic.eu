@@ -1,15 +1,21 @@
 #!/usr/bin/env eu
-# eu-oaz72.24: mulmod, powmod and modinv compute in i128 internally, so
-# they are exact for any 64-bit operands and moduli, and they return the
-# non-negative residue in [0, m). Expected values were computed with
-# Python's arbitrary-precision integers.
-#
-# Each group is a list of checks; RESULT is computed from every one of
-# them, so any failing check fails the test.
+{
+  title: "291 modular arithmetic: mulmod, powmod, modinv"
+  doc: "mulmod, powmod and modinv compute in i128 internally, so they are
+        exact for any 64-bit operands and moduli, and return the
+        non-negative residue in [0, m) (eu-oaz72.24). Expected values were
+        computed with Python's arbitrary-precision integers. Each group is
+        a list of checks and RESULT is computed from every one of them, so
+        any failing check fails the test."
+}
 
-# Largest 64-bit signed integer, smallest, and the largest prime below 2^63.
+` "the largest 64-bit signed integer"
 i64-max: 9223372036854775807
+
+` "the smallest 64-bit signed integer"
 i64-min: -9223372036854775807 - 1
+
+` "the largest prime below 2^63"
 p: 9223372036854775783
 
 ` "mulmod: small cases; in a pipeline the catenated value is the modulus"
@@ -86,6 +92,14 @@ modinv-boundary: [
   mulmod(i64-max, modinv(i64-max, p), p) = 1
 ]
 
+` "whole-number floats are read as integers, as the bitwise operators read them"
+whole-floats: [
+  mulmod(floor(7.5), 3, 5) = 1,
+  mulmod(7, 3, 5.0) = 1,
+  powmod(2.0, 10.0, 1000.0) = 24,
+  modinv(3.0, 7) = 5
+]
+
 RESULT: [
   mulmod-basic,
   mulmod-boundary,
@@ -94,5 +108,6 @@ RESULT: [
   powmod-boundary,
   fermat,
   modinv-basic,
-  modinv-boundary
+  modinv-boundary,
+  whole-floats
 ] concat all-true? then(:PASS, :FAIL)
