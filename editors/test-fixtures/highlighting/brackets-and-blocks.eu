@@ -1,0 +1,30 @@
+# Idiot brackets and monadic blocks
+
+` "Double-a list."
+⟦ xs ⟧: xs map(* 2)
+
+doubled: ⟦ 3 4 5 ⟧
+
+` "Guillemet pair."
+« ys »: ys reverse
+
+reversed: « 1 2 3 »
+
+ceiling: ⌈3.2⌉
+floored: ⌊3.8⌋
+
+products: { :for x: [1, 2], y: [10, 20] }.(x + y)
+
+filtered: { :for x: [1, 2, 3, 4, 5], _: [x] filter(> 3) }.(x)
+
+let-block: { :let a: 1 b: a + 1 }.b
+
+` "Monadic bracket: a list monad."
+⟪{}⟫: { :monad bind(m, f): m mapcat(f) return(v): [v] }
+
+pairs: ⟪ x: [1, 2] y: [10, 20] ⟫.(x + y)
+
+` "Bracket with a destructured parameter."
+‹ [a, b] ›: a + b
+
+summed: ‹ 3 4 ›

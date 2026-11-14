@@ -1,0 +1,40 @@
+# Declaration forms
+
+` "A documented property with `code` and **bold** text."
+documented: 1
+
+` { doc: "Metadata block on a function." }
+add(x, y): x + y
+
+inline-block: { a: 1 b: 2, c: 3 }
+
+` "Juxtaposed list parameter: sugar for `pair-sum([a, b])`."
+pair-sum[a, b]: a + b
+
+` "Juxtaposed block parameter."
+area{width height}: width * height
+
+` "Destructuring list parameter."
+swap([a, b]): [b, a]
+
+` "Destructuring block parameter."
+norm({x y}): x * x + y * y
+
+` "Cons destructuring."
+rest([h : t]): t
+
+'quoted key': true
+
+` { associates: :right precedence: :sum }
+(l +++ r): l ++ r
+
+(¬¬ x): x not not
+
+(x !?): x nil?
+
+(∅): []
+
+nested: {
+  inner(z): z * 2
+  value: inner(21)
+}
