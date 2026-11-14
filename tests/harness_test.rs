@@ -5430,3 +5430,8 @@ pub fn test_error_294_modular_non_integer() {
 pub fn test_error_295_modular_out_of_range() {
     run_error_test(&error_opts("295_modular_out_of_range.eu"));
 }
+
+#[test]
+pub fn test_error_296_bitwise_float_out_of_range() {
+    run_error_test(&error_opts("296_bitwise_float_out_of_range.eu"));
+}

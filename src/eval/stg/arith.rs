@@ -1017,8 +1017,9 @@ impl CallGlobal2 for Rem {}
 // product is below 2^126. Results are the non-negative residue in [0, m).
 
 /// The value of `n` as an i64 if it is a whole number in the i64 range,
-/// whether stored as an integer or as a float such as `7.0`, as the bitwise
-/// operations accept (see `require_i64`).
+/// whether stored as an integer or as a float such as `7.0`. The one rule
+/// for reading an integer operand, shared by the modular-arithmetic and
+/// bitwise intrinsics (`require_i64`).
 fn whole_i64(n: &Number) -> Option<i64> {
     if let Some(i) = n.as_i64() {
         Some(i)
@@ -1227,30 +1228,20 @@ impl CallGlobal2 for ModInv {}
 /// Extract an i64 from a Number, accepting integer-valued floats
 /// (which arise from intrinsics like `sort-nums` that convert via f64).
 fn require_i64(n: &Number, smid: crate::common::sourcemap::Smid) -> Result<i64, ExecutionError> {
-    if let Some(i) = n.as_i64() {
-        Ok(i)
-    } else if let Some(u) = n.as_u64() {
-        i64::try_from(u).map_err(|_| {
-            ExecutionError::BitwiseIntegerRequired(
-                smid,
-                format!("{u} is out of the i64 range for bitwise operations"),
-            )
-        })
-    } else if let Some(f) = n.as_f64() {
-        if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
-            Ok(f as i64)
+    whole_i64(n).ok_or_else(|| {
+        let detail = if let Some(u) = n.as_u64() {
+            format!("{u} is out of the i64 range for bitwise operations")
+        } else if let Some(f) = n.as_f64() {
+            if f.fract() == 0.0 {
+                format!("{f} is out of the i64 range for bitwise operations")
+            } else {
+                format!("got {f}, which is not a whole number")
+            }
         } else {
-            Err(ExecutionError::BitwiseIntegerRequired(
-                smid,
-                format!("got {f}, which is not a whole number"),
-            ))
-        }
-    } else {
-        Err(ExecutionError::BitwiseIntegerRequired(
-            smid,
-            "value cannot be represented as an integer".to_string(),
-        ))
-    }
+            "value cannot be represented as an integer".to_string()
+        };
+        ExecutionError::BitwiseIntegerRequired(smid, detail)
+    })
 }
 
 /// BITAND(l, r) - bitwise AND

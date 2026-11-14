@@ -2,7 +2,7 @@
 {
   title: "291 modular arithmetic: mulmod, powmod, modinv"
   doc: "mulmod, powmod and modinv compute in i128 internally, so they are
-        exact for any 64-bit operands and moduli, and return the
+        exact for any 64-bit signed operands and moduli, and return the
         non-negative residue in [0, m) (eu-oaz72.24). Expected values were
         computed with Python's arbitrary-precision integers. Each group is
         a list of checks and RESULT is computed from every one of them, so

@@ -183,8 +183,9 @@ inv: modinv(3, 7)                                                           # 5,
 neg: mulmod(-1, 1, 7)                                                       # 6
 ```
 
-The modulus must be at least 1 and the operands whole numbers (a float
-such as `7.0` is read as `7`); `powmod` takes
+The modulus must be at least 1 and the operands whole numbers: a float
+such as `7.0` is read as `7`, and a fractional operand such as `2.5` is
+an error; `powmod` takes
 a non-negative exponent (for `b^-k`, use `powmod(modinv(b, m), k, m)`),
 and `modinv(a, m)` is an error when `a` and `m` share a factor, as
 `modinv(6, 9)` does.
