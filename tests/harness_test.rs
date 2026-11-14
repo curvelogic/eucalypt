@@ -5287,3 +5287,13 @@ pub fn test_error_280_catenation_parenthesised_step() {
 pub fn test_error_281_assignment_style_in_expression() {
     run_error_test(&error_opts("281_assignment_style_in_expression.eu"));
 }
+
+#[test]
+pub fn test_error_282_oaz72_64_vec_of_block() {
+    run_error_test(&error_opts("282_oaz72_64_vec_of_block.eu"));
+}
+
+#[test]
+pub fn test_error_282_oaz72_64_vec_of_function() {
+    run_error_test(&error_opts("282_oaz72_64_vec_of_function.eu"));
+}

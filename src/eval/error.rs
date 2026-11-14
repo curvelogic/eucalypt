@@ -1049,6 +1049,18 @@ pub enum ExecutionError {
     UnexpectedFunction(Smid, &'static str /* expected kind, e.g. "number" */),
     #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
+    /// A value that cannot be stored in a set or vec was given as an
+    /// element (to `set.of`, `set.add`, `set.remove` or `vec.of`).
+    ///
+    /// Carries the collection type (`Set` or `Vec`) and a description of
+    /// the rejected element, e.g. "a list". The message names the element
+    /// as the problem, so a set given as a set element no longer reads as
+    /// the contradictory "expected set, found set" (eu-oaz72.74).
+    #[error(
+        "{} cannot be a {} element: {} elements must be numbers, strings or symbols",
+        .1.1, .1.0, .1.0
+    )]
+    InvalidElement(Smid, Box<(IntrinsicType, String)>),
     #[error("bad regex: {}\n  help: the pattern '{}' is not a valid regular expression", .1.1, .1.0)]
     BadRegex(Smid, Box<(String, String)>),
     #[error("{}", format_bad_datetime_components(&.1.0, &.1.1, &.1.2, &.1.3, &.1.4, &.1.5, &.1.6))]
@@ -1293,6 +1305,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::LookupOnFunction(s, _) => *s,
             ExecutionError::UnexpectedFunction(s, _) => *s,
             ExecutionError::NotValue(s, _) => *s,
+            ExecutionError::InvalidElement(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
             ExecutionError::UnrepresentableValue(s, _, _) => *s,
             ExecutionError::UnrenderableShape(s, _, _) => *s,
@@ -1975,6 +1988,8 @@ impl ExecutionError {
             // ("even NoBranchForDataTag ... is deliberately left uncoded");
             // decided and added after investigation by eu-1tkk.7.44.
             ExecutionError::NoBranchForDataTag(..) => Some("EU-EVAL-TYPE"),
+            // A value of the wrong type given as a set or vec element.
+            ExecutionError::InvalidElement(..) => Some("EU-EVAL-TYPE"),
             ExecutionError::ContractViolation(..) => Some("EU-EVAL-CONTRACT"),
             ExecutionError::UnrepresentableValue(..) => Some("EU-RENDER-UNREPRESENTABLE"),
             ExecutionError::UnrenderableShape(..) => Some("EU-RENDER-SHAPE"),
