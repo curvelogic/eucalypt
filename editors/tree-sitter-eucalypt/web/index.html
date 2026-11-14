@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eucalypt tree-sitter highlighting</title>
+<!--
+  Minimal consumer of the published browser build (eu-ioz21.5): loads
+  tree-sitter-eucalypt.wasm and queries/highlights.scm with web-tree-sitter
+  and renders highlighted HTML. Serve editors/tree-sitter-eucalypt over HTTP
+  after `npm ci` and open web/index.html; `?file=<url>` highlights another
+  file. scripts/test-wasm-page.cjs checks it headless.
+
+  The three URLs below are relative to this checkout. A page elsewhere points
+  them at a published copy instead, e.g. jsDelivr for eucalypt tag <tag>:
+    https://cdn.jsdelivr.net/npm/web-tree-sitter@0.22.6/tree-sitter.js
+    https://cdn.jsdelivr.net/gh/curvelogic/eucalypt@<tag>/editors/tree-sitter-eucalypt/tree-sitter-eucalypt.wasm
+    https://cdn.jsdelivr.net/gh/curvelogic/eucalypt@<tag>/editors/tree-sitter-eucalypt/queries/highlights.scm
+-->
+<script src="../node_modules/web-tree-sitter/tree-sitter.js"></script>
+<style>
+  :root { --bg: #fdfdfb; --fg: #24292f; --comment: #6e7781; --keyword: #8250df;
+          --string: #0a3069; --number: #0550ae; --function: #6639ba; --attr: #953800;
+          --op: #cf222e; --punct: #57606a; --param: #116329; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1117; --fg: #e6edf3; --comment: #8b949e; --keyword: #d2a8ff;
+            --string: #a5d6ff; --number: #79c0ff; --function: #d2a8ff; --attr: #ffa657;
+            --op: #ff7b72; --punct: #8b949e; --param: #7ee787; }
+  }
+  body { background: var(--bg); color: var(--fg); margin: 0 16px; font: 14px/1.5 system-ui, sans-serif; }
+  pre { overflow-x: auto; font: 13px/1.5 ui-monospace, monospace; }
+  .comment { color: var(--comment); font-style: italic; }
+  .keyword { color: var(--keyword); }
+  .string { color: var(--string); }
+  .number, .constant { color: var(--number); }
+  .function, .property { color: var(--function); }
+  .attribute { color: var(--attr); }
+  .operator { color: var(--op); }
+  .punctuation { color: var(--punct); }
+  .parameter, .variable { color: var(--param); }
+</style>
+</head>
+<body>
+<h1>Eucalypt tree-sitter highlighting</h1>
+<p id="status" data-state="loading">Loading…</p>
+<pre id="out"></pre>
+<script>
+// Resolve the query's matches to non-overlapping spans by highlights.scm's
+// precedence: an inner capture overrides an enclosing one and, of two
+// captures of the same extent, the later pattern wins. So paint the widest
+// captures first and, among equal extents, earlier patterns first, as
+// scripts/check-highlighting-consistency.js does. Indices are UTF-16 code
+// units, as web-tree-sitter reports them, so they index the JS string.
+function spans(source, matches) {
+  const list = matches.flatMap(({ pattern, captures }) =>
+    captures
+      .filter(({ name }) => !name.startsWith("_"))
+      .map(({ name, node }) => ({ name, pattern, start: node.startIndex, end: node.endIndex })));
+  list.sort((a, b) => b.end - b.start - (a.end - a.start) || a.pattern - b.pattern);
+  const paint = new Array(source.length).fill(null);
+  for (const c of list) paint.fill(c.name, c.start, c.end);
+  const out = [];
+  for (let i = 0; i < source.length; ) {
+    let j = i;
+    while (j < source.length && paint[j] === paint[i]) j++;
+    out.push({ name: paint[i], text: source.slice(i, j) });
+    i = j;
+  }
+  return out;
+}
+
+function render(target, parts) {
+  target.replaceChildren(...parts.map(({ name, text }) => {
+    if (name === null) return document.createTextNode(text);
+    const span = document.createElement("span");
+    // "function.builtin" becomes class="function builtin".
+    span.className = name.split(".").join(" ");
+    span.textContent = text;
+    return span;
+  }));
+}
+
+async function main() {
+  const status = document.getElementById("status");
+  try {
+    const params = new URLSearchParams(location.search);
+    await TreeSitter.init({ locateFile: (f) => "../node_modules/web-tree-sitter/" + f });
+    const language = await TreeSitter.Language.load("../tree-sitter-eucalypt.wasm");
+    const [query, source] = await Promise.all([
+      fetch("../queries/highlights.scm").then((r) => r.text()).then((q) => language.query(q)),
+      fetch(params.get("file") || "sample.eu").then((r) => r.text()),
+    ]);
+    const parser = new TreeSitter();
+    parser.setLanguage(language);
+    const tree = parser.parse(source);
+    render(document.getElementById("out"), spans(source, query.matches(tree.rootNode)));
+    const captures = query.captures(tree.rootNode);
+    // For scripts/test-wasm-page.cjs.
+    window.highlightResult = {
+      hasError: tree.rootNode.hasError,
+      captures: captures.map(({ name, node }) => ({
+        name, row: node.startPosition.row, text: node.text,
+      })),
+    };
+    status.textContent = `${captures.length} captures, ABI ${language.version}`;
+    status.dataset.state = "done";
+  } catch (e) {
+    status.textContent = "Failed: " + e;
+    status.dataset.state = "failed";
+  }
+}
+main();
+</script>
+</body>
+</html>
