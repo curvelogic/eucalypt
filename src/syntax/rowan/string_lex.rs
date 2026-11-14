@@ -384,7 +384,14 @@ impl<'text> Iterator for CStringPatternLexer<'text> {
                 }
             }
             _ => {
-                // Regular literal content (includes handling backslash escapes)
+                // Regular literal content (includes handling backslash
+                // escapes). When the token starts with a backslash, the
+                // escaped character belongs to it too: otherwise an escaped
+                // brace ("\{" or "\}") at the start of a literal run would
+                // be read as an unescaped brace (eu-oaz72.114).
+                if ch == '\\' {
+                    self.bump();
+                }
                 Some(self.literal_content(start))
             }
         }
@@ -434,6 +441,27 @@ mod tests {
                 (STRING_LITERAL_CONTENT, " test")
             ]
         );
+    }
+
+    fn lex_c(text: &str) -> Vec<(SyntaxKind, &str)> {
+        let lexer = CStringPatternLexer::new(text, ByteOffset(0));
+        lexer.map(|(kind, _span, text)| (kind, text)).collect()
+    }
+
+    #[test]
+    fn test_cstring_escaped_brace_before_interpolation() {
+        // eu-oaz72.114: an escaped brace starting a literal run stays with
+        // its backslash rather than being read as an unescaped brace.
+        assert_eq!(
+            lex_c("\\{ {n}"),
+            vec![
+                (STRING_LITERAL_CONTENT, "\\{ "),
+                (OPEN_BRACE, "{"),
+                (STRING_INTERPOLATION_TARGET, "n"),
+                (CLOSE_BRACE, "}")
+            ]
+        );
+        assert_eq!(lex_c("\\}"), vec![(STRING_LITERAL_CONTENT, "\\}")]);
     }
 
     #[test]

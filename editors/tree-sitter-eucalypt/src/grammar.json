@@ -1261,6 +1261,10 @@
               {
                 "type": "SYMBOL",
                 "name": "c_escape_sequence"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_c_lone_close_brace"
               }
             ]
           }
@@ -1527,6 +1531,15 @@
       },
       "named": true,
       "value": "r_string_content"
+    },
+    "_c_lone_close_brace": {
+      "type": "ALIAS",
+      "content": {
+        "type": "STRING",
+        "value": "}"
+      },
+      "named": true,
+      "value": "c_string_content"
     },
     "brace_escape": {
       "type": "CHOICE",
