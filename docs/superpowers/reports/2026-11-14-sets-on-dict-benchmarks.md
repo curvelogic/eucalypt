@@ -83,3 +83,29 @@ profile of 2e4 adds (blob build) puts the tree code (`insert`, `balance`,
 dispatch, environment access and heap allocation. Closing the gap is engine
 performance work, which the performance protocol leaves to a separately
 approved change.
+
+## After list elements (OPEN 8)
+
+- **Confidence:** measured-single — the same 4 vCPU session container, one
+  release binary of the branch with list elements (built with the prelude
+  blob, `cargo xtask prelude-compile && cargo build --release`), the three
+  programs below interleaved, seven rounds. Max RSS from one further run
+  of each.
+- **Programs**, exactly as run (`eu FILE`):
+  - add: `go(i, s): (i = 100000 ∨ (s set.size) < 0) then(s, go(i + 1, s set.add(i * 7919 % 100003)))` with `out: go(0, ∅) set.size`;
+  - baseline: `go(i, s): (i = 100000 ∨ s < 0) then(s, go(i + 1, s + (i * 7919 % 100003)))` with `out: go(0, 0)`;
+  - pairs: as add, adding `[i % 317, i * 7919 % 100003]`.
+
+| program | ticks | peak blocks | max RSS | wall median (min–max) |
+|---|---:|---:|---:|---:|
+| baseline | 8,000,216 | 1,030 | — | 0.36 s (0.35–0.41) |
+| 1e5 `set.add` | 10,600,226 | 1,467 | 86 MB | 0.89 s (0.86–1.00) |
+| 1e5 `set.add` of `[x, y]` pairs | 15,900,227 | 2,539 | 133 MB | 1.92 s (1.87–2.11) |
+
+The element wrappers now deep-force with `seqKey`, which costs 3 ticks more
+per add than the earlier box case. 1e5 adds cost about 0.53 s over the bare
+loop, which the coordinator reads as meeting "well under a second" for the
+shipped (blob) configuration. Pair elements cost more: each add builds and
+deep-forces a two-element list and allocates a key list. The engine-side
+cost of persistent-tree updates, and `set.add`'s second tree walk (`lookup`
+then `insert`), are follow-ups.
