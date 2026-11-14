@@ -26,8 +26,8 @@ use crate::{
 use super::{
     force::SeqList,
     support::{
-        closure_native_unboxing, data_list_arg, machine_return_bool, machine_return_num,
-        machine_return_set, native_to_set_primitive, resolve_native_unboxing, set_arg,
+        arg_to_element, closure_to_element, data_list_arg, machine_return_bool, machine_return_num,
+        machine_return_set, native_to_element, resolve_native_unboxing, set_arg,
         set_primitive_to_native,
     },
     syntax::{
@@ -124,25 +124,16 @@ impl StgIntrinsic for SetOf {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        // Resolve each element exactly as SET.ADD resolves its argument, so
-        // a non-primitive element raises the same error SET.ADD would.
+        // Each element raises the same error SET.ADD raises for it.
         let items = data_list_arg(machine, view, args[0].clone())?;
         let mut primitives = Vec::with_capacity(items.len());
         for item in &items {
-            let native = match machine.value_native(view, item) {
-                Some(native) => native,
-                // The wrapper forces each element only to its box, so a
-                // datetime's inner value may still be a thunk. A datetime is
-                // never a set element: raise SET.ADD's type mismatch for it.
-                None if machine.data_tag(view, item) == Some(DataConstructor::BoxedZdt.tag()) => {
-                    return Err(ExecutionError::TypeMismatch(
-                        machine.annotation(),
-                        Box::new((IntrinsicType::Set, IntrinsicType::ZonedDateTime, None)),
-                    ))
-                }
-                None => closure_native_unboxing(machine, view, item)?,
-            };
-            primitives.push(native_to_set_primitive(machine.annotation(), &native)?);
+            primitives.push(closure_to_element(
+                machine,
+                view,
+                item,
+                &IntrinsicType::Set,
+            )?);
         }
         // One sort + dedup: O(n log n), not n repeated insertions.
         let sorted = sort_dedup(&view, primitives);
@@ -216,8 +207,7 @@ impl StgIntrinsic for SetAdd {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let native = resolve_native_unboxing(machine, view, &args[0])?;
-        let prim = native_to_set_primitive(machine.annotation(), &native)?;
+        let prim = arg_to_element(machine, view, &args[0], &IntrinsicType::Set)?;
         let set = set_arg(machine, view, &args[1])?;
         // Always a fresh set, even when `prim` is already a member: set `=`
         // compares by identity, so returning the input would change it.
@@ -249,8 +239,7 @@ impl StgIntrinsic for SetRemove {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let native = resolve_native_unboxing(machine, view, &args[0])?;
-        let prim = native_to_set_primitive(machine.annotation(), &native)?;
+        let prim = arg_to_element(machine, view, &args[0], &IntrinsicType::Set)?;
         let set = set_arg(machine, view, &args[1])?;
         // Always a fresh set, even when `prim` is not a member (see SET.ADD).
         let elements = set
@@ -290,7 +279,7 @@ impl StgIntrinsic for SetContains {
             Ok(n) => n,
             Err(_) => return machine_return_bool(machine, view, false),
         };
-        let prim = match native_to_set_primitive(machine.annotation(), &native) {
+        let prim = match native_to_element(machine.annotation(), &native, &IntrinsicType::Set) {
             Ok(p) => p,
             Err(_) => return machine_return_bool(machine, view, false),
         };

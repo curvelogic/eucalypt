@@ -1,0 +1,4 @@
+xs: [3, 1, 2]
+
+` "`nth(_ + 1)` passes `nth` the section `_ + 1`, a function, where an index is wanted: the anaphor is not alone in its scope, so no lone-anaphor note is shown (eu-oaz72.132)"
+r: xs nth(_ + 1)

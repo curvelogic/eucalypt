@@ -1,0 +1,2 @@
+` "eu-oaz72.64: a function element in vec.of raises the typed element error at the vec.of call, not a panic with no location."
+result: [1, (_ + 1)] vec.of

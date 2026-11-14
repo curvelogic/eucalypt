@@ -1,2 +1,2 @@
 exit: 1
-stderr: "type mismatch: expected set, found datetime"
+stderr: "(?s)a datetime cannot be a set element: set elements must be numbers, strings or symbols.*errors[/\\]241_oaz72_32_set_of_datetime\.eu:2:35"

@@ -1,0 +1,5 @@
+` "a dict render error carries no source location rather than a stale one: the last user code evaluated before the render (mk, then the second dict) is unrelated to the dict that fails to render."
+mk(k): [k, 1]
+pq: dict.of[mk[2, :d], mk[3, :e]]
+other: dict.of[["a b", 1], ["", 2]]
+out: { q: pq, o: other }

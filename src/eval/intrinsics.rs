@@ -1167,6 +1167,11 @@ lazy_static! {
             ty: function(vec![dict_type(), block()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 219
+            name: "DICT.RENDER_VIEW",
+            ty: function(vec![any(), any()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

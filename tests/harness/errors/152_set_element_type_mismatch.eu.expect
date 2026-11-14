@@ -1,2 +1,2 @@
 exit: 1
-stderr: "type mismatch"
+stderr: "(?s)a set cannot be a set element: set elements must be numbers, strings or symbols.*errors[/\\]152_set_element_type_mismatch\.eu:1:11"
