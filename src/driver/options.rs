@@ -10,6 +10,9 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+/// Default number of rows in the `--profile` table (eu-oaz72.37).
+pub const DEFAULT_PROFILE_TOP: usize = 30;
+
 /// Format for error output
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ErrorFormat {
@@ -247,6 +250,20 @@ pub struct RunArgs {
     #[arg(long = "debug-trace")]
     pub debug_trace: bool,
 
+    /// Profile the run: attribute ticks, allocations and bytes to source
+    /// functions and print the top entries to stderr
+    #[arg(long = "profile")]
+    pub profile: bool,
+
+    /// Number of entries in the --profile table
+    #[arg(long = "profile-top", value_name = "N", default_value_t = DEFAULT_PROFILE_TOP)]
+    pub profile_top: usize,
+
+    /// Write sampled folded stacks (flame-graph input) to FILE; implies
+    /// --profile
+    #[arg(long = "profile-folded", value_name = "FILE")]
+    pub profile_folded: Option<PathBuf>,
+
     /// Allow IO monad operations (shell execution)
     #[arg(short = 'I', long = "allow-io")]
     pub allow_io: bool,
@@ -458,6 +475,11 @@ pub struct EucalyptOptions {
 
     // Show the raw, uncurated continuation-stack trace on execution errors
     pub debug_trace: bool,
+
+    // Source-level profiling (eu-oaz72.37)
+    pub profile: bool,
+    pub profile_top: usize,
+    pub profile_folded: Option<PathBuf>,
 
     // STG settings (flattened)
     pub stg_settings: StgSettings,
@@ -728,6 +750,16 @@ impl From<EucalyptCli> for EucalyptOptions {
             _ => false,
         };
 
+        // Extract the profiling options from Run command
+        let (profile, profile_top, profile_folded) = match &cli.command {
+            Some(Commands::Run(args)) => (
+                args.profile || args.profile_folded.is_some(),
+                args.profile_top,
+                args.profile_folded.clone(),
+            ),
+            _ => (false, DEFAULT_PROFILE_TOP, None),
+        };
+
         // Extract trailing args from Run command
         let args = match &cli.command {
             Some(Commands::Run(run_args)) => run_args.args.clone(),
@@ -804,6 +836,9 @@ impl From<EucalyptCli> for EucalyptOptions {
             source_prelude: cli.source_prelude,
             error_format,
             debug_trace,
+            profile,
+            profile_top,
+            profile_folded,
             stg_settings: StgSettings {
                 heap_limit_mib,
                 suppress_demand_analysis,
@@ -1170,6 +1205,21 @@ impl EucalyptOptions {
     /// Get the error output format
     pub fn error_format(&self) -> &ErrorFormat {
         &self.error_format
+    }
+
+    /// Whether `--profile` (or `--profile-folded`) is on.
+    pub fn profile(&self) -> bool {
+        self.profile
+    }
+
+    /// Rows in the `--profile` table.
+    pub fn profile_top(&self) -> usize {
+        self.profile_top
+    }
+
+    /// The `--profile-folded` output file, if any.
+    pub fn profile_folded(&self) -> Option<&PathBuf> {
+        self.profile_folded.as_ref()
     }
 
     /// Whether to dump the raw, uncurated continuation-stack trace on

@@ -34,6 +34,7 @@
 - [The State Monad](guide/state-monad.md)
 - [Type Checking](guide/type-checking.md)
 - [Structural Contracts](guide/contracts.md)
+- [Advent of Code](guide/advent-of-code.md)
 - [Advanced Topics](guide/advanced-topics.md)
 
 # Reference
