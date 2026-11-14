@@ -299,8 +299,9 @@ Fails, rather than prompting, if the location does not resolve to a file."
   "Against a real `eu': imports resolve from the file and errors are clickable."
   :tags '(real-eu)
   (let ((eu (getenv "EUCALYPT_TEST_EU")))
-    (unless (and eu (file-executable-p eu))
-      (ert-skip "EUCALYPT_TEST_EU does not name an eu binary"))
+    (when (or (null eu) (string-empty-p eu))
+      (ert-skip "EUCALYPT_TEST_EU is not set"))
+    (should (and (file-regular-p eu) (file-executable-p eu)))
     (let* ((root (file-name-as-directory (make-temp-file "eucalypt-real" t)))
            (dir (file-name-as-directory (expand-file-name "proj" root)))
            (eucalypt-eu-command eu)
