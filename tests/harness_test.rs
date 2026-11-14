@@ -5220,9 +5220,22 @@ pub fn test_error_278_intrinsic_call_site_vec_of() {
     run_error_test(&error_opts("278_intrinsic_call_site_vec_of.eu"));
 }
 
+/// The operator in a pipeline step receives the step's function, and the
+/// error states the parse (eu-oaz72.29).
+#[test]
+pub fn test_error_279_catenation_step_receives_function() {
+    run_error_test(&error_opts("279_catenation_step_receives_function.eu"));
+}
+
+/// A parenthesised pipeline step gets no parse note (eu-oaz72.29).
+#[test]
+pub fn test_error_280_catenation_parenthesised_step() {
+    run_error_test(&error_opts("280_catenation_parenthesised_step.eu"));
+}
+
 /// Leftover tokens in a closed string interpolation are a parse error,
 /// not dropped: `{ a b }` used to evaluate as `{a}` (eu-oaz72.50).
 #[test]
-pub fn test_error_279_interpolation_two_names() {
-    run_error_test(&error_opts("279_interpolation_two_names.eu"));
+pub fn test_error_281_interpolation_two_names() {
+    run_error_test(&error_opts("281_interpolation_two_names.eu"));
 }

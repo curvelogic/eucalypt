@@ -9,3 +9,6 @@ binding.gyp linguist-generated
 setup.py linguist-generated
 Makefile linguist-generated
 Package.swift linguist-generated
+
+# The published browser build is binary (eu-ioz21.5)
+*.wasm binary

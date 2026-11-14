@@ -190,6 +190,83 @@ pub fn arrow_function_shape(before: &str, after: &str, name: &str) -> bool {
     params_only && (opens_argument || used_again)
 }
 
+/// The note stating how a catenation took an operator expression as its
+/// pipeline step (eu-oaz72.29): `'c nth(i) = 2' was read as
+/// 'c (nth(i) = 2)'; parenthesise the pipeline: '(c nth(i)) = 2'`.
+///
+/// The text is read from the source the extents in `operand` point into;
+/// `None` when any of them cannot be read there.
+pub fn catenation_note(
+    operand: &crate::common::sourcemap::CatenationOperand,
+    source_map: &crate::common::sourcemap::SourceMap,
+    files: &SimpleFiles<String, String>,
+) -> Option<String> {
+    let file = source_map.source_info_for_smid(operand.pipeline.0)?.file?;
+    let source: &str = files.source(file).ok()?;
+    let atom = |smid| -> Option<(usize, usize)> {
+        let info = source_map.source_info_for_smid(smid)?;
+        if info.file? != file {
+            return None;
+        }
+        let span = info.span?;
+        widen_over_parens(source, span.start().to_usize(), span.end().to_usize())
+    };
+    let (pipeline_start, _) = atom(operand.pipeline.0)?;
+    let (_, pipeline_end) = atom(operand.pipeline.1)?;
+    let (step_start, _) = atom(operand.step.0)?;
+    let (_, step_end) = atom(operand.step.1)?;
+    let (_, head_end) = atom(operand.step_head_end)?;
+    if !(pipeline_start <= pipeline_end
+        && pipeline_end <= step_start
+        && step_start <= head_end
+        && head_end <= step_end)
+    {
+        return None;
+    }
+    let text = |a: usize, b: usize| source.get(a..b).map(one_line);
+    let whole = text(pipeline_start, step_end)?;
+    let pipeline = text(pipeline_start, pipeline_end)?;
+    let step = text(step_start, step_end)?;
+    let head = text(step_start, head_end)?;
+    let rest = text(head_end, step_end)?;
+    let parse = format!("note: '{whole}' was read as '{pipeline} ({step})'");
+    if operand.pipeline_has_anaphor {
+        // `(_ nth(0)) = 1` would make the parentheses the anaphor's scope.
+        return Some(parse);
+    }
+    Some(format!(
+        "{parse}; parenthesise the pipeline: '({pipeline} {head}){rest}'"
+    ))
+}
+
+/// Widen the atom at `start..end` over parentheses written round exactly
+/// it: `(x)` for the atom `x`.
+fn widen_over_parens(source: &str, mut start: usize, mut end: usize) -> Option<(usize, usize)> {
+    if start > end || end > source.len() {
+        return None;
+    }
+    loop {
+        let before = source.get(..start)?.trim_end();
+        let after = source.get(end..)?;
+        let after_trimmed = after.trim_start();
+        if before.ends_with('(') && after_trimmed.starts_with(')') {
+            start = before.len() - 1;
+            end = source.len() - after_trimmed.len() + 1;
+        } else {
+            return Some((start, end));
+        }
+    }
+}
+
+/// `text` on one line: each run of whitespace holding a line break becomes
+/// a single space.
+fn one_line(text: &str) -> String {
+    if !text.contains('\n') {
+        return text.to_string();
+    }
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

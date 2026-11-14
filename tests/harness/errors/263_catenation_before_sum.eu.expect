@@ -1,5 +1,6 @@
 exit: 1
-stderr: "the value called here is the result of '\+'"
+# the parse, stated as fact, then the operator whose result was called (eu-oaz72.29)
+stderr: "(?s)note: 'x f\(1\) \+ 1' was read as 'x \(f\(1\) \+ 1\)'; parenthesise the pipeline: '\(x f\(1\)\) \+ 1'.*the value called here is the result of '\+'"
 # no guess about precedence, and not the old wrong `f(a) + 1` example (eu-oaz72.28)
 stderr-absent: "catenation \(juxtaposition\)"
 stderr-absent: "binds as 'f\(a \+ 1\)'"

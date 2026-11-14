@@ -1,5 +1,6 @@
 exit: 1
-stderr: "the value called here is the result of '='"
+# the parse, stated as fact, then the operator whose result was called (eu-oaz72.29)
+stderr: "(?s)note: 'cells vec\.nth\(i\) = "S"' was read as 'cells \(vec\.nth\(i\) = "S"\)'; parenthesise the pipeline: '\(cells vec\.nth\(i\)\) = "S"'.*the value called here is the result of '='"
 # no guess about precedence, and no 'and'/'or' note without 'and' or 'or' (eu-oaz72.28)
 stderr-absent: "catenation \(juxtaposition\)"
 stderr-absent: "'and' and 'or'"
