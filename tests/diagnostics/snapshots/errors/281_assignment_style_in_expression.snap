@@ -1,0 +1,27 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/281_assignment_style_in_expression
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/281_assignment_style_in_expression.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/281_assignment_style_in_expression.eu:4:11
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: assignment-style syntax: 'result = ...' is not a valid eucalypt declaration
+  ┌─ tests/harness/errors/281_assignment_style_in_expression.eu:4:11
+  │
+4 │ r: result = 42
+  │           ^
+  │
+  = eucalypt uses ':' for declarations, not '='; write 'result: <value>' instead of 'result = <value>'

@@ -1,0 +1,22 @@
+#!/usr/bin/env eu
+# eu-oaz72.134: with the prelude blob, the assignment-style check rejected
+# `xs tail head = 2 && true` before evaluation, reading `head = ...` as a
+# Python-style declaration of `head`. In blob mode a prelude name is still a
+# free variable when the check runs, so it looked undefined; in source mode
+# it is bound and the program ran. A prelude name before `=` is not an
+# undefined name, so neither mode may reject it. The test wrapper in
+# tests/harness_test.rs runs this file in both prelude modes.
+
+xs: [1, 2, 3]
+
+# Never evaluated: the branch must not be rejected before evaluation.
+lazy-branch: true then(1, xs tail head = 2 && true)
+t1: lazy-branch = 1
+
+# A prelude function on the left of `=` in a lazily discarded position.
+t2: (false then(head = 2, :ok)) = :ok
+
+# The parenthesised pipeline is ordinary equality.
+t3: (xs tail head) = 2 && true
+
+RESULT: [t1, t2, t3] all-true? then(:PASS, :FAIL)

@@ -2665,6 +2665,11 @@ pub fn test_typecheck_091_deprecated_not_referenced() {
 }
 
 #[test]
+pub fn test_error_281() {
+    run_error_test(&error_opts("281_assignment_style_in_expression.eu"));
+}
+
+#[test]
 pub fn test_error_158() {
     run_error_test(&error_opts("158_self_assign_direct.eu"));
 }
@@ -3200,6 +3205,49 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
 #[test]
 pub fn test_236_oaz72_36_constructor_field_sharing() {
     run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
+}
+
+/// eu-oaz72.134 — the assignment-style check must give the same answer in
+/// both prelude modes. With the blob, prelude names are still free when the
+/// check runs and `xs tail head = 2 && true` was rejected before evaluation
+/// as a declaration of `head`; with the source prelude, `=` is bound and the
+/// check never fired, so `r: result = 42` reported only an unresolved
+/// variable. Each fixture runs here with and without `--source-prelude`
+/// (blob mode needs a fresh blob; `scripts/blob-mode-tests.sh` sweeps this
+/// target with one).
+#[test]
+pub fn test_251_prelude_modes_agree_on_assignment_style() {
+    for mode in [None, Some("--source-prelude")] {
+        let label = mode.unwrap_or("default prelude");
+
+        let mut cmd = std::process::Command::new(eu_binary());
+        cmd.arg("test");
+        cmd.args(mode);
+        cmd.arg("tests/harness/251_oaz72_134_prelude_mode_eq.eu");
+        let out = cmd.output().expect("failed to run eu test");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.status.success() && stdout.contains("PASS") && !stdout.contains("FAIL"),
+            "251_oaz72_134_prelude_mode_eq failed ({label}):\n{stdout}{stderr}"
+        );
+
+        let mut cmd = std::process::Command::new(eu_binary());
+        cmd.arg("run");
+        cmd.args(mode);
+        cmd.arg("tests/harness/errors/281_assignment_style_in_expression.eu");
+        let out = cmd.output().expect("failed to run eu");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "({label}) stderr was:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("assignment-style syntax: 'result = ...'"),
+            "expected the assignment-style diagnostic ({label}), stderr was:\n{stderr}"
+        );
+    }
 }
 
 /// Dicts (eu-oaz72.21). Every target must pass; in addition a lazy dict
