@@ -129,6 +129,10 @@ fn not_shown_without_a_lone_anaphor() {
         "xs map(_ + 1) nth(_ * 2)",
         // subsumed: the inner `_` joins the enclosing scope
         "xs map(_ + inc(_)) sum",
+        // `_1` alone pads binder 0: a two-argument function, not the
+        // identity
+        "xs nth(_1)",
+        "xs nth(_2)",
         // a function argument that is not an anaphor
         "xs nth(inc)",
         "g(inc)",

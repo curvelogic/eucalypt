@@ -399,8 +399,12 @@ impl<'smap> Shunter<'smap> {
             .iter()
             .enumerate()
             .filter_map(|(i, arg)| match &*arg.inner {
+                // One binder and a body that is the anaphor itself: `_1`
+                // alone pads the binders below it, so `nth(_1)` passes a
+                // two-argument function, not the identity.
                 Expr::Lam(s, _, scope)
                     if self.source_map.is_lone_anaphor(*s)
+                        && scope.pattern.len() == 1
                         && matches!(&*scope.body.inner, Expr::Var(v, _) if v == s) =>
                 {
                     Some((i, *s))

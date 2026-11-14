@@ -867,7 +867,12 @@ fn lone_anaphor_note(
         }
         let span = info.span?;
         let text = source.get(span.start().to_usize()..span.end().to_usize())?;
-        Some(text.split_whitespace().collect::<Vec<_>>().join(" "))
+        // On one line; whitespace within a line, as in a string, is kept.
+        Some(if text.contains('\n') {
+            text.split_whitespace().collect::<Vec<_>>().join(" ")
+        } else {
+            text.to_string()
+        })
     };
     let whole = text(call.call)?;
     let anaphors = call
