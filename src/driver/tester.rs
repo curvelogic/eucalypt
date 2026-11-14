@@ -31,9 +31,11 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     };
     let run_id = Uuid::new_v4().hyphenated().to_string();
 
+    let mut searched = vec![];
     let mut plans = vec![];
     for input in inputs {
         let path = resolve_input(opt, &input)?;
+        searched.push(path.display().to_string());
         if path.is_dir() {
             plans.extend(directory_plans(opt, &run_id, &path)?);
         } else {
@@ -42,6 +44,10 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
             let file_opts = opt.clone().with_explicit_inputs(vec![input]);
             plans.push(load_plan(&file_opts, &run_id, &path)?);
         }
+    }
+
+    if plans.is_empty() {
+        return Err(EucalyptError::NoTestsFound(searched.join(", ")));
     }
 
     run_plans(opt, plans.as_slice())

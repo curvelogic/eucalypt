@@ -5,6 +5,8 @@
 //! drive the real binary, because the defect was in how the `test`
 //! subcommand handles its command-line inputs, which no `.eu` program can
 //! reach.
+//!
+//! The same tests cover an empty suite, which used to panic.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -77,4 +79,26 @@ fn every_file_passing_passes_the_run() {
     assert_eq!(code, Some(0), "stdout:\n{stdout}");
     assert!(ran(&stdout, "one"), "one.eu not run:\n{stdout}");
     assert!(ran(&stdout, "two"), "two.eu not run:\n{stdout}");
+}
+
+/// A directory with no test files used to panic in report generation
+/// ("report requires at least one test plan"). It is now an error.
+#[test]
+fn no_test_files_is_an_error_not_a_panic() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let output = Command::new(env!("CARGO_BIN_EXE_eu"))
+        .current_dir(dir.path())
+        .arg("test")
+        .arg("-L")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/lib"))
+        .arg(dir.path())
+        .output()
+        .expect("run eu test");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2), "stderr:\n{stderr}");
+    assert!(!stderr.contains("panicked"), "panicked:\n{stderr}");
+    assert!(
+        stderr.contains("no test files found"),
+        "no error reported:\n{stderr}"
+    );
 }

@@ -119,7 +119,8 @@ eu test parsing.eu solver.eu tests/
 
 Each file is analysed and run on its own, as if tested alone, but the
 run is one suite: one report covers every test, and `eu test` exits
-non-zero if any test in any file fails.
+non-zero if any test in any file fails. If the inputs contain no test
+files at all, `eu test` reports an error and exits non-zero.
 
 ## Other formats
 
