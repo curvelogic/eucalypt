@@ -373,9 +373,9 @@ The `dict` functions carry these types, for example:
 |----------------|----------------------------------------------------------|
 | `dict.of`      | `[(k, v)] -> dict(k, v)`                                 |
 | `dict.get`     | `k -> dict(k, v) -> v`                                   |
-| `dict.get-or`  | `any -> d -> dict(k, v) -> v \| d`                       |
+| `dict.get-or`  | `any -> d -> dict(k, v) -> (v \| d)`                     |
 | `dict.assoc`   | `j -> w -> dict(k, v) -> dict(k \| j, v \| w)`           |
-| `dict.update`  | `j -> (v \| d -> w) -> d -> dict(k, v) -> dict(k \| j, v \| w)` |
+| `dict.update`  | `j -> ((v \| d) -> w) -> d -> dict(k, v) -> dict(k \| j, v \| w)` |
 | `dict.range`   | `any -> any -> dict(k, v) -> dict(k, v)`                 |
 | `dict.to-list` | `dict(k, v) -> [(k, v)]`                                 |
 | `dict.pop-min` | `dict(k, v) -> (k, v, dict(k, v))`                       |

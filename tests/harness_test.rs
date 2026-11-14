@@ -4649,6 +4649,16 @@ pub fn test_typecheck_118_dict_mixed_types_no_warning() {
     run_typecheck_test("118_dict_mixed_types_no_warning.eu");
 }
 
+#[test]
+pub fn test_typecheck_119_dict_update_non_function_warns() {
+    run_typecheck_test("119_dict_update_non_function_warns.eu");
+}
+
+#[test]
+pub fn test_typecheck_120_dict_get_or_default_in_result() {
+    run_typecheck_test("120_dict_get_or_default_in_result.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).

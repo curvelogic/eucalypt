@@ -2111,7 +2111,7 @@ dict: {
   get: '__DICT.GET'
 
   ` { doc: "`dict.get-or(k, default, d)` - return the value at key `k` in dict `d`, or `default` if `d` does not hold it."
-      type: s"any → d → dict(k, v) → v | d" }
+      type: s"any → d → dict(k, v) → (v | d)" }
   get-or: '__DICT.GET_OR'
 
   ` { doc: "`dict.assoc(k, v, d)` - return dict `d` with key `k` mapped to the lazy value `v`. If `d` holds an equal key, that key is kept and only its value replaced."
@@ -2163,11 +2163,11 @@ dict: {
   range: '__DICT.RANGE'
 
   ` { doc: "`dict.update(k, f, default, d)` - return dict `d` with key `k` mapped to the lazy value `f(old)`, where `old` is the value at `k`, or `default` if `d` does not hold `k`."
-      type: s"j → (v | d → w) → d → dict(k, v) → dict(k | j, v | w)" }
+      type: s"j → ((v | d) → w) → d → dict(k, v) → dict(k | j, v | w)" }
   update: '__DICT.UPDATE'
 
   ` { doc: "`dict.update-strict(k, f, default, d)` - as `dict.update`, but `f(old)` is evaluated before it is stored, so repeated updates (such as counting) do not build up unevaluated values."
-      type: s"j → (v | d → w) → d → dict(k, v) → dict(k | j, v | w)" }
+      type: s"j → ((v | d) → w) → d → dict(k, v) → dict(k | j, v | w)" }
   update-strict: '__DICT.UPDATE_STRICT'
 
   ` { doc: "`dict.merge-with(f, a, b)` - return the union of dicts `a` and `b`. Where both hold a key, the value is the lazy `f(va, vb)`, with `a`'s value first, and `a`'s key is kept."

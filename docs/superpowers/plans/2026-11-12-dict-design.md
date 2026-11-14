@@ -563,9 +563,9 @@ Recorded as built; none changes an agreed choice.
 - **Signatures beyond §9 (round 2).** Signatures must not warn on valid
   code, and a dict may hold keys and values of mixed types, so the
   arguments that need not match the dict's types are loosened: `get-or`
-  is `any → d → dict(k, v) → v | d`; `assoc` is
+  is `any → d → dict(k, v) → (v | d)`; `assoc` is
   `j → w → dict(k, v) → dict(k | j, v | w)`; `update`/`update-strict` are
-  `j → (v | d → w) → d → dict(k, v) → dict(k | j, v | w)`; `range`'s
+  `j → ((v | d) → w) → d → dict(k, v) → dict(k | j, v | w)`; `range`'s
   bounds and the key of `dissoc` and `contains?` are `any`. `get`,
   `to-list`, `min` and `pop-min` stay as §9 gives them.
   `eu check --strict tests/harness/250_dict.eu` is a test.
