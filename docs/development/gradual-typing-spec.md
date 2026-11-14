@@ -115,7 +115,7 @@ and are priorities for typing:
 | `(A, B, C)`       | 3-tuple, etc.                                    |
 | `{k: T, ..}`      | open record — has at least `k: T`, may have more |
 | `{k: T}`          | closed record — has exactly `k: T`               |
-| `set`             | ordered set of primitives                        |
+| `set`             | ordered set of primitives and lists of them      |
 | `vec`             | flat vector of primitives (O(1) indexed access)  |
 | `array`           | n-dimensional array of numbers (floats)          |
 | `IO(T)`           | IO action producing a value of type `T`          |

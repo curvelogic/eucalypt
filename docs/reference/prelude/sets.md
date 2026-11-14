@@ -4,9 +4,9 @@
 
 | Function | Description |
 |----------|-------------|
-| `set.of` | Create a set from list `xs` of primitive values, in one pass (duplicates removed) |
-| `set.from-list` | Alias of `set.of`: create a set from list `xs` of primitive values |
-| `set.to-list` | Return sorted list of elements in set `s` |
+| `set.of` | Create a set from list `xs` of primitive values or lists of them, in one pass (duplicates removed) |
+| `set.from-list` | Alias of `set.of`: create a set from list `xs` of primitive values or lists of them |
+| `set.to-list` | Return sorted list of elements in set `s`: numbers, then strings, then symbols, then lists |
 | `set.add` | Add element `e` to set `s` |
 | `set.remove` | Remove element `e` from set `s` |
 | `set.contains?` | True if set `s` contains element `e` |

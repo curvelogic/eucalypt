@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error[EU-EVAL-TYPE]: a datetime cannot be a set element: set elements must be numbers, strings or symbols
+error[EU-EVAL-TYPE]: a datetime cannot be a set element: set elements must be numbers, strings or symbols, or lists of them
   ┌─ tests/harness/errors/241_oaz72_32_set_of_datetime.eu:2:35
   │
 2 │ result: [t"2024-01-01T00:00:00Z"] set.of

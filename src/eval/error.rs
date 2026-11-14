@@ -1004,6 +1004,17 @@ fn format_bad_format_string(detail: &str) -> String {
     )
 }
 
+/// The message for [`ExecutionError::InvalidElement`]. Set elements may
+/// also be lists of elements (design note OPEN 8); vec elements may not.
+fn format_invalid_element(collection: &IntrinsicType, found: &str) -> String {
+    let allowed = if *collection == IntrinsicType::Set {
+        "numbers, strings or symbols, or lists of them"
+    } else {
+        "numbers, strings or symbols"
+    };
+    format!("{found} cannot be a {collection} element: {collection} elements must be {allowed}")
+}
+
 /// Format a bad timezone string error message
 fn format_bad_timezone(tz: &str) -> String {
     format!(
@@ -1144,10 +1155,7 @@ pub enum ExecutionError {
     /// the rejected element, e.g. "a list". The message names the element
     /// as the problem, so a set given as a set element no longer reads as
     /// the contradictory "expected set, found set" (eu-oaz72.74).
-    #[error(
-        "{} cannot be a {} element: {} elements must be numbers, strings or symbols",
-        .1.1, .1.0, .1.0
-    )]
+    #[error("{}", format_invalid_element(&.1.0, &.1.1))]
     InvalidElement(Smid, Box<(IntrinsicType, String)>),
     #[error("bad regex: {}\n  help: the pattern '{}' is not a valid regular expression", .1.1, .1.0)]
     BadRegex(Smid, Box<(String, String)>),

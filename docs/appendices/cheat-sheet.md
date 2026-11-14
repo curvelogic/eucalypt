@@ -562,7 +562,7 @@ either operand is an array. Scalar broadcasting is supported.
 
 | Expression | Description |
 |---|---|
-| `xs set.of` / `xs set.from-list` | Set of primitives from a list (one pass; the names are aliases) |
+| `xs set.of` / `xs set.from-list` | Set of primitives (and lists of them) from a list (one pass; the names are aliases) |
 | `s set.to-list` | Sorted list of a set's elements |
 | `v ∈ s` / `v ∉ s` | Membership |
 | `∅` | The empty set |
@@ -696,7 +696,7 @@ origin: { x: 0, y: 0 }
 | `IO(T)`            | IO action producing T                  |
 | `Lens(a, b)`       | lens focusing on b within a            |
 | `Traversal(a, b)`  | traversal over b's within a            |
-| `set`              | ordered set of primitives              |
+| `set`              | ordered set of primitives and lists    |
 | `vec`              | flat vector of primitives              |
 | `array`            | n-dimensional number array             |
 
