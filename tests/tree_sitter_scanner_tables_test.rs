@@ -14,9 +14,10 @@
 //! markers, with the Unicode version of the toolchain that generated them.
 //! This test regenerates them and fails if `scanner.c` differs. Under a
 //! toolchain with another Unicode version (`char::UNICODE_VERSION`) only the
-//! code points below U+0100 — where the lexer's hand-written cases live — are
-//! compared, so a Rust release that moves Unicode does not fail unrelated
-//! work; the test prints a note instead. Rewrite them, under the Rust stable
+//! code points whose class does not hang on the Unicode version are compared
+//! — those below U+0100 and every character literal the lexer's predicates
+//! match by hand (such as `•`, read from `lex.rs`) — so a Rust release that
+//! moves Unicode does not fail unrelated work. Rewrite them, under the Rust stable
 //! that CI uses, with
 //!
 //! ```text
@@ -109,8 +110,8 @@ fn unicode_line(block: &str) -> Option<&str> {
     block.lines().find(|l| l.starts_with("// Unicode "))
 }
 
-/// Each table's ranges, clipped to code points below `limit`.
-fn parse_tables(block: &str, limit: u32) -> Vec<(String, Vec<(u32, u32)>)> {
+/// Each table's name, with which of `probes` it contains.
+fn probe_tables(block: &str, probes: &[u32]) -> Vec<(String, Vec<u32>)> {
     let hex = |s: &str| u32::from_str_radix(s.trim().trim_start_matches("0x"), 16).unwrap();
     let mut tables: Vec<(String, Vec<(u32, u32)>)> = Vec::new();
     for line in block.lines() {
@@ -121,14 +122,62 @@ fn parse_tables(block: &str, limit: u32) -> Vec<(String, Vec<(u32, u32)>)> {
             for pair in line.split('{').skip(1) {
                 let pair = pair.split('}').next().unwrap();
                 let (lo, hi) = pair.split_once(',').unwrap();
-                let (lo, hi) = (hex(lo), hex(hi));
-                if lo < limit {
-                    ranges.push((lo, hi.min(limit - 1)));
-                }
+                ranges.push((hex(lo), hex(hi)));
             }
         }
     }
     tables
+        .into_iter()
+        .map(|(name, ranges)| {
+            let members = probes
+                .iter()
+                .copied()
+                .filter(|cp| ranges.iter().any(|(lo, hi)| lo <= cp && cp <= hi))
+                .collect();
+            (name, members)
+        })
+        .collect()
+}
+
+/// The character literals in the bodies of the lexer's identifier
+/// predicates: the cases it decides by hand rather than by Unicode property.
+fn hand_written_chars() -> Vec<u32> {
+    let lex =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/syntax/rowan/lex.rs"))
+            .expect("cannot read src/syntax/rowan/lex.rs");
+    let mut found = Vec::new();
+    for name in ["is_normal_start", "is_normal_continuation"] {
+        let head = format!("pub fn {name}(");
+        let body = &lex[lex
+            .find(&head)
+            .unwrap_or_else(|| panic!("no {name} in lex.rs"))..];
+        let body = &body[..body.find("\n}").expect("unterminated function")];
+        let mut rest = body;
+        while let Some(i) = rest.find('\'') {
+            let after = &rest[i + 1..];
+            let mut chars = after.chars();
+            if let (Some(c), Some('\'')) = (chars.next(), chars.next()) {
+                found.push(c as u32);
+                rest = &after[c.len_utf8() + 1..];
+            } else {
+                rest = after;
+            }
+        }
+    }
+    assert!(
+        found.contains(&0x2022),
+        "found no '•' arm in is_normal_start"
+    );
+    found
+}
+
+/// Code points whose class does not depend on the Unicode version.
+fn stable_probes() -> Vec<u32> {
+    let mut probes: Vec<u32> = (0..0x100).collect();
+    probes.extend(hand_written_chars());
+    probes.sort_unstable();
+    probes.dedup();
+    probes
 }
 
 const REGENERATE: &str = "regenerate with `EU_UPDATE_SCANNER_TABLES=1 cargo test --test \
@@ -161,16 +210,17 @@ fn scanner_character_tables_match_rowan_lexer() {
     let recorded = unicode_line(current).expect("scanner.c's tables record no Unicode version");
     let toolchain = unicode_line(&expected).unwrap();
     if recorded != toolchain {
-        // Another Unicode version: compare only the hand-written region.
+        // Another Unicode version: compare only what does not depend on it.
+        let probes = stable_probes();
         assert_eq!(
-            parse_tables(current, 0x100),
-            parse_tables(&expected, 0x100),
+            probe_tables(current, &probes),
+            probe_tables(&expected, &probes),
             "the character tables in editors/tree-sitter-eucalypt/src/scanner.c are not \
-             the rowan lexer's below U+0100; {REGENERATE}"
+             the rowan lexer's below U+0100 or for its hand-written cases; {REGENERATE}"
         );
         eprintln!(
             "note: scanner.c's character tables are for {}, this toolchain has {}; \
-             compared below U+0100 only. To follow it, {REGENERATE}",
+             compared below U+0100 and for the lexer's hand-written cases only. To follow it, {REGENERATE}",
             &recorded[3..],
             &toolchain[3..]
         );
