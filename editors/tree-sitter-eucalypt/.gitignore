@@ -34,5 +34,7 @@ dist/
 
 # Grammar volatiles
 *.wasm
+# The published browser build (eu-ioz21.5): see wasm-manifest.json
+!/tree-sitter-eucalypt.wasm
 *.obj
 *.o
