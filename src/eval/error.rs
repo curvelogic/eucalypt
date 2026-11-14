@@ -663,11 +663,16 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
     }
 }
 
+/// The `NotValue` context for a function application where a primitive
+/// value was expected. Shared by the raise site and every reader of it, so
+/// rewording it cannot silently disable a note (eu-oaz72.133).
+pub const NOT_VALUE_FUNCTION_APPLICATION: &str = "a function application";
+
 /// Format a "not a value" error message when a non-value expression is found
 /// where a primitive value was expected.
 fn format_not_value(context: &str) -> String {
     match context {
-        "a function application" => {
+        NOT_VALUE_FUNCTION_APPLICATION => {
             "expected a primitive value but found an unevaluated function application\n  \
              help: this often means a function received fewer arguments than it needs, \
              producing a partial application instead of a result\n  \
@@ -762,7 +767,7 @@ fn catenation_operand_note(
         ExecutionError::NotCallable(..)
         | ExecutionError::UnexpectedFunction(..)
         | ExecutionError::CannotReturnFunToCase(..) => true,
-        ExecutionError::NotValue(_, context) => context == "a function application",
+        ExecutionError::NotValue(_, context) => context == NOT_VALUE_FUNCTION_APPLICATION,
         _ => false,
     };
     if !shape {
@@ -831,6 +836,89 @@ fn unexpected_function_notes() -> Vec<String> {
          all of its remaining arguments"
             .to_string(),
     ]
+}
+
+/// The note stating that an argument is a lone anaphor (eu-oaz72.132),
+/// for an error whose primary label is a juxtaposed call that cook gave
+/// an argument consisting of one expression anaphor and nothing else:
+/// `nth(_)` passes `nth` the identity function.
+///
+/// Shown only when the error says a function arrived where a value was
+/// wanted, and only when the label is exactly that call.
+fn lone_anaphor_note(
+    inner: &ExecutionError,
+    primary: Option<(usize, codespan::Span)>,
+    source_map: &SourceMap,
+    files: &SimpleFiles<String, String>,
+) -> Option<String> {
+    let shape = match inner {
+        ExecutionError::TypeMismatch(_, detail) => {
+            matches!(detail.1, IntrinsicType::Function(..))
+        }
+        ExecutionError::UnexpectedFunction(..) | ExecutionError::CannotReturnFunToCase(..) => true,
+        ExecutionError::NotValue(_, context) => context == "a function application",
+        _ => false,
+    };
+    if !shape {
+        return None;
+    }
+    let (file, span) = primary?;
+    let call = source_map.lone_anaphor_call(file, span)?;
+    let source: &str = codespan_reporting::files::Files::source(files, file).ok()?;
+    let text = |smid: Smid| -> Option<String> {
+        let info = source_map.source_info_for_smid(smid)?;
+        if info.file? != file {
+            return None;
+        }
+        let span = info.span?;
+        let text = source.get(span.start().to_usize()..span.end().to_usize())?;
+        // On one line; whitespace within a line, as in a string, is kept.
+        Some(if text.contains('\n') {
+            text.split_whitespace().collect::<Vec<_>>().join(" ")
+        } else {
+            text.to_string()
+        })
+    };
+    let whole = text(call.call)?;
+    let anaphors = call
+        .anaphors
+        .iter()
+        .map(|(_, smid)| text(*smid).map(|t| format!("'{t}'")))
+        .collect::<Option<Vec<_>>>()?;
+    let positions: Vec<String> = call
+        .anaphors
+        .iter()
+        .map(|(i, _)| (i + 1).to_string())
+        .collect();
+    let and = |items: &[String]| match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [init @ .., last] => format!("{} and {last}", init.join(", ")),
+    };
+    let fact = match (call.arity, anaphors.len()) {
+        (1, _) => format!(
+            "{} is the whole argument, so the argument is the identity function",
+            anaphors[0]
+        ),
+        (_, 1) => format!(
+            "{} is the whole of argument {}, so that argument is the identity function",
+            anaphors[0], positions[0]
+        ),
+        _ => format!(
+            "{} are the whole of arguments {}, so each of those arguments is the identity \
+             function",
+            and(&anaphors),
+            and(&positions)
+        ),
+    };
+    let bounds = if call.arity == 1 {
+        "parentheses"
+    } else {
+        "commas and parentheses"
+    };
+    Some(format!(
+        "note: in '{whole}', {fact}: an expression anaphor's scope ends at the {bounds} round it"
+    ))
 }
 
 /// Format a "not callable" error message with the actual type of value found
@@ -1049,6 +1137,18 @@ pub enum ExecutionError {
     UnexpectedFunction(Smid, &'static str /* expected kind, e.g. "number" */),
     #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
+    /// A value that cannot be stored in a set or vec was given as an
+    /// element (to `set.of`, `set.add`, `set.remove` or `vec.of`).
+    ///
+    /// Carries the collection type (`Set` or `Vec`) and a description of
+    /// the rejected element, e.g. "a list". The message names the element
+    /// as the problem, so a set given as a set element no longer reads as
+    /// the contradictory "expected set, found set" (eu-oaz72.74).
+    #[error(
+        "{} cannot be a {} element: {} elements must be numbers, strings or symbols",
+        .1.1, .1.0, .1.0
+    )]
+    InvalidElement(Smid, Box<(IntrinsicType, String)>),
     #[error("bad regex: {}\n  help: the pattern '{}' is not a valid regular expression", .1.1, .1.0)]
     BadRegex(Smid, Box<(String, String)>),
     #[error("{}", format_bad_datetime_components(&.1.0, &.1.1, &.1.2, &.1.3, &.1.4, &.1.5, &.1.6))]
@@ -1293,6 +1393,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::LookupOnFunction(s, _) => *s,
             ExecutionError::UnexpectedFunction(s, _) => *s,
             ExecutionError::NotValue(s, _) => *s,
+            ExecutionError::InvalidElement(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
             ExecutionError::UnrepresentableValue(s, _, _) => *s,
             ExecutionError::UnrenderableShape(s, _, _) => *s,
@@ -1839,6 +1940,11 @@ impl ExecutionError {
         if let Some(note) = catenation {
             notes.insert(0, note);
         }
+        if let Some(note) =
+            files.and_then(|f| lone_anaphor_note(inner, primary_file_span, source_map, f))
+        {
+            notes.insert(0, note);
+        }
         if notes.is_empty() {
             diag
         } else {
@@ -1975,6 +2081,8 @@ impl ExecutionError {
             // ("even NoBranchForDataTag ... is deliberately left uncoded");
             // decided and added after investigation by eu-1tkk.7.44.
             ExecutionError::NoBranchForDataTag(..) => Some("EU-EVAL-TYPE"),
+            // A value of the wrong type given as a set or vec element.
+            ExecutionError::InvalidElement(..) => Some("EU-EVAL-TYPE"),
             ExecutionError::ContractViolation(..) => Some("EU-EVAL-CONTRACT"),
             ExecutionError::UnrepresentableValue(..) => Some("EU-RENDER-UNREPRESENTABLE"),
             ExecutionError::UnrenderableShape(..) => Some("EU-RENDER-SHAPE"),

@@ -479,27 +479,106 @@ pub fn list_value(
     Ok(acc)
 }
 
-/// Convert a Native value to a set/vec Primitive.
+/// The article-prefixed name of an intrinsic type, for element errors
+/// ("a list", "an array").
+fn with_article(ty: &IntrinsicType) -> String {
+    let name = ty.to_string();
+    match name.chars().next() {
+        Some('a' | 'e' | 'i' | 'o' | 'u') => format!("an {name}"),
+        _ => format!("a {name}"),
+    }
+}
+
+/// The error for a value that cannot be an element of `collection`
+/// (`IntrinsicType::Set` or `IntrinsicType::Vec`), located at `smid`.
+fn invalid_element(smid: Smid, collection: &IntrinsicType, found: String) -> ExecutionError {
+    ExecutionError::InvalidElement(smid, Box::new((collection.clone(), found)))
+}
+
+/// Convert a native value to a set/vec element.
 ///
-/// A string element shares the argument's `HeapString` (no copy).
-pub fn native_to_set_primitive(
+/// Numbers, strings and symbols are elements; anything else raises
+/// [`ExecutionError::InvalidElement`] for `collection` at `smid`. A
+/// string element shares the argument's `HeapString` (no copy).
+pub fn native_to_element(
     smid: Smid,
     native: &Native,
+    collection: &IntrinsicType,
 ) -> Result<crate::eval::memory::set::Primitive, ExecutionError> {
     use crate::eval::memory::set::Primitive as SetPrim;
     match native {
         Native::Num(n) => Ok(SetPrim::from_number(n)),
         Native::Str(s) => Ok(SetPrim::Str(*s)),
         Native::Sym(id) => Ok(SetPrim::Sym(*id)),
-        _ => Err(ExecutionError::TypeMismatch(
+        Native::Prng(_) => Err(invalid_element(
             smid,
-            Box::new((
-                crate::eval::types::IntrinsicType::Set,
-                native_type(native),
-                None,
-            )),
+            collection,
+            "a random number stream".to_string(),
+        )),
+        Native::Producer(_) => Err(invalid_element(smid, collection, "a stream".to_string())),
+        _ => Err(invalid_element(
+            smid,
+            collection,
+            with_article(&native_type(native)),
         )),
     }
+}
+
+/// Convert an evaluated value handle (a list element, say) to a set/vec
+/// element, looking through boxed scalars.
+///
+/// Anything but a number, string or symbol raises
+/// [`ExecutionError::InvalidElement`] for `collection`, located at the
+/// intrinsic's call site and naming what the element was.
+pub fn closure_to_element(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    item: &AbiClosure,
+    collection: &IntrinsicType,
+) -> Result<crate::eval::memory::set::Primitive, ExecutionError> {
+    let smid = machine.annotation();
+    if let Some(native) = machine.value_native(view, item) {
+        return native_to_element(smid, &native, collection);
+    }
+    let dc: Option<DataConstructor> = machine
+        .data_tag(view, item)
+        .and_then(|tag| tag.try_into().ok());
+    let found = match dc {
+        Some(
+            DataConstructor::BoxedNumber
+            | DataConstructor::BoxedString
+            | DataConstructor::BoxedSymbol
+            | DataConstructor::BoxedTypeData,
+        ) => {
+            let native = closure_native_unboxing(machine, view, item)?;
+            return native_to_element(smid, &native, collection);
+        }
+        // Forced only to its box, a datetime's inner value may still be a
+        // thunk; it is never an element either way.
+        Some(DataConstructor::BoxedZdt) => with_article(&IntrinsicType::ZonedDateTime),
+        Some(DataConstructor::ListNil | DataConstructor::ListCons) => "a list".to_string(),
+        Some(DataConstructor::Block) => "a block".to_string(),
+        Some(DataConstructor::BoolTrue | DataConstructor::BoolFalse) => "a boolean".to_string(),
+        Some(DataConstructor::Unit) => "null".to_string(),
+        Some(_) => "a structured value".to_string(),
+        // No data tag: an unsaturated lambda or partial application.
+        None => "a function".to_string(),
+    };
+    Err(invalid_element(smid, collection, found))
+}
+
+/// [`closure_to_element`] for an intrinsic argument.
+pub fn arg_to_element(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+    collection: &IntrinsicType,
+) -> Result<crate::eval::memory::set::Primitive, ExecutionError> {
+    if let Ok(native) = machine.resolve_native(view, arg) {
+        return native_to_element(machine.annotation(), &native, collection);
+    }
+    let closure = machine.resolve_closure(view, arg)?;
+    closure_to_element(machine, view, &closure, collection)
 }
 
 /// Convert a set/vec Primitive back to a Native value

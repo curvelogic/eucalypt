@@ -147,9 +147,86 @@ impl<T: GcScannable> GcScannable for Vec<NonNull<T>> {
     }
 }
 
+/// What marking checks about forwarded headers (eu-oaz72.136).
+///
+/// Every scan site marks a heap object before pushing it, and only pushed
+/// heap objects are evacuated, so an object forwarded in this collection
+/// is always marked with the current mark state. Any other forwarded
+/// header that marking meets is an old copy reached through a pointer an
+/// update phase missed. Since eu-oaz72.108 frees an evacuated block's lines
+/// in the collection that evacuates it, such a pointer is a use-after-free
+/// as soon as the line is reused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ForwardingCheck {
+    /// No check.
+    Off,
+    /// Mark phase of an evacuating collection: a forwarded header is
+    /// legitimate only if this collection marked (and so forwarded) it.
+    Unmarked,
+    /// Mark-in-place collection, or after the update phase: no live
+    /// pointer may reach a forwarded header.
+    Any,
+}
+
 /// View of the heap available to the collector
 pub struct CollectorHeapView<'guard> {
     heap: &'guard mut Heap,
+    /// Whether `mark` calls [`Self::debug_mark`] at all: poison or a
+    /// forwarding check is on. Computed once per view, so with no
+    /// `EU_GC_*` debug variable set `mark` tests this one flag.
+    debug_checks: bool,
+    /// `EU_GC_POISON` is set.
+    poison: bool,
+    /// The forwarding check marking applies.
+    forwarding: ForwardingCheck,
+    /// The GC verification level (`Heap::gc_verify_level`).
+    verify: u8,
+    /// During the post-update forwarding traversal only: the objects it
+    /// has visited. Marking then leaves the heap's marks alone and
+    /// reports an object as new on its first visit.
+    visited: Option<std::collections::HashSet<usize>>,
+}
+
+impl<'guard> CollectorHeapView<'guard> {
+    /// A view that marks with no forwarding check.
+    pub fn new(heap: &'guard mut Heap) -> Self {
+        Self::with_forwarding_check(heap, ForwardingCheck::Off)
+    }
+
+    /// A view whose marking applies `check` when the heap's verification
+    /// level is 1 or more.
+    fn with_forwarding_check(heap: &'guard mut Heap, check: ForwardingCheck) -> Self {
+        let verify = heap.gc_verify_level();
+        let poison = super::gc_debug::poison_enabled();
+        let forwarding = if verify >= 1 {
+            check
+        } else {
+            ForwardingCheck::Off
+        };
+        CollectorHeapView {
+            heap,
+            debug_checks: poison || forwarding != ForwardingCheck::Off,
+            poison,
+            forwarding,
+            verify,
+            visited: None,
+        }
+    }
+
+    /// A view for the post-update forwarding traversal: marking checks
+    /// that nothing reached is forwarded and records visits in a private
+    /// set, leaving mark bits, line maps and live bytes unchanged.
+    fn forwarding_traversal(heap: &'guard mut Heap) -> Self {
+        let verify = heap.gc_verify_level();
+        CollectorHeapView {
+            heap,
+            debug_checks: true,
+            poison: super::gc_debug::poison_enabled(),
+            forwarding: ForwardingCheck::Any,
+            verify,
+            visited: Some(Default::default()),
+        }
+    }
 }
 
 impl CollectorHeapView<'_> {
@@ -157,25 +234,77 @@ impl CollectorHeapView<'_> {
         self.heap.reset_region_marks();
     }
 
+    /// The debug checks marking makes before it marks (`EU_GC_POISON`,
+    /// `EU_GC_VERIFY`). Panics on a violation. Returns `Some(newly)` when
+    /// this is the post-update traversal, which must not mark: whether
+    /// `ptr` is new to it. Returns `None` when marking should proceed.
+    #[cold]
+    #[inline(never)]
+    fn debug_mark(&mut self, ptr: NonNull<u8>, type_name: &str, poison: bool) -> Option<bool> {
+        // Poison check: verify the object doesn't sit in swept (poisoned)
+        // memory.  This catches use-after-free where a live pointer
+        // references memory that was already reclaimed.
+        if poison && self.poison {
+            unsafe {
+                if super::gc_debug::looks_poisoned(ptr) {
+                    panic!(
+                        "GC POISON: use-after-free detected!\n\
+                         Object at {:p} (type {type_name}) sits in poisoned (swept) memory.\n\
+                         A live GC root references memory that was reclaimed by lazy sweep.",
+                        ptr.as_ptr(),
+                    );
+                }
+            }
+        }
+
+        if self.forwarding != ForwardingCheck::Off {
+            self.check_not_forwarded(ptr, type_name);
+        }
+
+        self.visited
+            .as_mut()
+            .map(|visited| visited.insert(ptr.as_ptr() as usize))
+    }
+
+    /// Panic if marking `ptr` meets a forwarded header it may not
+    /// (see [`ForwardingCheck`]).
+    fn check_not_forwarded(&self, ptr: NonNull<u8>, type_name: &str) {
+        // SAFETY: every pointer marking is given has an AllocHeader prefix;
+        // read-only access during stop-the-world collection.
+        let header = unsafe { &*self.heap.header_ptr_mut(ptr) };
+        if !header.is_forwarded() {
+            return;
+        }
+        let marked = header.is_marked_with_state(self.heap.mark_state());
+        let legitimate = self.forwarding == ForwardingCheck::Unmarked && marked;
+        if !legitimate {
+            let phase = match (self.forwarding, self.visited.is_some()) {
+                (_, true) => "after the update phase",
+                (ForwardingCheck::Unmarked, _) => {
+                    "while marking an evacuating collection, unmarked (forwarded by an earlier collection)"
+                }
+                _ => "while marking a non-evacuating collection",
+            };
+            panic!(
+                "GC VERIFY: marking met a forwarded header {phase}.\n\
+                 Object at {:p} (type {type_name}) was evacuated to {:?}, but a live \
+                 pointer still refers to the old copy: an update phase (scan_and_update) \
+                 missed it. The old copy's lines are freed in the collection that \
+                 evacuates it, so this pointer is a use-after-free.",
+                ptr.as_ptr(),
+                header.forwarded_to(),
+            );
+        }
+    }
+
     /// Mark object if not already marked and return whether marked
     pub fn mark<T>(&mut self, obj: NonNull<T>) -> bool {
         debug_assert!(obj != NonNull::dangling());
         debug_assert!(obj.as_ptr() as usize != usize::MAX);
 
-        // Poison check: if enabled, verify the object doesn't sit in
-        // swept (poisoned) memory.  This catches use-after-free where a
-        // live pointer references memory that was already reclaimed.
-        if super::gc_debug::poison_enabled() {
-            unsafe {
-                if super::gc_debug::looks_poisoned(obj.cast()) {
-                    panic!(
-                        "GC POISON: use-after-free detected!\n\
-                         Object at {:p} (type {}) sits in poisoned (swept) memory.\n\
-                         A live GC root references memory that was reclaimed by lazy sweep.",
-                        obj.as_ptr(),
-                        std::any::type_name::<T>(),
-                    );
-                }
+        if self.debug_checks && obj != NonNull::dangling() {
+            if let Some(newly) = self.debug_mark(obj.cast(), std::any::type_name::<T>(), true) {
+                return newly;
             }
         }
 
@@ -184,7 +313,7 @@ impl CollectorHeapView<'_> {
             self.heap.mark_line(obj);
             self.heap.note_live_bytes(self.heap.allocation_bytes(obj));
 
-            let verify = super::gc_debug::verify_level();
+            let verify = self.verify;
             if verify >= 2 {
                 // Level 2: full header + line consistency check
                 super::gc_verify::verify_marked_object(self.heap, obj);
@@ -212,6 +341,13 @@ impl CollectorHeapView<'_> {
     pub fn mark_raw_bytes(&mut self, ptr: NonNull<u8>) -> bool {
         debug_assert!(ptr != NonNull::dangling());
         debug_assert!(ptr.as_ptr() as usize != usize::MAX);
+        // Poison is checked only by `mark`: here only a forwarding check
+        // has anything to do.
+        if self.forwarding != ForwardingCheck::Off {
+            if let Some(newly) = self.debug_mark(ptr, "raw bytes", false) {
+                return newly;
+            }
+        }
         if !self.heap.is_marked(ptr) {
             self.heap.mark_object(ptr);
             self.heap.mark_lines_for_bytes(ptr);
@@ -227,6 +363,11 @@ impl CollectorHeapView<'_> {
         if let Some(ptr) = arr.allocated_data() {
             debug_assert!(ptr != NonNull::dangling());
             debug_assert!(ptr.as_ptr() as usize != usize::MAX);
+            if self.forwarding != ForwardingCheck::Off {
+                if let Some(newly) = self.debug_mark(ptr.cast(), "array backing", false) {
+                    return newly;
+                }
+            }
             if !self.heap.is_marked(ptr) {
                 self.heap.mark_object(ptr);
                 self.heap.mark_lines_for_bytes(ptr);
@@ -312,6 +453,13 @@ impl CollectorHeapView<'_> {
         // access is safe during stop-the-world collection — no concurrent
         // readers or writers.
         let header = unsafe { &mut *header_ptr };
+
+        // The forwarding check relies on this: an object is evacuated only
+        // after this collection has marked it (eu-oaz72.136).
+        debug_assert!(
+            header.is_marked_with_state(self.heap.mark_state()),
+            "evacuating an object this collection has not marked"
+        );
 
         // Already forwarded — return existing new location
         if header.is_forwarded() {
@@ -430,7 +578,8 @@ fn collect_mark_in_place(
 
     clock.switch(ThreadOccupation::CollectorMark);
 
-    let mut heap_view = CollectorHeapView { heap };
+    // Nothing is evacuated: no live pointer may reach a forwarded header.
+    let mut heap_view = CollectorHeapView::with_forwarding_check(heap, ForwardingCheck::Any);
 
     // clear line maps
     heap_view.reset();
@@ -454,9 +603,9 @@ fn collect_mark_in_place(
     }
 
     // Post-mark verification (level 2 already verified inline during mark)
-    let verify = super::gc_debug::verify_level();
+    let verify = heap_view.heap.gc_verify_level();
     if verify >= 1 {
-        verify_mark_integrity(roots, heap_view.heap);
+        verify_mark_integrity(roots, heap_view.heap, ForwardingCheck::Any);
     }
 
     clock.switch(ThreadOccupation::CollectorSweep);
@@ -555,7 +704,10 @@ pub fn collect_with_evacuation(
     heap.begin_evacuation_record(candidate_bases.clone());
 
     {
-        let mut heap_view = CollectorHeapView { heap: &mut *heap };
+        // Objects this collection forwards are marked first, so only an
+        // unmarked forwarded header is a stale pointer here.
+        let mut heap_view =
+            CollectorHeapView::with_forwarding_check(&mut *heap, ForwardingCheck::Unmarked);
         heap_view.reset();
 
         let mut queue = VecDeque::default();
@@ -587,11 +739,11 @@ pub fn collect_with_evacuation(
         }
     }
 
-    let verify = super::gc_debug::verify_level();
+    let verify = heap.gc_verify_level();
 
     // Checkpoint 1 — Post-mark (level 2 already verified inline during mark)
     if verify >= 1 {
-        verify_mark_integrity(roots, heap);
+        verify_mark_integrity(roots, heap, ForwardingCheck::Unmarked);
     }
 
     // Checkpoint 2 — Post-evacuate
@@ -602,7 +754,7 @@ pub fn collect_with_evacuation(
     // --- Update phase ---
     // Rewrite forwarded pointers in roots and all live heap objects.
     {
-        let heap_view = CollectorHeapView { heap: &mut *heap };
+        let heap_view = CollectorHeapView::new(&mut *heap);
 
         // Update root pointers (MachineState: globals, closure, stack)
         roots.scan_and_update(&heap_view);
@@ -653,6 +805,12 @@ pub fn collect_with_evacuation(
             }
         }
 
+        // Checkpoint 3a — Post-update, before the old copies are freed:
+        // no live pointer may still reach one (eu-oaz72.136).
+        if verify >= 2 {
+            verify_no_forwarded_references(roots, heap_view.heap);
+        }
+
         // No pointer to an old copy remains: free the evacuated lines of
         // the candidate blocks now rather than at the next collection
         // (eu-oaz72.108), then integrate the target blocks.
@@ -669,7 +827,7 @@ pub fn collect_with_evacuation(
 
     // Defer sweep to allocation time (lazy sweeping)
     {
-        let mut heap_view = CollectorHeapView { heap };
+        let mut heap_view = CollectorHeapView::new(heap);
         heap_view.defer_sweep();
     }
     // Large objects are freed eagerly: they have no line map to sweep
@@ -696,10 +854,11 @@ pub fn collect_with_evacuation(
 /// already-marked ones.  After a correct mark phase, the re-traversal
 /// should find zero new objects.
 ///
-/// Enabled by `EU_GC_VERIFY=1`.
-fn verify_mark_integrity(roots: &dyn GcScannable, heap: &mut Heap) {
+/// Enabled by `EU_GC_VERIFY=1`. `forwarding` is the forwarding check of
+/// the mark phase it verifies.
+fn verify_mark_integrity(roots: &dyn GcScannable, heap: &mut Heap, forwarding: ForwardingCheck) {
     let scope = Scope();
-    let mut heap_view = CollectorHeapView { heap };
+    let mut heap_view = CollectorHeapView::with_forwarding_check(heap, forwarding);
     let mut queue = VecDeque::default();
     let mut scan_buffer = Vec::new();
     let mut total = 0usize;
@@ -726,6 +885,33 @@ fn verify_mark_integrity(roots: &dyn GcScannable, heap: &mut Heap) {
             "GC mark integrity violation: {newly_marked} reachable objects were not marked \
              ({total} objects in re-traversal)"
         );
+    }
+}
+
+/// Verify that no live pointer reaches a forwarded header once the update
+/// phase has run (eu-oaz72.136).
+///
+/// Traverses everything reachable from `roots`, through the same `scan`
+/// methods as marking, with a private visited set in place of mark bits
+/// (every object is already marked, so marking alone would visit nothing).
+/// Every pointer `scan` reports passes through `mark`, `mark_raw_bytes` or
+/// `mark_array`, which panic if it still points at an old copy: one that
+/// `scan` reports but `scan_and_update` does not rewrite. Runs before
+/// `release_evacuated_lines`, so the old copies are still intact.
+///
+/// Enabled by `EU_GC_VERIFY=2`.
+fn verify_no_forwarded_references(roots: &dyn GcScannable, heap: &mut Heap) {
+    let scope = Scope();
+    let mut heap_view = CollectorHeapView::forwarding_traversal(heap);
+    let mut queue = VecDeque::default();
+    let mut scan_buffer = Vec::new();
+
+    roots.scan(&scope, &mut heap_view, &mut scan_buffer);
+    queue.extend(scan_buffer.drain(..));
+
+    while let Some(scanptr) = queue.pop_front() {
+        scanptr.get().scan(&scope, &mut heap_view, &mut scan_buffer);
+        queue.extend(scan_buffer.drain(..));
     }
 }
 
@@ -804,6 +990,19 @@ pub mod tests {
         /// An array of heap-pointer children plus a separate body pointer
         /// (mirrors `HeapSyn::Let { bindings, body }`).
         Compound(Array<RefPtr<TestObj>>, RefPtr<TestObj>),
+        /// A child pointer that `scan` reports but `scan_and_update`
+        /// deliberately leaves stale: the missed-update bug the forwarding
+        /// check exists to catch (eu-oaz72.136).
+        Unupdated(RefPtr<TestObj>),
+        /// A pointer array whose `scan_and_update` rewrites the backing
+        /// pointer but not the elements (eu-oaz72.136).
+        StaleElements(Array<RefPtr<TestObj>>),
+        /// A pointer array whose `scan_and_update` rewrites the elements
+        /// but not the backing pointer (eu-oaz72.136).
+        StaleBacking(Array<RefPtr<TestObj>>),
+        /// Raw bytes (as a `HeapString`'s) whose `scan_and_update` leaves
+        /// the backing pointer stale (eu-oaz72.136).
+        StaleBytes(Array<u8>),
     }
 
     impl StgObject for TestObj {}
@@ -817,13 +1016,20 @@ pub mod tests {
         ) {
             match self {
                 TestObj::Leaf(_) => {}
-                TestObj::Ptr(p) => {
+                TestObj::Ptr(p) | TestObj::Unupdated(p) => {
                     if marker.mark(*p) {
                         out.push(ScanPtr::from_non_null(scope, *p));
                     }
                 }
-                TestObj::Many(arr) => {
+                TestObj::Many(arr) | TestObj::StaleElements(arr) | TestObj::StaleBacking(arr) => {
                     scan_ptr_array(arr, scope, marker, out);
+                }
+                TestObj::StaleBytes(bytes) => {
+                    if let Some(ptr) = bytes.allocated_data() {
+                        if marker.mark_raw_bytes(ptr) {
+                            out.push(ScanPtr::from_non_null(scope, ptr.cast::<OpaqueHeapBytes>()));
+                        }
+                    }
                 }
                 TestObj::Compound(arr, body) => {
                     scan_ptr_array(arr, scope, marker, out);
@@ -836,7 +1042,23 @@ pub mod tests {
 
         fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
             match self {
-                TestObj::Leaf(_) => {}
+                TestObj::Leaf(_) | TestObj::Unupdated(_) | TestObj::StaleBytes(_) => {}
+                TestObj::StaleElements(arr) => {
+                    if let Some(old_ptr) = arr.allocated_data() {
+                        if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                            // SAFETY: new_ptr is a valid evacuated copy of
+                            // the same backing allocation.
+                            unsafe { arr.set_backing_ptr(new_ptr.cast()) };
+                        }
+                    }
+                }
+                TestObj::StaleBacking(arr) => {
+                    for p in arr.iter_mut() {
+                        if let Some(new) = heap.forwarded_to(*p) {
+                            *p = new;
+                        }
+                    }
+                }
                 TestObj::Ptr(p) => {
                     if let Some(new) = heap.forwarded_to(*p) {
                         *p = new;
@@ -1043,9 +1265,11 @@ pub mod tests {
             view.alloc(TestObj::Many(view.array(&[]))).unwrap().as_ptr()
         };
 
-        {
-            collect(&mut vec![let_ptr, bif_ptr], &mut heap, &mut clock, true);
-        }
+        // A collection may move its roots: read them back from the root
+        // set rather than reuse the stale locals.
+        let mut roots = vec![let_ptr, bif_ptr];
+        collect(&mut roots, &mut heap, &mut clock, true);
+        let bif_ptr = roots[1];
 
         // Flush lazy sweep so recycled counts are deterministic
         heap.flush_unswept();
@@ -1149,7 +1373,7 @@ pub mod tests {
 
         // Reconstruct via transmute and call scan_and_update (no-op since
         // nothing is forwarded, but verifies the transmute doesn't crash)
-        let heap_view = CollectorHeapView { heap: &mut heap };
+        let heap_view = CollectorHeapView::new(&mut heap);
         unsafe {
             let obj_ref: &mut dyn GcScannable =
                 std::mem::transmute::<[usize; 2], &mut dyn GcScannable>([
@@ -1178,8 +1402,10 @@ pub mod tests {
                 .as_ptr()
         };
 
-        // Do a normal collection first
-        collect(&mut vec![root_ptr], &mut heap, &mut clock, false);
+        // Do a normal collection first; it may move the root
+        let mut roots = vec![root_ptr];
+        collect(&mut roots, &mut heap, &mut clock, false);
+        let root_ptr = roots[0];
         heap.flush_unswept();
 
         let rest_before = heap.rest_block_count();
@@ -1281,6 +1507,175 @@ pub mod tests {
         );
     }
 
+    /// Roots whose `scan` reports every pointer but whose
+    /// `scan_and_update` rewrites none: a root set the update phase misses
+    /// (eu-oaz72.136).
+    struct UnupdatedRoots(Vec<RefPtr<TestObj>>);
+
+    impl GcScannable for UnupdatedRoots {
+        fn scan<'a>(
+            &'a self,
+            scope: &'a dyn CollectorScope,
+            marker: &mut CollectorHeapView<'a>,
+            out: &mut Vec<ScanPtr<'a>>,
+        ) {
+            self.0.scan(scope, marker, out)
+        }
+    }
+
+    /// The forwarding checks pass a correct evacuating collection, and
+    /// the mark-in-place and evacuating collections after it, with
+    /// verification forced on (eu-oaz72.136).
+    #[test]
+    pub fn test_forwarding_check_passes_correct_evacuation() {
+        let mut heap = Heap::new();
+        heap.set_gc_verify_level(2);
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let (mut roots, base) = sparse_head_block(&heap, 32);
+        let holder = MutatorHeapView::new(&heap)
+            .alloc(TestObj::Ptr(roots[1]))
+            .unwrap()
+            .as_ptr();
+        roots.push(holder);
+        let many = {
+            let view = MutatorHeapView::new(&heap);
+            view.alloc(TestObj::Many(view.array(&roots[2..6])))
+                .unwrap()
+                .as_ptr()
+        };
+        roots.push(many);
+
+        collect_with_evacuation(&mut roots, &mut heap, &mut clock, &[0], false);
+        assert!(roots
+            .iter()
+            .all(|r| crate::eval::memory::bump::block_base_of(*r) != base));
+        collect_mark_in_place_for_test(&mut roots, &mut heap, &mut clock);
+        collect_with_evacuation(&mut roots, &mut heap, &mut clock, &[], false);
+        assert_leaves_intact(&roots[..32]);
+    }
+
+    /// A root the update phase misses trips the post-update forwarding
+    /// traversal before the old copies are freed (eu-oaz72.136).
+    #[test]
+    #[should_panic(expected = "GC VERIFY: marking met a forwarded header after the update phase")]
+    pub fn test_forwarding_check_catches_unupdated_root() {
+        let mut heap = Heap::new();
+        heap.set_gc_verify_level(2);
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let (roots, _) = sparse_head_block(&heap, 32);
+        let mut roots = UnupdatedRoots(roots);
+
+        collect_with_evacuation(&mut roots, &mut heap, &mut clock, &[0], false);
+    }
+
+    /// A heap object whose `scan_and_update` misses a child pointer trips
+    /// the post-update forwarding traversal (eu-oaz72.136).
+    #[test]
+    #[should_panic(expected = "GC VERIFY: marking met a forwarded header after the update phase")]
+    pub fn test_forwarding_check_catches_unupdated_heap_pointer() {
+        let mut heap = Heap::new();
+        heap.set_gc_verify_level(2);
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let (leaves, _) = sparse_head_block(&heap, 32);
+        let holder = MutatorHeapView::new(&heap)
+            .alloc(TestObj::Unupdated(leaves[0]))
+            .unwrap()
+            .as_ptr();
+        let mut roots = vec![holder];
+
+        collect_with_evacuation(&mut roots, &mut heap, &mut clock, &[0], false);
+    }
+
+    /// Evacuate the head block holding `holder` and what it points to,
+    /// with verification forced to level 2.
+    fn evacuate_head_block_verified(heap: &mut Heap, holder: TestObj) {
+        heap.set_gc_verify_level(2);
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let holder = MutatorHeapView::new(heap).alloc(holder).unwrap().as_ptr();
+        let mut roots = vec![holder];
+        collect_with_evacuation(&mut roots, heap, &mut clock, &[0], false);
+    }
+
+    /// A stale element of a pointer array is reached only because
+    /// `mark_array` records its backing as visited in the post-update
+    /// traversal (everything is already marked) (eu-oaz72.136).
+    #[test]
+    #[should_panic(expected = "GC VERIFY: marking met a forwarded header after the update phase")]
+    pub fn test_forwarding_check_catches_stale_array_element() {
+        let mut heap = Heap::new();
+        let (leaves, _) = sparse_head_block(&heap, 32);
+        let arr = MutatorHeapView::new(&heap).array(&leaves[..8]);
+        evacuate_head_block_verified(&mut heap, TestObj::StaleElements(arr));
+    }
+
+    /// A stale array backing pointer trips `mark_array`'s check
+    /// (eu-oaz72.136).
+    #[test]
+    #[should_panic(expected = "(type array backing) was evacuated")]
+    pub fn test_forwarding_check_catches_stale_array_backing() {
+        let mut heap = Heap::new();
+        let (leaves, _) = sparse_head_block(&heap, 32);
+        let arr = MutatorHeapView::new(&heap).array(&leaves[..8]);
+        evacuate_head_block_verified(&mut heap, TestObj::StaleBacking(arr));
+    }
+
+    /// A stale raw-bytes backing pointer trips `mark_raw_bytes`'s check
+    /// (eu-oaz72.136).
+    #[test]
+    #[should_panic(expected = "(type raw bytes) was evacuated")]
+    pub fn test_forwarding_check_catches_stale_raw_bytes() {
+        let mut heap = Heap::new();
+        let _ = sparse_head_block(&heap, 32);
+        let bytes = MutatorHeapView::new(&heap).array(&[7u8; 64]);
+        evacuate_head_block_verified(&mut heap, TestObj::StaleBytes(bytes));
+    }
+
+    /// Miss an update with verification off, so the stale roots survive
+    /// the evacuating collection pointing at the freed old copies (whose
+    /// headers are intact: nothing has been allocated since), then turn
+    /// verification on at `level` for the next collection.
+    fn stale_roots_after_unverified_evacuation(heap: &mut Heap, level: u8) -> UnupdatedRoots {
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let (roots, _) = sparse_head_block(heap, 32);
+        let mut roots = UnupdatedRoots(roots);
+        heap.set_gc_verify_level(0);
+        collect_with_evacuation(&mut roots, heap, &mut clock, &[0], false);
+        heap.set_gc_verify_level(level);
+        roots
+    }
+
+    /// A stale pointer that survives into a later mark-in-place
+    /// collection trips the mark-time check (eu-oaz72.136).
+    #[test]
+    #[should_panic(
+        expected = "GC VERIFY: marking met a forwarded header while marking a non-evacuating collection"
+    )]
+    pub fn test_forwarding_check_catches_stale_pointer_in_mark_in_place() {
+        let mut heap = Heap::new();
+        let mut roots = stale_roots_after_unverified_evacuation(&mut heap, 1);
+        let mut clock = Clock::default();
+        collect_mark_in_place_for_test(&mut roots, &mut heap, &mut clock);
+    }
+
+    /// A stale pointer that survives into a later evacuating collection
+    /// trips the mark-time check: the old copy is forwarded but not marked
+    /// by this collection (eu-oaz72.136).
+    #[test]
+    #[should_panic(
+        expected = "GC VERIFY: marking met a forwarded header while marking an evacuating collection"
+    )]
+    pub fn test_forwarding_check_catches_stale_pointer_in_evacuating_mark() {
+        let mut heap = Heap::new();
+        let mut roots = stale_roots_after_unverified_evacuation(&mut heap, 1);
+        let mut clock = Clock::default();
+        collect_with_evacuation(&mut roots, &mut heap, &mut clock, &[], false);
+    }
+
     /// A candidate block's objects that are not evacuated keep their lines
     /// (eu-oaz72.108): here the block is pinned, so `try_evacuate` leaves
     /// every object in place.
@@ -1320,7 +1715,7 @@ pub mod tests {
         let original_addr = atom_ptr.as_ptr() as usize;
 
         // Manually perform evacuation via CollectorHeapView
-        let mut heap_view = CollectorHeapView { heap: &mut heap };
+        let mut heap_view = CollectorHeapView::new(&mut heap);
 
         // Mark the object so evacuation recognises it as live
         heap_view.mark(atom_ptr);
@@ -1372,7 +1767,7 @@ pub mod tests {
             .unwrap()
             .as_ptr();
 
-        let mut heap_view = CollectorHeapView { heap: &mut heap };
+        let mut heap_view = CollectorHeapView::new(&mut heap);
 
         // Mark and evacuate both
         heap_view.mark(atom_ptr);
@@ -1568,7 +1963,7 @@ pub mod tests {
         };
 
         let scope = Scope();
-        let mut heap_view = CollectorHeapView { heap: &mut heap };
+        let mut heap_view = CollectorHeapView::new(&mut heap);
 
         // scan() must mark body and report it as a reachable object to scan.
         heap_view.mark(compound_ptr);
@@ -1650,9 +2045,11 @@ pub mod tests {
             view.alloc(TestObj::Many(view.array(&[]))).unwrap().as_ptr()
         };
 
-        {
-            collect(&mut vec![let_ptr, bif_ptr], &mut heap, &mut clock, true);
-        }
+        // A collection may move its roots: read them back from the root
+        // set rather than reuse the stale locals.
+        let mut roots = vec![let_ptr, bif_ptr];
+        collect(&mut roots, &mut heap, &mut clock, true);
+        let bif_ptr = roots[1];
 
         // Flush lazy sweep so recycled counts are deterministic
         heap.flush_unswept();

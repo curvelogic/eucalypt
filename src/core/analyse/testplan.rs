@@ -234,6 +234,11 @@ impl TestPlan {
         self.targets.iter().any(|(t, _)| t.is_benchmark())
     }
 
+    /// The run this plan belongs to
+    pub fn run_id(&self) -> &str {
+        &self.run_id
+    }
+
     pub fn test_directory(&self) -> &Path {
         self.file().parent().unwrap()
     }
@@ -246,17 +251,25 @@ impl TestPlan {
     }
 
     pub fn evidence_file_name(&self) -> PathBuf {
-        let mut name = self.result_directory();
-        name.push(self.file().file_name().unwrap());
-        name.set_extension("evidence.yaml");
-        name
+        self.result_directory()
+            .join(self.sidecar_name("evidence.yaml"))
     }
 
     pub fn result_file_name(&self) -> PathBuf {
-        let mut name = self.result_directory();
-        name.push(self.file().file_name().unwrap());
-        name.set_extension("report.yaml");
-        name
+        self.result_directory()
+            .join(self.sidecar_name("report.yaml"))
+    }
+
+    /// Name of a result file for this test: the test file's full name
+    /// with `suffix` appended, so `x.eu` and `x.yaml` in one directory
+    /// get distinct files (`x.eu.report.yaml`, `x.yaml.report.yaml`).
+    fn sidecar_name(&self, suffix: &str) -> String {
+        let name = self
+            .file()
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled".to_string());
+        format!("{name}.{suffix}")
     }
 
     pub fn prepare_directory(&self) -> Result<(), std::io::Error> {

@@ -7,6 +7,7 @@ use crate::driver::options::EucalyptOptions;
 use crate::driver::prepare;
 use crate::driver::source::SourceLoader;
 use crate::syntax::input::{Input, Locator};
+use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -20,8 +21,10 @@ use super::statistics::{Statistics, Timings};
 ///
 /// Every input is tested, in the order given: a directory contributes
 /// each test file in it, a file contributes itself. With no inputs the
-/// current directory is tested. All plans run as one suite with one
-/// report, and the exit code is non-zero if any test fails.
+/// current directory is tested. A file reached more than once (named
+/// twice, or named and also inside a directory given) is tested once,
+/// at its first position. All plans run as one suite with one report,
+/// and the exit code is non-zero if any test fails.
 pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
     let inputs = if opt.explicit_inputs().is_empty() {
@@ -32,19 +35,28 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let run_id = Uuid::new_v4().hyphenated().to_string();
 
     let mut searched = vec![];
-    let mut plans = vec![];
+    // Each test file with the options to analyse it under, in order.
+    let mut files: Vec<(PathBuf, EucalyptOptions)> = vec![];
     for input in inputs {
         let path = resolve_input(opt, &input)?;
         searched.push(path.display().to_string());
         if path.is_dir() {
-            plans.extend(directory_plans(opt, &run_id, &path)?);
+            files.extend(directory_files(opt, &path)?);
         } else {
             // Analyse each file on its own, not over the merged core of
             // every input.
-            let file_opts = opt.clone().with_explicit_inputs(vec![input]);
-            plans.push(load_plan(&file_opts, &run_id, &path)?);
+            files.push((path, opt.clone().with_explicit_inputs(vec![input])));
         }
     }
+
+    // Paths are canonical, so a file reached twice compares equal.
+    let mut seen = HashSet::new();
+    files.retain(|(path, _)| seen.insert(path.clone()));
+
+    let plans = files
+        .iter()
+        .map(|(path, file_opts)| load_plan(file_opts, &run_id, path))
+        .collect::<Result<Vec<_>, _>>()?;
 
     if plans.is_empty() {
         return Err(EucalyptError::NoTestsFound(searched.join(", ")));
@@ -65,16 +77,37 @@ pub fn error_test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     error_test_with_binary(&eu_binary, opt)
 }
 
-/// Run an error test using the specified eu binary path.
+/// Run error tests using the specified eu binary path.
 ///
-/// Called from `eu test` (via `error_test`) and from `harness_test.rs`
-/// (which passes `CARGO_BIN_EXE_eu`).
+/// Every input is run as its own error test, in order (the current
+/// directory if there are none); the exit code is non-zero if any
+/// fails. Called from `harness_test.rs`, which passes
+/// `CARGO_BIN_EXE_eu`.
 pub fn error_test_with_binary(
     eu_binary: &Path,
     opt: &EucalyptOptions,
 ) -> Result<i32, EucalyptError> {
     let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
-    let input = opt.explicit_inputs().last().unwrap_or(&cwd);
+    let inputs = if opt.explicit_inputs().is_empty() {
+        vec![cwd]
+    } else {
+        opt.explicit_inputs().to_vec()
+    };
+    let mut exit = 0;
+    for input in &inputs {
+        if single_error_test(eu_binary, opt, input)? != 0 {
+            exit = 1;
+        }
+    }
+    Ok(exit)
+}
+
+/// Run one input as an error test against its `.expect` sidecar.
+fn single_error_test(
+    eu_binary: &Path,
+    opt: &EucalyptOptions,
+    input: &Input,
+) -> Result<i32, EucalyptError> {
     let path = resolve_input(opt, input)?;
 
     let expectation = match ErrorExpectation::load(&path) {
@@ -147,13 +180,14 @@ fn stdout_ok(result: std::io::Result<()>) -> std::io::Result<()> {
 
 /// Resolve an input to a path, to determine whether it is a single
 /// test file or a directory suite.
+///
+/// The path is looked up in each library directory in turn and the
+/// first that holds it wins; a directory that does not hold it is
+/// skipped.
 pub fn resolve_input(opt: &EucalyptOptions, input: &Input) -> Result<PathBuf, EucalyptError> {
     if let Locator::Fs(path) = input.locator() {
         for libdir in opt.lib_path() {
-            let mut filename = libdir.to_path_buf();
-            filename.push(path);
-            filename = filename.canonicalize()?;
-            if filename.exists() {
+            if let Ok(filename) = libdir.join(path).canonicalize() {
                 return Ok(filename);
             }
         }
@@ -205,10 +239,12 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
         lib_path.push(test.test_directory().to_path_buf());
 
         let input = Input::from_str(&test.file().to_string_lossy())?;
+        // `-o` names the report, not the output of the test runs.
         let test_opts = opt
             .clone()
             .with_explicit_inputs(vec![input])
-            .with_lib_path(lib_path.clone());
+            .with_lib_path(lib_path.clone())
+            .without_output();
 
         // Skip tests that require --allow-io when it has not been granted.
         // Failing here would incorrectly penalise CI environments that do
@@ -251,7 +287,7 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
         }
     }
 
-    let report = tester.report(tests)?;
+    let report = tester.report(tests, opt.output().map(PathBuf::as_path))?;
     stdout_ok(writeln!(
         stdout,
         "Report generated at {}",
@@ -265,13 +301,12 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
     Ok(exit)
 }
 
-/// Discover all tests in a directory and run, setting the directory in
-/// the library path for easy resolution of imports
-fn directory_plans(
+/// Discover all test files in a directory, in name order, each with the
+/// options to analyse it under
+fn directory_files(
     opt: &EucalyptOptions,
-    run_id: &str,
     dir: &Path,
-) -> Result<Vec<TestPlan>, EucalyptError> {
+) -> Result<Vec<(PathBuf, EucalyptOptions)>, EucalyptError> {
     stdout_ok(writeln!(
         std::io::stdout(),
         "Gathering tests in {}",
@@ -290,18 +325,16 @@ fn directory_plans(
 
     tests.sort();
 
-    tests
-        .iter()
+    Ok(tests
+        .into_iter()
         .map(|t| {
-            load_plan(
-                &opt.clone()
-                    .with_explicit_inputs(vec![Input::from(Locator::from(t.as_path()))])
-                    .build(),
-                run_id,
-                t,
-            )
+            let file_opts = opt
+                .clone()
+                .with_explicit_inputs(vec![Input::from(Locator::from(t.as_path()))])
+                .build();
+            (t, file_opts)
         })
-        .collect()
+        .collect())
 }
 
 /// A test result
@@ -349,8 +382,9 @@ pub trait Tester {
     /// Read the result summary (PASS/FAIL) from the result.yaml output
     fn summary(&self, plan: &TestPlan) -> Result<String, EucalyptError>;
 
-    /// Aggregate result.yamls and generate output report
-    fn report(&self, plan: &[TestPlan]) -> Result<PathBuf, EucalyptError>;
+    /// Aggregate result.yamls and generate output report, at `output`
+    /// if given
+    fn report(&self, plan: &[TestPlan], output: Option<&Path>) -> Result<PathBuf, EucalyptError>;
 }
 
 pub struct InProcessTester {}
@@ -857,12 +891,27 @@ impl Tester for InProcessTester {
 
     /// Generate a combined HTML test report for all specified tests
     ///
+    /// The report and the combined `results.yaml` go in the tests'
+    /// result directory when every test file is in one directory, and
+    /// otherwise in the current directory's `.result/<run id>/`. An
+    /// `output` path, from `eu test -o`, places the HTML report instead.
+    ///
     /// Return path to generated report
-    fn report(&self, plans: &[TestPlan]) -> Result<PathBuf, EucalyptError> {
-        let test_dir = plans
+    fn report(&self, plans: &[TestPlan], output: Option<&Path>) -> Result<PathBuf, EucalyptError> {
+        let first = plans
             .first()
-            .expect("report requires at least one test plan")
-            .result_directory();
+            .ok_or_else(|| EucalyptError::NoTestsFound(String::new()))?;
+        let test_dir = if plans
+            .iter()
+            .all(|p| p.test_directory() == first.test_directory())
+        {
+            first.result_directory()
+        } else {
+            std::env::current_dir()?
+                .join(".result")
+                .join(first.run_id())
+        };
+        fs::create_dir_all(&test_dir)?;
 
         // first combine all the result.yamls into one
         let inputs: Vec<Input> = plans
@@ -881,8 +930,10 @@ impl Tester for InProcessTester {
         eval::run(&result_opts, loader)?;
 
         // then process using test.eu:generate-report
-        let mut report_file = test_dir;
-        report_file.push("report.html");
+        let report_file = match output {
+            Some(path) => path.to_path_buf(),
+            None => test_dir.join("report.html"),
+        };
         let report_opts = EucalyptOptions::default()
             .with_explicit_inputs(vec![
                 Input::new(Locator::Fs(result_file), None, "yaml"),

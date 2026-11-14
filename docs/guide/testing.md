@@ -130,6 +130,23 @@ Each file is analysed and run on its own, as if tested alone, but the
 run is one suite: one report covers every test, and `eu test` exits
 non-zero if any test in any file fails. If the inputs contain no test
 files at all, `eu test` reports an error and exits non-zero.
+A file reached more than once — named twice, or named and also inside
+a directory given — is tested once, at its first position.
+
+Paths are looked up in the current directory first and then in each
+`-L` directory in turn, so `eu test -L tests solver.eu` finds
+`tests/solver.eu`.
+
+### Where results go
+
+Each test writes its working files (`<file>.evidence.yaml` and
+`<file>.report.yaml`, named from the test file's full name, so `x.eu`
+and `x.yaml` do not collide) to `.result/<run id>/` beside the test
+file. The combined `results.yaml` and the HTML `report.html` go in the
+same directory when every test file is in one directory; when they
+span several, they go in `.result/<run id>/` under the current
+directory. `-o PATH` writes the HTML report to `PATH` instead; the
+combined `results.yaml` stays where it would otherwise be.
 
 ## Other formats
 
