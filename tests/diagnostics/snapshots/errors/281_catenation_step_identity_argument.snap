@@ -1,0 +1,31 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/281_catenation_step_identity_argument
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/281_catenation_step_identity_argument.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/281_catenation_step_identity_argument.eu:5:19
+help-lines: 1
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tried to call a false as a function
+  help: only functions and blocks can be called with arguments
+  ┌─ tests/harness/errors/281_catenation_step_identity_argument.eu:5:19
+  │
+5 │ r: same(xs nth(0) = 1)
+  │                   ^
+  │
+  = note: 'xs nth(0) = 1' was read as 'xs (nth(0) = 1)'; parenthesise the pipeline: '(xs nth(0)) = 1'
+  = note: the value called here is the result of '='
+  = while evaluating (outermost first):
+    - r at 281_catenation_step_identity_argument.eu:5:19
