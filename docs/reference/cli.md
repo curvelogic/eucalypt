@@ -473,6 +473,58 @@ eu --statistics-file stats.json file.eu
 
 The statistics file is written regardless of whether evaluation succeeds.
 
+### Profiling
+
+`-S` gives totals; `--profile` (an `eu run` flag) shows where they go. It
+attributes every machine tick, allocation and allocated byte to the source
+location executing at the time, and prints the costliest locations to
+stderr when the run ends (also when it fails or is interrupted):
+
+```sh
+eu run --profile file.eu
+```
+
+```
+Profile: 920400 ticks, 160058 allocs, 32975520 bytes over 11 locations (top 5 by ticks)
+         ticks      %       allocs      %          bytes      %  location
+        220019  23.9%        20001  12.5%        8960704  27.2%  hot at prog.eu:1:19
+        160002  17.4%        20000  12.5%        5120000  15.5%  hot at prog.eu:1:35
+        160000  17.4%        40000  25.0%        5760000  17.5%  hot at prog.eu:1:29
+        140002  15.2%        20000  12.5%        5120000  15.5%  hot at prog.eu:1:44
+        140002  15.2%        20000  12.5%        5120000  15.5%  hot at prog.eu:1:48
+```
+
+- **ticks** are machine dispatches, the same unit as `-S` "Ticks"; the
+  column sums to the `-S` figure. **allocs** counts closure allocations
+  (the `-S` "Allocs" figure) and **bytes** counts all heap bytes allocated.
+  Each figure is *self* cost: work done by a location's own code, not by the
+  functions it calls.
+- A location is a user-file site (`name at file:line:col`, naming the
+  enclosing function and the expression's position, so one function can
+  have several rows) or a library function (`name (prelude)`, one row per
+  function).
+- Code inside the pre-compiled prelude carries no source information, so
+  its internals appear as one `<prelude internal>` row. Add the global
+  `--source-prelude` flag (`eu --source-prelude run --profile file.eu`) to
+  compile the prelude from source and name them. The two compilations differ
+  slightly, so their tick totals do too.
+- Lazy evaluation charges a thunk to the code that defines it, at the moment
+  something first forces it, so a cheap-looking function can show the cost
+  of data it is the first to touch. The folded stacks show who forced what.
+
+Options:
+
+- `--profile-top N` — rows in the table (default 30).
+- `--profile-folded FILE` — also write folded stacks, one
+  `outer;…;inner count` line per distinct stack, the input format of
+  `flamegraph.pl` and similar tools. A stack is sampled every 1009 ticks and
+  keeps its innermost 64 frames. Implies `--profile`.
+
+Profiling slows a run by about 10% (1.01–1.36× across the benchmark
+suite). With the flag off the engine runs its unprofiled dispatch loops and
+there is no measurable cost. Both figures were measured on a single machine;
+see `docs/superpowers/reports/2026-11-14-eu-oaz72.37-profiler.md`.
+
 ### Heap Limit
 
 By default, `eu` allows the managed heap to grow up to 32 GiB. To cap it at

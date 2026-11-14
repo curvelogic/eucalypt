@@ -39,8 +39,8 @@ use crate::eval::stg::tags::{DataConstructor, Tag};
 use super::program::{read_u32, read_u8};
 use super::{
     decode_program, BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, BytecodeProgram,
-    CodeRef, DecodedProgram, GlobalForm, Op, FORM_LAMBDA, FORM_THUNK, NO_BRANCH, REF_G, REF_L,
-    REF_V,
+    CodeRef, DecodedProgram, GlobalForm, Op, Profiler, FOLDED_STACK_DEPTH, FORM_LAMBDA, FORM_THUNK,
+    NO_BRANCH, REF_G, REF_L, REF_V,
 };
 
 /// Inline-capacity buffers for per-instruction operand decoding. On nearly
@@ -346,6 +346,10 @@ pub struct BcMachineState {
     /// mirrors `MachineState::stripped_meta` in `vm.rs`. A live heap handle,
     /// so it is scanned and pointer-updated with the other roots.
     pub stripped_meta: Option<BcValue>,
+    /// Source-level profiler (`eu run --profile`, eu-oaz72.37). `None` —
+    /// the default — selects the unprofiled dispatch loops, which never
+    /// touch it. Holds no heap pointers, so it is not a GC root.
+    pub profiler: Option<Box<Profiler>>,
 }
 
 impl BcMachineState {
@@ -379,6 +383,7 @@ impl BcMachineState {
             allocs: 0,
             diagnostics: Vec::new(),
             stripped_meta: None,
+            profiler: None,
         }
     }
 
@@ -425,10 +430,19 @@ impl BcMachineState {
     /// still has no force-site annotation of its own, so it keeps borrowing
     /// its environment's.
     pub fn stack_trace(&self, view: MutatorHeapView<'_>) -> Vec<Smid> {
-        let capacity = self.stack.len().min(64);
+        self.stack_trace_capped(view, usize::MAX)
+    }
+
+    /// [`Self::stack_trace`], stopping once `cap` frames are collected (the
+    /// innermost `cap`), so a profiler sample on a deep stack stays cheap.
+    pub fn stack_trace_capped(&self, view: MutatorHeapView<'_>, cap: usize) -> Vec<Smid> {
+        let capacity = self.stack.len().min(64).min(cap);
         let mut trace = Vec::with_capacity(capacity);
         let mut prev = Smid::default();
         for cont in self.stack.iter().rev() {
+            if trace.len() >= cap {
+                break;
+            }
             let smid = match cont {
                 BcContinuation::Branch { annotation, .. }
                 | BcContinuation::BranchPredecoded { annotation, .. }
@@ -459,6 +473,48 @@ impl BcMachineState {
             }
         }
         trace
+    }
+}
+
+/// The source location a profiled tick is charged to: the live annotation
+/// when valid; else the annotation of the closure being evaluated; else that
+/// of its environment (stamped where the closure was created); else the last
+/// valid annotation, so library plumbing with no annotation of its own is
+/// charged to the code that reached it.
+fn profile_location(state: &BcMachineState, heap: &Heap) -> Smid {
+    if state.annotation.is_valid() {
+        return state.annotation;
+    }
+    if let Some(c) = state.current.as_closure() {
+        let ann = c.annotation();
+        if ann.is_valid() {
+            return ann;
+        }
+        let env_ann = MutatorHeapView::new(heap).scoped(c.env()).annotation();
+        if env_ann.is_valid() {
+            return env_ann;
+        }
+    }
+    state.last_annotation
+}
+
+/// Profiled-loop hook (eu-oaz72.37): attribute the dispatch just completed,
+/// and any allocation since the previous record, to the live annotation, and
+/// take a folded-stack sample when one is due. Called only from the
+/// `PROFILE = true` instantiations of the dispatch loops.
+#[inline(never)]
+fn profile_tick(state: &mut BcMachineState, heap: &Heap) {
+    let location = profile_location(state, heap);
+    let allocs = state.allocs;
+    let due = match state.profiler.as_deref_mut() {
+        Some(p) => p.record(location, allocs, heap.bytes_allocated()),
+        None => return,
+    };
+    if due {
+        let trace = state.stack_trace_capped(MutatorHeapView::new(heap), FOLDED_STACK_DEPTH);
+        if let Some(p) = state.profiler.as_deref_mut() {
+            p.sample(location, trace);
+        }
     }
 }
 
@@ -3352,6 +3408,19 @@ impl<'a> BytecodeMachine<'a> {
     /// Run to termination (or `limit` ticks), returning the process exit
     /// code. Polls for GC every 500 ticks (mirrors `Machine::run`, spec §6).
     pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
+        // The profiled loop is a separate instantiation, selected once per
+        // run, so the unprofiled loop carries no profiling code (eu-oaz72.37).
+        if self.state.profiler.is_some() {
+            self.run_loop::<true>(limit)
+        } else {
+            self.run_loop::<false>(limit)
+        }
+    }
+
+    fn run_loop<const PROFILE: bool>(
+        &mut self,
+        limit: Option<usize>,
+    ) -> Result<Option<u8>, ExecutionError> {
         self.clock.switch(ThreadOccupation::Mutator);
         let gc_check_freq: u32 = 500;
         let mut gc_countdown: u32 = gc_check_freq;
@@ -3373,6 +3442,9 @@ impl<'a> BytecodeMachine<'a> {
                 )?;
             }
             self.dispatch()?;
+            if PROFILE {
+                profile_tick(&mut self.state, &self.heap);
+            }
         }
 
         if self.heap.policy_requires_collection() {
@@ -3385,6 +3457,22 @@ impl<'a> BytecodeMachine<'a> {
         }
         self.clock.stop();
         Ok(self.exit_code())
+    }
+
+    /// Turn on source-level profiling (`eu run --profile`, eu-oaz72.37)
+    /// from this point on; `folded` also samples folded stacks. Every later
+    /// `run`/force loop takes its profiled instantiation.
+    pub fn enable_profiler(&mut self, folded: bool) {
+        self.state.profiler = Some(Box::new(Profiler::new(
+            self.state.allocs,
+            self.heap.bytes_allocated(),
+            folded,
+        )));
+    }
+
+    /// The accumulated profile, if profiling was enabled.
+    pub fn profiler(&self) -> Option<&Profiler> {
+        self.state.profiler.as_deref()
     }
 
     /// Machine metrics (ticks, max stack) accumulated across every phase.
@@ -3803,6 +3891,14 @@ impl BytecodeMachine<'_> {
     /// on return. Mirroring `run`'s tail here keeps `-S` clock semantics
     /// identical across the two engines.
     fn drive_whnf(&mut self) -> Result<(), ExecutionError> {
+        if self.state.profiler.is_some() {
+            self.drive_whnf_loop::<true>()
+        } else {
+            self.drive_whnf_loop::<false>()
+        }
+    }
+
+    fn drive_whnf_loop<const PROFILE: bool>(&mut self) -> Result<(), ExecutionError> {
         self.clock.switch(ThreadOccupation::Mutator);
         let gc_check_freq: u32 = 500;
         let mut gc_countdown: u32 = gc_check_freq;
@@ -3818,6 +3914,9 @@ impl BytecodeMachine<'_> {
                 )?;
             }
             self.dispatch()?;
+            if PROFILE {
+                profile_tick(&mut self.state, &self.heap);
+            }
         }
 
         if self.heap.policy_requires_collection() {
@@ -4595,6 +4694,14 @@ impl BcBifContext<'_, '_> {
     /// NullEmitter and the `Bif` dispatch tail) until the sub-evaluation
     /// terminates. Mirrors `evaluate_to_whnf_impl` (`vm.rs`).
     fn drive_to_whnf(&mut self) -> Result<(), ExecutionError> {
+        if self.state.profiler.is_some() {
+            self.drive_to_whnf_loop::<true>()
+        } else {
+            self.drive_to_whnf_loop::<false>()
+        }
+    }
+
+    fn drive_to_whnf_loop<const PROFILE: bool>(&mut self) -> Result<(), ExecutionError> {
         let mut null = NullEmitter;
         let gc_check_freq: u32 = 500;
         let mut gc_countdown: u32 = gc_check_freq;
@@ -4636,6 +4743,9 @@ impl BcBifContext<'_, '_> {
             // HeapSyn's `evaluate_to_whnf_impl` (vm.rs) exactly, keeping the two
             // engines byte-identical.
             self.run_subrun_capture_lifecycle()?;
+            if PROFILE {
+                profile_tick(self.state, self.heap);
+            }
         }
         Ok(())
     }
