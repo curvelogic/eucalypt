@@ -259,7 +259,8 @@ fn widen_over_parens(source: &str, mut start: usize, mut end: usize) -> Option<(
 }
 
 /// `text` on one line as the lexer reads it: comments are dropped and each
-/// run of whitespace, or whitespace and comments, becomes a single space
+/// run of whitespace, or whitespace and comments, becomes a single space,
+/// including one at the start
 /// (eu-oaz72.133). `text` runs between atom boundaries, so it never starts
 /// or ends inside a token.
 fn one_line(text: &str) -> String {
@@ -276,7 +277,9 @@ fn one_line(text: &str) -> String {
         let Some(token) = text.get(span.start().to_usize()..span.end().to_usize()) else {
             continue;
         };
-        if gap && !out.is_empty() {
+        // A leading gap is kept too: the rest of a step, ` = 1`, starts
+        // with one.
+        if gap {
             out.push(' ');
         }
         gap = false;

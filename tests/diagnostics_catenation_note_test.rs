@@ -280,6 +280,20 @@ fn comment_not_quoted() {
         "xs # the list\n  nth(0) = 1",
         &parse_note("xs nth(0) = 1", "xs (nth(0) = 1)", "(xs nth(0)) = 1"),
     );
+    // A comment or `#` after the step's head keeps the space before the
+    // operator.
+    assert_note(
+        "xs nth(0) # c\n  = 1",
+        &parse_note("xs nth(0) = 1", "xs (nth(0) = 1)", "(xs nth(0)) = 1"),
+    );
+    assert_note(
+        "xs nth(0) = \"#\"",
+        &parse_note(
+            "xs nth(0) = \"#\"",
+            "xs (nth(0) = \"#\")",
+            "(xs nth(0)) = \"#\"",
+        ),
+    );
     // `#` inside a string is not a comment.
     assert_note(
         "xs \"#\" nth(0) = 1",

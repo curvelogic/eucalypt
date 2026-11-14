@@ -26,7 +26,7 @@ pub type Atom = (RcExpr, Written);
 /// What an atom, as written, can evaluate to (eu-oaz72.133).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shape {
-    /// A literal (number, string, symbol, list or block): never a function.
+    /// A literal (number, string, symbol or list): never a function.
     Literal,
     /// A plain name: taken to be data.
     Name,

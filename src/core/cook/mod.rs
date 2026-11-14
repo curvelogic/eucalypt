@@ -122,7 +122,8 @@ fn written(expr: &RcExpr) -> shunt::Written {
     };
     // Only a literal, or a plain name, is taken to be data (eu-oaz72.133).
     let shape = match &*expr.inner {
-        Expr::Literal(..) | Expr::List(..) | Expr::Block(..) => shunt::Shape::Literal,
+        // A block can be called, so it is not taken to be data.
+        Expr::Literal(..) | Expr::List(..) => shunt::Shape::Literal,
         Expr::Name(..) | Expr::Var(..) => shunt::Shape::Name,
         _ => shunt::Shape::Other,
     };
