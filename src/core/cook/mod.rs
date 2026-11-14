@@ -93,24 +93,20 @@ pub struct Cooker<'smap> {
 /// `Expr::Operator(_, _, _, body)` where `body` is `ErrPseudoCat`.
 /// This splits the atom list at those operators, discarding the
 /// catenation markers themselves.
-/// Each atom's extent (see `shunt::shunt`) is split with it.
-fn split_at_cat_operators(
-    atoms: &[RcExpr],
-    extents: &[shunt::Written],
-) -> Vec<(Vec<RcExpr>, Vec<shunt::Written>)> {
-    let mut groups: Vec<(Vec<RcExpr>, Vec<shunt::Written>)> = Vec::new();
-    let mut current: (Vec<RcExpr>, Vec<shunt::Written>) = (Vec::new(), Vec::new());
-    for (atom, extent) in atoms.iter().zip(extents) {
-        if is_cat_operator(atom) {
-            if !current.0.is_empty() {
+/// Each atom travels with its extent (see `shunt::shunt`).
+fn split_at_cat_operators(atoms: Vec<shunt::Atom>) -> Vec<Vec<shunt::Atom>> {
+    let mut groups: Vec<Vec<shunt::Atom>> = Vec::new();
+    let mut current: Vec<shunt::Atom> = Vec::new();
+    for atom in atoms {
+        if is_cat_operator(&atom.0) {
+            if !current.is_empty() {
                 groups.push(std::mem::take(&mut current));
             }
         } else {
-            current.0.push(atom.clone());
-            current.1.push(*extent);
+            current.push(atom);
         }
     }
-    if !current.0.is_empty() {
+    if !current.is_empty() {
         groups.push(current);
     }
     groups
@@ -119,19 +115,21 @@ fn split_at_cat_operators(
 /// An atom as written (see `shunt::shunt`). `HasSmid` gives an anaphor no
 /// location, but each anaphor carries the `Smid` of its token.
 fn written(expr: &RcExpr) -> shunt::Written {
-    match &*expr.inner {
-        Expr::ExprAnaphor(s, _) => shunt::Written {
-            smid: *s,
-            anaphor: true,
-        },
-        Expr::BlockAnaphor(s, _) => shunt::Written {
-            smid: *s,
-            anaphor: false,
-        },
-        _ => shunt::Written {
-            smid: expr.smid(),
-            anaphor: false,
-        },
+    let (smid, anaphor) = match &*expr.inner {
+        Expr::ExprAnaphor(s, _) => (*s, true),
+        Expr::BlockAnaphor(s, _) => (*s, false),
+        _ => (expr.smid(), false),
+    };
+    // Only a literal, or a plain name, is taken to be data (eu-oaz72.133).
+    let shape = match &*expr.inner {
+        Expr::Literal(..) | Expr::List(..) | Expr::Block(..) => shunt::Shape::Literal,
+        Expr::Name(..) | Expr::Var(..) => shunt::Shape::Name,
+        _ => shunt::Shape::Other,
+    };
+    shunt::Written {
+        smid,
+        anaphor,
+        shape,
     }
 }
 
@@ -234,31 +232,29 @@ impl<'smap> Cooker<'smap> {
             self.in_expr_anaphor_scope = true;
         }
 
-        let atoms: Vec<_> = {
+        // Each atom is cooked with its extent, its `Smid` as written
+        // before cooking (eu-oaz72.29): see `shunt::shunt`.
+        let atoms: Vec<shunt::Atom> = {
             let old_in_expr_anaphor_scope = self.in_expr_anaphor_scope;
             let subcooked = filled
                 .iter()
-                .map(|e| self.cook_(e.clone()))
-                .collect::<Result<Vec<RcExpr>, CoreError>>();
+                .map(|e| Ok((self.cook_(e.clone())?, written(e))))
+                .collect::<Result<Vec<shunt::Atom>, CoreError>>();
             self.in_expr_anaphor_scope = old_in_expr_anaphor_scope;
             subcooked?
         };
 
-        // Each atom's extent is its `Smid` as written, before cooking
-        // (eu-oaz72.29): see `shunt::shunt`.
-        let extents: Vec<shunt::Written> = filled.iter().map(written).collect();
-
         let cooked = if bracket {
             // Split at catenation operators, shunt each group, collect as List
-            let groups = split_at_cat_operators(&atoms, &extents);
+            let groups = split_at_cat_operators(atoms);
             let mut items = Vec::new();
-            for (group, group_extents) in groups {
-                items.push(shunt::shunt(group, group_extents, self.source_map)?);
+            for group in groups {
+                items.push(shunt::shunt(group, self.source_map)?);
             }
             let smid = exprs.first().map(|e| e.smid()).unwrap_or_default();
             RcExpr::from(Expr::List(smid, items))
         } else {
-            shunt::shunt(atoms, extents, self.source_map)?
+            shunt::shunt(atoms, self.source_map)?
         };
 
         if wrap_lambda {

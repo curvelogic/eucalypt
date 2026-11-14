@@ -264,8 +264,13 @@ fn fresh_name(base: &str, avoid: &mut HashSet<String>) -> String {
 /// which is what a diagnostic should blame.  Re-tag so that later passes
 /// (the STG compiler in particular) annotate the code with the user's
 /// location.
-fn retag_call_site(reduced: RcExpr, call_smid: Smid) -> RcExpr {
-    if call_smid.is_valid() {
+///
+/// Only an application written in the callee's `body` is re-tagged. When
+/// the body is a bare parameter (`f(a): a`) the reduced expression is the
+/// argument itself, already at the user's own location, and re-tagging it
+/// would move an error raised there to the call (eu-oaz72.133).
+fn retag_call_site(body: &RcExpr, reduced: RcExpr, call_smid: Smid) -> RcExpr {
+    if call_smid.is_valid() && matches!(&*body.inner, Expr::App(..)) {
         if let Expr::App(_, rf, rargs) = &*reduced.inner {
             return RcExpr::from(Expr::App(call_smid, rf.clone(), rargs.clone()));
         }
@@ -376,7 +381,7 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                         }
 
                         let reduced =
-                            retag_call_site(substs_depth(&body, &mappings, 0)?, *call_smid);
+                            retag_call_site(&body, substs_depth(&body, &mappings, 0)?, *call_smid);
 
                         if shared.is_empty() {
                             Ok(reduced)

@@ -258,13 +258,31 @@ fn widen_over_parens(source: &str, mut start: usize, mut end: usize) -> Option<(
     }
 }
 
-/// `text` on one line: each run of whitespace holding a line break becomes
-/// a single space.
+/// `text` on one line as the lexer reads it: comments are dropped and each
+/// run of whitespace, or whitespace and comments, becomes a single space
+/// (eu-oaz72.133). `text` runs between atom boundaries, so it never starts
+/// or ends inside a token.
 fn one_line(text: &str) -> String {
-    if !text.contains('\n') {
+    if !text.contains('\n') && !text.contains('#') {
         return text.to_string();
     }
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    let mut out = String::with_capacity(text.len());
+    let mut gap = false;
+    for (kind, span) in Lexer::from_text(text) {
+        if matches!(kind, WHITESPACE | COMMENT) {
+            gap = true;
+            continue;
+        }
+        let Some(token) = text.get(span.start().to_usize()..span.end().to_usize()) else {
+            continue;
+        };
+        if gap && !out.is_empty() {
+            out.push(' ');
+        }
+        gap = false;
+        out.push_str(token);
+    }
+    out
 }
 
 #[cfg(test)]

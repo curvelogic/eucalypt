@@ -10,18 +10,29 @@ use crate::core::expr::*;
 /// mint whole-call spans for the applications formed here
 /// (see [`Shunter::form_apply`]).
 ///
-/// `extents` holds, for each of `exprs`, the atom as it was written,
-/// before it was cooked: a parenthesised group cooks to an application
-/// stamped with its operator's `Smid`, but as written it is the whole
-/// group. Extents are used only to record catenations whose
+/// Each atom carries, with its cooked expression, the atom as it was
+/// written, before it was cooked: a parenthesised group cooks to an
+/// application stamped with its operator's `Smid`, but as written it is
+/// the whole group. Extents are used only to record catenations whose
 /// function operand is an unparenthesised operator expression
 /// (eu-oaz72.29).
-pub fn shunt(
-    exprs: Vec<RcExpr>,
-    extents: Vec<Written>,
-    source_map: &mut SourceMap,
-) -> Result<RcExpr, CoreError> {
-    Shunter::new(exprs, extents, source_map).shunt()
+pub fn shunt(atoms: Vec<Atom>, source_map: &mut SourceMap) -> Result<RcExpr, CoreError> {
+    Shunter::new(atoms, source_map).shunt()
+}
+
+/// A cooked atom with its extent as written.
+pub type Atom = (RcExpr, Written);
+
+/// What an atom, as written, can evaluate to (eu-oaz72.133).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shape {
+    /// A literal (number, string, symbol, list or block): never a function.
+    Literal,
+    /// A plain name: taken to be data.
+    Name,
+    /// Anything else, a call, an operator expression or an anaphor, which
+    /// may be a function: `nth(0)` is a partial application.
+    Other,
 }
 
 /// An atom as it was written, before cooking (eu-oaz72.29).
@@ -31,6 +42,8 @@ pub struct Written {
     pub smid: Smid,
     /// Whether the atom is an expression anaphor (`_`, `_0`, …).
     pub anaphor: bool,
+    /// What the atom can evaluate to.
+    pub shape: Shape,
 }
 
 /// The source extent of an expression on the shunter's output stack, as
@@ -57,7 +70,23 @@ struct Extent {
     /// The infix applications along the leftmost spine, outermost last:
     /// in `nth(0) + 1 = 2`, the `+` then the `=`. Each receives a value
     /// computed from the leftmost operand. Empty unless `infix`.
+    ///
+    /// The spine stops at the first application whose right operand is
+    /// not a literal or a plain name (eu-oaz72.133): in `a + nth(0) = 1`
+    /// the function `+` receives may be its right operand's, and then
+    /// parenthesising the pipeline fixes nothing. Every application above
+    /// that one may have received it too.
     spine: Vec<Smid>,
+    /// Whether the spine may be extended: no application on it took a
+    /// right operand that may be a function.
+    spine_open: bool,
+    /// The shape of the leftmost operand when that is a single atom;
+    /// `Other` otherwise. Only `Literal` matters: a literal head cannot be
+    /// the step's function, so no parenthesisation is a fix.
+    head_shape: Shape,
+    /// The shape of the expression when it is a single atom; `Other`
+    /// otherwise.
+    shape: Shape,
 }
 
 impl Written {
@@ -65,6 +94,7 @@ impl Written {
         Written {
             smid,
             anaphor: false,
+            shape: Shape::Other,
         }
     }
 }
@@ -82,6 +112,9 @@ impl Extent {
             anaphor: written.anaphor,
             head_anaphor: written.anaphor,
             spine: vec![],
+            spine_open: true,
+            head_shape: written.shape,
+            shape: written.shape,
         }
     }
 
@@ -95,6 +128,9 @@ impl Extent {
             anaphor: left.anaphor || right.anaphor,
             head_anaphor: left.anaphor || right.anaphor,
             spine: vec![],
+            spine_open: true,
+            head_shape: Shape::Other,
+            shape: Shape::Other,
         }
     }
 }
@@ -111,13 +147,7 @@ struct Shunter<'smap> {
 }
 
 impl<'smap> Shunter<'smap> {
-    pub fn new(
-        exprs: Vec<RcExpr>,
-        extents: Vec<Written>,
-        source_map: &'smap mut SourceMap,
-    ) -> Self {
-        debug_assert_eq!(exprs.len(), extents.len());
-        let mut input: Vec<(RcExpr, Written)> = exprs.into_iter().zip(extents).collect();
+    pub fn new(mut input: Vec<Atom>, source_map: &'smap mut SourceMap) -> Self {
         input.reverse();
         Shunter {
             input,
@@ -164,10 +194,7 @@ impl<'smap> Shunter<'smap> {
     /// Push back a filler synthesised by `fill`: it was not written, so
     /// its extent is its own `Smid`.
     fn push_back(&mut self, expr: RcExpr) {
-        let written = Written {
-            smid: expr.smid(),
-            anaphor: false,
-        };
+        let written = Written::operator(expr.smid());
         self.input.push((expr, written));
     }
 
@@ -304,7 +331,10 @@ impl<'smap> Shunter<'smap> {
     fn apply_two(&mut self, expr: RcExpr) {
         if let Some(((right, rext), (left, lext))) = self.pop_two_output() {
             let is_infix = !(expr.is_pseudocall() || expr.is_pseudodot() || expr.is_pseudocat());
-            if expr.is_pseudocat() && rext.infix && !lext.infix {
+            // A literal head cannot be the step's function (eu-oaz72.133):
+            // `xs 1 + nth(0) = 1` would be no better parenthesised.
+            if expr.is_pseudocat() && rext.infix && !lext.infix && rext.head_shape != Shape::Literal
+            {
                 // `x a op b`: the operator expression `a op b`, written
                 // without parentheses, became the pipeline step applied to
                 // `x` (eu-oaz72.29). The catenation's application is stamped
@@ -330,8 +360,23 @@ impl<'smap> Shunter<'smap> {
             }
             let applied = self.form_apply(expr, &[left, right]);
             let extent = if is_infix {
-                let mut spine = if lext.infix { lext.spine } else { vec![] };
-                spine.push(applied.smid());
+                let (mut spine, open) = if lext.infix {
+                    (lext.spine, lext.spine_open)
+                } else {
+                    (vec![], true)
+                };
+                // The function may come from a right operand that is not
+                // data (eu-oaz72.133): stop the spine here.
+                let data = rext.shape != Shape::Other;
+                let spine_open = open && data;
+                if spine_open {
+                    spine.push(applied.smid());
+                }
+                let head_shape = if lext.infix {
+                    lext.head_shape
+                } else {
+                    lext.shape
+                };
                 Extent {
                     first: lext.first,
                     last: rext.last,
@@ -340,6 +385,9 @@ impl<'smap> Shunter<'smap> {
                     anaphor: lext.anaphor || rext.anaphor,
                     head_anaphor: lext.head_anaphor,
                     spine,
+                    spine_open,
+                    head_shape,
+                    shape: Shape::Other,
                 }
             } else {
                 Extent::span(&lext, &rext)

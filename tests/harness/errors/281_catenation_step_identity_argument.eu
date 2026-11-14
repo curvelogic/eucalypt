@@ -1,0 +1,5 @@
+xs: [1, 2, 3]
+same(a): a
+
+` "`same(xs nth(0) = 1)`: `same` inlines to its argument, which keeps its own location at `=`, so the error is raised there and the parse is stated (eu-oaz72.133)"
+r: same(xs nth(0) = 1)
