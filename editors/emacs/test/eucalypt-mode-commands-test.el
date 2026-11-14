@@ -35,7 +35,7 @@ log=\"$EUCALYPT_STUB_LOG\"
   if [ \"$1\" = eu@- ]; then printf 'stdin=%s\\n' \"$(tr '\\n' '|')\"; fi
   printf 'end\\n'; } >> \"$log\"
 if [ -n \"$NO_COLOR\" ]; then red=''; off=''; else red=$(printf '\\033[31m'); off=$(printf '\\033[0m'); fi
-case \"$*\" in *slow*) sleep 1; printf 'late\\n'; exit 0 ;; esac
+case \"$*\" in *slow*) sleep 1; printf 'late\\n'; printf 'late\\n' >&2; exit 0 ;; esac
 case \"$1\" in
   list-targets)
     if [ \"$2\" = broken.eu ]; then printf 'boom\\n' >&2; exit 1; fi
@@ -200,7 +200,8 @@ Fails, rather than prompting, if the location does not resolve to a file."
       (with-current-buffer errors
         (should (derived-mode-p 'eucalypt-compilation-mode))
         (should-not (string-search "\e[" (buffer-string)))
-        (should (string-search "unresolved variable" (buffer-string))))
+        (should (string-search "unresolved variable" (buffer-string)))
+        (should-not (string-search "Process" (buffer-string))))
       (should (equal (eucalypt-test--goto-first-error errors)
                      (cons (expand-file-name "m.eu" dir) 2))))))
 
@@ -252,7 +253,10 @@ Fails, rather than prompting, if the location does not resolve to a file."
         (should-not (process-live-p slow))))
     (sleep-for 1.2)
     (with-current-buffer eucalypt--command-output-buffer
-      (should (equal (buffer-string) "a: 1\n")))))
+      (should (equal (buffer-string) "a: 1\n")))
+    (with-current-buffer eucalypt--command-error-buffer
+      (should-not (string-search "late" (buffer-string)))
+      (should-not (string-search "Process" (buffer-string))))))
 
 (ert-deftest eucalypt-test-evaluate ()
   "`eucalypt-evaluate' passes `-e EXPR' after the file."

@@ -567,6 +567,10 @@ first.  DIRECTORY may be remote.  Returns the process."
   (when (process-live-p eucalypt--last-process)
     (set-process-sentinel eucalypt--last-process #'ignore)
     (delete-process eucalypt--last-process))
+  ;; Its standard-error pipe too, so it writes nothing more.
+  (when-let ((buf (get-buffer eucalypt--command-error-buffer))
+             (pipe (get-buffer-process buf)))
+    (delete-process pipe))
   (let* ((default-directory directory)
          (exe (eucalypt--executable))
          (format (or format (eucalypt--infer-output-format-from-args args)))
@@ -600,6 +604,10 @@ first.  DIRECTORY may be remote.  Returns the process."
                             "finished"
                           (format "exited with status %d"
                                   (process-exit-status proc))))))))
+    ;; The standard-error pipe's default sentinel would write
+    ;; "Process eu stderr finished" into the errors buffer.
+    (when-let ((pipe (get-buffer-process err)))
+      (set-process-sentinel pipe #'ignore))
     ;; Inputs come from the command line, never from standard input.
     (process-send-eof eucalypt--last-process)
     eucalypt--last-process))
@@ -645,7 +653,7 @@ Each entry is (NAME . PLIST), with :format and :doc keys."
     (unwind-protect
         (with-temp-buffer
           (let ((status (process-file (eucalypt--executable) nil
-                                      (list t (file-local-name errfile)) nil
+                                      (list t errfile) nil
                                       "list-targets"
                                       (file-name-nondirectory file))))
             (unless (eql status 0)
