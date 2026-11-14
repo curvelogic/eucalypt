@@ -1180,10 +1180,8 @@ pass — the ⌈[x]⌉/⌊[x]⌋ ceiling/floor notation declared in lib/prelude.
         (identifier)))))
 
 ================================================================================
-Row-polymorphic type-DSL string interpolation content (eu-2sa6.17
-prelude-parsing pass — audit report §2.7: `..r` isn't an identifier or
-dotted path, so interpolation_content had to be broadened from a narrow
-identifier/dotted-reference/number choice to a general soup)
+Row-polymorphic type-DSL s-string is one opaque literal (eu-ioz21.7: as in
+the Rowan lexer's S_STRING, s"..." is not interpolated, so `{..}` is text)
 ================================================================================
 
 x: s"string → IO({..})"
@@ -1195,16 +1193,9 @@ x: s"string → IO({..})"
     (declaration_head
       (identifier))
     (soup
-      (name
-        (identifier))
       (literal
-        (string
-          (string_content)
-          (interpolation
-            content: (interpolation_content
-              (soup
-                (operator))))
-          (string_content))))))
+        (s_string
+          (s_string_content))))))
 
 ================================================================================
 Comma-separated interpolation content (eu-2sa6.17 prelude-parsing pass —
@@ -1233,10 +1224,8 @@ x: "{a, b}"
                   (identifier))))))))))
 
 ================================================================================
-Doubly-nested braces inside string interpolation (eu-2sa6.17 prelude-parsing
-pass — audit report §2.7: format_spec's flat /:[^}]+/ regex stopped at the
-first '}' it saw, which is wrong as soon as the spec contains its own
-nested `{...}` pair; made brace-aware via recursion instead)
+Doubly-nested braces in a type-DSL s-string are text (eu-ioz21.7: the
+s-string is opaque, so `: string` is not a symbol or a format spec)
 ================================================================================
 
 x: s"{ users: [{ name: string }] }"
@@ -1248,16 +1237,9 @@ x: s"{ users: [{ name: string }] }"
     (declaration_head
       (identifier))
     (soup
-      (name
-        (identifier))
       (literal
-        (string
-          (interpolation
-            content: (interpolation_content
-              (soup
-                (name
-                  (identifier))))
-            (format_spec)))))))
+        (s_string
+          (s_string_content))))))
 
 ================================================================================
 Multi-head cons destructuring pattern (eu-2sa6.17 prelude-parsing pass —
@@ -1449,3 +1431,154 @@ f: (• + 1)
           (operator)
           (literal
             (number)))))))
+
+================================================================================
+Symbol name must follow its colon (eu-ioz21.7: `x :y` is a symbol, `: y`
+is not; a juxtaposed list-parameter head after a value starts a new
+declaration rather than becoming the soup `range[lo, hi] :hi`)
+================================================================================
+
+a: x :y
+range[lo, hi]: hi - lo
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (literal
+        (symbol
+          (identifier)))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (identifier)
+        (identifier)))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Juxtaposed block-parameter head after a value (eu-ioz21.7: without the
+scanner's `name{...}:` lookahead, `m{x: px}` joins the previous soup and
+`: px` becomes a symbol)
+================================================================================
+
+a: x
+m{x: px}: px
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (block_param
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (name
+              (identifier))))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Format spec is not a symbol (eu-ioz21.7: {x:fmt} and {y: number} are format
+specs, as in the Rowan string lexer)
+================================================================================
+
+a: "{x:badfmt} {y: number}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (string
+          (interpolation
+            content: (interpolation_content
+              (soup
+                (name
+                  (identifier))))
+            (format_spec
+              (format_spec_content)))
+          (string_content)
+          (interpolation
+            content: (interpolation_content
+              (soup
+                (name
+                  (identifier))))
+            (format_spec
+              (format_spec_content))))))))
+
+================================================================================
+Bracket declaration head with a cons pattern (eu-ioz21.7:
+tests/harness/097_idiot_brackets.eu)
+================================================================================
+
+a: x
+⌈ [f: lists] ⌉: lists
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (cons_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Bracket declaration head after a value (eu-ioz21.7)
+================================================================================
+
+a: x
+⟦ y ⟧: y
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (soup
+          (name
+            (identifier)))))
+    (soup
+      (name
+        (identifier)))))
