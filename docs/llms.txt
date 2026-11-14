@@ -42,6 +42,7 @@ evaluation and purely functional semantics.
 - [Monads and the monad() Utility](https://curvelogic.github.io/eucalypt/guide/monads.html): Built-in `io`/`random` monads, monadic blocks and bracket pairs, and building custom monads with `monad()`
 - [The State Monad](https://curvelogic.github.io/eucalypt/guide/state-monad.html): Threading block-valued state through a sequence of operations with the optional `state.eu` library
 - [Type Checking](https://curvelogic.github.io/eucalypt/guide/type-checking.html): The always-on gradual type checker, annotation syntax, `eu check`, `--strict`, and what it does and doesn't catch
+- [Advent of Code](https://curvelogic.github.io/eucalypt/guide/advent-of-code.html): A cookbook for puzzle solving: per-day targets and tests, parsing input, grids, BFS and Dijkstra with a dict as priority queue, memoisation and dynamic programming, loops and cycle detection, intervals, debugging and performance
 - [Advanced Topics](https://curvelogic.github.io/eucalypt/guide/advanced-topics.html): Metadata system, sets, deep find/query with wildcards, type predicates, sorting, grouping, format specifiers, and version assertions
 
 ## Reference

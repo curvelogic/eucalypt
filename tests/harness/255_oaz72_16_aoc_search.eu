@@ -1,0 +1,102 @@
+#!/usr/bin/env eu
+# eu-oaz72.16: the breadth-first search and Dijkstra templates of the
+# Advent of Code cookbook (docs/guide/advent-of-code.md), copied from it,
+# on grids small enough to run in the harness. The Dijkstra queue is a dict
+# keyed by [priority, seq] (eu-oaz72.22). Expected values were computed
+# independently (a Python BFS and a heapq Dijkstra).
+#
+# RESULT is computed from every check, so a wrong distance fails the test.
+
+` "a distance longer than any path"
+far: 1000000000
+
+` "the fewest steps from `start` to a state satisfying `goal?`, or null if there is none"
+bfs(moves, goal?, start): {
+  ` "the states one step beyond `ring` not yet in `seen`"
+  beyond(ring, seen): ring mapcat(moves) remove(∈ seen) set.of set.to-list
+
+  ` "search from `ring`, at distance `d`, having seen `seen`"
+  go(d, ring, seen): cond[
+    ring nil? => null,
+    ring any(goal?) => d,
+    { next: beyond(ring, seen) }.(go(d + 1, next, seen set.union(set.of(next))))
+  ]
+}.(go(0, [start], set.of[start]))
+
+` "the least distance from `start` to a state satisfying `goal?`, where `moves(s)` lists the `[cost, next]` steps out of state `s`; null if there is none"
+dijkstra(moves, goal?, start): {
+  ` "true if reaching state `s` at distance `d` beats the best found so far"
+  better?(dist, [d, s]): d < (dist dict.get-or(s, far))
+
+  ` "queue state `s` at distance `d` under number `seq`, and record its distance"
+  push([queue, seq, dist], [d, s]): [queue dict.assoc([d, seq], s), seq + 1, dist dict.assoc(s, d)]
+
+  ` "a step of cost `c` to state `s`, taken from distance `d`"
+  from(d, [c, s]): [d + c, s]
+
+  ` "take the nearest queued state and continue from it"
+  search([queue, seq, dist]): queue dict.empty? then(null, visit(seq, dist, queue dict.pop-min))
+
+  ` "visit state `s` at distance `d`, with `rest` still queued, skipping a stale entry"
+  visit(seq, dist, [[d, _], s, rest]): cond[
+    goal?(s) => d,
+    d > (dist dict.get(s)) => search([rest, seq, dist]),
+    search(s moves map(from(d)) filter(better?(dist)) foldl(push, [rest, seq, dist]))
+  ]
+}.(search(push([dict.empty, 0, dict.empty], [0, start])))
+
+# --- BFS on a maze -----------------------------------------------------------
+
+` :suppress
+maze: ["S..#....", "#.##.##.", "...#..#.", ".#...#E."]
+
+` :suppress
+grid: { w: maze head str.len  h: maze count  cells: maze mapcat(str.letters) vec.of }
+
+` "the character at `[x, y]`, or a wall off the grid"
+at([x, y]): (x >= 0 ∧ x < grid.w ∧ y >= 0 ∧ y < grid.h) then(grid.cells vec.nth(y * grid.w + x), "#")
+
+` "true if cell `c` is not a wall"
+open?(c): at(c) != "#"
+
+` "the open cells next to `[x, y]`"
+maze-moves([x, y]): [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] filter(open?)
+
+bfs-steps: bfs(maze-moves, = [6, 3], [0, 0])
+bfs-start: bfs(maze-moves, = [0, 0], [0, 0])
+bfs-walled: bfs(maze-moves, = [3, 0], [0, 0])
+
+# --- Dijkstra on a weighted grid -------------------------------------------
+
+` "the side of the grid"
+n: 12
+
+` "true if the cell `[x, y]` is on the grid"
+inside?([x, y]): x >= 0 ∧ x < n ∧ y >= 0 ∧ y < n
+
+` "the cells next to `[x, y]` on the grid"
+around([x, y]): [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] filter(inside?)
+
+` "the weight of the cell `[x, y]`"
+weight([x, y]): (7 * x + 13 * y + x * y) % 9 + 1
+
+` "a step into cell `c`, costing its weight"
+costed(c): [weight(c), c]
+
+` "a step into cell `c`, costing 1"
+unit(c): [1, c]
+
+weighted: dijkstra(around ; map(costed), = [n - 1, n - 1], [0, 0])
+# Every step costs 1, so many queued entries share a priority; [d, seq]
+# keys keep them apart.
+uniform: dijkstra(around ; map(unit), = [n - 1, n - 1], [0, 0])
+unreachable: dijkstra(around ; map(unit), = [n, n], [0, 0])
+
+RESULT: [
+  bfs-steps = 17,
+  bfs-start = 0,
+  bfs-walled null?,
+  weighted = 90,
+  uniform = 22,
+  unreachable null?
+] all-true? then(:PASS, :FAIL)

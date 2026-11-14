@@ -3,6 +3,9 @@
 A dense single-page reference covering all syntax forms, operators,
 common patterns, and key prelude functions.
 
+For worked recipes — parsing puzzle input, grids, search, memoisation and
+loops — see the [Advent of Code cookbook](../guide/advent-of-code.md).
+
 ## Primitives
 
 | Type | Syntax | Examples |
