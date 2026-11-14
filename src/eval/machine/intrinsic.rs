@@ -60,6 +60,16 @@ impl AbiClosure {
             AbiClosure::Byte(BcValue::Native(_)) => 0,
         }
     }
+
+    /// The closure's own source annotation (eu-oaz72.121): where the value
+    /// was written, as opposed to the machine's current register. Invalid
+    /// for a bare native or an unannotated closure.
+    pub fn annotation(&self) -> Smid {
+        match self {
+            AbiClosure::Byte(BcValue::Closure(c)) => c.annotation(),
+            AbiClosure::Byte(BcValue::Native(_)) => Smid::default(),
+        }
+    }
 }
 
 /// Machine interface exposed to intrinsic implementations

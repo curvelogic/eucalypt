@@ -2,10 +2,9 @@
 #
 # Catenation binds more loosely than `+`, so this parses as
 # `xs (foldl(+, 0) + 1)` and `+` is handed the partial application
-# `foldl(+, 0)`.  The primary label was the eleven columns of `foldl(+, 0)`
-# only because the machine's annotation register still held the operand's
-# location when `+` failed.  Since eu-oaz72.63 a case continuation restores
-# its push-time annotation on resume, so the error points at the failing
-# `+` (column 19) — see docs/superpowers/reports/2026-11-13-resume-annotation-snapshots.md.
+# `foldl(+, 0)`.  The primary label is the eleven columns of `foldl(+, 0)`:
+# the operand's own annotation is carried with the error (eu-oaz72.121), so it
+# no longer depends on the machine's annotation register, which since
+# eu-oaz72.63 holds the failing `+` instead.
 xs: [1, 2, 3]
 n: xs foldl(+, 0) + 1

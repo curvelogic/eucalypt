@@ -114,15 +114,17 @@ pub fn num_arg(
             // (as this used to) mislabelled every function value as a block
             // and triggered the misdirecting 'did you mean block.field?'
             // hint for a value that was never a block (eu-1tkk.7.9).
-            if machine
-                .resolve_closure(view, arg)
-                .map(|c| c.arity() > 0)
-                .unwrap_or(false)
-            {
-                return Err(ExecutionError::UnexpectedFunction(
-                    machine.annotation(),
-                    "number",
-                ));
+            if let Ok(c) = machine.resolve_closure(view, arg) {
+                if c.arity() > 0 {
+                    // Carry the operand's own annotation (eu-oaz72.121): it
+                    // points at the under-applied call the user must fix,
+                    // not at the operator it was handed to.
+                    return Err(ExecutionError::UnexpectedFunction(
+                        machine.annotation(),
+                        "number",
+                        c.annotation(),
+                    ));
+                }
             }
             // Otherwise it is a genuine Cons (block/list). Inspect the tag
             // so the error message includes useful context.
