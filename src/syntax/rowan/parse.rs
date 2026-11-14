@@ -967,7 +967,7 @@ impl<'text> Parser<'text> {
                     self.sink().token(OPEN_BRACE, tok_len);
 
                     // Parse interpolation content
-                    self.parse_string_interpolation_content();
+                    let reported_later = self.parse_string_interpolation_content();
 
                     // Consume closing brace
                     if let Some((CLOSE_BRACE, close_text)) = self.peek() {
@@ -993,7 +993,7 @@ impl<'text> Parser<'text> {
                                 self.next();
                                 self.sink().token(CLOSE_BRACE, stray_len);
                                 found_close = true;
-                                if let Some(range) = leftover {
+                                if let Some(range) = leftover.filter(|_| !reported_later) {
                                     self.errors
                                         .push(ParseError::InvalidStringInterpolation { range });
                                 }
@@ -1041,8 +1041,13 @@ impl<'text> Parser<'text> {
     }
 
     /// Parse the content inside an interpolation {...}
-    fn parse_string_interpolation_content(&mut self) {
+    ///
+    /// Returns true when the content is a dotted lookup with no first name
+    /// (`{..}`, `{.x}`): desugaring reports that as an invalid string
+    /// interpolation, so the parser does not report its leftovers too.
+    fn parse_string_interpolation_content(&mut self) -> bool {
         self.add_trivia();
+        let mut reported_later = false;
 
         // Check if we have dotted references by looking ahead
         let has_dots = self
@@ -1063,6 +1068,8 @@ impl<'text> Parser<'text> {
                 self.sink().start_node(NAME);
                 self.sink().token(STRING_INTERPOLATION_TARGET, len);
                 self.sink().finish_node(); // end NAME
+            } else {
+                reported_later = true;
             }
             self.add_trivia();
 
@@ -1123,6 +1130,7 @@ impl<'text> Parser<'text> {
             }
             self.add_trivia();
         }
+        reported_later
     }
 }
 
@@ -2698,6 +2706,14 @@ UNIT@0..105
             let parse = parse_unit(src);
             assert!(parse.errors().is_empty(), "{src:?}: {:?}", parse.errors());
         }
+    }
+
+    /// A dotted lookup with no first name is reported by desugaring as an
+    /// invalid string interpolation, not by the parser as well.
+    #[test]
+    fn string_interpolation_without_first_name_is_left_to_desugaring() {
+        let parse = parse_unit("x: \"{..}\"\n");
+        assert!(parse.errors().is_empty(), "{:?}", parse.errors());
     }
 
     /// A padded format specifier excludes its trailing whitespace.

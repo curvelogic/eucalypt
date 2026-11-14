@@ -1,6 +1,6 @@
 ` { target: :conform format: :yaml }
 conform: {
-  interpolated: "hello {1 + 1} world"
+  interpolated: { n: 1 + 1 result: "hello {n} world" }.result
   replaced: "hello world" str.replace("world", "eucalypt")
   split-result: "a,b,c" str.split-on(",")
   joined: ["x", "y", "z"] str.join-on("-")
