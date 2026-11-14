@@ -105,6 +105,66 @@ Several files may be given; each gets its own block under a heading.
 Spans carry one class per level of the capture name, so `@string.escape`
 is rendered as `<span class="ts-string ts-string-escape">`.
 
+## Browser use (WASM)
+
+A WebAssembly build of the grammar, `tree-sitter-eucalypt.wasm`, is
+committed in this directory next to `queries/highlights.scm`, so every
+eucalypt tag carries a matching pair. `wasm-manifest.json` records what the
+WASM was built from: the grammar version, the ABI version, the tree-sitter
+CLI and emscripten versions, the `web-tree-sitter` version it was checked
+with, and SHA-256 digests of the WASM and of every C source it was compiled
+from. A cargo test (`tests/tree_sitter_wasm_test.rs`) fails when the
+sources change without a rebuild, so the WASM at a tag is always the
+grammar at that tag.
+
+### Obtaining the WASM and query for a eucalypt version
+
+Take both files from the same tag (or commit), `<tag>` below:
+
+```text
+https://cdn.jsdelivr.net/gh/curvelogic/eucalypt@<tag>/editors/tree-sitter-eucalypt/tree-sitter-eucalypt.wasm
+https://cdn.jsdelivr.net/gh/curvelogic/eucalypt@<tag>/editors/tree-sitter-eucalypt/queries/highlights.scm
+https://cdn.jsdelivr.net/gh/curvelogic/eucalypt@<tag>/editors/tree-sitter-eucalypt/wasm-manifest.json
+```
+
+`https://raw.githubusercontent.com/curvelogic/eucalypt/<tag>/editors/tree-sitter-eucalypt/…`
+serves the same files, as does a checkout of the tag. Load the WASM with the
+`web-tree-sitter` version named in the manifest; other versions are
+untested.
+
+### Building it
+
+From this directory, with docker, podman or emscripten's `emcc` on `PATH`:
+
+```bash
+npm ci
+npm run build-wasm   # writes tree-sitter-eucalypt.wasm and wasm-manifest.json
+npm run check-wasm   # rebuilds into a temporary file and compares
+```
+
+The build runs the lockfile-pinned `tree-sitter build --wasm`, which uses its
+pinned `emscripten/emsdk` image under docker or podman when `emcc` is
+absent; with the same CLI and image the output is byte-for-byte
+reproducible. It compiles the committed `src/parser.c`, so after changing
+`grammar.js` run `npm run build` (`tree-sitter generate`) first. Commit
+both files.
+
+### Example page
+
+`web/index.html` is a minimal consumer: it loads the WASM and
+`queries/highlights.scm` with `web-tree-sitter` and renders highlighted
+HTML (`?file=<url>` highlights another file). Serve the repository over HTTP
+after `npm ci` and open it, or check it headless:
+
+```bash
+npm run test-wasm
+```
+
+This opens the page in Chromium via Playwright (which must be installed;
+`CHROMIUM_PATH` selects a browser binary) for several sample files and
+checks that each parses without errors and yields exactly the captures that
+the native CLI (`tree-sitter query --captures`) yields.
+
 ## Language Overview
 
 Eucalypt is a functional language for generating, templating, and rendering structured data formats (YAML, JSON, TOML).

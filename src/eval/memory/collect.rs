@@ -518,9 +518,10 @@ pub fn collect_mark_in_place_for_test(
 /// 1. Mark phase: trace live objects as normal
 /// 2. Evacuate phase: copy marked objects from candidate blocks to target blocks
 /// 3. Update phase: rewrite all pointers to forwarded objects
-/// 4. Sweep phase: defer sweep. The old copies' lines stay marked from the
-///    mark phase, so a candidate block's evacuated space is reclaimed by the
-///    next collection, not this one
+/// 4. Release: redraw each candidate block's line map without the old
+///    copies' lines (eu-oaz72.108), so evacuated space is reclaimed in this
+///    collection, not the next
+/// 5. Sweep phase: defer sweep
 ///
 /// Objects are evacuated via `CollectorHeapView::evacuate()` which does a
 /// byte-level copy (header + payload) and sets a forwarding pointer in the
@@ -549,6 +550,9 @@ pub fn collect_with_evacuation(
     // Candidate indices resolved to block base addresses once, before the
     // mark phase moves anything (eu-oaz72.4).
     let candidate_bases = heap.candidate_block_bases(candidates);
+    // Record the line marks made in candidate blocks so the old copies'
+    // lines can be freed once pointers are updated (eu-oaz72.108).
+    heap.begin_evacuation_record(candidate_bases.clone());
 
     {
         let mut heap_view = CollectorHeapView { heap: &mut *heap };
@@ -649,7 +653,10 @@ pub fn collect_with_evacuation(
             }
         }
 
-        // Finalise evacuation: integrate target blocks, reclaim candidates
+        // No pointer to an old copy remains: free the evacuated lines of
+        // the candidate blocks now rather than at the next collection
+        // (eu-oaz72.108), then integrate the target blocks.
+        heap_view.heap.release_evacuated_lines();
         heap_view.heap.finalise_evacuation();
     }
 
@@ -1211,6 +1218,94 @@ pub mod tests {
         );
 
         eprintln!("Evacuation collection completed successfully");
+    }
+
+    /// Root `n` leaves numbered from 0, allocated among `n * 4` dead ones in
+    /// one fresh heap's head block, and return the roots and that block's
+    /// base address.
+    fn sparse_head_block(heap: &Heap, n: usize) -> (Vec<RefPtr<TestObj>>, usize) {
+        let view = MutatorHeapView::new(heap);
+        let mut roots = Vec::new();
+        for i in 0..n {
+            roots.push(view.alloc(TestObj::Leaf(i as i64)).unwrap().as_ptr());
+            for _ in 0..4 {
+                let _ = view.alloc(TestObj::Leaf(-1)).unwrap();
+            }
+        }
+        let base = crate::eval::memory::bump::block_base_of(roots[0]);
+        assert!(
+            roots
+                .iter()
+                .all(|r| crate::eval::memory::bump::block_base_of(*r) == base),
+            "fixture must fit in one block"
+        );
+        (roots, base)
+    }
+
+    fn assert_leaves_intact(roots: &[RefPtr<TestObj>]) {
+        for (i, r) in roots.iter().enumerate() {
+            match unsafe { &*r.as_ptr() } {
+                TestObj::Leaf(v) => assert_eq!(*v, i as i64, "leaf {i} corrupted"),
+                other => panic!("leaf {i} corrupted: {other:?}"),
+            }
+        }
+    }
+
+    /// An evacuated block's lines are freed in the collection that
+    /// evacuates it (eu-oaz72.108). The mark phase line-marks each object
+    /// before evacuating it; those lines once stayed marked until the next
+    /// collection, so the block was freed a collection late and stress mode
+    /// held about twice the live data.
+    #[test]
+    pub fn test_evacuated_block_lines_freed_in_same_collection() {
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let (mut roots, base) = sparse_head_block(&heap, 32);
+
+        // Candidate 0 is the head block
+        collect_with_evacuation(&mut roots, &mut heap, &mut clock, &[0], false);
+
+        assert!(
+            roots
+                .iter()
+                .all(|r| crate::eval::memory::bump::block_base_of(*r) != base),
+            "every root must have been evacuated"
+        );
+        assert_leaves_intact(&roots);
+        assert_eq!(
+            heap.bump_block_marked_lines(base),
+            Some(0),
+            "the evacuated block still has marked lines: its old copies keep \
+             it until the next collection (HeapState::release_evacuated_lines)"
+        );
+    }
+
+    /// A candidate block's objects that are not evacuated keep their lines
+    /// (eu-oaz72.108): here the block is pinned, so `try_evacuate` leaves
+    /// every object in place.
+    #[test]
+    pub fn test_unevacuated_candidate_objects_keep_lines() {
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let (mut roots, base) = sparse_head_block(&heap, 32);
+        let before = roots.clone();
+
+        heap.pin_block(roots[0]);
+        collect_with_evacuation(&mut roots, &mut heap, &mut clock, &[0], false);
+        heap.unpin_block(base);
+
+        assert_eq!(roots, before, "a pinned block's objects must not move");
+        assert_leaves_intact(&roots);
+        // Each live leaf is five allocations from the next, more than a
+        // line apart, so every one keeps a line of its own
+        let marked = heap.bump_block_marked_lines(base).unwrap();
+        assert!(
+            marked >= 32,
+            "only {marked} lines still marked for 32 live objects left in a \
+             candidate block"
+        );
     }
 
     /// Test that a single evacuated object is accessible via the forwarding
@@ -1816,6 +1911,9 @@ pub mod tests {
         // Capture unswept addresses BEFORE the evacuation pass so we can
         // identify the newly-added evacuation target block afterwards.
         let unswept_before: HashSet<usize> = heap.unswept_block_base_addresses();
+        // The candidates themselves also reach unswept, emptied by
+        // evacuation (eu-oaz72.108): they are not targets.
+        let candidates_before: HashSet<usize> = heap.rest_block_base_addresses();
 
         // Force evacuation of all rest blocks (indices 2..2+rest_count is a
         // conventional way to include every block in the evacuation candidate
@@ -1829,7 +1927,11 @@ pub mod tests {
         //   defer_sweep()         → rest (including target) to unswept
         // So rest is empty and the former target is in unswept.
         let unswept_after: HashSet<usize> = heap.unswept_block_base_addresses();
-        let new_blocks: Vec<usize> = unswept_after.difference(&unswept_before).copied().collect();
+        let new_blocks: Vec<usize> = unswept_after
+            .difference(&unswept_before)
+            .filter(|base| !candidates_before.contains(base))
+            .copied()
+            .collect();
 
         // If no new block appeared in unswept, the evacuation target was never
         // allocated (nothing was actually evacuated).  Skip rather than fail.

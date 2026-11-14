@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/282_catenation_function_from_right
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/282_catenation_function_from_right.eu
+fixture: errors/283_catenation_function_from_right
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/283_catenation_function_from_right.eu
 prelude-modes: identical
 
 === both prelude modes ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: EU-EVAL-TYPE
-primary: user tests/harness/errors/282_catenation_function_from_right.eu:5:9
+primary: user tests/harness/errors/283_catenation_function_from_right.eu:5:9
 help-lines: 0
 note-lines: 1
 secondary-labels: 0
@@ -19,11 +19,11 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
-  ┌─ tests/harness/errors/282_catenation_function_from_right.eu:5:9
+  ┌─ tests/harness/errors/283_catenation_function_from_right.eu:5:9
   │
 5 │ r: xs k + nth(0) = 1
   │         ^
   │
   = a function value cannot be used directly here; it must first be called with all of its remaining arguments
   = while evaluating (outermost first):
-    - r at 282_catenation_function_from_right.eu:5:18
+    - r at 283_catenation_function_from_right.eu:5:18
