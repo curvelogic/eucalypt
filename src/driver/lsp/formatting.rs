@@ -49,6 +49,7 @@ pub fn format_range(
     }
 
     let unit = parse.tree();
+    super::diagnostics::debug_assert_lossless(source, unit.syntax());
     let config = options_to_config(options);
     let formatter = Formatter::new(config);
 
