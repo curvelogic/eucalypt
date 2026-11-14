@@ -5287,3 +5287,17 @@ pub fn test_error_280_catenation_parenthesised_step() {
 pub fn test_error_281_assignment_style_in_expression() {
     run_error_test(&error_opts("281_assignment_style_in_expression.eu"));
 }
+
+/// The argument of a function whose body is its parameter keeps its own
+/// location, so the pipeline-step note is shown (eu-oaz72.133).
+#[test]
+pub fn test_error_282_catenation_step_identity_argument() {
+    run_error_test(&error_opts("282_catenation_step_identity_argument.eu"));
+}
+
+/// No pipeline-step note when the function comes from an operator's right
+/// operand (eu-oaz72.133).
+#[test]
+pub fn test_error_283_catenation_function_from_right() {
+    run_error_test(&error_opts("283_catenation_function_from_right.eu"));
+}

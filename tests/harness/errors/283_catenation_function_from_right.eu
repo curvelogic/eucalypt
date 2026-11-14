@@ -1,0 +1,5 @@
+xs: [1, 2, 3]
+k: 1
+
+` "`xs k + nth(0) = 1` reads as `xs (k + nth(0) = 1)`: `+` receives `nth(0)` from its right operand, so parenthesising the pipeline would fix nothing and no parse note is shown (eu-oaz72.133)"
+r: xs k + nth(0) = 1
