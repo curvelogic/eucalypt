@@ -17,11 +17,12 @@ use crate::{
 };
 
 use super::{
-    force::SeqStrList,
+    force::{SeqNumList, SeqStrList},
     printf::{self, PrintfError},
     support::{
-        machine_return_bool, machine_return_num, machine_return_str, machine_return_str_iter,
-        machine_return_str_list, machine_return_sym, str_arg, str_arg_ref, str_list_arg,
+        collect_num_list, machine_return_bool, machine_return_num, machine_return_num_list,
+        machine_return_str, machine_return_str_iter, machine_return_str_list, machine_return_sym,
+        num_arg, str_arg, str_arg_ref, str_list_arg,
     },
     syntax::{
         dsl::{atom, box_str, case, data, force, lambda, let_, local, lref, str, unbox_str, value},
@@ -479,6 +480,151 @@ impl StgIntrinsic for Letters {
 }
 
 impl CallGlobal1 for Letters {}
+
+/// CODE_POINTS(string) - the Unicode scalar values of a string's characters,
+/// one per character as split by `LETTERS`
+pub struct CodePoints;
+
+impl StgIntrinsic for CodePoints {
+    fn name(&self) -> &str {
+        "CODE_POINTS"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let string = str_arg_ref(machine, view, &args[0])?;
+        let points = string.chars().map(|c| f64::from(u32::from(c))).collect();
+        machine_return_num_list(machine, view, points)
+    }
+}
+
+impl CallGlobal1 for CodePoints {}
+
+/// Convert a number to a Unicode scalar value, or say why it is not one.
+fn scalar_value(value: f64) -> Result<char, String> {
+    if value.fract() != 0.0 || !value.is_finite() {
+        return Err(format!("{value} is not a whole number"));
+    }
+    if value < 0.0 {
+        return Err(format!("{value} is negative"));
+    }
+    if value > f64::from(char::MAX as u32) {
+        return Err(format!(
+            "{value} is above the largest code point, U+10FFFF (1114111)"
+        ));
+    }
+    let n = value as u32;
+    char::from_u32(n).ok_or_else(|| {
+        format!("{n} (U+{n:04X}) is a surrogate (U+D800 to U+DFFF), not a Unicode scalar value")
+    })
+}
+
+/// FROM_CODE_POINTS(list) - the string whose characters have the given code points
+pub struct FromCodePoints;
+
+impl StgIntrinsic for FromCodePoints {
+    fn name(&self) -> &str {
+        "FROM_CODE_POINTS"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
+            1, // [list]
+            force(
+                SeqNumList.global(lref(0)),
+                // [seqlist] [list]
+                let_(
+                    vec![value(call::bif::from_code_points(lref(0)))],
+                    data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
+                ),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
+        let points = collect_num_list(machine, view, args[0].clone())?;
+        let mut out = String::with_capacity(points.len());
+        for p in points {
+            out.push(
+                scalar_value(p).map_err(|detail| ExecutionError::InvalidCodePoint(smid, detail))?,
+            );
+        }
+        machine_return_str(machine, view, out)
+    }
+}
+
+impl CallGlobal1 for FromCodePoints {}
+
+/// CODE_POINT(string) - the code point of a one-character string
+pub struct CodePoint;
+
+impl StgIntrinsic for CodePoint {
+    fn name(&self) -> &str {
+        "CODE_POINT"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
+        let string = str_arg_ref(machine, view, &args[0])?;
+        let mut chars = string.chars();
+        match (chars.next(), chars.next()) {
+            (Some(c), None) => machine_return_num(machine, view, Number::from(u32::from(c))),
+            _ => Err(ExecutionError::InvalidCodePoint(
+                smid,
+                format!(
+                    "ch.code-point requires a string of exactly one character, but got {} characters\n  \
+                     help: use str.code-points for a longer string",
+                    string.chars().count()
+                ),
+            )),
+        }
+    }
+}
+
+impl CallGlobal1 for CodePoint {}
+
+/// OF_CODE_POINT(n) - the one-character string for a code point
+pub struct OfCodePoint;
+
+impl StgIntrinsic for OfCodePoint {
+    fn name(&self) -> &str {
+        "OF_CODE_POINT"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
+        let n = num_arg(machine, view, &args[0])?;
+        let value = n.as_f64().unwrap_or(f64::NAN);
+        let c = scalar_value(value).map_err(|d| ExecutionError::InvalidCodePoint(smid, d))?;
+        machine_return_str(machine, view, c.to_string())
+    }
+}
+
+impl CallGlobal1 for OfCodePoint {}
 
 /// __DQ - constant for the double quote character
 pub struct Dq;

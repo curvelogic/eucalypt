@@ -1187,6 +1187,31 @@ lazy_static! {
             ty: function(vec![num(), num(), num()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 223
+            name: "MD5",
+            ty: function(vec![str_(), str_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 224
+            name: "CODE_POINTS",
+            ty: function(vec![str_(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 225
+            name: "FROM_CODE_POINTS",
+            ty: function(vec![list(), str_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 226
+            name: "CODE_POINT",
+            ty: function(vec![str_(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 227
+            name: "OF_CODE_POINT",
+            ty: function(vec![num(), str_()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

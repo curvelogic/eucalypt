@@ -1164,6 +1164,11 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "BASE64_ENCODE" => Some("base64.encode"),
         "BASE64_DECODE" => Some("base64.decode"),
         "SHA256" => Some("sha256"),
+        "MD5" => Some("str.md5"),
+        "CODE_POINTS" => Some("str.code-points"),
+        "FROM_CODE_POINTS" => Some("str.from-code-points"),
+        "CODE_POINT" => Some("ch.code-point"),
+        "OF_CODE_POINT" => Some("ch.of-code-point"),
 
         // Set operations
         "SET.EMPTY" => Some("set.empty"),

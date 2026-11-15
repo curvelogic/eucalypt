@@ -67,6 +67,7 @@ ordered-float = "2.10.0"
 semver = "1"
 base64 = "0.22"
 sha2 = "0.10"
+md-5 = "0.10"
 rowan = "0.15.3"
 ndarray = "0.16"
 serde = { version = "1", features = ["derive"] }

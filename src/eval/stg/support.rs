@@ -962,6 +962,10 @@ pub mod call {
             call_bif("JOIN", &[list, sep])
         }
 
+        pub fn from_code_points(list: Ref) -> Rc<StgSyn> {
+            call_bif("FROM_CODE_POINTS", &[list])
+        }
+
         pub fn contract_fail(headline: Ref, violations: Ref) -> Rc<StgSyn> {
             call_bif("CONTRACT_FAIL", &[headline, violations])
         }

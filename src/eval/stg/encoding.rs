@@ -1,6 +1,7 @@
 //! Encoding and hashing intrinsics (base64, SHA-256, etc.)
 
 use base64::{engine::general_purpose::STANDARD, Engine};
+use md5::Md5;
 use sha2::{Digest, Sha256};
 
 use crate::eval::{
@@ -117,3 +118,27 @@ impl StgIntrinsic for Sha256Hash {
 }
 
 impl CallGlobal1 for Sha256Hash {}
+
+/// MD5(s) — return the MD5 hash of a string (its UTF-8 bytes) as lowercase hex
+pub struct Md5Hash;
+
+impl StgIntrinsic for Md5Hash {
+    fn name(&self) -> &str {
+        "MD5"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let input = str_arg(machine, view, &args[0])?;
+        let hash = Md5::digest(input.as_bytes());
+        let hex = hash.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        machine_return_str(machine, view, hex)
+    }
+}
+
+impl CallGlobal1 for Md5Hash {}

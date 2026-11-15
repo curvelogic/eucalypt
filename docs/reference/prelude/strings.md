@@ -32,6 +32,9 @@
 | `str.base64-encode` | Encode string `s` as base64 |
 | `str.base64-decode` | Decode base64 string `s` back to its original string |
 | `str.sha256` | Return the SHA-256 hash of string `s` as lowercase hex |
+| `str.md5` | Return the MD5 hash of string `s` (its UTF-8 bytes) as lowercase hex. MD5 is not secure: use it only to match existing checksums |
+| `str.code-points` | The Unicode code points of the characters of string `s` (one per character, as `str.letters` splits it), as a list of numbers |
+| `str.from-code-points` | The string whose characters have the Unicode code points `ns`; the inverse of `str.code-points`. An error for an element that is not a whole number in 0 to 0x10FFFF or is a surrogate (0xD800 to 0xDFFF) |
 | `str.replace(pattern, replacement, s)` | Replace all occurrences of regex `pattern` with `replacement` in string `s`. Pipeline: s str.replace(pat, rep) |
 | `str.contains?(pattern, s)` | True if string `s` contains a match for regex `pattern`. Pipeline: s str.contains?(pat) |
 | `str.trim` | Trim leading and trailing whitespace from string `s` |
@@ -50,6 +53,8 @@ a little more convenient to use interpolation instead..
 | `ch.n` |  |
 | `ch.t` |  |
 | `ch.dq` |  |
+| `ch.code-point` | The Unicode code point of the single character `c`, as a number; an error unless `c` is exactly one character |
+| `ch.of-code-point` | The one-character string with Unicode code point `n`; an error unless `n` is a whole number in 0 to 0x10FFFF and not a surrogate (0xD800 to 0xDFFF) |
 
 The `ch` namespace provides special characters:
 
@@ -57,10 +62,39 @@ The `ch` namespace provides special characters:
 - `ch.t` -- Tab
 - `ch.dq` -- Double quote
 
+`ch.code-point(c)` gives the Unicode code point of a one-character string and
+`ch.of-code-point(n)` is its inverse; see
+[Code Points](#code-points) for the string-level `str.code-points` and
+`str.from-code-points`.
+
 ### Encoding and Hashing Examples
 
 ```eu
 encoded: "hello" str.base64-encode    # "aGVsbG8="
 decoded: "aGVsbG8=" str.base64-decode # "hello"
 hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
+legacy: "abc" str.md5                 # "900150983cd24fb0d6963f7d28e17f72"
 ```
+
+`str.md5` hashes the UTF-8 bytes of the string and returns 32 lowercase hex
+digits. MD5 is not secure; use it only to match an existing checksum.
+
+### Code Points
+
+`str.code-points` and `str.from-code-points` convert between a string and the
+list of Unicode code points of its characters (one number per character, as
+`str.letters` splits it, so `"é"` is `[233]`, not two bytes). `ch.code-point`
+and `ch.of-code-point` do the same for a single character.
+
+```eu
+points:  "aé😀" str.code-points                    # [97, 233, 128512]
+text:    [104, 105] str.from-code-points           # "hi"
+shifted: "abc" str.code-points map(+ 1) str.from-code-points  # "bcd"
+one:     "é" ch.code-point                         # 233
+char:    128512 ch.of-code-point                   # "😀"
+```
+
+`str.from-code-points` and `ch.of-code-point` stop with an error for a number
+that is not a whole number from 0 to 0x10FFFF, or that is a surrogate (0xD800
+to 0xDFFF); `ch.code-point` stops unless its argument is exactly one
+character.

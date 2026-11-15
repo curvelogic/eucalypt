@@ -1,0 +1,65 @@
+#!/usr/bin/env eu
+{
+  title: "297 string intrinsics: str.md5, str.code-points, ch.code-point"
+  doc: "str.md5 returns lowercase hex over the UTF-8 bytes, matching the
+        RFC 1321 test suite; str.code-points / str.from-code-points and
+        ch.code-point / ch.of-code-point convert between text and Unicode
+        scalar values (eu-oaz72.25). Each group is a list of checks and
+        RESULT is computed from every one of them, so any failing check
+        fails the test."
+}
+
+` "RFC 1321 appendix A.5 test suite"
+md5-rfc1321: [
+  str.md5("") = "d41d8cd98f00b204e9800998ecf8427e",
+  str.md5("a") = "0cc175b9c0f1b6a831c399e269772661",
+  str.md5("abc") = "900150983cd24fb0d6963f7d28e17f72",
+  str.md5("message digest") = "f96b697d7cb7938d525a2f31aaf161d0",
+  str.md5("abcdefghijklmnopqrstuvwxyz") = "c3fcd3d76192e4007dfb496cca67e13b",
+  str.md5("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789") = "d174ab98d277d9f5a5611c2c9f419d9f",
+  str.md5("12345678901234567890123456789012345678901234567890123456789012345678901234567890") = "57edf4a22be3c955ac49da2e2107b67a"
+]
+
+` "the hash is over UTF-8 bytes (value from Python hashlib), and is 32 hex digits"
+md5-utf8: [
+  str.md5("é") = "66ddcd97cfdeabb2f6fb8a999b4bc76f",
+  ("abc" str.md5 str.len) = 32
+]
+
+` "str.code-points: one per character, as str.letters splits it"
+code-points: [
+  str.code-points("") = [],
+  str.code-points("abc") = [97, 98, 99],
+  str.code-points("é→😀") = [233, 8594, 128512],
+  (str.code-points("é→😀") count) = ("é→😀" str.letters count)
+]
+
+` "str.from-code-points round-trips ASCII and non-ASCII text"
+round-trip: [
+  str.from-code-points([]) = "",
+  str.from-code-points([104, 105]) = "hi",
+  str.from-code-points([233, 8594, 128512]) = "é→😀",
+  ("héllo, wörld → 😀" str.code-points str.from-code-points) = "héllo, wörld → 😀",
+  ([0, 55295, 57344, 1114111] str.from-code-points str.code-points) = [0, 55295, 57344, 1114111]
+]
+
+` "ch.code-point and ch.of-code-point agree with the str functions"
+single: [
+  ch.code-point("a") = 97,
+  ch.code-point("😀") = 128512,
+  ch.of-code-point(97) = "a",
+  ch.of-code-point(128512) = "😀",
+  ch.of-code-point(ch.code-point("é")) = "é",
+  ch.code-point(ch.of-code-point(8594)) = 8594,
+  ch.code-point(ch.n) = 10,
+  ch.of-code-point(97.0) = "a",
+  ("héllo" str.letters map(ch.code-point)) = str.code-points("héllo")
+]
+
+RESULT: [
+  md5-rfc1321,
+  md5-utf8,
+  code-points,
+  round-trip,
+  single
+] concat all-true? then(:PASS, :FAIL)
