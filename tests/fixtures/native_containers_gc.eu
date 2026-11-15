@@ -1,0 +1,42 @@
+# eu-oaz72.54: a set, a vec and an ndarray are held live across enough
+# allocation to force many collections under a small heap limit, then read
+# back. Strings inside the set and vec are built at run time, so they are
+# reachable only through the container. A container the collector failed
+# to mark or to update after evacuation reads back wrong (or crashes).
+
+key(n): "k-{n}"
+
+s0: range(0, 200) map(key) set.from-list
+v0: range(0, 200) map(key) vec.of
+a0: arr.from-flat([2, 3], [1, 2, 3, 4, 5, 6])
+
+# Allocates far more than the 32 MiB collection trigger while s, v and a
+# are live only as loop arguments.
+loop(i, s, v, a, acc): if(acc < 0, acc, if(i = 0, acc, loop(i - 1, s, v, a, acc + 1)))
+
+done: loop(300000, s0, v0, a0, 0)
+
+# Evolving containers: each iteration builds fresh ones from the last.
+evolve(i, s, v, a): if(i = 0, [s, v, a], evolve(i - 1, s set.add(key(1000 + i % 7)), v, a arr.set([i % 2, i % 3], i)))
+
+e: evolve(2000, s0, v0, a0)
+es: e head
+ea: e nth(2)
+
+checks: [
+  done = 300000,
+  (s0 set.size) = 200,
+  (s0 set.to-list head) = "k-0",
+  s0 set.contains?("k-150"),
+  (v0 vec.len) = 200,
+  (v0 vec.nth(199)) = "k-199",
+  (v0 vec.to-list) = (range(0, 200) map(key)),
+  (a0 arr.shape) = [2, 3],
+  (a0 arr.to-list) = [1, 2, 3, 4, 5, 6],
+  (es set.size) = 207,
+  es set.contains?("k-1003"),
+  (ea arr.get([0, 0])) = 6,
+  (ea arr.get([1, 1])) = 1
+]
+
+r: if(checks all-true?, 1, 0)
