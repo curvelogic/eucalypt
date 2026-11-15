@@ -5216,6 +5216,30 @@ pub fn test_error_277_vec_nth_non_integer() {
     run_error_test(&error_opts("277_vec_nth_non_integer.eu"));
 }
 
+/// A large whole float in an intrinsic error prints exactly (eu-oaz72.155).
+#[test]
+pub fn test_error_307_vec_index_large_negative() {
+    run_error_test(&error_opts("307_vec_index_large_negative.eu"));
+}
+
+/// A large whole float in an intrinsic error prints exactly (eu-oaz72.155).
+#[test]
+pub fn test_error_307_vec_index_large_out_of_range() {
+    run_error_test(&error_opts("307_vec_index_large_out_of_range.eu"));
+}
+
+/// A large whole float in an intrinsic error prints exactly (eu-oaz72.155).
+#[test]
+pub fn test_error_307_code_point_large_negative() {
+    run_error_test(&error_opts("307_code_point_large_negative.eu"));
+}
+
+/// A large whole float in an intrinsic error prints exactly (eu-oaz72.155).
+#[test]
+pub fn test_error_307_code_point_large_above_max() {
+    run_error_test(&error_opts("307_code_point_large_above_max.eu"));
+}
+
 /// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
 #[test]
 pub fn test_error_277_vec_nth_out_of_range() {

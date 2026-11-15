@@ -1,0 +1,4 @@
+` "eu-oaz72.155: a large whole float in an intrinsic error prints its exact digits"
+r: str.from-code-points[2.0 ^ 63]
+exit: 1
+stderr: "9223372036854775808 is above the largest code point"
