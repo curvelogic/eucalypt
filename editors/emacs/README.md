@@ -218,7 +218,18 @@ EU=target/release/eu scripts/check-emacs-mode.sh
 
 ### Against the grammar
 
-The mode's font-lock queries name tree-sitter node types, so a grammar
+The mode has no highlight queries of its own: at load it derives its
+font-lock rules from the grammar's `queries/highlights.scm` (found next to
+`eucalypt-mode.el`, then in `../tree-sitter-eucalypt/queries`; override with
+`eucalypt-highlights-file`). Each capture name is renamed to an Emacs face
+by the table `eucalypt-mode--capture-faces`, which also assigns the
+feature (and so the `treesit-font-lock-level`); `#match?`, `#eq?` and
+`#any-of?` are rewritten to Emacs's `#match`/`#equal`. A capture missing
+from the table is an error at load. The only Emacs-specific rule is the
+face for Unicode idiot brackets. When packaging the mode, copy
+`highlights.scm` beside it.
+
+The derived queries name tree-sitter node types, so a grammar
 change can break them: a query that no longer matches the grammar raises
 `treesit-query-error` and switches off every feature at that
 `treesit-font-lock-level`. After changing the grammar or the queries, run

@@ -12,9 +12,12 @@
 ;; compiled grammar (the script passes it with --eval).
 ;;
 ;; The check:
+;;   0. (at load) the mode's capture-to-face table covers every capture
+;;      highlights.scm uses, else `require' fails; and the features of the
+;;      derived rules match the mode's feature list;
 ;;   1. compiles every font-lock query in `eucalypt-mode--font-lock-settings'
-;;      and every docstring query used by
-;;      `eucalypt--fontify-markdown-in-docstrings' against the grammar, by
+;;      (derived from highlights.scm, which the markdown-in-docstrings
+;;      fontifier also uses) against the grammar, by
 ;;      running each against a parsed buffer (a query naming a node or
 ;;      structure the grammar lacks raises `treesit-query-error');
 ;;   2. fontifies each FILE at `treesit-font-lock-level' 1 to 4, failing on
@@ -43,6 +46,18 @@
       (treesit-query-capture root query)
     (error (eucalypt-check--fail "%s: %S" label err))))
 
+(defun eucalypt-check--features ()
+  "Check the derived rules and the feature list name the same features."
+  (let ((listed (apply #'append eucalypt-mode--font-lock-feature-list))
+        (used (delete-dups (mapcar (lambda (s) (nth 2 s))
+                                   eucalypt-mode--font-lock-settings))))
+    (dolist (f used)
+      (unless (memq f listed)
+        (eucalypt-check--fail "feature `%s' has rules but is in no level" f)))
+    (dolist (f listed)
+      (unless (memq f used)
+        (eucalypt-check--fail "feature `%s' is in a level but has no rules" f)))))
+
 (defun eucalypt-check--compile-queries ()
   "Check that every query the mode uses compiles against the grammar."
   (with-temp-buffer
@@ -56,15 +71,13 @@
         (setq count (1+ count))
         (eucalypt-check--try-query
          root (format "font-lock feature `%s'" (nth 2 setting)) (car setting)))
-      (dolist (query eucalypt--docstring-doc-queries)
-        (setq count (1+ count))
-        (eucalypt-check--try-query root "docstring doc query" (list query)))
       (princ (format "compiled %d queries\n" count)))))
 
 (defconst eucalypt-check--expected-faces
-  '((3 . (font-lock-variable-name-face font-lock-function-call-face))
-    (4 . (font-lock-builtin-face font-lock-bracket-face
-          font-lock-operator-face)))
+  '((2 . (font-lock-keyword-face))
+    (3 . (font-lock-variable-name-face font-lock-function-call-face))
+    (4 . (font-lock-bracket-face font-lock-operator-face
+          font-lock-doc-face font-lock-preprocessor-face)))
   "Faces that must appear somewhere in the corpus at each level.")
 
 (defun eucalypt-check--faces-in-buffer ()
@@ -121,7 +134,16 @@
     ("x: c\"cee\"\n" "cee" font-lock-string-face)
     ("x: r\"raw\"\n" "raw" font-lock-string-face)
     ("x: s\"{a: number}\"\n" "s\"{a: number}\"" font-lock-string-face)
-    ("x: t\"2024-03-15\"\n" "2024-03-15" font-lock-constant-face))
+    ("x: t\"2024-03-15\"\n" "2024-03-15" font-lock-constant-face)
+    ;; Faces that come from the capture mapping over highlights.scm.
+    ("x: if(a, b, c)\n" "if" font-lock-keyword-face)
+    ("f(a): g(a)\n" "g" font-lock-function-call-face)
+    ("` {doc: \"hello\"}\nx: 1\n" "hello" font-lock-doc-face)
+    ("` \"hello\"\nx: 1\n" "hello" font-lock-doc-face)
+    ("x: \"a{b}\"\n" "b" font-lock-variable-use-face)
+    ;; Emacs-specific addition, and markdown layered on docstrings.
+    ("x: \u27e6 a \u27e7\n" "\u27e6 a \u27e7" eucalypt-unicode-bracket-face)
+    ("` \"see `code`\"\nx: 1\n" "code" font-lock-constant-face))
   "Literals and the face each must carry at level 4.")
 
 (defun eucalypt-check--literals ()
@@ -133,6 +155,7 @@
       (setq-local treesit-font-lock-level 4)
       (treesit-font-lock-recompute-features)
       (treesit-font-lock-fontify-region (point-min) (point-max))
+      (eucalypt--fontify-markdown-in-docstrings (point-min) (point-max))
       (goto-char (point-min))
       (search-forward text)
       (let ((pos (match-beginning 0)))
@@ -153,6 +176,7 @@
     (kill-emacs 1))
   (let ((files command-line-args-left))
     (setq command-line-args-left nil)
+    (eucalypt-check--features)
     (eucalypt-check--compile-queries)
     (eucalypt-check--literals)
     (when files (eucalypt-check--fontify files))
