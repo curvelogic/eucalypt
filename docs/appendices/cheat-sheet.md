@@ -357,6 +357,7 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `map(f)` | Transform each element |
 | `filter(p?)` | Keep elements matching predicate |
 | `foldl(f, init)` | Left fold |
+| `foldl-strict(f, init)` | Left fold, accumulator evaluated at each step (constant stack for scalars) |
 | `foldr(f, init)` | Right fold |
 | `sort-by(f)` | Sort by key function |
 | `take(n)` | First n elements (`[]` if n <= 0) |
