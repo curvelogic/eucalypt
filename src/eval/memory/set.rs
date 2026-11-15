@@ -127,8 +127,9 @@ pub(crate) fn scan_primitive_array<'a>(
     }
 }
 
-/// Rewrite the backing pointer of a heap array of primitives, then the
-/// string pointers of its elements (read at the new location).
+/// Rewrite the backing pointer of a heap array of primitives, then, when
+/// `has_strings`, the string pointers of its elements (read at the new
+/// location).
 pub(crate) fn update_primitive_array(
     elements: &mut Array<Primitive>,
     has_strings: bool,

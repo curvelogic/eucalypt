@@ -71,3 +71,4 @@ lib/prelude.blob
 # Advent of Code puzzle inputs must not be published; readers supply their own
 /examples/aoc25/inputs/day??.txt
 /examples/aoc25/.result/
+/.result/
