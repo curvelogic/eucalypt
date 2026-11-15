@@ -1,5 +1,6 @@
 //! String and regex intrinsics
 
+use crate::eval::error::exact_f64;
 use crate::{
     common::sourcemap::Smid,
     eval::{
@@ -513,14 +514,15 @@ impl CallGlobal1 for CodePoints {}
 /// Convert a number to a Unicode scalar value, or say why it is not one.
 fn scalar_value(value: f64) -> Result<char, String> {
     if value.fract() != 0.0 || !value.is_finite() {
-        return Err(format!("{value} is not a whole number"));
+        return Err(format!("{} is not a whole number", exact_f64(value)));
     }
     if value < 0.0 {
-        return Err(format!("{value} is negative"));
+        return Err(format!("{} is negative", exact_f64(value)));
     }
     if value > f64::from(char::MAX as u32) {
         return Err(format!(
-            "{value} is above the largest code point, U+10FFFF (1114111)"
+            "{} is above the largest code point, U+10FFFF (1114111)",
+            exact_f64(value)
         ));
     }
     let n = value as u32;

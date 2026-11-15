@@ -1,0 +1,46 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/307_code_point_large_negative
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/307_code_point_large_negative.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/307_code_point_large_negative.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid code point: -9223372036854775808 is negative
+  ┌─ tests/harness/errors/307_code_point_large_negative.eu:2:4
+  │
+2 │ r: str.from-code-points[0 - (2.0 ^ 63)]
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/307_code_point_large_negative.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid code point: -9223372036854775808 is negative
+  ┌─ tests/harness/errors/307_code_point_large_negative.eu:2:4
+  │
+2 │ r: str.from-code-points[0 - (2.0 ^ 63)]
+  │    ^^^

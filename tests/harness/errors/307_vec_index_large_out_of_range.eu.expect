@@ -1,0 +1,4 @@
+` "eu-oaz72.155: a large whole float in an intrinsic error prints its exact digits"
+r: vec.of[10, 20] vec.nth(2.0 ^ 63)
+exit: 1
+stderr: "vec.nth index 9223372036854775808 out of range for vec of length 2"

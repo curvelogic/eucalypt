@@ -28,6 +28,7 @@ use super::{
         LambdaForm,
     },
 };
+use crate::eval::error::exact_number;
 
 /// Convert the index argument `what` of vec function `func` to a `usize`.
 ///
@@ -48,20 +49,26 @@ fn vec_index(func: &str, what: &str, native: &Native, smid: Smid) -> Result<usiz
     if num.as_i64().is_some() {
         return Err(ExecutionError::Panic(
             smid,
-            format!("{func} {what} {num} out of range: vec indices start at 0"),
+            format!(
+                "{func} {what} {} out of range: vec indices start at 0",
+                exact_number(num)
+            ),
         ));
     }
     let f = num.as_f64().unwrap_or(f64::NAN);
     if f.fract() != 0.0 || !f.is_finite() {
         return Err(ExecutionError::Panic(
             smid,
-            format!("{func} {what} {num} must be an integer"),
+            format!("{func} {what} {} must be an integer", exact_number(num)),
         ));
     }
     if f < 0.0 {
         return Err(ExecutionError::Panic(
             smid,
-            format!("{func} {what} {num} out of range: vec indices start at 0"),
+            format!(
+                "{func} {what} {} out of range: vec indices start at 0",
+                exact_number(num)
+            ),
         ));
     }
     Ok(f as usize)
@@ -71,7 +78,7 @@ fn vec_index(func: &str, what: &str, native: &Native, smid: Smid) -> Result<usiz
 /// (which saturates a huge value such as `1e20`).
 fn num_display(native: &Native) -> String {
     match native {
-        Native::Num(num) => num.to_string(),
+        Native::Num(num) => exact_number(num),
         _ => String::new(),
     }
 }
