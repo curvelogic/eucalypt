@@ -20,9 +20,9 @@ use super::{
     force::{SeqNumList, SeqStrList},
     printf::{self, PrintfError},
     support::{
-        collect_num_list, machine_return_bool, machine_return_num, machine_return_num_list,
-        machine_return_str, machine_return_str_iter, machine_return_str_list, machine_return_sym,
-        num_arg, str_arg, str_arg_ref, str_list_arg,
+        collect_num_list, machine_return_bool, machine_return_num, machine_return_str,
+        machine_return_str_iter, machine_return_str_list, machine_return_sym, num_arg, str_arg,
+        str_arg_ref, str_list_arg,
     },
     syntax::{
         dsl::{atom, box_str, case, data, force, lambda, let_, local, lref, str, unbox_str, value},
@@ -498,8 +498,13 @@ impl StgIntrinsic for CodePoints {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let string = str_arg_ref(machine, view, &args[0])?;
-        let points = string.chars().map(|c| f64::from(u32::from(c))).collect();
-        machine_return_num_list(machine, view, points)
+        // Integers, not floats: they must render as `97`, not `97.0`.
+        let mut items = Vec::with_capacity(string.len());
+        for c in string.chars() {
+            let native = machine.native_value(view, Native::Num(Number::from(u32::from(c))))?;
+            items.push(machine.data_value(view, DataConstructor::BoxedNumber.tag(), &[native])?);
+        }
+        machine.return_closure_list(view, items)
     }
 }
 

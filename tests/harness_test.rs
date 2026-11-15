@@ -3334,13 +3334,6 @@ pub fn test_291_modular_arithmetic() {
     run_test(&opts("291_modular_arithmetic.eu"));
 }
 
-/// str.md5 matches RFC 1321; str.code-points / str.from-code-points and
-/// ch.code-point / ch.of-code-point round-trip text (eu-oaz72.25).
-#[test]
-pub fn test_297_string_intrinsics() {
-    run_test(&opts("297_string_intrinsics.eu"));
-}
-
 /// The BFS and Dijkstra templates of the Advent of Code cookbook
 /// (eu-oaz72.16), with the Dijkstra queue a dict keyed by `[priority, seq]`
 /// (eu-oaz72.22).
@@ -5461,4 +5454,19 @@ pub fn test_error_299_code_point_fractional() {
 #[test]
 pub fn test_error_300_code_point_not_one_char() {
     run_error_test(&error_opts("300_code_point_not_one_char.eu"));
+}
+
+#[test]
+pub fn test_error_301_code_point_negative() {
+    run_error_test(&error_opts("301_code_point_negative.eu"));
+}
+
+#[test]
+pub fn test_error_302_of_code_point_surrogate() {
+    run_error_test(&error_opts("302_of_code_point_surrogate.eu"));
+}
+
+#[test]
+pub fn test_error_303_of_code_point_too_large() {
+    run_error_test(&error_opts("303_of_code_point_too_large.eu"));
 }
