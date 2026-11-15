@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**60 of 315 fixtures diverge.**
+**64 of 319 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -71,6 +71,10 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/277_vec_slice_non_integer` | user tests/harness/errors/277_vec_slice_non_integer.eu:2:23 | user tests/harness/errors/277_vec_slice_non_integer.eu:2:23 | 1 (1 user) | 1 (1 user) |
 | `errors/278_intrinsic_call_site_set_add` | user tests/harness/errors/278_intrinsic_call_site_set_add.eu:5:11 | user tests/harness/errors/278_intrinsic_call_site_set_add.eu:5:11 | 1 (1 user) | 1 (1 user) |
 | `errors/278_intrinsic_call_site_set_remove` | user tests/harness/errors/278_intrinsic_call_site_set_remove.eu:5:30 | user tests/harness/errors/278_intrinsic_call_site_set_remove.eu:5:30 | 1 (1 user) | 1 (1 user) |
+| `errors/307_code_point_large_above_max` | user tests/harness/errors/307_code_point_large_above_max.eu:2:4 | user tests/harness/errors/307_code_point_large_above_max.eu:2:4 | 0 (0 user) | 0 (0 user) |
+| `errors/307_code_point_large_negative` | user tests/harness/errors/307_code_point_large_negative.eu:2:4 | user tests/harness/errors/307_code_point_large_negative.eu:2:4 | 0 (0 user) | 0 (0 user) |
+| `errors/307_vec_index_large_negative` | user tests/harness/errors/307_vec_index_large_negative.eu:2:19 | user tests/harness/errors/307_vec_index_large_negative.eu:2:19 | 1 (1 user) | 1 (1 user) |
+| `errors/307_vec_index_large_out_of_range` | user tests/harness/errors/307_vec_index_large_out_of_range.eu:2:19 | user tests/harness/errors/307_vec_index_large_out_of_range.eu:2:19 | 1 (1 user) | 1 (1 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
 | `many-decls/huge_decls_type_warning` | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | 1 (1 user) | 1 (1 user) |
 | `many-decls/many_decls_nested_user_fn` | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | 2 (1 user) | 2 (1 user) |
