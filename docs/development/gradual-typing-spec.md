@@ -647,7 +647,7 @@ min: number -> number -> number
 | `apply` | `any -> [any] -> any` | Arity depends on list length |
 | `cond` | `[(bool, a)] -> a -> a` | Heterogeneous pair list |
 | `parse-args` | `{..} -> [string] -> {..}` | Return shape mirrors input |
-| `deep-transform` | `(any -> any \| null) -> any -> any` | Recursive structure walk |
+| `deep-transform` | `(any -> (any \| null)) -> any -> any` | Recursive structure walk |
 | `deep-fold` | `any` throughout | Callback-driven recursion |
 | `match?` | `any -> any -> bool` | Structurally overloaded pattern |
 
