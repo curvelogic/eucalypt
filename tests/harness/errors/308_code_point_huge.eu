@@ -1,0 +1,2 @@
+` "eu-oaz72.156: a huge float in a code-point error is capped"
+r: str.from-code-points[2.0 ^ 1000]
