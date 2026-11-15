@@ -1,0 +1,26 @@
+"Grid-lookup benchmark (eu-oaz72.52). A 60x60 array of `r * 60 + c` is
+read at every cell, ten sweeps, with `arr.get`: the hot path of an AoC
+grid loop. Each sweep sums the grid, so the total is
+10 * (3600 * 3599 / 2) = 64782000, computed independently."
+
+` "the grid: cell (r, c) holds r * 60 + c"
+grid: arr.from-flat([60, 60], range(0, 3600))
+
+` "the sum of row `r` of `g`, read by coordinate"
+row-sum(g, r): range(0, 60) map(cell(g, r)) sum
+
+` "the cell at row `r`, column `c` of `g`"
+cell(g, r, c): g arr.get([r, c])
+
+` "the sum of every cell, read by coordinate"
+sweep(g): range(0, 60) map(row-sum(g)) sum
+
+` "one sweep of the grid; `_n` is ignored"
+once(_n): grid sweep
+
+` { target: :bench-array-grid-get
+    verify: ["default-expectation"] }
+bench-array-grid-get: {
+  total: range(0, 10) map(once) sum
+  RESULT: (total = 64782000) then(:PASS, :FAIL)
+}

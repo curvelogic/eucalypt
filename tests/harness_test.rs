@@ -655,6 +655,12 @@ pub fn test_bench_024_dict_counting() {
     run_test(&opts("bench/024_dict_counting.eu"));
 }
 
+// Grid lookups with `arr.get` (eu-oaz72.52).
+#[test]
+pub fn test_bench_025_array_grid_get() {
+    run_test(&opts("bench/025_array_grid_get.eu"));
+}
+
 #[test]
 pub fn test_harness_071() {
     run_test(&opts("071_sorting_lists.eu"));

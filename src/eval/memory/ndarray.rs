@@ -135,7 +135,20 @@ impl HeapNdArray {
 
     /// Get element at the given coordinates. Returns None if out of bounds.
     pub fn get(&self, coords: &[usize]) -> Option<f64> {
-        self.view().get(IxDyn(coords)).copied()
+        // Direct row-major offset: no view (and no shape validation) is
+        // rebuilt per call. Shape and data agree by construction.
+        let shape = self.shape();
+        if coords.len() != shape.len() {
+            return None;
+        }
+        let mut offset = 0usize;
+        for (&c, &extent) in coords.iter().zip(shape) {
+            if c >= extent {
+                return None;
+            }
+            offset = offset * extent + c;
+        }
+        self.data.as_slice().get(offset).copied()
     }
 
     /// A copy with the element at coords set to value.
@@ -339,6 +352,28 @@ mod tests {
         assert_eq!(c.iter().copied().collect::<Vec<_>>(), vec![11.0, 22.0]);
         let d = a.scalar_op(10.0, |x, s| x * s);
         assert_eq!(d.iter().copied().collect::<Vec<_>>(), vec![10.0, 20.0]);
+    }
+
+    #[test]
+    fn get_matches_view_indexing() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let vals: Vec<f64> = (0..24).map(f64::from).collect();
+        let arr = heap_arr(&view, &[2, 3, 4], vals);
+        for i in 0..2 {
+            for j in 0..3 {
+                for k in 0..4 {
+                    assert_eq!(
+                        arr.get(&[i, j, k]),
+                        arr.view().get(IxDyn(&[i, j, k])).copied()
+                    );
+                }
+            }
+        }
+        assert_eq!(arr.get(&[2, 0, 0]), None);
+        assert_eq!(arr.get(&[0, 3, 0]), None);
+        assert_eq!(arr.get(&[0, 0]), None);
+        assert_eq!(arr.get(&[0, 0, 0, 0]), None);
     }
 
     #[test]

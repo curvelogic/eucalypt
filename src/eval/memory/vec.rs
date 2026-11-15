@@ -18,6 +18,10 @@ use crate::eval::error::ExecutionError;
 /// A vector of primitive values, stored entirely in the GC heap.
 pub struct HeapVec {
     elements: Array<Primitive>,
+    /// Whether any element is a string. Numeric and symbol elements hold
+    /// no heap pointer, so a vec without strings needs no per-element
+    /// tracing or updating at GC (eu-oaz72.52).
+    has_strings: bool,
 }
 
 impl StgObject for HeapVec {}
@@ -29,11 +33,11 @@ impl GcScannable for HeapVec {
         marker: &mut CollectorHeapView<'a>,
         out: &mut Vec<ScanPtr<'a>>,
     ) {
-        scan_primitive_array(&self.elements, scope, marker, out);
+        scan_primitive_array(&self.elements, self.has_strings, scope, marker, out);
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
-        update_primitive_array(&mut self.elements, heap);
+        update_primitive_array(&mut self.elements, self.has_strings, heap);
     }
 }
 
@@ -45,6 +49,7 @@ impl HeapVec {
     ) -> Result<Self, ExecutionError> {
         Ok(HeapVec {
             elements: Array::try_from_slice(mem, elements)?,
+            has_strings: elements.iter().any(|p| matches!(p, Primitive::Str(_))),
         })
     }
 
