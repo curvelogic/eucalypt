@@ -1,0 +1,26 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/291_modinv_not_invertible
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/291_modinv_not_invertible.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/291_modinv_not_invertible.eu:2:4
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: modular arithmetic: 6 has no inverse modulo 9, because gcd(6, 9) = 3
+  help: modinv(a, m) exists only when a and m are coprime
+  ┌─ tests/harness/errors/291_modinv_not_invertible.eu:2:4
+  │
+2 │ x: modinv(6, 9)
+  │    ^^^^^^^^^^^^

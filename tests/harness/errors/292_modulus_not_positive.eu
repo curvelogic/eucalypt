@@ -1,0 +1,2 @@
+` "eu-oaz72.24: the modulus must be at least 1"
+x: mulmod(2, 3, 0)

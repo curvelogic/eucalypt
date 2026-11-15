@@ -1,0 +1,2 @@
+exit: 1
+stderr: "powmod requires each argument to be a whole number, but the base is 2\.5"

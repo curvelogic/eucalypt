@@ -1,0 +1,2 @@
+exit: 1
+stderr: "mulmod requires each argument to be in the 64-bit signed range, but the first factor is 9223372036854775808"
