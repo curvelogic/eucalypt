@@ -26,10 +26,10 @@ eu --seed 42 example.eu
 
 | Function | Description |
 |----------|-------------|
-| `random-stream(seed)` |  |
-| `stream-advance(n, s)` |  |
-| `random-ret(v, stream)` |  |
-| `random-bind(m, f, stream)` |  |
+| `random-stream(seed)` | Deprecated compatibility alias for `random.stream(seed) random.as-list`. Returns a lazy list of floats in [0, 1) |
+| `stream-advance(n, s)` | Helper: advance the opaque random stream `s` by `n` steps, returning the new stream |
+| `random-ret(v, stream)` | Return action for the random monad: yield `v` leaving the stream untouched |
+| `random-bind(m, f, stream)` | Bind for the random monad: run action `m` on the stream, feed its value to `f` and run the resulting action on the remaining stream |
 | `random.stream(seed)` | Create an opaque PRNG stream from integer seed |
 | `random.as-list(s)` | Convert an opaque random stream to a lazy cons-list of floats |
 | `random.float(s)` | State-monad action returning a random float in [0,1) |

@@ -7,6 +7,7 @@
 ##
 ## Prelude versioning and run metadata
 ##
+` "Namespace for metadata about the standard prelude."
 eu: {
   ` "Metadata about this version of the standard prelude"
   prelude: {
@@ -142,14 +143,16 @@ monad(m): {
 ## Random number generation
 ##
 
-# Compatibility alias: deprecated, use random.stream. Returns a lazy cons-list of floats.
+` "`random-stream(seed)` - deprecated compatibility alias for `random.stream(seed) random.as-list`. Returns a lazy list of floats in [0, 1)."
 random-stream(seed): random.stream(seed) random.as-list
 
-# Helper: advance an opaque stream n steps.
+` "`stream-advance(n, s)` - helper: advance the opaque random stream `s` by `n` steps, returning the new stream."
 stream-advance(n, s): if(n = 0, s, stream-advance(n - 1, __STREAM_ADVANCE(s)))
 
+` "`random-ret(v, stream)` - return action for the random monad: yield `v` leaving the stream untouched."
 random-ret(v, stream): { value: v, rest: stream }
 
+` "`random-bind(m, f, stream)` - bind for the random monad: run action `m` on the stream, feed its value to `f` and run the resulting action on the remaining stream."
 random-bind(m, f, stream): {
   r: m(stream)
   run: f(r.value)(r.rest)
@@ -1017,10 +1020,13 @@ par-concat(f, xs): __PARMAP(:par-concat, f, xs) concat
 a little more convenient to use interpolation instead.."
     export: :suppress }
 ch: {
+  ` "A newline character, for interpolation."
   n: "
 "
+  ` "A tab character, for interpolation."
   t: "	"
 
+  ` "A double-quote character, for interpolation."
   dq: __DQ
 }
 
@@ -1364,16 +1370,19 @@ assert(p?, s, v): if(v p?, v, panic(s))
 # Debug tracing
 #
 
-` { doc: "`dbg(opts, v)` - print value `v` to stderr and return `v` unchanged. opts keys: label (string)." }
-# Render a value for debug output: eu-syntax for blocks/lists, DBG_REPR for everything else
+` "Render a value for debug output: eu-syntax for blocks and lists, the debug representation for everything else."
 __dbg-render(v): if(v block?, v render-as(:eu), if(v list?, v render-as(:eu), __DBG_REPR(v)))
 
+` { doc: "`dbg(opts, v)` - print value `v` to stderr and return `v` unchanged. `opts` is a block; the only key used is `label` (string), prefixed to the output. See also `▶`." }
 dbg(opts, v): {result: __DBG(lookup-or(:label, "", opts), __dbg-render(v), v)}.result
 
-` { doc: "`▶v` - debug-trace value or function. On a value, prints it to stderr and returns it. On a function, returns a wrapped version that traces each output."
+` { doc: "Debug-trace a value: print it to stderr and return it unchanged. Helper for `▶`."
     precedence: 85 }
 __dbg-val(v): {result: __DBG("", __dbg-render(v), v)}.result
+` "Helper for `▶`: apply `f` to `x` and debug-trace the result."
 __dbg-after(f, x): ▶(f(x))
+
+` { doc: "`▶ v` - debug-trace a value or function. On a value, prints it to stderr and returns it unchanged. On a function, returns a wrapped version that traces each output, so `▶ f` can replace `f` in a pipeline. See also `dbg`." }
 (▶ v): if(__SATURATED(v), __dbg-val(v), __dbg-after(v))
 
 #
@@ -1785,6 +1794,7 @@ values(b): b elements map(value)
 ` { doc: "`sort-keys(b)` - return block `b` with keys sorted alphabetically."
     type: s"{..} → {..}" }
 sort-keys(b): b elements qsort(pair-key-lt) block
+  ` "Helper: order two `[key, value]` pairs by key."
   pair-key-lt(p1, p2): key(p1) < key(p2)
 
 ` { doc: "`bimap(f, g, pr)` - apply f to first item of pair and g to second, return pair."
@@ -1872,6 +1882,7 @@ select(ks, b):
 dissoc(ks, b):
   b filter-items(by-key(∉ set.from-list(ks))) block
 
+` "Internal namespace holding the `alter?` and `update?` helpers."
 _block: {
   ` "If `k` satisfies `k?` then `v!` else `v`"
   alter?(k?, v!, k, v): [k, if(k k?, v!, v)]
@@ -1940,10 +1951,13 @@ deep-merge-at(ks, v, b): if(ks nil?,
     doc: "Function for working with a human view of time." }
 cal: {
 
+  ` "`cal.ifields(t)` - break an epoch time `t` (seconds) into a block of date-time fields (`y`, `m`, `d`, `H`, `M`, `S`, ...)."
   ifields: block ∘__IFIELDS
 
+  ` "`cal.now` - the current time as a block of date-time fields (as `cal.ifields`), taken from `io.epoch-time`."
   now: io.epoch-time ifields
-  
+
+  ` "`cal.epoch` - the Unix epoch (time 0) as a block of date-time fields."
   epoch: 0 ifields
 
   ` "`cal.zdt(y, m, d, H, M, S, Z)` - create zoned date time from datetime components and timezone string (e.g. '+0100')"

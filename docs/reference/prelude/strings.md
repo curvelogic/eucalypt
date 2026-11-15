@@ -47,9 +47,9 @@ a little more convenient to use interpolation instead..
 
 | Function | Description |
 |----------|-------------|
-| `ch.n` |  |
-| `ch.t` |  |
-| `ch.dq` |  |
+| `ch.n` | A newline character, for interpolation |
+| `ch.t` | A tab character, for interpolation |
+| `ch.dq` | A double-quote character, for interpolation |
 
 The `ch` namespace provides special characters:
 

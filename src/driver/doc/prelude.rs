@@ -56,6 +56,9 @@ fn section_to_category(section: &str) -> Option<&'static str> {
         "Text and regexes" => Some("strings"),
         "Combinators" => Some("combinators"),
         "Sets" => Some("sets"),
+        "Vecs (O(1) indexed access)" => Some("arrays"),
+        "N-dimensional arrays (tensors)" => Some("arrays"),
+        "Graph algorithms" => Some("graphs"),
         // Single-`#` sections (stored in `section` field after Python script compat)
         "Utilities" => Some("combinators"),
         "Metadata basics" => Some("metadata"),
@@ -77,6 +80,9 @@ fn namespace_to_category(ns: &str) -> &'static str {
         "set" => "sets",
         "assertions" => "metadata",
         "random" => "random",
+        "vec" | "arr" => "arrays",
+        "graph" => "graphs",
+        "bit" => "bits",
         _ => "io",
     }
 }
@@ -337,6 +343,10 @@ fn regex_strip_plain_prefix(s: &str) -> String {
 fn entry_category(entry: &FlatEntry) -> &'static str {
     if !entry.namespace.is_empty() {
         namespace_to_category(&entry.namespace)
+    } else if entry.name.starts_with("par-") {
+        // The par-* block's `##` heading comment spans many lines, so the
+        // section heading is not a reliable key; match by name instead.
+        "parallel"
     } else if let Some(cat) = section_to_category(&entry.section) {
         cat
     } else {
@@ -635,6 +645,40 @@ fn category_sections(category: &str) -> Option<(&'static str, Vec<SectionConfig<
                 source: SectionSource::All,
             }],
         ),
+        "arrays" => (
+            "Vecs and Arrays",
+            vec![
+                SectionConfig {
+                    display: "Vecs",
+                    source: SectionSource::Filter(|e| e.namespace == "vec"),
+                },
+                SectionConfig {
+                    display: "N-dimensional Arrays",
+                    source: SectionSource::All,
+                },
+            ],
+        ),
+        "graphs" => (
+            "Graph Algorithms",
+            vec![SectionConfig {
+                display: "Graph Functions",
+                source: SectionSource::All,
+            }],
+        ),
+        "bits" => (
+            "Bitwise Operations",
+            vec![SectionConfig {
+                display: "Bit Functions",
+                source: SectionSource::All,
+            }],
+        ),
+        "parallel" => (
+            "Process Parallelism",
+            vec![SectionConfig {
+                display: "Parallel Combinators",
+                source: SectionSource::All,
+            }],
+        ),
         "random" => (
             "Random Numbers",
             vec![SectionConfig {
@@ -832,6 +876,26 @@ fn generate_index_page(
             "Random Numbers",
             "random number generation, monadic random: namespace",
         ),
+        (
+            "arrays",
+            "Vecs and Arrays",
+            "vecs (O(1) indexed access) and n-dimensional arrays",
+        ),
+        (
+            "graphs",
+            "Graph Algorithms",
+            "union-find, topological sort, Kruskal",
+        ),
+        (
+            "bits",
+            "Bitwise Operations",
+            "bitwise and, or, xor, shifts, bit counts",
+        ),
+        (
+            "parallel",
+            "Process Parallelism",
+            "experimental par-* combinators",
+        ),
         ("metadata", "Metadata", "metadata and assertion functions"),
         (
             "io",
@@ -903,6 +967,10 @@ const CATEGORY_ORDER: &[&str] = &[
     "calendar",
     "sets",
     "random",
+    "arrays",
+    "graphs",
+    "bits",
+    "parallel",
     "metadata",
     "io",
 ];
