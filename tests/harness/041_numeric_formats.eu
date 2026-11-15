@@ -1,77 +1,77 @@
 "Examples from https://alvinalexander.com/programming/printf-format-cheat-sheet"
 
-fmt: str.fmt
+format: str.format
 
 int-widths: {
-  α: fmt(0, "%3d") //= "  0"
-  β: fmt(123456789, "%3d") //= "123456789"
-  γ: fmt(-10, "%3d") //= "-10"
-  δ: fmt(-123456789, "%3d") //= "-123456789"
+  α: 0 format("%3d") //= "  0"
+  β: 123456789 format("%3d") //= "123456789"
+  γ: -10 format("%3d") //= "-10"
+  δ: -123456789 format("%3d") //= "-123456789"
 }
 
 int-pads: {
-  α: fmt(0, "%03d") //= "000"
-  β: fmt(1, "%03d") //= "001"
-  γ: fmt(123456789, "%03d") //= "123456789"
-  δ: fmt(-10, "%03d") //= "-10"
-  ε: fmt(-123456789, "%03d") //= "-123456789"
+  α: 0 format("%03d") //= "000"
+  β: 1 format("%03d") //= "001"
+  γ: 123456789 format("%03d") //= "123456789"
+  δ: -10 format("%03d") //= "-10"
+  ε: -123456789 format("%03d") //= "-123456789"
 }
 
 int-justs: {
   # At least five wide
-  α: fmt(10, "%5d") //= "   10"
+  α: 10 format("%5d") //= "   10"
   # At least five-wide, left-justified
-  β: fmt(10, "%-5d") //= "10   "
+  β: 10 format("%-5d") //= "10   "
   # At least five-wide, zero-filled
-  γ: fmt(10, "%05d") //= "00010"
+  γ: 10 format("%05d") //= "00010"
   # At least five-wide, with a plus sign
-  δ: fmt(10, "%+5d") //= "  +10"
+  δ: 10 format("%+5d") //= "  +10"
   # Five-wide, plus sign, left-justified
-  ε: fmt(10, "%-+5d") //= "+10  "
+  ε: 10 format("%-+5d") //= "+10  "
 }
 
 hex-ints: {
-  α: fmt(10, "%x") //= "a"
-  β: fmt(10, "%X") //= "A"
+  α: 10 format("%x") //= "a"
+  β: 10 format("%X") //= "A"
 }
 
 oct-ints: {
-  α: fmt(10, "%o") //= "12"
+  α: 10 format("%o") //= "12"
 }
 
 float-fmts: {
   # Print one position after the decimal
-  α: fmt(10.3456, "%.1f") //= "10.3"
+  α: 10.3456 format("%.1f") //= "10.3"
   # Two positions after the decimal
-  β: fmt(10.3456, "%.2f") //= "10.35"
+  β: 10.3456 format("%.2f") //= "10.35"
   # Eight-wide, two positions after the decimal
-  γ: fmt(10.3456, "%8.2f") //= "   10.35"
+  γ: 10.3456 format("%8.2f") //= "   10.35"
   # Eight-wide, four positions after the decimal
-  δ: fmt(10.3456, "%8.4f") //= " 10.3456"
+  δ: 10.3456 format("%8.4f") //= " 10.3456"
   # Eight-wide, two positions after the decimal, zero-filled
-  ε: fmt(10.3456, "%08.2f") //= "00010.35"
+  ε: 10.3456 format("%08.2f") //= "00010.35"
   # Eight-wide, two positions after the decimal, left-justified
-  ζ: fmt(10.3456, "%-8.2f") //= "10.35   "
+  ζ: 10.3456 format("%-8.2f") //= "10.35   "
   # Printing a much larger number with that same format
-  η: fmt(101234567.3456, "%-8.2f") //= "101234567.35"
+  η: 101234567.3456 format("%-8.2f") //= "101234567.35"
 }
 
 string-fmts: {
   # A simple string
-  α: fmt("Hello", "%s") //= "Hello"
+  α: "Hello" format("%s") //= "Hello"
   # A string with a minimum length
-  β: fmt("Hello", "%10s") //= "     Hello"
+  β: "Hello" format("%10s") //= "     Hello"
   # Minimum length, left-justified
-  γ: fmt("Hello", "%-10s") //= "Hello     "
+  γ: "Hello" format("%-10s") //= "Hello     "
 }
 
 symbol: {
   # A simple string
-  α: fmt(:Hello, "%s") //= "Hello"
+  α: :Hello format("%s") //= "Hello"
   # A string with a minimum length
-  β: fmt(:Hello, "%10s") //= "     Hello"
+  β: :Hello format("%10s") //= "     Hello"
   # Minimum length, left-justified
-  γ: fmt(:Hello, "%-10s") //= "Hello     "
+  γ: :Hello format("%-10s") //= "Hello     "
 }
 
 a: 1
@@ -85,10 +85,10 @@ fmt-interpolations: {
 
 x: 33
 y: 44
-badfmt(n): fmt(n, "%-8d") "***{}***"
+bad-format(n): n format("%-8d") "***{}***"
 
 fn-interpolations: {
-  α: "{x:badfmt} -- {y:badfmt}" //= "***33      *** -- ***44      ***"
+  α: "{x:bad-format} -- {y:bad-format}" //= "***33      *** -- ***44      ***"
 }
 
 f: "{:%03d}{:%05x}"

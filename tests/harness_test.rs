@@ -3542,6 +3542,12 @@ pub fn test_240_oaz72_41_lambda_capture_sharing() {
 }
 
 #[test]
+/// `str.format(spec, x)`: spec-first argument order and the `%b` specifier.
+pub fn test_str_format() {
+    run_test(&opts("str_format.eu"));
+}
+
+#[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame
 /// inside it could win `to_diagnostic`'s "prefer a user file" test and become

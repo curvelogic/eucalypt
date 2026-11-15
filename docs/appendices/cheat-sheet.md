@@ -404,6 +404,7 @@ float such as `2.0` is accepted.
 | Function | Description |
 |----------|-------------|
 | `str.len(s)` | String length |
+| `str.format(spec, x)` | Printf-style format, spec first: `255 str.format("%x")`, `5 str.format("%08b")` (`%b` binary) |
 | `str.to-upper(s)` | Upper case |
 | `str.to-lower(s)` | Lower case |
 | `str.starts-with?(re, s)` | Starts with regex match? |

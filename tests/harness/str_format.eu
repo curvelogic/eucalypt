@@ -1,0 +1,19 @@
+# str.format(spec, x): spec first, so it works in pipelines.
+
+hex: (255 str.format("%x")) = "ff"
+upper-hex: (255 str.format("%X")) = "FF"
+octal: (8 str.format("%o")) = "10"
+binary: (5 str.format("%b")) = "101"
+binary-padded: (5 str.format("%08b")) = "00000101"
+binary-width: (5 str.format("%8b")) = "     101"
+binary-zero: (0 str.format("%b")) = "0"
+binary-negative: (-1 str.format("%b")) = ("1" repeat take(64) str.join-on(""))
+hex-negative: (-1 str.format("%x")) = "ffffffffffffffff"
+mapped: ([1, 2, 3] map(str.format("%04d"))) = ["0001", "0002", "0003"]
+float: (3.14159 str.format("%.2f")) = "3.14"
+string: ("hi" str.format("%5s")) = "   hi"
+direct: str.format("%03d", 7) = "007"
+
+RESULT: [hex, upper-hex, octal, binary, binary-padded, binary-width, binary-zero,
+         binary-negative, hex-negative, mapped, float, string, direct]
+  all-true? then(:PASS, :FAIL)

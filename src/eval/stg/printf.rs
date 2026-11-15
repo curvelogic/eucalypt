@@ -107,6 +107,8 @@ pub enum Specifier {
     Hex,
     /// `X`
     UpperHex,
+    /// `b`
+    Binary,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -226,6 +228,7 @@ fn parse_format(format: &str) -> Option<Argument> {
         b'X' => Specifier::UpperHex,
         b'u' => Specifier::Uint,
         b'o' => Specifier::Octal,
+        b'b' => Specifier::Binary,
         b'f' => Specifier::Double {
             format: DoubleFormat::Normal,
         },
@@ -327,6 +330,13 @@ fn write_numeric(
                 Specifier::Octal => {
                     if let Some(i) = num.as_i64() {
                         write_using!($flags, "o", precision, i)
+                    } else {
+                        Err(PrintfError::ConversionError)
+                    }
+                }
+                Specifier::Binary => {
+                    if let Some(i) = num.as_i64() {
+                        write_using!($flags, "b", precision, i)
                     } else {
                         Err(PrintfError::ConversionError)
                     }
@@ -479,5 +489,53 @@ pub fn fmt(
         Err(PrintfError::InvalidFormatString(format!(
             "'{fmt_string}' is not a recognised printf specifier"
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bin(spec: &str, n: i64) -> String {
+        let parsed = parse_format(spec).expect("spec should parse");
+        let mut out = String::new();
+        write_numeric(
+            &mut out,
+            parsed.flags,
+            parsed.width,
+            parsed.precision,
+            parsed.specifier,
+            &Number::from(n),
+        )
+        .expect("write should succeed");
+        out
+    }
+
+    #[test]
+    fn binary_plain() {
+        assert_eq!(bin("%b", 5), "101");
+    }
+
+    #[test]
+    fn binary_zero() {
+        assert_eq!(bin("%b", 0), "0");
+    }
+
+    #[test]
+    fn binary_width_pads_with_spaces() {
+        assert_eq!(bin("%8b", 5), "     101");
+        assert_eq!(bin("%-8b", 5), "101     ");
+    }
+
+    #[test]
+    fn binary_zero_pad() {
+        assert_eq!(bin("%08b", 5), "00000101");
+    }
+
+    #[test]
+    fn binary_negative_is_64_bit_twos_complement() {
+        assert_eq!(bin("%b", -1), "1".repeat(64));
+        assert_eq!(bin("%b", -2), format!("{}0", "1".repeat(63)));
+        assert_eq!(bin("%x", -1), "ffffffffffffffff");
     }
 }
