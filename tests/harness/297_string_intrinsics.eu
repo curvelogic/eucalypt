@@ -51,7 +51,7 @@ single: [
   ch.of-code-point(128512) = "😀",
   ch.of-code-point(ch.code-point("é")) = "é",
   ch.code-point(ch.of-code-point(8594)) = 8594,
-  ch.code-point(ch.n) = 10,
+  ch.code-point(ch.dq) = 34,
   ch.of-code-point(97.0) = "a",
   ("héllo" str.letters map(ch.code-point)) = str.code-points("héllo")
 ]
