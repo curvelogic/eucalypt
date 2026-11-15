@@ -5536,6 +5536,6 @@ pub fn test_error_306_complex_result_large_float() {
 }
 
 #[test]
-pub fn test_error_dict_detached_value_label() {
-    run_error_test(&error_opts("dict_detached_value_label.eu"));
+pub fn test_error_250_dict_detached_label() {
+    run_error_test(&error_opts("250_dict_detached_label.eu"));
 }

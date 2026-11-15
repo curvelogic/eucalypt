@@ -1,3 +1,0 @@
-` "an error raised from a dict value rebuilt over fresh frames still labels where the value was built (the whole dict.assoc call), not the unrelated dict.empty."
-f(i): dict.empty dict.assoc(:k, [i, i])
-v: (f(3) dict.get(:k))(1)

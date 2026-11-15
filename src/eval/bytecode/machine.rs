@@ -5331,14 +5331,14 @@ impl BcBifContext<'_, '_> {
                 None => return Ok(None),
             }
         }
-        // Keep the original's annotations (eu-oaz72.83): the frame's is the
-        // call site an error trace reports as "called from here", and the
-        // closure's is the annotation stamped on entering it. Falling back to
-        // the intrinsic's own site would blame the dict operation instead.
-        let closure_ann = match &closure {
-            AbiClosure::Byte(BcValue::Closure(c)) => c.annotation(),
-            AbiClosure::Byte(BcValue::Native(_)) => self.state.annotation,
-        };
+        // Keep the original frame's annotation (eu-oaz72.83): it is the call
+        // site an error trace reports as "called from here". Falling back to
+        // the intrinsic's own site would blame the dict operation instead. (A
+        // closure annotation is not observable in any trace, so it is not
+        // copied.)
+        if fields.is_empty() {
+            return self.build_data(view, tag, &fields).map(Some);
+        }
         let frame_ann = view.scoped(env).annotation();
         let code = self
             .program
@@ -5357,11 +5357,7 @@ impl BcBifContext<'_, '_> {
             self.state.root_env,
             frame_ann,
         )?;
-        Ok(Some(BcValue::Closure(BcClosure::new_annotated(
-            code,
-            new_env,
-            closure_ann,
-        ))))
+        Ok(Some(BcValue::Closure(BcClosure::new(code, new_env))))
     }
 
     /// Follow `OP_ATOM` alias closures to the value they name (at most a

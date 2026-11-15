@@ -1,2 +1,0 @@
-exit: 1
-stderr: "tried to call a list as a function(.|\n)*-{10,}.*called from here"
