@@ -1,0 +1,6 @@
+{ doc: "lookup-or / lookup-or-in return (any | a), parenthesised since | binds looser than → (eu-oaz72.137): a number default passed to a string function warns with the union." }
+
+` { type: "string → string" }
+shout(s): s str.to-upper
+
+result: lookup-or(:x, 1, {x: 2}) shout

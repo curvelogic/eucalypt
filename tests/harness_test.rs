@@ -4724,6 +4724,26 @@ pub fn test_typecheck_120_dict_get_or_default_in_result() {
     run_typecheck_test("120_dict_get_or_default_in_result.eu");
 }
 
+#[test]
+pub fn test_typecheck_121_lookup_or_union_result() {
+    run_typecheck_test("121_lookup_or_union_result.eu");
+}
+
+#[test]
+pub fn test_typecheck_122_deep_transform_rule_must_be_function() {
+    run_typecheck_test("122_deep_transform_rule_must_be_function.eu");
+}
+
+#[test]
+pub fn test_typecheck_123_fnil_nullable_arg() {
+    run_typecheck_test("123_fnil_nullable_arg.eu");
+}
+
+#[test]
+pub fn test_typecheck_124_coalesce_result_may_be_null() {
+    run_typecheck_test("124_coalesce_result_may_be_null.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).

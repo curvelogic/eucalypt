@@ -327,7 +327,7 @@ null?: = null
 (x ✓): not(x = null)
 
 ` { doc: "`coalesce(xs)` - return the first non-null element from list `xs`, or null if all are null."
-    type: s"[a | null] → a | null" }
+    type: s"[a | null] → (a | null)" }
 coalesce(xs): (xs nil?) then(null, (xs head)✓ then(xs head, xs tail coalesce))
 
 ` { doc: "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
@@ -437,12 +437,12 @@ lookup(s, b): __LOOKUP(s, b)
 lookup-in(b, s): __LOOKUP(s, b)
 
 ` { doc: "`lookup-or(s, d, b)` - look up symbol `s` in block `b`, default `d` if not found."
-    type: s"symbol → a → {..} → any | a"
+    type: s"symbol → a → {..} → (any | a)"
     blame: :boundary }
 lookup-or(s, d, b): __LOOKUPOR(s, d, b)
 
 ` { doc: "`lookup-or-in(b, s, d)` - look up symbol `s` in block `b`, default `d` if not found."
-    type: s"{..} → symbol → a → any | a" }
+    type: s"{..} → symbol → a → (any | a)" }
 lookup-or-in(b, s, d): lookup-or(s, d, b)
 
 ` { doc: "a ~ :k - safe key lookup. Returns value at key :k if a is a block containing :k, else null. Null-propagating for chained navigation."
@@ -540,7 +540,7 @@ deep-query-paths(pattern, b): b deep-query-fold(pattern) map(first)
 ##
 
 ` { doc: "`deep-transform(rule, data)` - recursively transform a nested structure. At each node, call `rule(node)`. If it returns non-null, use that as the replacement (stop recursing into that node). If it returns null, recurse into children (block values and list elements)."
-    type: s"(any → any | null) → any → any" }
+    type: s"(any → (any | null)) → any → any" }
 deep-transform(rule, data): {
   attempt: rule(data)
   recurse: if(data block?, data map-values(deep-transform(rule)),
@@ -1312,7 +1312,7 @@ juxt(f, g, x): [x f, x g]
 ## Utilities
 #
 ` { doc: "`fnil(f, v, x)` - return a function equivalent to f except it sees `x` instead of `null` when null is passed."
-    type: s"(a → b) → a → a | null → b" }
+    type: s"(a → b) → a → (a | null) → b" }
 fnil(f, v, x): if(x = null, f(v), f(x))
 
 #
