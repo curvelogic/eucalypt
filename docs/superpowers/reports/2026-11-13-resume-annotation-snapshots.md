@@ -107,3 +107,15 @@ papered over.
   `vec_of` the list literal, 5:9); restored, all five pass in both modes.
 - `cargo test` (all gates), `scripts/blob-mode-tests.sh`, and the harness
   under `EU_GC_VERIFY=2 EU_GC_STRESS=1`.
+
+## Addendum (eu-oaz72.121): operand locations recovered
+
+`UnexpectedFunction` now carries the function operand's own annotation, and
+the renderer uses it as the primary location when it lies in a user file (else
+the machine's register, as before). The catenation note is found from the
+operand's head as well as from the operator. 192, errors/229 and
+catenation_arith regain `add(1)` (2:9) and the eleven-column `foldl(+, 0)`
+span (10:7), pinned again by the 229 `.expect`. Not recoverable this way:
+`metadata_span` (the offending `"2"` is a native string with no location of
+its own) and 011 (an assertion failure, not an operand type error); both stay
+as recorded above.

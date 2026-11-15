@@ -230,6 +230,10 @@ fn not_shown_without_the_parse() {
         // a step operator that fails for another reason than a function
         "xs 1 + \"a\"",
         "xs head ∘ inc",
+        // the step head is called and is not a function: a not-callable
+        // error is not the operator receiving the step's function
+        // (eu-oaz72.121)
+        "xs k(1) + 2",
     ] {
         assert_no_note(expr);
     }

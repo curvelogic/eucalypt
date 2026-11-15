@@ -609,6 +609,50 @@ impl SourceMap {
         self.catenation_operands.get(&(file, span))
     }
 
+    /// The catenation whose step's leftmost operand (its head, `nth(0)` in
+    /// `xs nth(0) + 1`) is at `file`/`span` (eu-oaz72.121). An operator
+    /// handed the step's partial application blames that operand's own
+    /// location, so the note is found from there as well as from the
+    /// operator.
+    pub fn catenation_operand_by_head(
+        &self,
+        file: usize,
+        span: Span,
+        source: &str,
+    ) -> Option<&CatenationOperand> {
+        self.catenation_operands.values().find(|operand| {
+            let start = self.source_info_for_smid(operand.step.0);
+            let end = self.source_info_for_smid(operand.step_head_end);
+            match (start, end) {
+                (
+                    Some(SourceInfo {
+                        file: Some(f1),
+                        span: Some(s1),
+                        ..
+                    }),
+                    Some(SourceInfo {
+                        file: Some(f2),
+                        span: Some(s2),
+                        ..
+                    }),
+                ) => {
+                    *f1 == file
+                        && *f2 == file
+                        && s1.start() == span.start()
+                        && s2.end() <= span.end()
+                        // The head's last atom may sit inside closing
+                        // brackets that belong to the head: `nth(0)`.
+                        && source
+                            .get(s2.end().to_usize()..span.end().to_usize())
+                            .is_some_and(|rest| {
+                                rest.chars().all(|c| matches!(c, ')' | ']' | '}') || c.is_whitespace())
+                            })
+                }
+                _ => false,
+            }
+        })
+    }
+
     /// Record that the expression anaphor at `anaphor` was alone in its
     /// scope, so cook wrapped the identity function round it
     /// (eu-oaz72.132).

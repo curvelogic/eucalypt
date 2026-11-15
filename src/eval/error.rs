@@ -778,7 +778,16 @@ fn catenation_operand_note(
     if !source_map.is_user_file(file) {
         return None;
     }
-    let operand = source_map.catenation_operand(file, span)?;
+    // Only an operand blamed by its own location (eu-oaz72.121) is found
+    // from the step head; every other error is raised at the operator.
+    let by_head = || {
+        let ExecutionError::UnexpectedFunction(..) = inner else {
+            return None;
+        };
+        let source: &str = codespan_reporting::files::Files::source(files, file).ok()?;
+        source_map.catenation_operand_by_head(file, span, source)
+    };
+    let operand = source_map.catenation_operand(file, span).or_else(by_head)?;
     evidence::catenation_note(operand, source_map, files)
 }
 
@@ -1145,7 +1154,16 @@ pub enum ExecutionError {
     /// self-contradictory message and a misdirecting `did you mean
     /// block.field?` hint for a value that was never a block (eu-1tkk.7.9).
     #[error("type mismatch: expected {1}, found a function")]
-    UnexpectedFunction(Smid, &'static str /* expected kind, e.g. "number" */),
+    ///
+    /// The third field is the function operand's own annotation (the
+    /// under-applied call as written), which replaces the machine's register
+    /// as the primary location when it lies in a user file (eu-oaz72.121);
+    /// invalid when the operand has none.
+    UnexpectedFunction(
+        Smid,
+        &'static str, /* expected kind, e.g. "number" */
+        Smid,
+    ),
     #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
     /// A value that cannot be stored in a set or vec was given as an
@@ -1415,7 +1433,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::UnknownIntrinsic(s, _) => *s,
             ExecutionError::NotCallable(s, _) => *s,
             ExecutionError::LookupOnFunction(s, _) => *s,
-            ExecutionError::UnexpectedFunction(s, _) => *s,
+            ExecutionError::UnexpectedFunction(s, _, _) => *s,
             ExecutionError::NotValue(s, _) => *s,
             ExecutionError::InvalidElement(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
@@ -1501,12 +1519,40 @@ impl ExecutionError {
         self.diagnostic_impl(source_map, Some(files))
     }
 
+    /// This error with its operand's own location as primary, when it
+    /// carries one in a user file; `None` otherwise (eu-oaz72.121).
+    fn blame_operand(&self, source_map: &SourceMap) -> Option<ExecutionError> {
+        match self {
+            ExecutionError::Traced(e, trace) => e
+                .blame_operand(source_map)
+                .map(|e| ExecutionError::Traced(Box::new(e), trace.clone())),
+            ExecutionError::UnexpectedFunction(_, kind, operand) => {
+                let file = source_map.source_info_for_smid(*operand)?.file?;
+                source_map
+                    .is_user_file(file)
+                    .then_some(ExecutionError::UnexpectedFunction(
+                        *operand,
+                        kind,
+                        Smid::default(),
+                    ))
+            }
+            _ => None,
+        }
+    }
+
     fn diagnostic_impl(
         &self,
         source_map: &SourceMap,
         files: Option<&SimpleFiles<String, String>>,
     ) -> Diagnostic<usize> {
         use codespan_reporting::diagnostic::Label;
+
+        // Blame the operand itself when it was written in a user file
+        // (eu-oaz72.121): the operator it was handed to is only where the
+        // machine noticed.
+        if let Some(rebound) = self.blame_operand(source_map) {
+            return rebound.diagnostic_impl(source_map, files);
+        }
 
         // Delegate CompileError to its own diagnostic
         if let ExecutionError::Compile(e) = self {
