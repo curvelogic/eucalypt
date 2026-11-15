@@ -100,6 +100,46 @@ whole-floats: [
   modinv(3.0, 7) = 5
 ]
 
+` "crt: Chinese remainder theorem over [remainder, modulus] pairs (eu-oaz72.24)"
+crt-basic: [
+  crt[[2, 3], [3, 5], [2, 7]] = 23,
+  crt[[4, 7]] = 4,
+  crt[[3, 7]] = 3,
+  ([] crt) = 0,
+  crt[[0, 1]] = 0,
+  crt[[-1, 7], [3, 5]] = 13,
+  crt[[2, 7], [-1, 4]] = 23,
+  crt[[3, 5], [2, 3], [2, 7]] = 23
+]
+
+` "crt: a 2020 d13-style system whose moduli multiply to ~1.1e15, past what a * b % m allows"
+crt-buses: {
+  ids: [17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+  rems: [0, 17, 20, 22, 23, 26, 27, 27, 28, 28]
+  t: zip-with(pair, rems, ids) crt
+  ok: [
+    t = 361058656549844,
+    foldl(*, 1, ids) = 1085220062510491,
+    (ids map(mod(t))) = rems
+  ]
+}.ok
+
+` "powmod and modinv compose a 2019 d22 p2-style affine shuffle on 119315717514047 cards"
+shuffle-card: {
+  n: 119315717514047
+  k: 101741582076661
+  a: 37
+  b: 50694
+  big-a: powmod(a, k, n)
+  big-b: mulmod(mulmod(b, big-a - 1, n), modinv(a - 1, n), n)
+  ok: [
+    big-a = 79653924844580,
+    big-b = 29113325022823,
+    mulmod(2020 - big-b, modinv(big-a, n), n) = 56078591800410,
+    (mulmod(big-a, 2020, n) + big-b) % n = 92454302139067
+  ]
+}.ok
+
 RESULT: [
   mulmod-basic,
   mulmod-boundary,
@@ -109,5 +149,8 @@ RESULT: [
   fermat,
   modinv-basic,
   modinv-boundary,
-  whole-floats
+  whole-floats,
+  crt-basic,
+  crt-buses,
+  shuffle-card
 ] concat all-true? then(:PASS, :FAIL)

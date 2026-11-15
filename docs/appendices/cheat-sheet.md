@@ -459,6 +459,7 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
 | `mulmod(a, b, m)` / `powmod(b, e, m)` / `modinv(a, m)` | Exact modular arithmetic for 64-bit signed integers; result in `[0, m)` |
+| `crt[[r, m], ...]` | Chinese remainder theorem: least `x ≥ 0` with `x ≡ r (mod m)` for each pair (moduli pairwise coprime) |
 | `even?` / `odd?` | Do **not** exist — use `2 ∣ x` / `2 ∤ x` (U+2223 divides, not `\|`) or `x % 2 = 0` |
 
 ### Lenses (`lens.eu`)

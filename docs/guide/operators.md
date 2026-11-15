@@ -190,6 +190,18 @@ a non-negative exponent (for `b^-k`, use `powmod(modinv(b, m), k, m)`),
 and `modinv(a, m)` is an error when `a` and `m` share a factor, as
 `modinv(6, 9)` does.
 
+`crt` combines congruences with the Chinese remainder theorem. It takes a
+list of `[remainder, modulus]` pairs and returns the least non-negative `x`
+that leaves each remainder, built on `mulmod` and `modinv`:
+
+```eu
+x: crt[[2, 3], [3, 5], [2, 7]] //=> 23
+```
+
+The moduli must be pairwise coprime, so `crt[[1, 6], [2, 9]]` is an
+error even though that system has a solution, and their product must fit in
+64 bits: a running product of the moduli, taken in list order, past 2^63 may stop with `numeric overflow`. Negative remainders are normalised, and `[] crt` is `0`.
+
 ## The Assertion Operators
 
 Two special operators are provided for testing:
