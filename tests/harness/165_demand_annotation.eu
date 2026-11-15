@@ -123,7 +123,9 @@ test-foldl-strict: {
   same: foldl-strict(+, 10, [1, 2, 3]) = foldl(+, 10, [1, 2, 3])
   empty: foldl-strict(+, 7, []) = 7
   lazy-foldl: foldl(second-of, 0, [panic("step forced"), 5]) = 5
-  RESULT: [same, empty, lazy-foldl] all-true? then(:PASS, :FAIL)
+  lazy-seed: foldl-strict(second-of, panic("seed forced"), [5]) = 5
+  lazy-op: foldl-strict(panic("op forced"), 0, []) = 0
+  RESULT: [same, empty, lazy-foldl, lazy-seed, lazy-op] all-true? then(:PASS, :FAIL)
 }
 
 ` { target: :test-laziness }

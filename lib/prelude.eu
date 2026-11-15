@@ -1556,7 +1556,7 @@ repeat(i): __CONS(i, repeat(i))
     blame: :transparent }
 foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 
-` { doc: "`foldl-strict(op, i, l)` - as `foldl`, but the accumulator is evaluated to weak head normal form at each step, so a long fold runs in constant stack instead of building a chain of unevaluated `op` calls. Use it where `op` is strict in the accumulator, as `+` and `max` are. `op(i, x)` is evaluated even where `op` would ignore it, so an error there surfaces where `foldl` would have skipped it."
+` { doc: "`foldl-strict(op, i, l)` - as `foldl`, but the accumulator is evaluated to weak head normal form at each step, so a long fold runs in constant stack instead of building a chain of unevaluated `op` calls (for a scalar accumulator; a list or block accumulator is forced only to its outermost constructor). Use it where `op` is strict in the accumulator, as `+` and `max` are. `op(i, x)` is evaluated even where `op` would ignore it, so an error there surfaces where `foldl` would have skipped it."
     type: s"(b → a → b) → b → [a] → b"
     blame: :transparent }
 ## The two identical branches are deliberate: `a list?` evaluates the accumulator

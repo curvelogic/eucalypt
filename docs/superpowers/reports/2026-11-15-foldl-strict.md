@@ -3,8 +3,8 @@
 `foldl-strict(op, i, l)` evaluates the accumulator to WHNF per step via
 `if(a list?, rec, rec)` (the type predicate forces `a` and never errors).
 Other shapes (local helper, `rest` thunk) kept a stack frame per element.
-Demand analysis derives `op`/`l` strict and leaves `i` lazy on the empty-list
-path, which matches the definition.
+Demand analysis derives `op` and `l` strict; `i` is not forced up front (on an
+empty list it is the result, and otherwise it is only an argument to `op`).
 
 ## Measurements (release builds, base = master, new = branch)
 
@@ -18,6 +18,6 @@ master as base and its figures were wrong): bench 019 blob 989,245 ->
 (46,900,723 blob, 40,700,694 source) because it uses `foldl`, which this change
 leaves alone. Max stack on 019: 12,009 -> 16. So `sum`, `product` and `count`
 cost about 10 (blob) / 13 (source) more ticks per element in exchange for
-constant stack. measured-single.
+constant stack. measured-verified (ticks are deterministic; reproduced by two independent reviewers).
 Wall, 019, 7 interleaved pairs, ms: base 105-130 / new 99-111. Below the 200 ms
 floor, so no ratio is claimed.
