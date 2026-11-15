@@ -200,7 +200,7 @@ x: crt[[2, 3], [3, 5], [2, 7]] //=> 23
 
 The moduli must be pairwise coprime, so `crt[[1, 6], [2, 9]]` is an
 error even though that system has a solution, and their product must fit in
-64 bits: the running product of the moduli, taken in list order, past 2^63 stops with `numeric overflow`. Negative remainders are normalised, and `[] crt` is `0`.
+64 bits: a running product of the moduli, taken in list order, past 2^63 may stop with `numeric overflow`. Negative remainders are normalised, and `[] crt` is `0`.
 
 ## The Assertion Operators
 

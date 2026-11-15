@@ -839,7 +839,7 @@ powmod(b, e, m): __POWMOD(b, e, m)
     type: s"number → number → number" }
 modinv(a, m): __MODINV(a, m)
 
-` { doc: "`crt(congruences)` - Chinese remainder theorem: given `[[r, m], ...]`, the least non-negative `x` with `x ≡ r (mod m)` for every pair; the moduli must be pairwise coprime (otherwise an error from `modinv`) and the running product of the moduli must stay within 64 bits (past 2^63 it is a `numeric overflow` error, even if the answer would fit). Remainders are normalised; the empty list gives 0."
+` { doc: "`crt(congruences)` - Chinese remainder theorem: given `[[r, m], ...]`, the least non-negative `x` with `x ≡ r (mod m)` for every pair; the moduli must be pairwise coprime (otherwise an error from `modinv`) and the running product of the moduli should fit within 64 bits (a running product past 2^63 may stop with a `numeric overflow` error). Remainders are normalised; the empty list gives 0."
     type: s"[[number]] → number" }
 crt(congruences): {
   step([x, big], [r, m]): [x + (big * mulmod(r - x, modinv(big, m), m)), big * m]
