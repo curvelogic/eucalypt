@@ -5480,3 +5480,8 @@ pub fn test_error_304_crt_non_coprime() {
 pub fn test_error_305_exact_error_number() {
     run_error_test(&error_opts("305_exact_error_number.eu"));
 }
+
+#[test]
+pub fn test_error_306_complex_result_large_float() {
+    run_error_test(&error_opts("306_complex_result_large_float.eu"));
+}
