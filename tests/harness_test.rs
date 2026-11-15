@@ -5256,6 +5256,30 @@ pub fn test_error_307_code_point_large_above_max() {
     run_error_test(&error_opts("307_code_point_large_above_max.eu"));
 }
 
+/// Large floats in index/code-point errors print exactly, huge ones capped (eu-oaz72.156).
+#[test]
+pub fn test_error_308_array_negative_large() {
+    run_error_test(&error_opts("308_array_negative_large.eu"));
+}
+
+/// Large floats in index/code-point errors print exactly, huge ones capped (eu-oaz72.156).
+#[test]
+pub fn test_error_308_array_negative_huge() {
+    run_error_test(&error_opts("308_array_negative_huge.eu"));
+}
+
+/// Large floats in index/code-point errors print exactly, huge ones capped (eu-oaz72.156).
+#[test]
+pub fn test_error_308_vec_index_huge() {
+    run_error_test(&error_opts("308_vec_index_huge.eu"));
+}
+
+/// Large floats in index/code-point errors print exactly, huge ones capped (eu-oaz72.156).
+#[test]
+pub fn test_error_308_code_point_huge() {
+    run_error_test(&error_opts("308_code_point_huge.eu"));
+}
+
 /// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).
 #[test]
 pub fn test_error_277_vec_nth_out_of_range() {

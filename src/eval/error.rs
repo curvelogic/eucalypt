@@ -1093,10 +1093,19 @@ pub fn exact_f64(f: f64) -> String {
     }
 }
 
+/// As [`display_number`], for a bare `f64`.
+pub fn display_f64(f: f64) -> String {
+    if f.is_finite() && f.abs() >= 2f64.powi(126) {
+        Number::from_f64(f).map_or_else(|| format!("{f:e}"), |n| n.to_string())
+    } else {
+        exact_f64(f)
+    }
+}
+
 /// Like [`exact_number`] but keeps the compact scientific form for
 /// magnitudes of 2^126 and above, where a full digit string would be
 /// unreadably long and the exact value adds nothing.
-fn display_number(n: &Number) -> String {
+pub fn display_number(n: &Number) -> String {
     match n.as_f64() {
         Some(f) if !n.is_i64() && !n.is_u64() && f.abs() >= 2f64.powi(126) => n.to_string(),
         _ => exact_number(n),
@@ -1374,9 +1383,9 @@ pub enum ExecutionError {
     ArrayNdIndexOutOfBounds(Smid, Vec<usize>),
     #[error("array shape mismatch: {1}")]
     ArrayShapeMismatch(Smid, String),
-    #[error("negative array index or dimension: {1} — array indices and dimensions must be non-negative")]
+    #[error("negative array index or dimension: {} — array indices and dimensions must be non-negative", display_f64(*.1))]
     ArrayNegativeIndex(Smid, f64),
-    #[error("{1} {2} must be an integer")]
+    #[error("{} {} must be an integer", .1, display_f64(*.2))]
     ArrayNonIntegerIndex(Smid, String, f64),
     /// An array shape whose element count exceeds what one array can
     /// hold: `(function, shape, maximum element count)`.
@@ -2271,6 +2280,9 @@ mod exact_number_tests {
         let big = num(2f64.powi(1000));
         assert_eq!(display_number(&big), big.to_string());
         assert_eq!(display_number(&num(2f64.powi(63))), "9223372036854775808");
+        assert_eq!(display_f64(2f64.powi(1000)), "1.0715086071862673e+301");
+        assert_eq!(display_f64(-(2f64.powi(63))), "-9223372036854775808");
+        assert_eq!(display_f64(0.5), "0.5");
     }
 }
 

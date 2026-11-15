@@ -1,0 +1,46 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/308_code_point_huge
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/308_code_point_huge.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/308_code_point_huge.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid code point: 1.0715086071862673e+301 is above the largest code point, U+10FFFF (1114111)
+  ┌─ tests/harness/errors/308_code_point_huge.eu:2:4
+  │
+2 │ r: str.from-code-points[2.0 ^ 1000]
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/308_code_point_huge.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid code point: 1.0715086071862673e+301 is above the largest code point, U+10FFFF (1114111)
+  ┌─ tests/harness/errors/308_code_point_huge.eu:2:4
+  │
+2 │ r: str.from-code-points[2.0 ^ 1000]
+  │    ^^^
