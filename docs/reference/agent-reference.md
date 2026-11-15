@@ -1631,7 +1631,8 @@ All functions verified against `lib/prelude.eu`:
 | `str.matches?` | `matches?(re, s)` | True if `re` matches full string `s` |
 | `str.letters` | `letters(s)` | List of individual characters |
 | `str.len` | `len(s)` | String length in characters |
-| `str.fmt` | `fmt(x, spec)` | Printf-style format |
+| `str.format` | `format(spec, x)` | Printf-style format (`%d %x %X %o %b %f %e %s`); `255 str.format("%x")` |
+| `str.fmt` | `fmt(x, spec)` | DEPRECATED — use `str.format` |
 | `str.to-upper` | `to-upper(s)` | Convert to upper case |
 | `str.to-lower` | `to-lower(s)` | Convert to lower case |
 | `str.prefix` | `prefix(b, a)` | Prepend `b` onto `a` |

@@ -1134,8 +1134,14 @@ str: {
       type: s"string → number" }
   len: count ∘ letters
 
-  ` { doc: "`fmt(x, spec)` - format `x` using printf-style format `spec`."
-      type: s"any → string → string" }
+  ` { doc: "`format(spec, x)` - format `x` using printf-style format `spec` (`%d`, `%x`, `%X`, `%o`, `%b`, `%f`, `%e`, `%s`, with width and flags). Pipeline-friendly: `255 str.format` with a spec argument."
+      type: s"string → any → string" }
+  format(spec, x): __FMT(x, spec)
+
+  ` { doc: "`fmt(x, spec)` - DEPRECATED: use `str.format(spec, x)`, which takes the spec first so it works in pipelines."
+      type: s"any → string → string"
+      deprecated: "use str.format(spec, x)"
+      replaced-by: "format" }
   fmt: __FMT
 
   ` { doc: "`to-upper(s)` - convert string `s` to upper case."

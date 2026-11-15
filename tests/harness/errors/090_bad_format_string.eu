@@ -1,2 +1,2 @@
-# Error: str.fmt called with a full template instead of a bare %-specifier
-x: str.fmt(42, "Value is %d")
+# Error: str.format called with a full template instead of a bare %-specifier
+x: 42 str.format("Value is %d")

@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**64 of 320 fixtures diverge.**
+**63 of 320 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -24,7 +24,6 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/081_array_shape_mismatch` | user tests/harness/errors/081_array_shape_mismatch.eu:2:4 | user tests/harness/errors/081_array_shape_mismatch.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/082_array_reshape_mismatch` | user tests/harness/errors/082_array_reshape_mismatch.eu:2:40 | user tests/harness/errors/082_array_reshape_mismatch.eu:2:40 | 1 (1 user) | 1 (1 user) |
 | `errors/083_array_arith_mismatch` | user tests/harness/errors/083_array_arith_mismatch.eu:4:4 | user tests/harness/errors/083_array_arith_mismatch.eu:4:4 | 1 (1 user) | 1 (1 user) |
-| `errors/090_bad_format_string` | user tests/harness/errors/090_bad_format_string.eu:2:4 | user tests/harness/errors/090_bad_format_string.eu:2:4 | 0 (0 user) | 0 (0 user) |
 | `errors/094_io_no_flag` | user tests/harness/errors/094_io_no_flag.eu:4:9 | none | 0 (0 user) | 0 (0 user) |
 | `errors/100_fn_call_source_loc` | user tests/harness/errors/100_fn_call_source_loc.eu:2:9 | user tests/harness/errors/100_fn_call_source_loc.eu:2:9 | 1 (1 user) | 1 (1 user) |
 | `errors/106_io_check_fail` | user tests/harness/errors/106_io_check_fail.eu:2:23 | none | 0 (0 user) | 0 (0 user) |

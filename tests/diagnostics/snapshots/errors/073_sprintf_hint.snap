@@ -25,5 +25,5 @@ error: unresolved variable 'sprintf'
   │           ^^^^^^^
   │
   = check that the variable is defined and in scope
-  = eucalypt has no sprintf/format function; for printf-style numeric formatting use 'str.fmt', e.g. 'x str.fmt("%.2f")' for two decimal places
+  = eucalypt has no top-level sprintf/format function; for printf-style numeric formatting use 'str.format', e.g. 'x str.format("%.2f")' for two decimal places
   = for string interpolation of named values, use "Hello, {name}!" where 'name' is a binding in scope

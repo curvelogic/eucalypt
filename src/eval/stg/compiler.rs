@@ -370,11 +370,10 @@ impl CompileError {
                     // String formatting functions from C, Python, Ruby, JavaScript.
                     // Eucalypt uses string interpolation with {name} placeholders.
                     // Note: 'printf' is matched by the print/println arm above.
-                    "sprintf" | "format" | "string_format" | "str.format" | "fmt"
-                    | "format_string" => {
+                    "sprintf" | "format" | "string_format" | "fmt" | "format_string" => {
                         notes.push(
-                            "eucalypt has no sprintf/format function; for printf-style \
-                             numeric formatting use 'str.fmt', e.g. 'x str.fmt(\"%.2f\")' \
+                            "eucalypt has no top-level sprintf/format function; for printf-style \
+                             numeric formatting use 'str.format', e.g. 'x str.format(\"%.2f\")' \
                              for two decimal places"
                                 .to_string(),
                         );

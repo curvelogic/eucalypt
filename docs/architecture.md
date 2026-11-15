@@ -688,7 +688,7 @@ The prelude (~29KB) is written entirely in eucalypt, wrapping intrinsics with er
 - `identity`, `const`, `compose` (`∘`, `;`), `flip`, `curry`, `uncurry`
 
 **String functions:**
-- `str.split`, `str.join`, `str.match`, `str.fmt`, `str.letters`
+- `str.split`, `str.join`, `str.match`, `str.format`, `str.letters`
 
 **Loading:**
 - Prelude is embedded in the binary at compile time
