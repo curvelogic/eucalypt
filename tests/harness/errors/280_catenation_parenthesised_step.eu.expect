@@ -1,0 +1,4 @@
+exit: 1
+stderr: "the value called here is the result of '='"
+# parenthesised in the source: no note about how the pipeline was read (eu-oaz72.29)
+stderr-absent: "was read as"

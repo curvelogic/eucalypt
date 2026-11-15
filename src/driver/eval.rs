@@ -255,6 +255,12 @@ pub struct Executor<'a> {
     #[cfg(not(target_arch = "wasm32"))]
     prelude_blob: Option<crate::eval::stg::blob::PreludeBlob>,
 
+    /// The blob's per-slot demand signatures, moved out of it once by
+    /// `set_prelude_blob` and shared with each compile, rather than copied
+    /// for every run (eu-oaz72.92).
+    #[cfg(not(target_arch = "wasm32"))]
+    prelude_demand_sigs: crate::eval::stg::compiler::PreludeDemandSignatures,
+
     /// Command-line arguments passed after `--`.
     ///
     /// Used to override the stale `__args` global baked into the blob at
@@ -299,6 +305,8 @@ impl<'a> Executor<'a> {
             err: None,
             #[cfg(not(target_arch = "wasm32"))]
             prelude_blob: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            prelude_demand_sigs: Default::default(),
             args: Vec::new(),
             seed: None,
             type_findings: TypeWarningLinks::default(),
@@ -316,8 +324,10 @@ impl<'a> Executor<'a> {
     /// can classify blob-mode global-slot Smids (eu-1tkk.7.12) the same way
     /// it classifies source-compiled-prelude Smids.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn set_prelude_blob(&mut self, blob: Option<crate::eval::stg::blob::PreludeBlob>) {
-        if let Some(ref blob) = blob {
+    pub fn set_prelude_blob(&mut self, mut blob: Option<crate::eval::stg::blob::PreludeBlob>) {
+        if let Some(ref mut blob) = blob {
+            self.prelude_demand_sigs =
+                std::sync::Arc::new(std::mem::take(&mut blob.demand_signatures));
             self.source_map.extend_blame_table(blob.blame.clone());
             let slot_to_name: std::collections::HashMap<u32, String> = blob
                 .name_to_slot
@@ -496,13 +506,31 @@ impl<'a> Executor<'a> {
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(ref b) = self.prelude_blob {
                 stg_settings.prelude_globals = Some(b.name_to_slot.clone());
+                // The demand signatures derived for each prelude global when
+                // the blob was built, by slot (eu-oaz72.77).
+                stg_settings.prelude_demand_sigs = self.prelude_demand_sigs.clone();
             }
 
-            // Run demand analysis on the core expression before STG compile
+            // Run demand analysis on the core expression before STG compile.
+            // In blob mode the program's calls of prelude globals take the
+            // signatures derived for them, as source mode's analysis of
+            // prelude and program together sees them (eu-oaz72.92).
             if !stg_settings.suppress_demand_analysis {
                 let t = Instant::now();
+                #[cfg(not(target_arch = "wasm32"))]
+                let prelude = self.prelude_blob.as_ref().map(|b| {
+                    crate::core::analyse_demand::PreludeSignatures {
+                        name_to_slot: &b.name_to_slot,
+                        sigs: &self.prelude_demand_sigs,
+                    }
+                });
+                #[cfg(target_arch = "wasm32")]
+                let prelude = None;
                 let (annotated, _signatures, named_signatures) =
-                    crate::core::analyse_demand::analyse_demands(&self.evaluand);
+                    crate::core::analyse_demand::analyse_demands_with_prelude(
+                        &self.evaluand,
+                        prelude,
+                    );
                 self.evaluand = annotated;
                 stg_settings.user_demand_sigs = named_signatures;
                 stats.timings_mut().record("demand-analysis", t.elapsed());
@@ -594,6 +622,9 @@ impl<'a> Executor<'a> {
                     heap_mib,
                     stg_settings.test_mode,
                 )?;
+                if opt.profile() {
+                    m.enable_profiler(opt.profile_folded().is_some());
+                }
                 let t_exec = Instant::now();
                 let ret = m.run(None);
                 stats
@@ -642,7 +673,32 @@ impl<'a> Executor<'a> {
                 // available.
                 collect_bytecode_stats(&m, stats);
 
-                let diagnostics = m.take_diagnostics();
+                let mut diagnostics = m.take_diagnostics();
+
+                // `--profile` (eu-oaz72.37): report even on error, like -S,
+                // so an interrupted or failing run still shows where its
+                // time went.
+                if let Some(profiler) = m.profiler() {
+                    Self::register_prelude_source(
+                        self.prelude_blob.is_some(),
+                        &mut self.files,
+                        &mut self.source_map,
+                    );
+                    diagnostics.push(profiler.report(
+                        &self.source_map,
+                        &self.files,
+                        opt.profile_top(),
+                    ));
+                    if let Some(path) = opt.profile_folded() {
+                        let folded = profiler.folded_report(&self.source_map, &self.files);
+                        if let Err(e) = std::fs::write(path, folded) {
+                            diagnostics.push(format!(
+                                "warning: could not write folded stacks to {}: {e}",
+                                path.display()
+                            ));
+                        }
+                    }
+                }
                 Self::flush_diagnostics(&mut self.err, diagnostics);
 
                 result
@@ -684,7 +740,8 @@ impl<'a> Executor<'a> {
                 self.ensure_prelude_source_registered();
                 match error_format {
                     ErrorFormat::Human => {
-                        let mut diagnostic = e.to_diagnostic(&self.source_map);
+                        let mut diagnostic =
+                            e.to_diagnostic_with_source(&self.source_map, &self.files);
                         self.promote_type_findings(&e, &mut diagnostic);
 
                         let mut notes = vec![];
@@ -740,9 +797,25 @@ impl<'a> Executor<'a> {
     /// A no-op on the source-compiled path (no blob) and after the first
     /// call.
     fn ensure_prelude_source_registered(&mut self) {
+        Self::register_prelude_source(
+            self.prelude_blob.is_some(),
+            &mut self.files,
+            &mut self.source_map,
+        );
+    }
+
+    /// [`Self::ensure_prelude_source_registered`] over explicit fields, for
+    /// a caller that holds another field borrowed (the `--profile` report,
+    /// rendered while the output emitter still borrows `self.out`).
+    fn register_prelude_source(
+        has_blob: bool,
+        files: &mut SimpleFiles<String, String>,
+        source_map: &mut SourceMap,
+    ) {
+        let _ = (has_blob, &files, &source_map);
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if self.prelude_blob.is_none() || self.source_map.has_prelude_file() {
+            if !has_blob || source_map.has_prelude_file() {
                 return;
             }
             let resources = crate::driver::resources::Resources::default();
@@ -750,8 +823,8 @@ impl<'a> Executor<'a> {
                 return;
             };
             let name = crate::syntax::input::Locator::Resource("prelude".to_string()).to_string();
-            let file_id = self.files.add(name, text.clone());
-            self.source_map.set_prelude_file(file_id);
+            let file_id = files.add(name, text.clone());
+            source_map.set_prelude_file(file_id);
         }
     }
 
@@ -986,7 +1059,7 @@ impl<'a> Executor<'a> {
         // Reuse the human path's diagnostic wholesale so that message, primary
         // label, and secondary labels come from exactly the same selection —
         // including the type checker's promoted argument findings (eu-1tkk.7.40).
-        let mut diagnostic = error.to_diagnostic(&self.source_map);
+        let mut diagnostic = error.to_diagnostic_with_source(&self.source_map, &self.files);
         self.promote_type_findings(error, &mut diagnostic);
 
         // Map each codespan label to a JsonLabel, resolving in_user_file via

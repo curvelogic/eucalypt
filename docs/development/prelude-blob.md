@@ -70,6 +70,47 @@ merging prelude source directly — is a real fix, but a substantial one. It
 is tracked as a follow-on bead and deliberately deferred so it doesn't run
 ahead of the 0.13 lever-(a) predecoded-IR work.
 
+## Demand signatures (eu-oaz72.77)
+
+The blob carries a demand signature for each prelude global, by slot
+(`PreludeBlob::demand_signatures`). `cargo xtask prelude-compile` derives
+them by running the demand analysis (`derive_top_level_signatures` in
+`src/core/analyse_demand.rs`) over the merged prelude core: the same
+analysis source mode runs over the prelude. A signature records which
+arguments the binding's own lambda forces on every path. An alias takes
+the signature of the function it names (`zip-with: map2`), and a partial
+application the signature of its function less the arguments it supplies
+(`zip: zip-with(pair)`); a block or other value has none (eu-oaz72.92).
+The analysis reads an application spine as one call, so a pipeline step
+such as `xs nil? then(d, xs head)` saturates `then` and `head-or` is
+strict in its list, and a call of a conditional written through an alias
+or a wrapper (`if: __IF`, `then(t, f, c): if(c, t, f)`) joins its branches
+as a call of `__IF` does, where the analysis can see the wrapper: in the
+prelude analysed at blob build, and in a user program's own definitions.
+
+In blob mode the demand analysis of the user program also takes these
+signatures, for calls whose callee is a free variable naming a prelude
+global, as source mode's analysis of prelude and program together sees
+them. It takes only their signatures: a user call of the blob's `if` or
+`then` does not join its branches, which is sound but less precise than
+source mode, where the call has been inlined to `__IF`.
+
+The STG compiler uses these signatures for a call whose callee is a free
+variable resolving to a prelude global, both in user code at run time and
+for intra-prelude calls when the blob is compiled. It looks them up by the
+global's slot, never by name, so a user helper named like a prelude
+function neither lends nor borrows a signature. A complex argument in a
+strict position is evaluated before the call; every other argument stays
+lazy.
+
+The signatures replace a hand-written table that claimed more strictness
+than the prelude has for 31 of its 64 entries
+(`docs/superpowers/reports/2026-11-13-prelude-demand-signatures-design.md`).
+Because they are derived, they cannot drift from the definitions. The
+blob's freshness hash covers the analysis sources
+(`DEMAND_ANALYSIS_PATHS` in `src/eval/stg/wire_format.rs`), so a blob whose
+signatures came from an older analysis is stale, not misread.
+
 ## What this means in practice
 
 - **Released binaries are unaffected.** `cargo xtask prelude-compile` runs

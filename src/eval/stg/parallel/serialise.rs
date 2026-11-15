@@ -351,6 +351,7 @@ fn encode_scalar(
             Ok(())
         }
         Native::Set(_)
+        | Native::Dict(_)
         | Native::NdArray(_)
         | Native::Vec(_)
         | Native::Prng(_)

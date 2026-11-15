@@ -8,3 +8,5 @@ node_modules/**/*.map
 tsconfig.json
 **/*.ts
 **/*.map
+test/**
+scripts/**

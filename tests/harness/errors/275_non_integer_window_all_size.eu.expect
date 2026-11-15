@@ -1,0 +1,2 @@
+exit: 1
+stderr: "window-all size 1.5 must be an integer"

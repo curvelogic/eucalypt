@@ -1,0 +1,4 @@
+exit: 1
+stderr: "found a function"
+# the function may come from the right operand: no misleading suggestion (eu-oaz72.133)
+stderr-absent: "was read as"

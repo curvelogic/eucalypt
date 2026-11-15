@@ -1,0 +1,2 @@
+` "eu-oaz72.24: an operand one past the largest 64-bit signed integer is out of range"
+x: mulmod(9223372036854775808, 2, 7)

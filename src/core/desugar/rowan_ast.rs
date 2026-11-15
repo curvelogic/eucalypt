@@ -2523,6 +2523,31 @@ fn name_identifier_span(decl: &rowan_ast::Declaration) -> Option<Span> {
 }
 
 /// Extract just the declaration name without desugaring body
+/// Operators of the inline assertion family (`lib/prelude.eu`,
+/// "Assertions"), whose failures a test target's verdict reports.
+const ASSERTION_OPERATORS: [&str; 5] = ["//=", "//=?", "//!", "//=>", "//=?>"];
+
+/// Whether a declaration's body carries test checks: a `RESULT`
+/// identifier (the key `lib/test.eu` takes a target's verdict from) or
+/// an inline assertion operator.
+///
+/// The tester uses this to report a target whose checks would never
+/// gate because it is not auto-run. It is syntactic: checks reached
+/// only through a reference to another declaration are not seen.
+fn declaration_has_checks(decl: &rowan_ast::Declaration) -> bool {
+    use crate::syntax::rowan::kind::SyntaxKind;
+    decl.body().is_some_and(|body| {
+        body.syntax()
+            .descendants_with_tokens()
+            .filter_map(|e| e.into_token())
+            .any(|t| match t.kind() {
+                SyntaxKind::UNQUOTED_IDENTIFIER => t.text() == "RESULT",
+                SyntaxKind::OPERATOR_IDENTIFIER => ASSERTION_OPERATORS.contains(&t.text()),
+                _ => false,
+            })
+    })
+}
+
 fn extract_declaration_name(decl: &rowan_ast::Declaration) -> Result<String, CoreError> {
     if let Some(head) = decl.head() {
         let kind = head.classify_declaration();
@@ -2629,6 +2654,7 @@ fn rowan_declaration_to_binding(
             metadata.doc.unwrap_or_default(),
             metadata.format,
             metadata.validations.unwrap_or_default(),
+            declaration_has_checks(decl),
         );
     }
 

@@ -31,6 +31,15 @@ test: {
 Several test targets can be embedded in one file. Each is run as a
 separate test.
 
+The tester runs a file's `test-` and `bench-` targets, its `main`
+target, and any target that names validators with `verify`. Any other
+target is not run. So that its checks are not skipped silently,
+`eu test` fails a file that declares such a target when the target's
+body binds `RESULT` or uses an inline assertion (`//=`, `//=>`, `//!`,
+`//=?`, `//=?>`): name it `test-…` or give it `verify`. The check reads
+the target's own body, so checks reached only through a reference to
+another declaration are not seen.
+
 ## How the default verdict is computed
 
 Each test target is rendered to output, and that output is parsed back
@@ -106,6 +115,38 @@ If your intention is not to embed tests in a eucalypt file but instead
 to write a test as a single file, then you can omit the test targets.
 Eucalypt will use a `main` target or run the entire file as usual and
 then validate the result (looking for a `RESULT` key, by default).
+
+## Running several files
+
+`eu test` accepts any number of files and directories and tests every
+one, in the order given. A directory contributes each test file in it,
+in name order; with no arguments the current directory is tested.
+
+```sh
+eu test parsing.eu solver.eu tests/
+```
+
+Each file is analysed and run on its own, as if tested alone, but the
+run is one suite: one report covers every test, and `eu test` exits
+non-zero if any test in any file fails. If the inputs contain no test
+files at all, `eu test` reports an error and exits non-zero.
+A file reached more than once — named twice, or named and also inside
+a directory given — is tested once, at its first position.
+
+Paths are looked up in the current directory first and then in each
+`-L` directory in turn, so `eu test -L tests solver.eu` finds
+`tests/solver.eu`.
+
+### Where results go
+
+Each test writes its working files (`<file>.evidence.yaml` and
+`<file>.report.yaml`, named from the test file's full name, so `x.eu`
+and `x.yaml` do not collide) to `.result/<run id>/` beside the test
+file. The combined `results.yaml` and the HTML `report.html` go in the
+same directory when every test file is in one directory; when they
+span several, they go in `.result/<run id>/` under the current
+directory. `-o PATH` writes the HTML report to `PATH` instead; the
+combined `results.yaml` stays where it would otherwise be.
 
 ## Other formats
 

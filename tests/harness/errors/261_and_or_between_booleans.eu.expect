@@ -1,0 +1,2 @@
+exit: 1
+stderr: "'and' and 'or' are ordinary functions"

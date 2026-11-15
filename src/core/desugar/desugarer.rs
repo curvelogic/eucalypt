@@ -488,6 +488,7 @@ impl<'smap> Desugarer<'smap> {
         doc: String,
         fmt: Option<String>,
         validations: Vec<String>,
+        has_checks: bool,
     ) {
         let tgt = Target::new(
             target,
@@ -495,7 +496,8 @@ impl<'smap> Desugarer<'smap> {
             fmt,
             self.stack.iter().map(String::clone).collect(),
             validations,
-        );
+        )
+        .with_checks(has_checks);
         self.targets.insert(tgt);
     }
 

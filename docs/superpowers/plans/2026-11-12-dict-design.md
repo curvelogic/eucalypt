@@ -1,6 +1,6 @@
 # dict — design note
 
-- **Status:** Draft for owner agreement (not yet agreed)
+- **Status:** Agreed 2026-11-12 (owner accepted every §11 recommendation)
 - **Date:** 2026-11-12
 - **Bead:** eu-oaz72.21 (eu-oaz72.22, priority queue, folded in)
 - **Plan:** `docs/superpowers/plans/2026-11-12-aoc-2026-preparation.md`
@@ -464,3 +464,159 @@ the new `dict.*` names.
 | 12 | `=` on dicts | reference identity, as sets today |
 | — | Exact numbers in sets change `set.to-list` for >2^53 (§6) | accept; closes eu-oaz72.10's set half |
 | — | Additions beyond the owner's list: `empty`, `empty?`, `update` default, result shapes (OPEN 4) | as §7 |
+
+## 12. Implementation notes (PR 2)
+
+Recorded as built; none changes an agreed choice.
+
+- **Value cells.** The cell template is a new fixed fixture,
+  `BytecodeProgram::cell_template` (`Atom(L0)`), beside the apply and
+  producer templates; the blob wire format moves to v9.
+  `IntrinsicMachine::memo_cell` prepares every stored value.
+- **Arguments arrive as aliases.** An intrinsic's lazy argument is an
+  `OP_ATOM` alias closure over the caller's frame. Storing it would keep
+  that frame alive, and in a loop that frame holds the previous version of
+  the dict being updated, so every version would be retained (measured:
+  5,414 peak heap blocks for 50,000 chained updates, against 1,113 with the
+  fix; measured-single). `memo_cell` therefore follows aliases: an
+  evaluated target is stored directly (a boxed scalar is rebuilt over a
+  fresh frame, since the box also closes over its binding frame); an
+  unevaluated one is stored as a cell around the original alias, so it
+  memoises in the slot it names and the cell drops the alias once evaluated.
+- **Evaluated constructors (eu-oaz72.70).** `memo_cell` rebuilds any
+  evaluated data constructor over fresh frames, field by field and
+  recursively, looking through `OP_ATOM` aliases and updatable `Atom`
+  thunks (`thunk ✳i`, a list element naming a variable) whose target is
+  evaluated. It is all or nothing: a field that is not evaluated (a thunk,
+  a function, a cell) pins its frame anyway, so the value is then stored as
+  it is, as is one of more than 64 constructors (a large evaluated value is
+  not copied on every update). A loop storing `[i, [i, :x], "s"]` now peaks
+  at 1,255 blocks over 50,000 updates (`assoc-chain-lists`), and at 1,341
+  over 1,000,000 updates storing `[i, i]` (measured-single).
+- **Remaining limit.** An unevaluated value still closes over the frame it
+  was built in, and so does an evaluated one with an unevaluated field: a
+  block literal (compiled as a thunk), `[i + 1, i]`, or a list whose
+  elements are non-updatable arithmetic thunks (`[i % 7, i]`, even after
+  the same list was deep-forced as a key, since such thunks do not
+  memoise). A loop that threads a dict and stores such values retains
+  earlier versions until those values are replaced or evaluated in place.
+  Detaching them needs flat closures (a thunk capturing only its free
+  variables), a compiler change beyond the dict.
+- **Key forcing** happens in the wrappers: `seqKey` deep-forces a key and
+  `seqDictPairs` prepares `dict.of`'s list, rebuilding each well-formed pair
+  as `BlockPair(forced key, value)`. List keys may nest at most 32 deep
+  (`BadDictKey` beyond).
+- **Rendering** is PR 4; until then a dict reaching output raises
+  `DictNotRenderable`, pointing at `dict.to-list`. Dict arguments are typed
+  `any` in prelude signatures until PR 4 adds `dict(k, v)`.
+
+## 13. Implementation notes (PR 3)
+
+Recorded as built; none changes an agreed choice.
+
+- **Merge** is `Dict::union_with`, the join-based union of §2 (split `a`
+  at `b`'s root, recurse, `link`). Where both dicts hold equal keys, `a`'s
+  key is kept (choice 6, `a` being the dict merged into) and the value is
+  `f(va, vb)`.
+- **Lazy combined values.** `update` and `merge-with` build `f(old)` and
+  `f(va, vb)` with `apply1_thunk`/`apply2_thunk` (a fresh frame `[f, args]`
+  over the root env) and store them through `memo_cell`, which cells them
+  (§5), so each is computed at most once and none keeps the caller's frame,
+  or the previous dict, alive. A function value that itself closes over the
+  caller's frame (a section such as `+ i` over a loop variable) still pins
+  that frame: §12's remaining limit.
+- **Strict variants** (OPEN 7). `update-strict` is an STG wrapper that
+  forces `f(old)` before storing it with `assoc`'s code, so the value is
+  stored evaluated. `merge-with-strict` is prelude: a fold of `b`'s entries
+  into `a`, using `update-strict` where `a` holds the key. The measurements
+  that motivate them are in
+  `docs/superpowers/reports/2026-11-13-dict-ordered-ops-benchmarks.md`.
+- **Edge cases**: `range` with `hi ≤ lo` is the empty dict; `min`, `max`,
+  `pop-min` and `pop-max` of an empty dict raise `EmptyDict` ("dict.pop-min
+  of an empty dict"); `to-block` names an entry by a symbol key, by a string
+  key's text, or by a number key's rendered text, and raises
+  `DictKeyNotBlockKey` for a list key and `DictBlockKeyCollision` for two
+  keys that name the same entry (`"x"` and `:x`, `1` and `"1"`), the
+  rule §8 and OPEN 5 set for rendering.
+
+## 14. Implementation notes (PR 4)
+
+Recorded as built; none changes an agreed choice.
+
+- **Render view.** `DICT.RENDER_VIEW(x)` returns the dict's entries as a
+  list of block pairs, not a `Block`, and returns unit (not `x`) for any
+  other value: the wrapper's fallback cases on the result, rendering a list
+  as a mapping and sending unit to `EmitNative(x)`, which keeps `x` in its
+  environment. The block render branch is one helper (`render_mapping`)
+  used by the `Block` arm and both list arms, so a dict carries a render
+  tag as a block does. The intrinsic is internal render machinery and is
+  filtered from traces.
+- **Naming and errors.** `dict.to-block` and rendering share one naming
+  function (`entry_names`); rendering raises its own errors,
+  `DictKeyNotRenderable` (list key) and `DictRenderKeyCollision`, whose
+  hints point at `dict.to-list`. `DictNotRenderable` remains for a dict
+  reaching an emitter directly, which the render wrapper no longer allows.
+- **Typing.** `dict(k, v)` is `App(App(Con("dict"), k), v)`, beside
+  `Lens`/`Traversal`; `dict` is a type keyword, so, like `set`, it cannot
+  be a record field name in a type string. The `Dict(T)` rename (OPEN 9)
+  is not in this PR.
+- **Signatures beyond §9 (round 2).** Signatures must not warn on valid
+  code, and a dict may hold keys and values of mixed types, so the
+  arguments that need not match the dict's types are loosened: `get-or`
+  is `any → d → dict(k, v) → (v | d)`; `assoc` is
+  `j → w → dict(k, v) → dict(k | j, v | w)`; `update`/`update-strict` are
+  `j → ((v | d) → w) → d → dict(k, v) → dict(k | j, v | w)`; `range`'s
+  bounds and the key of `dissoc` and `contains?` are `any`. `get`,
+  `to-list`, `min` and `pop-min` stay as §9 gives them.
+  `eu check --strict tests/harness/250_dict.eu` is a test.
+- **Render error location.** A render error comes from the render
+  machinery, which has no annotation, so `DictKeyNotRenderable` and
+  `DictRenderKeyCollision` carry no source location: the machine's current
+  or last annotation is whatever user code ran last, unrelated to the
+  dict. A location for them would need the dict to carry its construction
+  Smid, a change to the GC-traced dict layout left out of this PR.
+- **Known checker limit.** A literal symbol inside a tuple is not widened
+  when a type variable is instantiated, so `pq dict.assoc([2, :d], 0)` on
+  a dict built from `[[3, :c], …]` warns (`(number, :c)` against
+  `(number, :d)`) under the §9 `assoc`; the loosened `assoc` no longer
+  does. `cons([2, :d], [[3, :c]])` still warns; the fix belongs to the
+  checker (eu-oaz72.127).
+
+## 15. Implementation notes (PR 5)
+
+Recorded as built; none changes an agreed choice.
+
+- **A header over the tree.** `Native::Set` keeps its shape,
+  `RefPtr<HeapSet>`, and `HeapSet` becomes a one-field header
+  `{ root: Tree }` over `DictNode`s whose values are an inert unit
+  (`Native::Num(0)`, no heap pointer, so set values need no tracing and no
+  per-element allocation). Every set operation allocates a fresh header, so
+  set `=` (identity, choice 12) behaves exactly as before — `s set.add(x)`
+  for a member, and two separately built empty sets, are still unequal to
+  their inputs — and the GC entry points for `Native::Set`
+  (`scan_native`/`update_native`, the machine's `Ref::V` arms) are
+  unchanged: they already push the header, whose `scan` now marks and
+  pushes the root node and whose `scan_and_update` rewrites it.
+- **Operations.** `add` (a member keeps the tree as it is), `remove` and
+  `contains?` are `Dict::insert`/`delete`/`lookup`; `size` reads the root's
+  weight; `of` sorts, deduplicates (first occurrence kept) and builds
+  bottom-up; `to-list` and rendering walk in order. `union` is
+  `union_with` keeping `a`'s key; `intersect` and `diff` are new join-based
+  tree operations (`Dict::intersect`, `Dict::difference`, recursion bounded
+  by the second tree's height). `sample` keeps its draws — a partial
+  Fisher–Yates over ranks — but records only swapped positions and finds
+  each rank with `Dict::nth`, so it is O(k log n) rather than O(n).
+- **Elements.** Elements are numbers, strings, symbols and lists of them
+  (OPEN 8, accepted), keyed as dict keys are. The element wrappers and
+  `set.of` deep-force with `seqKey`; scalars convert through `Primitive`
+  (still the vec element type), lists become `DictKey::List` (nested at
+  most 32 deep). Error decision: anything else is still eu-oaz72.64's
+  `InvalidElement`, a list holding a bad value is described as "a list
+  holding a block", the set message lists "or lists of them", and
+  `set.contains?` returns false for such values. `to-list` boxes list
+  elements as cons-lists, and rendering emits them as nested sequences.
+- **Visible change.** Symbols now order by name (OPEN 2), not by intern
+  order, so `set.to-list` of a set holding several symbols may come back in
+  a different order; numbers and strings are unchanged. Numbers were
+  already exact in sets (eu-oaz72.5).
+- Measurements: `docs/superpowers/reports/2026-11-14-sets-on-dict-benchmarks.md`.

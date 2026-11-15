@@ -37,7 +37,7 @@ eu --seed 42 example.eu
 | `random.split(s)` | State-monad action that splits the stream into two independent streams. Returns a value/rest block where value and rest are each independent streams |
 | `random.choice(lst, stream)` | State-monad action returning a random element from list |
 | `random.shuffle(lst)` | State-monad action returning a shuffled copy of list |
-| `random.sample(n, lst, stream)` | State-monad action returning n elements sampled without replacement |
+| `random.sample(n, lst, stream)` | State-monad action returning n elements sampled without replacement; a non-integer n is an error |
 | `random.run(action, stream)` | Run a random action on a stream; returns a value/rest block |
 | `random.eval(action, stream)` | Run a random action and return only the value |
 | `random.exec(action, stream)` | DEPRECATED: use random.run(action, stream).rest. Run a random action and return only the remaining stream |

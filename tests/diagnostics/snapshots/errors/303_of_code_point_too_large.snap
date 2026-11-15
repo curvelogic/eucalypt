@@ -1,0 +1,25 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/303_of_code_point_too_large
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/303_of_code_point_too_large.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/303_of_code_point_too_large.eu:2:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid code point: 1114112 is above the largest code point, U+10FFFF (1114111)
+  ┌─ tests/harness/errors/303_of_code_point_too_large.eu:2:12
+  │
+2 │ x: 1114112 ch.of-code-point
+  │            ^^

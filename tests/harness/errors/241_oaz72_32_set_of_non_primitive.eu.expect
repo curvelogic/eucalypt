@@ -1,0 +1,2 @@
+exit: 1
+stderr: "(?s)a list holding a block cannot be a set element: set elements must be numbers, strings or symbols, or lists of them.*errors[/\\]241_oaz72_32_set_of_non_primitive\.eu:2:26"

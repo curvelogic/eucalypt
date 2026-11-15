@@ -1,0 +1,2 @@
+` "A non-integer array coordinate is an error, not truncated (eu-oaz72.88)"
+r: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([0, 0.5])

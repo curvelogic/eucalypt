@@ -93,22 +93,45 @@ pub struct Cooker<'smap> {
 /// `Expr::Operator(_, _, _, body)` where `body` is `ErrPseudoCat`.
 /// This splits the atom list at those operators, discarding the
 /// catenation markers themselves.
-fn split_at_cat_operators(atoms: &[RcExpr]) -> Vec<Vec<RcExpr>> {
-    let mut groups: Vec<Vec<RcExpr>> = Vec::new();
-    let mut current: Vec<RcExpr> = Vec::new();
+/// Each atom travels with its extent (see `shunt::shunt`).
+fn split_at_cat_operators(atoms: Vec<shunt::Atom>) -> Vec<Vec<shunt::Atom>> {
+    let mut groups: Vec<Vec<shunt::Atom>> = Vec::new();
+    let mut current: Vec<shunt::Atom> = Vec::new();
     for atom in atoms {
-        if is_cat_operator(atom) {
+        if is_cat_operator(&atom.0) {
             if !current.is_empty() {
                 groups.push(std::mem::take(&mut current));
             }
         } else {
-            current.push(atom.clone());
+            current.push(atom);
         }
     }
     if !current.is_empty() {
         groups.push(current);
     }
     groups
+}
+
+/// An atom as written (see `shunt::shunt`). `HasSmid` gives an anaphor no
+/// location, but each anaphor carries the `Smid` of its token.
+fn written(expr: &RcExpr) -> shunt::Written {
+    let (smid, anaphor) = match &*expr.inner {
+        Expr::ExprAnaphor(s, _) => (*s, true),
+        Expr::BlockAnaphor(s, _) => (*s, false),
+        _ => (expr.smid(), false),
+    };
+    // Only a literal, or a plain name, is taken to be data (eu-oaz72.133).
+    let shape = match &*expr.inner {
+        // A block can be called, so it is not taken to be data.
+        Expr::Literal(..) | Expr::List(..) => shunt::Shape::Literal,
+        Expr::Name(..) | Expr::Var(..) => shunt::Shape::Name,
+        _ => shunt::Shape::Other,
+    };
+    shunt::Written {
+        smid,
+        anaphor,
+        shape,
+    }
 }
 
 /// Check whether an expression is a catenation operator wrapper.
@@ -208,21 +231,30 @@ impl<'smap> Cooker<'smap> {
 
         if wrap_lambda {
             self.in_expr_anaphor_scope = true;
+            // A soup that is nothing but one anaphor (`_` in `nth(_)`)
+            // becomes the identity function (eu-oaz72.132).
+            if let [only] = filled.as_slice() {
+                if let Expr::ExprAnaphor(s, _) = &*only.inner {
+                    self.source_map.record_lone_anaphor(*s);
+                }
+            }
         }
 
-        let atoms: Vec<_> = {
+        // Each atom is cooked with its extent, its `Smid` as written
+        // before cooking (eu-oaz72.29): see `shunt::shunt`.
+        let atoms: Vec<shunt::Atom> = {
             let old_in_expr_anaphor_scope = self.in_expr_anaphor_scope;
             let subcooked = filled
                 .iter()
-                .map(|e| self.cook_(e.clone()))
-                .collect::<Result<Vec<RcExpr>, CoreError>>();
+                .map(|e| Ok((self.cook_(e.clone())?, written(e))))
+                .collect::<Result<Vec<shunt::Atom>, CoreError>>();
             self.in_expr_anaphor_scope = old_in_expr_anaphor_scope;
             subcooked?
         };
 
         let cooked = if bracket {
             // Split at catenation operators, shunt each group, collect as List
-            let groups = split_at_cat_operators(&atoms);
+            let groups = split_at_cat_operators(atoms);
             let mut items = Vec::new();
             for group in groups {
                 items.push(shunt::shunt(group, self.source_map)?);

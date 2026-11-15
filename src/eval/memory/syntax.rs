@@ -16,6 +16,7 @@ use serde_json::Number;
 use std::{fmt, ptr::NonNull};
 
 use super::alloc::{ScopedPtr, StgObject};
+use super::dict::DictNode;
 use super::ndarray::HeapNdArray;
 use super::set::HeapSet;
 use super::string::HeapString;
@@ -38,6 +39,9 @@ pub enum Native {
     Zdt(DateTime<FixedOffset>),
     /// A set of primitive values
     Set(RefPtr<HeapSet>),
+    /// A persistent ordered dictionary: the root of a weight-balanced
+    /// tree of [`DictNode`]s, `None` when empty (eu-oaz72.21)
+    Dict(Option<RefPtr<DictNode>>),
     /// An n-dimensional array of f64 values
     NdArray(RefPtr<HeapNdArray>),
     /// A vector of primitive values (O(1) indexed access)
@@ -56,6 +60,7 @@ impl PartialEq for Native {
             (Native::Num(a), Native::Num(b)) => a == b,
             (Native::Zdt(a), Native::Zdt(b)) => a == b,
             (Native::Set(a), Native::Set(b)) => a == b,
+            (Native::Dict(a), Native::Dict(b)) => a == b,
             (Native::NdArray(a), Native::NdArray(b)) => a == b,
             (Native::Vec(a), Native::Vec(b)) => a == b,
             (Native::Prng(a), Native::Prng(b)) => a == b,
@@ -76,6 +81,7 @@ impl Native {
             Native::Num(_) => "number",
             Native::Zdt(_) => "datetime",
             Native::Set(_) => "set",
+            Native::Dict(_) => "dict",
             Native::NdArray(_) => "array",
             Native::Vec(_) => "vec",
             Native::Prng(_) => "prng",
@@ -103,6 +109,13 @@ impl fmt::Display for Native {
             }
             Native::Set(_) => {
                 write!(f, "<set>")
+            }
+            Native::Dict(root) => {
+                let size = root.map_or(0, |p| {
+                    // SAFETY: a dict root points at a live, immutable node.
+                    unsafe { p.as_ref() }.size()
+                });
+                write!(f, "<dict:{size}>")
             }
             Native::NdArray(_) => {
                 write!(f, "<array>")

@@ -41,6 +41,10 @@ pub struct ErrorExpectation {
     exit: Option<i32>,
     /// Regex pattern to match against stderr
     stderr_pattern: Option<String>,
+    /// Regex patterns that must *not* match stderr (`stderr-absent:`, may
+    /// repeat) — used to gate that a hint is not shown without evidence
+    /// (eu-oaz72.28)
+    stderr_absent: Vec<String>,
 }
 
 impl ErrorExpectation {
@@ -73,6 +77,15 @@ impl ErrorExpectation {
                 ));
             }
         }
+        for pattern in &self.stderr_absent {
+            let re = Regex::new(pattern)
+                .map_err(|e| format!("invalid stderr-absent regex pattern '{pattern}': {e}"))?;
+            if re.is_match(actual_stderr) {
+                return Err(format!(
+                    "stderr matched absent pattern '{pattern}'\nactual stderr:\n{actual_stderr}"
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -82,10 +95,14 @@ impl ErrorExpectation {
     /// ```yaml
     /// exit: 1
     /// stderr: "pattern"
+    /// stderr-absent: "pattern that must not appear"
     /// ```
+    ///
+    /// `stderr-absent:` may be given more than once.
     pub fn parse(content: &str) -> Result<Self, String> {
         let mut exit = None;
         let mut stderr_pattern = None;
+        let mut stderr_absent = vec![];
 
         for line in content.lines() {
             let line = line.trim();
@@ -107,6 +124,13 @@ impl ErrorExpectation {
                     .and_then(|v| v.strip_suffix('"'))
                     .unwrap_or(value);
                 stderr_pattern = Some(value.to_string());
+            } else if let Some(value) = line.strip_prefix("stderr-absent:") {
+                let value = value.trim();
+                let value = value
+                    .strip_prefix('"')
+                    .and_then(|v| v.strip_suffix('"'))
+                    .unwrap_or(value);
+                stderr_absent.push(value.to_string());
             }
         }
 
@@ -117,6 +141,7 @@ impl ErrorExpectation {
         Ok(ErrorExpectation {
             exit,
             stderr_pattern,
+            stderr_absent,
         })
     }
 
@@ -156,6 +181,9 @@ pub struct TestPlan {
     error_expectation: Option<ErrorExpectation>,
     /// Whether this test requires `--allow-io` to run
     requires_io: bool,
+    /// Targets declared in the file whose bodies carry checks but which
+    /// the tester does not run, so their checks would never gate
+    unrun_checked_targets: Vec<Target>,
 }
 
 impl TestPlan {
@@ -192,9 +220,23 @@ impl TestPlan {
         self.requires_io
     }
 
+    /// Targets declared in the file under test whose bodies carry checks
+    /// (a `RESULT` binding or an inline assertion) but which the tester
+    /// does not run: not named `test…` or `bench-…`, not `main`, and
+    /// with no `verify`. Their checks would never gate, so the tester
+    /// fails the file.
+    pub fn unrun_checked_targets(&self) -> &[Target] {
+        &self.unrun_checked_targets
+    }
+
     /// Whether this plan contains any benchmark targets
     pub fn has_benchmarks(&self) -> bool {
         self.targets.iter().any(|(t, _)| t.is_benchmark())
+    }
+
+    /// The run this plan belongs to
+    pub fn run_id(&self) -> &str {
+        &self.run_id
     }
 
     pub fn test_directory(&self) -> &Path {
@@ -209,17 +251,25 @@ impl TestPlan {
     }
 
     pub fn evidence_file_name(&self) -> PathBuf {
-        let mut name = self.result_directory();
-        name.push(self.file().file_name().unwrap());
-        name.set_extension("evidence.yaml");
-        name
+        self.result_directory()
+            .join(self.sidecar_name("evidence.yaml"))
     }
 
     pub fn result_file_name(&self) -> PathBuf {
-        let mut name = self.result_directory();
-        name.push(self.file().file_name().unwrap());
-        name.set_extension("report.yaml");
-        name
+        self.result_directory()
+            .join(self.sidecar_name("report.yaml"))
+    }
+
+    /// Name of a result file for this test: the test file's full name
+    /// with `suffix` appended, so `x.eu` and `x.yaml` in one directory
+    /// get distinct files (`x.eu.report.yaml`, `x.yaml.report.yaml`).
+    fn sidecar_name(&self, suffix: &str) -> String {
+        let name = self
+            .file()
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled".to_string());
+        format!("{name}.{suffix}")
     }
 
     pub fn prepare_directory(&self) -> Result<(), std::io::Error> {
@@ -256,6 +306,7 @@ impl TestPlan {
         // The `:main` target and any explicitly validated targets are drawn from
         // the full `targets` set so they work even when declared in imported files.
         let mut targets: Vec<(Target, Vec<String>)> = vec![];
+        let mut unrun_checked_targets: Vec<Target> = vec![];
         for t in &unit.targets {
             let include = if t.name().starts_with("test") || t.is_benchmark() {
                 // Only auto-run test/bench targets from the file itself.
@@ -271,8 +322,11 @@ impl TestPlan {
                 } else {
                     targets.push((t.clone(), formats.clone()))
                 }
+            } else if t.has_checks() && unit.own_targets.contains(t) {
+                unrun_checked_targets.push(t.clone());
             }
         }
+        unrun_checked_targets.sort_by(|a, b| a.name().cmp(b.name()));
 
         // default to empty target if there are none
         if targets.is_empty() {
@@ -294,6 +348,7 @@ impl TestPlan {
             targets,
             error_expectation: None,
             requires_io: header.requires_io,
+            unrun_checked_targets,
         })
     }
 
@@ -334,6 +389,7 @@ impl TestPlan {
             targets: vec![(target, vec!["yaml".to_string()])],
             error_expectation: Some(expectation),
             requires_io: false,
+            unrun_checked_targets: vec![],
         }
     }
 
@@ -351,6 +407,7 @@ impl TestPlan {
             targets: vec![(Target::default(), vec!["yaml".to_string()])],
             error_expectation: None,
             requires_io: false,
+            unrun_checked_targets: vec![],
         }
     }
 }
@@ -378,6 +435,15 @@ pub mod tests {
         let exp = ErrorExpectation::parse(content).expect("should parse");
         assert_eq!(exp.exit(), Some(2));
         assert_eq!(exp.stderr_pattern(), None);
+    }
+
+    #[test]
+    fn test_parse_expect_sidecar_stderr_absent() {
+        let content = "exit: 1\nstderr-absent: \"arrow\"\nstderr-absent: \"and\"\n";
+        let exp = ErrorExpectation::parse(content).unwrap();
+        assert!(exp.validate(1, "unresolved variable 'g'").is_ok());
+        assert!(exp.validate(1, "note: no arrow functions").is_err());
+        assert!(exp.validate(1, "'and' and 'or'").is_err());
     }
 
     #[test]
@@ -415,6 +481,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: Some(1),
             stderr_pattern: Some("division by zero".to_string()),
+            stderr_absent: vec![],
         };
         assert!(exp.validate(1, "error: division by zero at line 5").is_ok());
     }
@@ -424,6 +491,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: Some(1),
             stderr_pattern: None,
+            stderr_absent: vec![],
         };
         let result = exp.validate(0, "");
         assert!(result.is_err());
@@ -435,6 +503,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: None,
             stderr_pattern: Some("expected pattern".to_string()),
+            stderr_absent: vec![],
         };
         let result = exp.validate(1, "something else entirely");
         assert!(result.is_err());
@@ -446,6 +515,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: None,
             stderr_pattern: Some(r"line \d+".to_string()),
+            stderr_absent: vec![],
         };
         assert!(exp.validate(1, "error at line 42").is_ok());
         assert!(exp.validate(1, "error at line XY").is_err());
@@ -496,6 +566,62 @@ fib: 42
     pub fn test_no_bench_targets() {
         let plan = source_to_test_plan("RESULT: :PASS");
         assert!(!plan.has_benchmarks());
+    }
+
+    fn unrun_checked_names(plan: &TestPlan) -> Vec<String> {
+        plan.unrun_checked_targets()
+            .iter()
+            .map(|t| t.name().clone())
+            .collect()
+    }
+
+    /// A target with checks that the tester does not run is reported;
+    /// targets the tester runs, and targets without checks, are not.
+    #[test]
+    pub fn test_unrun_checked_targets() {
+        let plan = source_to_test_plan(
+            "
+` { target: :semantics }
+semantics: { a: 1 = 1 RESULT: a then(:PASS, :FAIL) }
+
+` { target: :asserted }
+asserted: { a: 1 //=> 1 }
+
+` { target: :predicate }
+predicate: { a: 1 //=?> pos? }
+
+` { target: :test-named }
+named: { RESULT: :PASS }
+
+` { target: :verified verify: [:v] }
+verified: { RESULT: :PASS }
+
+` { target: :fixture }
+fixture: 1
+
+v(context): :PASS
+",
+        );
+        assert_eq!(
+            unrun_checked_names(&plan),
+            vec![
+                "asserted".to_string(),
+                "predicate".to_string(),
+                "semantics".to_string()
+            ]
+        );
+    }
+
+    /// A metadata pass-through (`//`) is not an assertion.
+    #[test]
+    pub fn test_metadata_operator_is_not_a_check() {
+        let plan = source_to_test_plan(
+            "
+` { target: :tagged }
+tagged: 1 // { a: 1 }
+",
+        );
+        assert!(unrun_checked_names(&plan).is_empty());
     }
 
     pub fn source_to_test_plan(text: &str) -> TestPlan {

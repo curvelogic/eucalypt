@@ -117,7 +117,7 @@ impl fmt::Display for Kind {
 pub fn constructor_kind(name: &str) -> Option<Kind> {
     match name {
         "List" | "IO" | "Dict" | "NonEmpty" => Some(Kind::star_to_star()),
-        "Lens" | "Traversal" => Some(Kind::star_to_star_to_star()),
+        "Lens" | "Traversal" | "dict" => Some(Kind::star_to_star_to_star()),
         _ => None,
     }
 }
@@ -279,7 +279,7 @@ pub enum Type {
     /// A named type constructor.
     ///
     /// Built-in constructors: `List`, `IO`, `Dict`, `NonEmpty`, `Lens`,
-    /// `Traversal`.  User-defined constructors may also appear here.
+    /// `Traversal`, `dict`.  User-defined constructors may also appear here.
     Con(String),
 
     /// Constructor application: `App(f, x)` — the type `f` applied to `x`.
@@ -367,6 +367,16 @@ impl Type {
     /// `Dict(inner)` — homogeneous block with values of type `inner`.
     pub fn dict(inner: Type) -> Self {
         Type::App(Box::new(Type::Con("Dict".into())), Box::new(inner))
+    }
+
+    /// `dict(k, v)` — persistent dict ordered by key, with keys of type `k`
+    /// and values of type `v` (the runtime dict, not the block type
+    /// `Dict(T)`).
+    pub fn ordered_dict(k: Type, v: Type) -> Self {
+        Type::App(
+            Box::new(Type::App(Box::new(Type::Con("dict".into())), Box::new(k))),
+            Box::new(v),
+        )
     }
 
     /// `NonEmpty([inner])` — non-empty list.
@@ -724,6 +734,7 @@ fn fmt_app(f: &mut fmt::Formatter<'_>, head: &Type, arg: &Type) -> fmt::Result {
             match name.as_str() {
                 "Lens" => return write!(f, "Lens({a}, {arg})"),
                 "Traversal" => return write!(f, "Traversal({a}, {arg})"),
+                "dict" => return write!(f, "dict({a}, {arg})"),
                 _ => {}
             }
         }
@@ -1049,6 +1060,18 @@ mod tests {
         assert_eq!(
             Type::non_empty(Type::Number).to_string(),
             "NonEmpty([number])"
+        );
+    }
+
+    #[test]
+    fn display_ordered_dict() {
+        assert_eq!(
+            Type::ordered_dict(Type::list(Type::Number), Type::String).to_string(),
+            "dict([number], string)"
+        );
+        assert_eq!(
+            kind_of(&Type::Con("dict".into())),
+            Kind::star_to_star_to_star()
         );
     }
 

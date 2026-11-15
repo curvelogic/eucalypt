@@ -337,27 +337,35 @@ fn debug_trace_restores_the_uncurated_trace() {
 
     // A transparent library frame is present in the raw `--debug-trace` dump
     // and is gone from the curated trace: proves `--debug-trace` bypasses
-    // curation rather than being an inert flag. Since the DirectApp call-site
-    // fix (eu-1tkk.7) swap_args anchors on the user call site with the named
-    // boundary combinator kept as context — the same shape as
-    // nth_out_of_range below — where it previously curated to nothing because
-    // no user frame reached the trace at all. The test's intent is unchanged:
-    // curation drops every *transparent* frame while keeping the user anchor
-    // and the boundary combinator.
-    let path = dir.join("swap_args.eu");
-    let raw = frames(&run_debug_trace(&path));
+    // curation rather than being an inert flag. The fixture raises under
+    // `filter` in both prelude modes. `swap_args` used to serve here, but its
+    // only transparent frame in blob mode was a call to the global `=`, which
+    // the blob now inlines as source mode does (eu-oaz72.47).
+    let transparent = std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/debug_trace_transparent_frame.eu"
+    ));
+    let raw = frames(&run_debug_trace(transparent));
     assert!(
         raw.iter().any(|(kind, _)| kind == "transparent"),
-        "swap_args.eu: expected the raw --debug-trace dump to retain a transparent \
-         frame, got {raw:?}"
+        "debug_trace_transparent_frame.eu: expected the raw --debug-trace dump to \
+         retain a transparent frame, got {raw:?}"
     );
-    let (curated_json, _, _) = run(&path);
+    let (curated_json, _, _) = run(transparent);
     let curated = frames(&curated_json);
     assert!(
         !curated.iter().any(|(kind, _)| kind == "transparent"),
-        "swap_args.eu: curation must drop every transparent frame the raw dump \
-         carried, got {curated:?}"
+        "debug_trace_transparent_frame.eu: curation must drop every transparent \
+         frame the raw dump carried, got {curated:?}"
     );
+
+    // Since the DirectApp call-site fix (eu-1tkk.7) swap_args anchors on the
+    // user call site with the named boundary combinator kept as context —
+    // the same shape as nth_out_of_range below — where it previously curated
+    // to nothing because no user frame reached the trace at all.
+    let path = dir.join("swap_args.eu");
+    let (curated_json, _, _) = run(&path);
+    let curated = frames(&curated_json);
     assert!(
         curated.contains(&("boundary".to_string(), "nth".to_string())),
         "swap_args.eu: curated trace must name the boundary combinator, got {curated:?}"

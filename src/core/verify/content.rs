@@ -18,9 +18,39 @@ fn is_user_identifier(name: &str) -> bool {
 
 /// Scan the core expression for errors
 pub fn verify(expr: RcExpr) -> Result<Vec<CoreError>, CoreError> {
-    let mut verifier = Verifier::default();
+    verify_with_globals(expr, &|_| false)
+}
+
+/// Scan the core expression for errors, treating any free variable for
+/// which `is_global` returns `true` as resolved.
+///
+/// With the prelude blob active the prelude is not loaded as source, so a
+/// reference to a prelude name (`head`, `map`, ...) is still a
+/// `Var::Free` when the verifier runs; it resolves later to a global slot.
+/// The caller passes the blob's global names here so that such a name is
+/// not mistaken for an undefined, user-written one — exactly as it is not
+/// in source-prelude mode, where it is a bound variable (eu-oaz72.134).
+pub fn verify_with_globals(
+    expr: RcExpr,
+    is_global: &dyn Fn(&str) -> bool,
+) -> Result<Vec<CoreError>, CoreError> {
+    let mut verifier = Verifier {
+        errors: vec![],
+        is_global,
+    };
     verifier.verify(expr)?;
     Ok(verifier.errors)
+}
+
+/// Return `true` if `f` is a reference to the `=` operator, whether it is
+/// still free (blob path, before the prelude's inlinable cores are
+/// injected) or bound to the prelude's own `=` (source-prelude path).
+fn is_eq_operator(f: &RcExpr) -> bool {
+    match &*strip_meta(f).inner {
+        Expr::Var(_, Var::Free(n)) => n == "=",
+        Expr::Var(_, Var::Bound(BoundVar { name: Some(n), .. })) => n == "=",
+        _ => false,
+    }
 }
 
 /// Strip any `Meta` wrappers from an expression to reach its inner form.
@@ -70,12 +100,14 @@ fn is_trivially_self_referential(value: &RcExpr, binder: u32) -> bool {
     false
 }
 
-#[derive(Default)]
-pub struct Verifier {
+pub struct Verifier<'g> {
     errors: Vec<CoreError>,
+    /// Free names that resolve to globals outside the expression (the
+    /// prelude blob's bindings), and so are not undefined.
+    is_global: &'g dyn Fn(&str) -> bool,
 }
 
-impl Verifier {
+impl Verifier<'_> {
     fn verify(&mut self, expr: RcExpr) -> Result<RcExpr, CoreError> {
         match &*expr.inner {
             Expr::ErrPseudoCall | Expr::ErrPseudoCat | Expr::ErrPseudoDot => {
@@ -116,26 +148,25 @@ impl Verifier {
             Expr::App(s, f, args) => {
                 // Detect assignment-style declarations: `name = value`.
                 //
-                // After cook (with or without the prelude blob), `name = value`
-                // produces `App(Var::Free("="), [Var::Free("name"), ...])`.  The
-                // `=` free-var may be the prelude equality operator (blob path) or
-                // an undefined function (source-prelude path); either way, the
-                // first argument being a free identifier is strong evidence of a
-                // Python/JS-style declaration mistake.
+                // After cook, `name = value` produces `App(=, [Var::Free("name"),
+                // ...])`.  The `=` is free on the blob path (the prelude is not
+                // loaded) and bound to the prelude's `=` on the source-prelude
+                // path; `is_eq_operator` accepts both.  The first argument being
+                // an *undefined* identifier is strong evidence of a
+                // Python/JS-style declaration mistake.  A prelude name is not
+                // undefined: on the source path it is bound, and on the blob
+                // path `is_global` recognises it, so the two modes agree
+                // (eu-oaz72.134).
                 //
                 // We only fire when the identifier looks user-written (starts with
                 // a letter) to avoid false positives on compiler-generated names
                 // like `_e_a0` or `__build`.
-                if let Expr::Var(_, Var::Free(eq)) = &*f.inner {
-                    if eq == "=" {
-                        if let Some(first_arg) = args.first() {
-                            if let Expr::Var(_, Var::Free(name)) = &*first_arg.inner {
-                                if is_user_identifier(name) {
-                                    self.errors.push(CoreError::AssignmentStyleDeclaration(
-                                        *s,
-                                        name.clone(),
-                                    ));
-                                }
+                if is_eq_operator(f) {
+                    if let Some(first_arg) = args.first() {
+                        if let Expr::Var(_, Var::Free(name)) = &*first_arg.inner {
+                            if is_user_identifier(name) && !(self.is_global)(name) {
+                                self.errors
+                                    .push(CoreError::AssignmentStyleDeclaration(*s, name.clone()));
                             }
                         }
                     }

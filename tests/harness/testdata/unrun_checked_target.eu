@@ -1,0 +1,12 @@
+{ title: "unrun checked target" }
+
+# Fixture for `test_tester_fails_unrun_checked_target`: the `semantics`
+# target carries a `RESULT` but is neither named `test-…` nor given
+# `verify`, so the tester would never run it. The tester must fail the
+# file rather than pass it on its other targets.
+
+` { target: :test-runs }
+runs: { RESULT: :PASS }
+
+` { target: :semantics }
+semantics: { RESULT: :FAIL }

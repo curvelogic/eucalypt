@@ -162,6 +162,7 @@ table is verified against `named_precedence` in
 | 45 | append | left | `<<` | Deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |

@@ -12,8 +12,8 @@ primary: user tests/harness/errors/078_anon_anaphor_scope.eu:5:23
 help-lines: 0
 note-lines: 2
 secondary-labels: 1
-trace-frames: 1
-trace-user-frames: 1
+trace-frames: 0
+trace-user-frames: 0
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -26,7 +26,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
   │                   │
   │                   called from here
   │
+  = note: in 'double(_)', '_' is the whole argument, so the argument is the identity function: an expression anaphor's scope ends at the parentheses round it
   = a function value cannot be used directly here; it must first be called with all of its remaining arguments
-  = this can happen when a function is under-applied (missing an argument), or when low-precedence catenation groups an expression differently than intended — add parentheses to disambiguate
-  = while evaluating (outermost first):
-    - # Mistake: using '_' inside a nested function call when a function arg is expected.… at 078_anon_anaphor_scope.eu:1:1

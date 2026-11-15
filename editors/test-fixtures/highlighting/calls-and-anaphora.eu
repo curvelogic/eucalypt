@@ -1,0 +1,29 @@
+# Calls, pipelines, sections and anaphora
+
+xs: [1, 2, 3, 4]
+
+` "Sum a pair."
+add-pair[a, b]: a + b
+
+` "Read a point."
+point-x{x y}: x
+
+paren-call: max(1, 2)
+local-list-call: add-pair[1, 2]
+local-block-call: point-x{x: 3 y: 4}
+list-call: sum[1, 2, 3]
+block-call: merge{a: 1}{b: 2}
+pipeline: xs map(* 10) filter(> 15) count
+section: xs map(+ 1)
+expression-anaphor: xs map(_ * 2 + 1)
+numbered-anaphor: xs map(_0 * _0)
+block-anaphor: { x: • y: • }
+numbered-block-anaphor: { first: •0 second: •1 }
+generalised-lookup: { a: 3 b: 4 }.(a + b)
+namespace-lookup: "abc" str.to-upper
+conditional: ((xs count) > 3) then("long", "short")
+transform: 5 when(pos?, + 1)
+multi-way: cond[xs nil? => "empty", (xs count) > 10 => "big", "small"]
+composed: xs map(abs ; inc)
+constants: [true, false, null, nil]
+intrinsic: __NULL

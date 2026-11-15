@@ -1,60 +1,61 @@
 #!/usr/bin/env eu
-# Strict prelude args: Seq forces strict args at global call sites
-#
-# In blob-prelude mode, prelude functions are globals (Ref::G) with no
-# demand analysis. The prelude demand signature table provides
-# conservative strictness for common prelude functions, enabling Seq
-# wrapping of complex arguments at call sites.
+{
+  title: "171 strict prelude args"
+  doc: "Strict prelude arguments: a complex argument in a position a prelude
+        function's demand signature marks strict is evaluated before the call.
+        In blob mode the signatures are derived by the demand analysis when the
+        blob is built and stored per global slot (eu-oaz72.77); in source mode
+        the same analysis runs over the prelude directly. Either way the result
+        is unchanged."
+}
 
-# nth with complex index arg — forces (2 + 1) eagerly
+` "`nth` with a computed index"
 nth-ok: nth(2 + 1, [10, 20, 30, 40]) = 40
 
-# take with computed count
+` "`take` with a computed count"
 take-ok: take(1 + 1, [10, 20, 30]) = [10, 20]
 
-# drop with computed count
+` "`drop` with a computed count"
 drop-ok: drop(2 - 1, [10, 20, 30]) = [20, 30]
 
-# foldl with complex initial accumulator
+` "`foldl` with a computed initial accumulator"
 foldl-ok: foldl(+, 10 + 5, [1, 2, 3]) = 21
 
-# map with complex function (lambda is WHNF, so no seq needed,
-# but the list arg via catenation is separate)
+` "`map` with a computed function"
 map-ok: ([1, 2, 3] map(_ + (5 * 2))) = [11, 12, 13]
 
-# filter with result used in further computation
+` "`filter` with a computed predicate"
 filter-ok: ([1, 2, 3, 4, 5] filter(_ > (1 + 1))) = [3, 4, 5]
 
-# Nested prelude calls with complex args
+` "Nested prelude calls with complex args"
 nested-ok: nth(0, take(1 + 1, [10, 20, 30])) = 10
 
-# range with computed bounds
+` "`range` with computed bounds"
 range-ok: range(2 * 1, 2 + 3) = [2, 3, 4]
 
-# reverse preserves values
+` "`reverse` preserves values"
 reverse-ok: reverse([1, 2, 3]) = [3, 2, 1]
 
-# sum / product with list
+` "`sum` of a list"
 sum-ok: sum([1, 2, 3, 4]) = 10
+` "`product` of a list"
 product-ok: product([1, 2, 3, 4]) = 24
 
-# max / min with computed args
+` "`max` with computed arguments"
 max-ok: max(3 + 1, 2 + 1) = 4
+` "`min` with computed arguments"
 min-ok: min(3 + 1, 2 + 1) = 3
 
-# abs with complex arg
+` "`abs` with a computed argument"
 abs-ok: abs(0 - (3 + 2)) = 5
 
-# Chained prelude calls
+` "Chained prelude calls"
 chain-ok: ([5, 3, 1, 4, 2] sort-nums reverse head) = 5
 
-# compose with complex args
+` "`compose` with computed arguments"
 compose-ok: compose(_ + 1, _ * 2, 3) = 7
 
-RESULT: if(
-  [nth-ok, take-ok, drop-ok, foldl-ok, map-ok, filter-ok,
-   nested-ok, range-ok, reverse-ok, sum-ok, product-ok,
-   max-ok, min-ok, abs-ok, chain-ok, compose-ok] all-true?,
-  :PASS,
-  :FAIL
-)
+RESULT: [nth-ok, take-ok, drop-ok, foldl-ok, map-ok, filter-ok,
+         nested-ok, range-ok, reverse-ok, sum-ok, product-ok,
+         max-ok, min-ok, abs-ok, chain-ok, compose-ok]
+        all-true? then(:PASS, :FAIL)

@@ -2135,6 +2135,236 @@ top-scorers:
 
 ---
 
+# Dicts
+
+A **dict** is a persistent dictionary ordered by key. Where a block is
+keyed by symbols and looks a key up by scanning, a dict takes keys of
+several kinds — numbers, strings, symbols, or lists of those, such as
+`[x, y]` coordinates — and finds, adds or removes one in O(log n). Its
+entries are always kept in key order, which also makes it a priority queue.
+
+All the functions live in the `dict` namespace, and, as for sets, the dict
+comes last, so they read well in a pipeline: `d dict.get(k)`. The
+[cheat sheet](../appendices/cheat-sheet.md) lists them all, and the
+[prelude reference](../reference/prelude/dicts.md) documents each one.
+
+## Building a dict
+
+`dict.of` (alias `dict.from-list`) builds a dict from `[key, value]`
+pairs; `dict.empty` is the empty dict, and `dict.assoc` adds an entry.
+
+```eu
+ages: dict.of[["ann", 31], ["bob", 27]]
+more: ages dict.assoc("cy", 45)
+
+n: more dict.size //=> 3
+names: more dict.keys //=> ["ann", "bob", "cy"]
+```
+
+A dict is persistent: `assoc` and `dissoc` return a new dict and leave the
+old one as it was (`ages` above still has two entries). The new dict shares
+almost all of its structure with the old, so this is cheap.
+
+`dict.from-block` turns a block into a dict keyed by its symbols, and
+`dict.to-block` turns a dict back into a block.
+
+## Looking up
+
+```eu
+` :suppress
+d: dict.of[[[0, 0], :start], [[3, 4], :goal]]
+
+goal: d dict.get([3, 4]) //=> :goal
+none: d dict.get-or([1, 1], :wall) //=> :wall
+there: d dict.contains?([0, 0]) //=> true
+```
+
+`dict.get` of a key the dict does not hold is an error that names the key;
+`dict.get-or` gives a default instead. (`d` is marked `:suppress` because a
+dict with list keys cannot be rendered; see [Rendering](#rendering).)
+
+## Keys and their order
+
+Keys are evaluated fully when they are stored; values are not (see below).
+Entries come out — from `to-list`, `keys`, `values` and in rendered output —
+in key order. Numbers order numerically, strings by their text, symbols by
+name and lists element by element, and across kinds numbers come before
+strings, strings before symbols, and symbols before lists. `1` and `1.0` are
+the same key.
+
+```eu
+` :suppress
+mixed: dict.of[[:b, 1], ["a", 2], [[1], 3], [10, 4], [2, 5]]
+
+order: mixed dict.keys //=> [2, 10, "a", :b, [1]]
+```
+
+## Counting and updating
+
+`dict.update(k, f, default)` maps `k` to `f` of its old value, starting
+from `default` when the key is absent. In a loop that counts, use
+`dict.update-strict`, which evaluates the new value at once, so a long run
+of updates does not build up a chain of unevaluated additions:
+
+```eu
+` "count one more of word `w` in dict `d`"
+count(d, w): d dict.update-strict(w, + 1, 0)
+
+` "count the words of a list"
+tally(words): words foldl(count, dict.empty)
+
+counts: ["to", "be", "or", "not", "to", "be"] tally dict.to-list
+          //=> [["be", 2], ["not", 1], ["or", 1], ["to", 2]]
+```
+
+`dict.merge-with(f, a, b)` combines two dicts, using `f(va, vb)` where both
+hold a key (`merge-with-strict` evaluates it at once):
+
+```eu
+a: dict.of[[:x, 1], [:y, 2]]
+b: dict.of[[:y, 10], [:z, 20]]
+
+sum: dict.merge-with(+, a, b) dict.to-list //=> [[:x, 1], [:y, 12], [:z, 20]]
+```
+
+## Lazy values and memo tables
+
+A value is stored unevaluated and computed at most once, the first time it
+is needed, however many dicts share it. So a dict can refer to itself, which
+makes it a memo table:
+
+```eu
+` "the Fibonacci number `n`, defined from the earlier entries of the table `fib`"
+fib-entry(n): (n < 2) then(n, (fib dict.get(n - 1)) + (fib dict.get(n - 2)))
+
+` "the entry for `n` in the table"
+entry(n): [n, fib-entry(n)]
+
+` "a table of Fibonacci numbers, each defined from the earlier entries"
+fib: range(0, 91) map(entry) dict.of
+
+f90: fib dict.get(90) //=> 2880067194370816120
+```
+
+Each entry is computed once, so this takes 91 additions rather than an
+exponential number.
+
+## Ordered operations
+
+Because entries are kept in order, the least and greatest keys, and the
+entries in a range of keys, are each found in O(log n):
+
+```eu
+d: dict.of[[5, :e], [1, :a], [3, :c], [7, :g]]
+
+least: d dict.min //=> [1, :a]
+greatest: d dict.max //=> [7, :g]
+middle: d dict.range(2, 6) dict.keys //=> [3, 5]
+```
+
+`dict.range(lo, hi)` holds the keys `k` with `lo ≤ k < hi`. `dict.pop-min`
+returns the least entry and the rest of the dict as `[key, value, rest]`
+(`pop-max` likewise for the greatest); `min`, `max` and the pops are errors
+on an empty dict, so test `dict.empty?` first.
+
+## Priority queues and Dijkstra's algorithm
+
+A dict keyed by `[priority, item]` is a priority queue: `dict.assoc` pushes
+an item and `dict.pop-min` takes the item with the least priority. When two
+items could share a priority, make the key unique, for instance
+`[priority, item]` with the item itself, or `[priority, seq, item]` with a
+counter.
+
+Here is Dijkstra's algorithm on a 141 × 141 grid, finding the cheapest path
+from the top-left corner to the bottom-right, where entering a cell costs
+its weight. The queue is a dict keyed by `[distance, [x, y]]`; the best
+distances found so far are a dict keyed by `[x, y]`. Rather than finding
+and changing a queued entry when a shorter path turns up, the search pushes
+a new entry and skips stale ones as they are popped.
+
+```eu
+` "the side of the grid"
+n: 141
+
+` "a distance longer than any path"
+far: 1000000000
+
+` "the target cell"
+goal: [n - 1, n - 1]
+
+` "the weight of the cell `[x, y]`"
+weight([x, y]): (7 * x + 13 * y + x * y) % 9 + 1
+
+` "true if the cell `[x, y]` is on the grid"
+inside?([x, y]): x >= 0 ∧ x < n ∧ y >= 0 ∧ y < n
+
+` "the cells next to `[x, y]` on the grid"
+neighbours([x, y]): [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] filter(inside?)
+
+` "the cost of entering cell `c` from a cell at distance `d`"
+via(d, c): d + weight(c)
+
+` "true if entering cell `c` at distance `d` beats its best distance so far"
+better?(d, dist, c): via(d, c) < (dist dict.get-or(c, far))
+
+` "queue cell `c`, entered from a cell at distance `d`"
+push(d, queue, c): queue dict.assoc([via(d, c), c], null)
+
+` "record the distance of cell `c`, entered from a cell at distance `d`"
+record(d, dist, c): dist dict.assoc(c, via(d, c))
+
+` "take the nearest queued cell and continue the search from it"
+search(queue, dist): queue dict.pop-min visit(dist)
+
+` "visit cell `c` at distance `d`, with `rest` still queued; a stale entry relaxes nothing"
+visit(dist, [[d, c], v, rest]): {
+  fresh: d <= (dist dict.get-or(c, far))
+  improved: fresh then(c neighbours filter(better?(d, dist)), [])
+}.((c = goal) then(d, search(improved foldl(push(d), rest), improved foldl(record(d), dist))))
+
+shortest: search(dict.of[[[0, [0, 0]], null]], dict.of[[[0, 0], 0]]) //=> 1085
+```
+
+The queue holds no values of its own (`null`): the key carries everything.
+Each step costs O(log n) in the size of the queue, and the whole search runs
+in a few seconds.
+
+## Rendering
+
+A dict renders, in every output format, as a mapping of its entries in key
+order: a symbol key as its name, a string key as its text and a number key
+as its rendered text.
+
+```eu
+scores: dict.of[[:bob, 27], [:ann, 31]]
+```
+
+```yaml
+scores:
+  ann: 31
+  bob: 27
+```
+
+A list key cannot be a mapping key, and two keys with the same text (`1`
+and `"1"`, or `"x"` and `:x`) would give the mapping the same key twice, so
+both are errors; render `d dict.to-list` to output such a dict as
+`[key, value]` pairs. See [Export Formats](../reference/export-formats.md).
+
+## Types
+
+The type checker writes the type of a dict as `dict(k, v)`, with keys of
+type `k` and values of type `v`; bare `dict` is `dict(any, any)`. It is a
+different type from `Dict(T)`, the type of a block whose values all have
+type `T`. See [Type Checking](type-checking.md#dictk-v).
+
+## Equality
+
+`=` on two dicts compares identity, not contents, as it does for sets: two
+dicts built separately with the same entries are not `=`. Compare
+`d dict.to-list` instead.
+
+---
+
 # Strings and Text
 
 In this chapter you will learn:
@@ -2250,6 +2480,10 @@ label: '99'
 > sum: x + y
 > result: "{sum}"
 > ```
+>
+> Anything else inside the braces — a second name, as in `"{ a b }"` —
+> is a parse error. Whitespace around the name and the format
+> specifier is ignored: `"{ n : %06d }"` is `"{n:%06d}"`.
 
 ## Escaping Braces
 
@@ -3315,6 +3549,43 @@ Precedence can be specified as:
 
 Associativity can be `:left`, `:right`, or omitted (defaults to
 `:left`).
+
+## Integer Overflow
+
+Integers are signed 64-bit. When `+`, `-`, `*` or `^` on two such integers
+gives a result outside that range, evaluation stops with a `numeric overflow` error
+pointing at the operator, rather than losing precision:
+
+```eu,notest
+a: 2 ^ 62    # 4611686018427387904, an integer
+b: 2.0 ^ 63  # a float, as an operand is a float
+c: 2 ^ 63    # error: numeric overflow
+```
+
+An integer raised to a negative integer power, such as `2 ^ (0 - 1)`, is
+a float (`0.5`).
+
+### Modular arithmetic
+
+`mulmod(a, b, m)`, `powmod(b, e, m)` and `modinv(a, m)` work modulo `m`
+without overflowing: they compute in 128 bits internally, so they are
+exact for any 64-bit signed operands and moduli, where `a * b % m` would stop
+with `numeric overflow` once `a * b` passes 2^63. Each returns the
+residue in `[0, m)`, so negative operands are normalised:
+
+```eu
+big: mulmod(9223372036854775807, 9223372036854775806, 9223372036854775783)  # 552
+pow: powmod(3, 1000000000000, 1000000007)                                   # 570188345
+inv: modinv(3, 7)                                                           # 5, as 3 * 5 = 15 = 1 (mod 7)
+neg: mulmod(-1, 1, 7)                                                       # 6
+```
+
+The modulus must be at least 1 and the operands whole numbers: a float
+such as `7.0` is read as `7`, and a fractional operand such as `2.5` is
+an error; `powmod` takes
+a non-negative exponent (for `b^-k`, use `powmod(modinv(b, m), k, m)`),
+and `modinv(a, m)` is an error when `a` and `m` share a factor, as
+`modinv(6, 9)` does.
 
 ## The Assertion Operators
 
@@ -5976,6 +6247,15 @@ test: {
 Several test targets can be embedded in one file. Each is run as a
 separate test.
 
+The tester runs a file's `test-` and `bench-` targets, its `main`
+target, and any target that names validators with `verify`. Any other
+target is not run. So that its checks are not skipped silently,
+`eu test` fails a file that declares such a target when the target's
+body binds `RESULT` or uses an inline assertion (`//=`, `//=>`, `//!`,
+`//=?`, `//=?>`): name it `test-…` or give it `verify`. The check reads
+the target's own body, so checks reached only through a reference to
+another declaration are not seen.
+
 ## How the default verdict is computed
 
 Each test target is rendered to output, and that output is parsed back
@@ -6051,6 +6331,38 @@ If your intention is not to embed tests in a eucalypt file but instead
 to write a test as a single file, then you can omit the test targets.
 Eucalypt will use a `main` target or run the entire file as usual and
 then validate the result (looking for a `RESULT` key, by default).
+
+## Running several files
+
+`eu test` accepts any number of files and directories and tests every
+one, in the order given. A directory contributes each test file in it,
+in name order; with no arguments the current directory is tested.
+
+```sh
+eu test parsing.eu solver.eu tests/
+```
+
+Each file is analysed and run on its own, as if tested alone, but the
+run is one suite: one report covers every test, and `eu test` exits
+non-zero if any test in any file fails. If the inputs contain no test
+files at all, `eu test` reports an error and exits non-zero.
+A file reached more than once — named twice, or named and also inside
+a directory given — is tested once, at its first position.
+
+Paths are looked up in the current directory first and then in each
+`-L` directory in turn, so `eu test -L tests solver.eu` finds
+`tests/solver.eu`.
+
+### Where results go
+
+Each test writes its working files (`<file>.evidence.yaml` and
+`<file>.report.yaml`, named from the test file's full name, so `x.eu`
+and `x.yaml` do not collide) to `.result/<run id>/` beside the test
+file. The combined `results.yaml` and the HTML `report.html` go in the
+same directory when every test file is in one directory; when they
+span several, they go in `.result/<run id>/` under the current
+directory. `-o PATH` writes the HTML report to `PATH` instead; the
+combined `results.yaml` stays where it would otherwise be.
 
 ## Other formats
 
@@ -7879,6 +8191,42 @@ A closed record is a subtype of the corresponding `Dict` type when all
 its field values share a common type. An open or annotated-Dict record is
 consistent with `Dict(T)` for gradual typing purposes.
 
+### dict(k, v)
+
+`dict(k, v)` — lowercase, with two parameters — is the type of a
+[dict](dicts.md), the persistent dictionary ordered by key, with keys of
+type `k` and values of type `v`. It is a different type from the block type
+`Dict(T)` above. Bare `dict` means `dict(any, any)`. A dict is persistent,
+so `dict(k, v)` is covariant in both parameters: a `dict(number, never)` is
+a `dict(number, string)`.
+
+```eu,notest
+` { type: "dict([number], number)" }
+dist: dict.of[[[0, 0], 0]]
+```
+
+The `dict` functions carry these types, for example:
+
+| Function       | Type                                                     |
+|----------------|----------------------------------------------------------|
+| `dict.of`      | `[(k, v)] -> dict(k, v)`                                 |
+| `dict.get`     | `k -> dict(k, v) -> v`                                   |
+| `dict.get-or`  | `any -> d -> dict(k, v) -> (v \| d)`                     |
+| `dict.assoc`   | `j -> w -> dict(k, v) -> dict(k \| j, v \| w)`           |
+| `dict.update`  | `j -> ((v \| d) -> w) -> d -> dict(k, v) -> dict(k \| j, v \| w)` |
+| `dict.range`   | `any -> any -> dict(k, v) -> dict(k, v)`                 |
+| `dict.to-list` | `dict(k, v) -> [(k, v)]`                                 |
+| `dict.pop-min` | `dict(k, v) -> (k, v, dict(k, v))`                       |
+
+Results such as `pop-min`'s are fixed tuples, so destructuring them
+(`[k, v, rest]`) gives each part its own type. Keys of different types in
+one dict are allowed at run time (they order numbers < strings < symbols <
+lists), so the signatures do not tie a default, a new key or value, or a
+range bound to the dict's own types: `dict.get-or(:b, null)` on a dict of
+numbers, `dict.range(0, :z)`, and an `assoc` or `update` that brings in a
+new key or value type all check clean. `dict.get` keeps the precise
+`k -> dict(k, v) -> v`, so a lookup's result has the dict's value type.
+
 ### Row polymorphism
 
 **Named row variables** allow functions that preserve the shape of records
@@ -7998,7 +8346,7 @@ of a type constructor:
 
 - `*` — an ordinary type (e.g. `number`, `[string]`)
 - `* -> *` — a unary type constructor (e.g. `List`, `IO`)
-- `* -> * -> *` — a binary type constructor (e.g. `Lens`, `Dict`)
+- `* -> * -> *` — a binary type constructor (e.g. `Lens`, `dict`)
 
 Declare a constructor variable with a kind annotation using `::`:
 
@@ -8637,6 +8985,7 @@ b: { tags: [1, 2] }     match?(spec)   # => false
 | Named row variable       | `{k: T, ..r}` (`{{k: T, ..r}}` in string)       |
 | Row concatenation        | `{..r, ..s}` (`{{..r, ..s}}` in string)          |
 | Homogeneous dict         | `Dict(T)`                                        |
+| Ordered dict (`dict.*`)  | `dict(k, v)`; bare `dict` = `dict(any, any)`     |
 | IO action                | `IO(T)`                                          |
 | Lens                     | `Lens(a, b)`                                     |
 | Traversal                | `Traversal(a, b)`                                |
@@ -8972,6 +9321,734 @@ specs and deliberately differs on closed ones.
 
 ---
 
+# Advent of Code
+
+This chapter is a cookbook for solving [Advent of Code](https://adventofcode.com)
+puzzles in eucalypt: how to lay out a day, parse the input, work with grids,
+search, memoise, iterate, and find out why a solution is slow. Each recipe
+is a short, complete program; copy it and adapt it.
+
+The recipes follow the [style guide](../eucalypt-style.md): pipelines over
+nested calls, `then` for a two-way choice, `cond` for three or more, and
+functions whose data argument comes last. The
+[syntax gotchas](../appendices/syntax-gotchas.md) are worth a read before the
+first puzzle; the ones that bite hardest in AoC code are noted where they
+come up.
+
+## Running a puzzle
+
+Keep each day in one file, with the worked example and your puzzle input
+beside it:
+
+```text
+day01.eu
+inputs/day01-ex1.txt    # the worked example from the puzzle page
+inputs/day01.txt        # your puzzle input (do not commit it)
+```
+
+A text file imported by name arrives as a list of strings, one per line.
+Write the solution as functions of that list, then give each part a target
+that imports the real input, and add a `test` target that checks the
+worked example:
+
+```eu,notest
+` "the two columns of numbers in `lines`"
+columns(lines): lines map(str.matches-of("\d+") ; map(num)) transpose
+
+` "the total distance between the sorted columns"
+part-1(lines): columns(lines) map(sort-nums) uncurry(zip-with(-)) map(abs) sum
+
+` { target: :test
+    import: "ex=inputs/day01-ex1.txt" }
+test: {
+  p1: ex part-1 //= 11
+  RESULT: p1 then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day01.txt" }
+answer-1: input part-1
+```
+
+```sh
+eu test day01.eu            # check the worked example
+eu day01.eu -t part-1       # solve part 1 with your input
+eu check day01.eu           # type-check without running
+```
+
+`eu test` judges a file by its `test` targets. A file with none is judged
+by its default output, which has no `RESULT`, so it reports `FAIL`; give
+every day a `test` target from the start. `RESULT` is computed from the
+checks so that each one counts (see [Testing](testing.md)).
+
+To explore an input before writing a solution, bind it to a name on the
+command line and evaluate an expression against it:
+
+```sh
+eu input=inputs/day01.txt -e 'input count'
+eu input=inputs/day01.txt -e 'input map(str.len) max-of'
+```
+
+The same check, with the example inline rather than in a file, looks like
+this:
+
+```eu
+` "the two columns of numbers in `lines`"
+columns(lines): lines map(str.matches-of("\d+") ; map(num)) transpose
+
+` "the total distance between the sorted columns"
+part-1(lines): columns(lines) map(sort-nums) uncurry(zip-with(-)) map(abs) sum
+
+` :suppress
+ex: ["3   4", "4   3", "2   5", "1   3", "3   9", "3   3"]
+
+distance: ex part-1 //=> 11
+```
+
+## Parsing
+
+### Lines and blank-line blocks
+
+Many inputs are groups of lines separated by blank lines. `split-on`
+splits a list wherever its predicate holds, dropping the separators:
+
+```eu
+` :suppress
+lines: ["1000", "2000", "", "4000", "", "5000", "6000"]
+
+groups: lines split-on(= "") //=> [["1000", "2000"], ["4000"], ["5000", "6000"]]
+totals: groups map(map(num) ; sum) //=> [3000, 4000, 11000]
+```
+
+A single input that has two sections (rules, then updates, say) is the
+same thing with two groups; destructure them with a function parameter:
+
+```eu
+` :suppress
+lines: ["a: 1", "b: 2", "", "a", "b", "a"]
+
+` "the number of uses of each rule, from `[rules, uses]`"
+summary[rs, us]: { rules: rs count uses: us count }
+
+both: lines split-on(= "") summary //=> { rules: 2 uses: 3 }
+```
+
+### Numbers
+
+`str.matches-of` finds every match of a regex; `num` turns each into a
+number. Include the minus sign in the pattern to keep negative numbers:
+
+```eu
+` "all the integers in string `s`, including negative ones"
+ints(s): s str.matches-of("-?\d+") map(num)
+
+robot: "p=0,4 v=3,-3" ints //=> [0, 4, 3, -3]
+```
+
+Where a hyphen is a separator rather than a sign, as in a range `10-20`,
+match `\d+` instead, or `10-20` reads as `10` and `-20`.
+
+### Regex groups
+
+`str.match-with` returns the whole match followed by its groups, so `tail`
+leaves the groups. Name the parts with a destructuring parameter:
+
+```eu
+` "a parsed `move n from a to b` instruction"
+instruction[k, a, b]: { n: k from: a to: b }
+
+` "parse one instruction line"
+move(line): line str.match-with("move (\d+) from (\d+) to (\d+)") tail map(num) instruction
+
+m: "move 3 from 1 to 2" move //=> { n: 3 from: 1 to: 2 }
+```
+
+The parameters are `k`, `a` and `b`, not `n`, `from` and `to`: a block
+field sees itself, so `{ n: n }` would refer to the field, not the
+parameter (see [the gotcha](../appendices/syntax-gotchas.md)).
+
+### Characters and digits
+
+`str.letters` splits a string into one-character strings:
+
+```eu
+row: "#.#" str.letters //=> ["#", ".", "#"]
+digits: "9021" str.letters map(num) //=> [9, 0, 2, 1]
+```
+
+## Grids
+
+### A grid as a vec
+
+A list has O(n) indexed access, so a grid you look into at random is best
+held as a flat [vec](../reference/prelude/index.md) of its characters, with
+the cell `[x, y]` at index `y * w + x`:
+
+```eu
+` :suppress
+rows: ["#....", "..#..", "....S"]
+
+` :suppress
+grid: { w: rows head str.len  h: rows count  cells: rows mapcat(str.letters) vec.of }
+
+` "true if `[x, y]` is on the grid"
+inside?([x, y]): x >= 0 ∧ x < grid.w ∧ y >= 0 ∧ y < grid.h
+
+` "the character at `[x, y]`, or null off the grid"
+at([x, y]): inside?([x, y]) then(grid.cells vec.nth(y * grid.w + x), null)
+
+` "every cell `[x, y]` that holds character `c`"
+find-all(c): { :for y: range(0, grid.h), x: range(0, grid.w), _: [at([x, y])] filter(= c) }.[x, y]
+
+start: find-all("S") head //=> [4, 2]
+corner: at([0, 0]) //=> "#"
+off: at([5, 0]) //=> null
+```
+
+For a sparse grid, or one you change as you go, keep the interesting cells
+in a set instead: `walls: find-all("#") set.of`, then `c ∈ walls`. Sets and
+[dicts](dicts.md) take `[x, y]` lists as elements and keys.
+
+### Neighbours
+
+List the offsets and add them, filtering by the bounds, or use a `:for`
+comprehension for the eight cells around a point:
+
+```eu
+` "the four directions, as `[dx, dy]`"
+dirs: [[1, 0], [0, 1], [-1, 0], [0, -1]]
+
+` "the cell one step from `[x, y]` in direction `[dx, dy]`"
+step([x, y], [dx, dy]): [x + dx, y + dy]
+
+` "the four cells next to `c`"
+adjacent(c): dirs map(step(c))
+
+` "the eight cells around `[x, y]`"
+around([x, y]): { :for dx: [-1, 0, 1], dy: [-1, 0, 1], _: [[dx, dy]] filter(!= [0, 0]) }.[x + dx, y + dy]
+
+four: adjacent([2, 2]) //=> [[3, 2], [2, 3], [1, 2], [2, 1]]
+eight: around([0, 0]) count //=> 8
+```
+
+Turning right is a step along `dirs`: the next direction after index `i` is
+`dirs !! ((i + 1) % 4)`.
+
+### Columns and transposes
+
+`transpose` turns rows into columns, which is the easy way to read a grid
+column by column or to rotate it:
+
+```eu
+` :suppress
+rows: ["abc", "def"]
+
+cols: rows map(str.letters) transpose map(str.join-on("")) //=> ["ad", "be", "cf"]
+```
+
+### Numeric grids
+
+For a grid of numbers, an n-dimensional `arr` has indexing by `[row, col]`,
+whole-array arithmetic, and `arr.neighbours`, which drops the offsets that
+fall off the edge:
+
+```eu
+` :suppress
+heights: arr.from-flat([2, 3], [1, 2, 3, 4, 5, 6])
+
+centre: heights arr.get([1, 1]) //=> 5
+next-to-corner: heights arr.neighbours([0, 0], [[0, 1], [1, 0], [-1, 0], [0, -1]]) //=> [2, 4]
+```
+
+An `arr` holds its numbers as 64-bit floats (`5` comes back as `5.0`), so
+it is exact only up to 2⁵³. Keep large counts in lists or dicts.
+
+## Search
+
+### Breadth-first search
+
+Breadth-first search finds the fewest steps when every step costs the
+same. Keep the current ring of states and a set of the states seen, and
+expand one ring at a time. The search below is written over any states:
+`moves(s)` lists the states one step from `s`.
+
+```eu
+` :suppress
+maze: ["S..#....", "#.##.##.", "...#..#.", ".#...#E."]
+
+` :suppress
+grid: { w: maze head str.len  h: maze count  cells: maze mapcat(str.letters) vec.of }
+
+` "the character at `[x, y]`, or a wall off the grid"
+at([x, y]): (x >= 0 ∧ x < grid.w ∧ y >= 0 ∧ y < grid.h) then(grid.cells vec.nth(y * grid.w + x), "#")
+
+` "true if cell `c` is not a wall"
+open?(c): at(c) != "#"
+
+` "the open cells next to `[x, y]`"
+moves([x, y]): [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] filter(open?)
+
+` "the fewest steps from `start` to a state satisfying `goal?`, or null if there is none"
+bfs(moves, goal?, start): {
+  ` "the states one step beyond `ring` not yet in `seen`"
+  beyond(ring, seen): ring mapcat(moves) remove(∈ seen) set.of set.to-list
+
+  ` "search from `ring`, at distance `d`, having seen `seen`"
+  go(d, ring, seen): cond[
+    ring nil? => null,
+    ring any(goal?) => d,
+    { next: beyond(ring, seen) }.(go(d + 1, next, seen set.union(set.of(next))))
+  ]
+}.(go(0, [start], set.of[start]))
+
+steps: bfs(moves, = [6, 3], [0, 0]) //=> 17
+```
+
+A state need not be a cell. When the puzzle depends on more than position
+(the direction you face, the keys you hold), make the state a list of all
+of it, such as `[x, y, dir]`; sets and dicts take any list of primitives.
+
+### Dijkstra's algorithm
+
+When steps cost different amounts, use Dijkstra's algorithm with a
+priority queue. A [dict](dicts.md) is the priority queue: its entries are
+kept in key order, `dict.assoc` pushes and `dict.pop-min` takes the entry
+with the least key. Key the queue by `[priority, seq]`, where `seq` is a
+counter that makes every key unique, and store the state as the value: the
+queue then orders entries by two numbers alone, and two states at the same
+distance never collide.
+
+The template below threads `[queue, seq, dist]` through the search, where
+`dist` is a dict of the best distance found for each state. Rather than
+finding a queued entry and lowering its priority when a shorter path turns
+up, it pushes a new entry and skips stale ones as they are popped. Because
+`dist` is keyed by state, a state must be a valid dict key: a number,
+string, symbol or list of those. As for `bfs`, `moves(s)` describes the
+puzzle, here as `[cost, next]` pairs. The
+example is a 141 × 141 grid, the size of a typical AoC map, where entering
+a cell costs its weight:
+
+```eu
+` "a distance longer than any path"
+far: 1000000000
+
+` "the least distance from `start` to a state satisfying `goal?`, where `moves(s)` lists the `[cost, next]` steps out of state `s`; null if there is none"
+dijkstra(moves, goal?, start): {
+  ` "true if reaching state `s` at distance `d` beats the best found so far"
+  better?(dist, [d, s]): d < (dist dict.get-or(s, far))
+
+  ` "queue state `s` at distance `d` under number `seq`, and record its distance"
+  push([queue, seq, dist], [d, s]): [queue dict.assoc([d, seq], s), seq + 1, dist dict.assoc(s, d)]
+
+  ` "a step of cost `c` to state `s`, taken from distance `d`"
+  from(d, [c, s]): [d + c, s]
+
+  ` "take the nearest queued state and continue from it"
+  search([queue, seq, dist]): queue dict.empty? then(null, visit(seq, dist, queue dict.pop-min))
+
+  ` "visit state `s` at distance `d`, with `rest` still queued, skipping a stale entry"
+  visit(seq, dist, [[d, _], s, rest]): cond[
+    goal?(s) => d,
+    d > (dist dict.get(s)) => search([rest, seq, dist]),
+    search(s moves map(from(d)) filter(better?(dist)) foldl(push, [rest, seq, dist]))
+  ]
+}.(search(push([dict.empty, 0, dict.empty], [0, start])))
+
+` "the side of the grid"
+n: 141
+
+` "the weight of the cell `[x, y]`"
+weight([x, y]): (7 * x + 13 * y + x * y) % 9 + 1
+
+` "true if the cell `[x, y]` is on the grid"
+inside?([x, y]): x >= 0 ∧ x < n ∧ y >= 0 ∧ y < n
+
+` "a step into cell `c`, costing its weight"
+costed(c): [weight(c), c]
+
+` "the steps out of cell `[x, y]`"
+moves([x, y]): [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] filter(inside?) map(costed)
+
+shortest: dijkstra(moves, = [n - 1, n - 1], [0, 0]) //=> 1085
+```
+
+Each push and pop is O(log n) in the size of the queue, and this search of
+nearly 20,000 cells runs in about four seconds. In a loop this hot, small
+named helpers such as `from` and `costed` are quicker than the same
+functions built with `bimap` or `juxt`.
+
+For a priority queue whose states are themselves lists of primitives, the
+counter is optional: `[d, s]` is already a unique key. The
+[dict guide](dicts.md#priority-queues-and-dijkstras-algorithm) has that
+form.
+
+### Union-find and topological order
+
+For connected components and dependency orders on numbered nodes, the
+`graph` namespace has union-find and Kahn's algorithm built in. Both take
+the number of nodes and a list of `[i, j]` edges:
+
+```eu
+` "a component label for each of six nodes"
+labels: graph.union-find(6, [[0, 1], [1, 2], [3, 4]])
+
+components: labels set.of set.size //=> 3
+order: graph.topo-sort(3, [[2, 0], [0, 1]]) //=> [2, 0, 1]
+```
+
+The results are numbers in floating-point form (`2.0`), which compare equal
+to integers. When the graph has a cycle, `topo-sort` returns only the
+nodes it could order: check `order count = n`. To use names rather than numbers, number
+them first, for instance with a dict from name to index.
+
+## Memoisation and dynamic programming
+
+### Rolling rows
+
+When each row of a table depends only on the row before, fold over the
+rows, keeping one row. Here, the number of paths from the top-left to the
+bottom-right of a grid, moving only right or down and avoiding `#`:
+
+```eu
+` :suppress
+rows: ["....", "..#.", ".#..", "...."]
+
+` "the paths to a cell from `left` and from `up`, or none if it is a wall"
+cell(left, [up, c]): (c = "#") then(0, left + up)
+
+` "the path counts for `row`, given the counts for the row above"
+next-row(above, row): zip(above, row str.letters) scanl(cell, 0) tail
+
+` "the path counts above the first row: one way in, at the top-left"
+entry: [1] ++ (repeat(0) take(3))
+
+paths: rows foldl(next-row, entry) last //=> 2
+```
+
+### Counting by key
+
+When the puzzle has many identical things that each become several more,
+count them instead of listing them: a dict from thing to count. Each step
+builds the next dict with `dict.update-strict`, which adds as it goes rather
+than building up unevaluated sums. These stones split when they have an
+even number of digits; after 75 steps there are 65 trillion of them, but
+only 54 distinct numbers:
+
+```eu
+` "the stones that stone `x` becomes in one step"
+blink-stone(x): {
+  s: str.of(x)
+  half: (s str.len) / 2
+  ` "the number formed by the characters `cs`"
+  join(cs): cs str.join-on("") num
+}.(cond[
+  x = 0 => [1],
+  (s str.len) % 2 = 0 => s str.letters split-at(half) map(join),
+  [x * 2024]
+])
+
+` "add `k` stones numbered `y` to the counts `d`"
+add(k, d, y): d dict.update-strict(y, + k, 0)
+
+` "add the stones that `k` stones numbered `x` become"
+add-children(d, [x, k]): blink-stone(x) foldl(add(k), d)
+
+` "one step for every stone"
+blink(counts): counts dict.to-list foldl(add-children, dict.empty)
+
+` "a count of one stone numbered `x`"
+one(x): [x, 1]
+
+` "the number of stones after `n` steps from the list `xs`"
+stones(n, xs): iterate(blink, xs map(one) dict.of) nth(n) dict.values sum
+
+short: stones(25, [125, 17]) //=> 55312
+long: stones(75, [125, 17]) //=> 65601038650482
+```
+
+`dict.merge-with(+, a, b)` adds two such tallies together.
+
+### A lazy table
+
+A dict's values are stored unevaluated and computed at most once, so a
+dict can be defined in terms of itself: write down every entry of the
+table as a formula over the others, and only the entries you reach are
+computed. Here is the longest common subsequence of two strings, a 2-D
+table keyed by `[i, j]`:
+
+```eu
+` :suppress
+a: "AGGTAB" str.letters vec.of
+` :suppress
+b: "GXTXAYB" str.letters vec.of
+
+` "the length of the longest common subsequence of the first `i` of `a` and the first `j` of `b`"
+lcs([i, j]): cond[
+  i = 0 ∨ j = 0 => 0,
+  (a vec.nth(i - 1)) = (b vec.nth(j - 1)) => (table dict.get([i - 1, j - 1])) + 1,
+  max(table dict.get([i - 1, j]), table dict.get([i, j - 1]))
+]
+
+` { doc: "every entry of the table, each defined from earlier entries"
+    export: :suppress }
+table: { :for i: range(0, (a vec.len) + 1), j: range(0, (b vec.len) + 1) }.[[i, j], lcs([i, j])] dict.of
+
+length: table dict.get([a vec.len, b vec.len]) //=> 4
+```
+
+The same works for a one-dimensional table keyed by an integer, and for
+any state space you can list in advance.
+
+### Memoising discovered states
+
+When the states turn up only as the recursion finds them, thread a memo
+dict through it: each call takes the memo and returns `[result, memo]` with
+what it learned added. Here, the number of ways to build each design from
+the given patterns, memoised on the rest of the design still to build:
+
+```eu
+` :suppress
+patterns: ["r", "wr", "b", "g", "bwu", "rb", "gb", "br"]
+
+` "the number of ways to build `design`, as `[ways, memo]`, given the answers in `memo`"
+ways(memo, design): cond[
+  design = "" => [1, memo],
+  memo dict.contains?(design) => [memo dict.get(design), memo],
+  {
+    rests: patterns filter(begins?(design)) map(str.len ; str-drop(design))
+    found: rests foldl(add-ways, [0, memo])
+  }.([first(found), second(found) dict.assoc(design, first(found))])
+]
+
+` "true if `design` begins with pattern `p`"
+begins?(design, p): design str.starts-with?(p)
+
+` "the rest of `s` after its first `k` characters"
+str-drop(s, k): s str.letters drop(k) str.join-on("")
+
+` "add the ways to build `rest` to the running `[total, memo]`"
+add-ways([total, memo], rest): {
+  r: ways(memo, rest)
+}.([total + first(r), second(r)])
+
+` "the ways to build each design, sharing one memo"
+all-ways(designs): designs foldl(add-ways-to-list, [[], dict.empty]) first reverse
+
+` "add the ways to build `design` to the list, as `[counts, memo]`"
+add-ways-to-list([counts, memo], design): {
+  r: ways(memo, design)
+}.([first(r) ‖ counts, second(r)])
+
+counts: all-ways["brwrr", "bggr", "gbbr", "rrbgbr", "ubwu", "bwurrg", "brgr", "bbrwb"]
+          //=> [2, 1, 4, 6, 0, 1, 2, 0]
+```
+
+Patterns are used as regexes by `str.starts-with?`, which is fine for
+letters; escape them if they hold regex characters.
+
+## Iteration
+
+### Loops
+
+`iterate(f, x)` is the lazy list `x`, `f(x)`, `f(f(x))`, … and
+`iterate(f, x) nth(n)` is `f` applied `n` times, which is fine while `n`
+is modest. For a long loop, write a tail-recursive function that calls
+the step directly:
+
+```eu
+` "one step of the simulation"
+step(s): (s * 7 + 3) % 1000003
+
+` "the state after `n` steps from `s`"
+run(n, s): (n = 0) then(s, run(n - 1, step(s)))
+
+final: run(100000, 1) //=> 940193
+```
+
+This runs in constant stack: eucalypt can see that `step` uses its
+argument, so each state is computed as the loop goes. Two forms lose that,
+and instead build a chain of unevaluated steps that is only
+worked through at the end, using stack and memory in proportion:
+
+- `iterate(step, s) nth(n)` with a large `n`;
+- a generic loop that takes the step as a parameter, such as
+  `times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))`: eucalypt cannot
+  tell whether an unknown `f` uses its argument.
+
+So for a long loop, name the step function in the loop itself. A loop that
+runs until something holds tests the state in the same place, as in
+`run-until(s): (s done?) then(s, run-until(step(s)))`, and looking at the
+state in the test also keeps it evaluated.
+
+### Cycle detection
+
+"What is the state after a billion steps?" usually means the states repeat.
+Record the step at which each state was seen in a dict; at the first repeat,
+skip whole cycles and run only the remainder. The state must be a valid
+dict key — a number, string, symbol or list of them — so encode a grid as a
+string or a list of rows.
+
+```eu
+` "`f` applied `n` times to `x`"
+times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))
+
+` "the state after `n` steps of `f` from `x`, skipping repeated cycles"
+after(f, n, x): {
+  ` "continue from state `s` at step `i`, with the step of each earlier state in `seen`"
+  go(i, s, seen): cond[
+    i = n => s,
+    seen dict.contains?(s) => times(f, (n - i) % (i - (seen dict.get(s))), s),
+    go(i + 1, f(s), seen dict.assoc(s, i))
+  ]
+}.(go(0, x, dict.empty))
+
+` "one step of a sequence that soon repeats"
+next(x): (x * x + 1) % 97
+
+state: after(next, 1000000000, 0) //=> 26
+```
+
+## Intervals and geometry
+
+### Merging intervals
+
+Sort the intervals by start, then fold, extending the last interval while
+the next one overlaps or touches it:
+
+```eu
+` "add interval `[lo, hi]` to the merged list `acc`, built in reverse"
+absorb(acc, [lo, hi]): cond[
+  acc nil? => [[lo, hi]],
+  lo <= (acc head second) + 1 => [acc head first, max(hi, acc head second)] ‖ (acc tail),
+  [lo, hi] ‖ acc
+]
+
+` "the intervals `xs` merged where they overlap"
+merge-intervals(xs): xs sort-by-num(first) foldl(absorb, []) reverse
+
+` "the number of integers covered by `[lo, hi]`"
+width([lo, hi]): hi - lo + 1
+
+` :suppress
+ranges: [[3, 5], [10, 14], [16, 20], [12, 18]]
+
+merged: ranges merge-intervals //=> [[3, 5], [10, 20]]
+covered: ranges merge-intervals map(width) sum //=> 14
+```
+
+### Areas of lattice polygons
+
+The shoelace formula gives the area of a polygon from its corners, and
+Pick's theorem turns that into a count of cells: the cells inside a loop
+dug along the grid, plus the loop itself, number `area + perimeter / 2 + 1`.
+
+```eu
+` "the offset of one step in each direction"
+offsets: { R: [1, 0] L: [-1, 0] U: [0, -1] D: [0, 1] }
+
+` "the corner reached from `[x, y]` by `k` steps in direction `d`"
+dig([x, y], [d, k]): { o: offsets lookup(d) }.[x + k * first(o), y + k * second(o)]
+
+` "twice the signed area of the polygon through the corners `ps`"
+shoelace(ps): zip-with(cross, ps, (ps tail) ++ [ps head]) sum
+
+` "the cross product of two corners"
+cross([x1, y1], [x2, y2]): x1 * y2 - x2 * y1
+
+` :suppress
+plan: [[:R, 6], [:D, 5], [:L, 2], [:D, 2], [:R, 2], [:D, 2], [:L, 5],
+       [:U, 2], [:L, 1], [:U, 2], [:R, 2], [:U, 3], [:L, 2], [:U, 2]]
+
+` "the cells inside the dug loop, including the loop"
+lagoon(steps): {
+  corners: steps scanl(dig, [0, 0]) tail
+  perimeter: steps map(second) sum
+}.((corners shoelace abs) / 2 + perimeter / 2 + 1)
+
+cells: plan lagoon //=> 62
+```
+
+`/` is floor division and `÷` exact division; both areas here are whole.
+The Manhattan distance between two points is
+`abs(x1 - x2) + abs(y1 - y2)`.
+
+### Common divisors
+
+There is no `gcd` in the prelude yet; Euclid's algorithm is two lines, and
+`lcm` follows. Puzzles where several cycles must line up ask for the `lcm`
+of their lengths:
+
+```eu
+` "the greatest common divisor of `a` and `b`"
+gcd(a, b): (b = 0) then(a, gcd(b, a % b))
+
+` "the least common multiple of `a` and `b`"
+lcm(a, b): a / gcd(a, b) * b
+
+together: [12, 18, 30] foldl(lcm, 1) //=> 180
+```
+
+## Debugging
+
+- **`▶ x`** prints `x` to stderr and returns it, so it can go anywhere in an
+  expression: `(▶ (a + b)) * 2`. `x dbg{label: "dist"}` does the same with
+  a label, and fits at any point in a pipeline.
+- **`` ` :trace ``** on a declaration prints each call and its arguments;
+  `` ` { trace: :strict-exit } `` also forces and prints the result. See
+  [Debug Tracing](../reference/agent-reference.md#9-debug-tracing).
+- **`//=>`** asserts a value inline and passes it on: put
+  `parse(ex) count //=> 10` in a test target while you work.
+- **`eu dump <phase> day01.eu`** shows the program after each compiler
+  phase, which helps when a parse is not what you meant.
+- **`eu day01.eu -t part-1 -S`** prints the time, steps, stack depth and
+  allocation of a run; see the [CLI reference](../reference/cli.md).
+- **`timeout 60 eu …`** stops a run that loops forever, and
+  `--heap-limit-mib 4096` stops one that would use all your memory; both
+  are worth having on by default during a puzzle.
+
+```eu
+` "the square of `x`"
+square(x): x * x
+
+` "the sum of the squares, printing the list of squares on stderr"
+loud: [1, 2, 3] map(square) dbg{label: "squares"} sum //=> 14
+```
+
+## Performance
+
+Know what each structure costs:
+
+| Operation | Cost |
+|---|---|
+| `xs nth(i)`, `xs !! i`, `xs count`, `xs last` on a list | O(n) |
+| `v vec.nth(i)`, `v vec.len` on a vec | O(1) |
+| `x ∈ s`, `s set.add(x)`, `s set.remove(x)` on a set | O(log n) |
+| `d dict.get(k)`, `dict.assoc`, `dict.pop-min` on a dict | O(log n) |
+| `b.key`, `b lookup(:k)`, `b merge(c)` on a block | O(n) in the block's size |
+| `xs ++ ys` | O(length of `xs`) |
+| `s str.letters` | O(length of `s`) |
+
+So: hold a grid as a vec, not a list of lists you index into; hold
+visited states in a set, not a list you search; and use a dict, not a
+block, for any table that grows as the program runs.
+
+Some habits that pay:
+
+- **Build lists by prepending** with `‖` and reverse once at the end;
+  appending one item at a time with `++` is quadratic.
+- **Parse once.** Bind the parsed input to a name inside the part's
+  function rather than parsing inside a loop.
+- **Use `dict.update-strict`** (and `dict.merge-with-strict`) in a loop that
+  counts, so the counts do not build up as chains of unevaluated sums.
+- **Parallelise independent work** with `par-map`, `par-sum`, `par-max`,
+  `par-min` and `par-concat`, which give the same answer as their
+  sequential forms (`map`, then `sum`, and so on) on several cores. They
+  are strict, so use them for a finite list of expensive pieces, such as
+  one per input line. See [Parallel Evaluation](parallelism.md).
+- **Measure** with `-S` before changing anything.
+
+---
+
 # Advanced Topics
 
 In this chapter you will learn:
@@ -9118,13 +10195,38 @@ in a code review.
 
 ## Sets
 
-Sets are unordered collections of unique values, provided by the
-`set` namespace.
+Sets are collections of unique numbers, strings and symbols, and lists
+of them (such as `[x, y]` grid points), provided by the `set` namespace. A set is held as a persistent balanced tree (the
+same structure as a [dict](dicts.md)), so `set.add`, `set.remove` and
+`set.contains?` take time logarithmic in the set's size, `set.size` is
+constant, and each new set shares most of its structure with the old
+one. `set.to-list` returns the elements in order: numbers first (by
+value), then strings, then symbols (by name), then lists (element by
+element, a shorter list first when one is a prefix of the other). List
+elements are compared exactly as [dict](dicts.md) keys are.
+
+```sh
+eu -e '[[2, 1], [1, 2], [1, 2]] set.of set.add([0, 5]) set.to-list'
+```
+
+```yaml
+- - 0
+  - 5
+- - 1
+  - 2
+- - 2
+  - 1
+```
+
+An element that is neither a number, string or symbol nor a list of
+them — a block, a boolean, a function, or a list holding one — is an
+error in `set.of`, `set.add` and `set.remove`, and simply not a member
+for `set.contains?`.
 
 ### Creating Sets
 
 ```sh
-eu -e '[1, 2, 2, 3, 3, 3] set.from-list set.to-list'
+eu -e '[1, 2, 2, 3, 3, 3] set.of set.to-list'
 ```
 
 ```yaml
@@ -9133,7 +10235,8 @@ eu -e '[1, 2, 2, 3, 3, 3] set.from-list set.to-list'
 - 3
 ```
 
-Duplicates are removed and elements are sorted.
+Duplicates are removed and elements are sorted. `set.from-list` is an
+alias of `set.of` — the same function, pairing with `set.to-list`.
 
 The empty set is written as `∅`:
 
@@ -10307,6 +11410,7 @@ table is verified against `named_precedence` in
 | 45 | append | left | `<<` | Deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -10335,17 +11439,18 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 
 - [Lists](lists.md) -- list construction, transformation, folding, sorting (91 entries)
 - [Blocks](blocks.md) -- block construction, access, merging, transformation (66 entries)
-- [Strings](strings.md) -- string manipulation, regex, formatting (36 entries)
-- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (30 entries)
+- [Strings](strings.md) -- string manipulation, regex, formatting (41 entries)
+- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (35 entries)
 - [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (12 entries)
 - [Combinators](combinators.md) -- function composition, application, utilities (14 entries)
 - [Calendar](calendar.md) -- date and time functions (8 entries)
-- [Sets](sets.md) -- set operations (14 entries)
+- [Sets](sets.md) -- set operations (15 entries)
+- [Dicts](dicts.md) -- persistent ordered dictionaries (24 entries)
 - [Random Numbers](random.md) -- random number generation, monadic random: namespace (15 entries)
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
-- [IO](io.md) -- environment, time, argument access, and monad utility (85 entries)
+- [IO](io.md) -- environment, time, argument access, and monad utility (86 entries)
 
-*375 documented entries in total.*
+*411 documented entries in total.*
 
 ## Standard Libraries
 
@@ -10411,8 +11516,8 @@ Repeated `!!` over the same list in a loop is quadratic.
 
 | Function | Description |
 |----------|-------------|
-| `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is not rejected |
-| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0. A non-integer `n` is not rejected |
+| `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is an error |
+| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0, `[]` when `n` exceeds the length of `l`. A non-integer `n` is an error |
 | `take-while(p?, l)` | Initial elements of list `l` while `p?` is true |
 | `take-until(p?)` | Initial elements of list `l` while `p?` is false |
 | `drop-while(p?, l)` | Skip initial elements of list `l` while `p?` is true |
@@ -10440,11 +11545,11 @@ Repeated `!!` over the same list in a loop is quadratic.
 
 | Function | Description |
 |----------|-------------|
-| `split-at(n, l)` | Split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0 |
+| `split-at(n, l)` | Split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0; a non-integer `n` is an error |
 | `split-after(p?, l)` | Split list where `p?` becomes false and return pair |
 | `split-when(p?, l)` | Split list where `p?` becomes true and return pair |
-| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step`; a size or step that is not positive is an error |
-| `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n`; a size that is not positive is an error |
+| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step`; a size or step that is not a positive integer is an error |
+| `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n`; a size that is not a positive integer is an error |
 | `discriminate(pred, xs)` | Return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false |
 
 ## Folds and Scans
@@ -10494,7 +11599,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `nth(n, l)` | Return `n`th item (from 0) of list if it exists, otherwise error; a negative `n` is an error |
+| `nth(n, l)` | Return `n`th item (from 0) of list if it exists, otherwise error; a negative or non-integer `n` is an error |
 | `(l !! r)` | Return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get` |
 | `count(l)` | Return count of items in list `l` |
 | `last` | Return last element of list `l` |
@@ -10505,10 +11610,10 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0 |
+| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`.
-Panics if `n` is out of range, including a negative `n` |
+An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`.
 Returns `l` unchanged if no element matches |
 | `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
@@ -10518,8 +11623,8 @@ Returns `l` unchanged if no element matches |
 | `butlast(l)` | Return all elements of list `l` except the last |
 | `unzip(pairs)` | List of pairs to pair of lists. Inverse of zip |
 | `interleave(a, b)` | Alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended |
-| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n`; a size that is not positive gives `[]`, otherwise a step that is not positive is an error |
-| `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk; a size that is not positive gives `[]` |
+| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n`; a size that is not positive gives `[]`, otherwise a step that is not positive is an error; a non-integer size or step is an error |
+| `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk; a size that is not positive gives `[]`; a non-integer size is an error |
 | `group-consecutive-by(f, xs)` | Group consecutive elements where `f` returns equal values into sublists |
 | `group-consecutive` | Group consecutive equal elements into sublists |
 | `uniq(xs)` | Remove consecutive duplicates from a list |
@@ -10541,10 +11646,9 @@ elements that satisfy `pred`. Matching elements are discarded |
 
 A block is searched linearly by key; there is no index. `lookup`,
 `lookup-or` and `has` are all O(n) in the number of keys, and `merge` is linear in the size of
-both operands. A block is the right shape for records and small
-configuration, but not for a large lookup table queried in a loop:
-for membership use a set of primitives, and for indexed access to
-numbers use a vec (`vec.of`).
+both operands. A block is the right shape for records and small configuration, but not for a
+large lookup table queried in a loop: use a `dict` (see the [dicts reference](dicts.md)) for
+large keyed tables, a set for membership, and a vec (`vec.of`) for indexed access to numbers.
 
 ## Block Construction and Merging
 
@@ -10703,6 +11807,9 @@ hosts: data deep-query("*.config.host")
 | `str.base64-encode` | Encode string `s` as base64 |
 | `str.base64-decode` | Decode base64 string `s` back to its original string |
 | `str.sha256` | Return the SHA-256 hash of string `s` as lowercase hex |
+| `str.md5` | Return the MD5 hash of string `s` (its UTF-8 bytes) as lowercase hex. MD5 is not secure: use it only to match existing checksums |
+| `str.code-points` | The Unicode code points of the characters of string `s` (one per character, as `str.letters` splits it), as a list of numbers |
+| `str.from-code-points` | The string whose characters have the Unicode code points `ns`; the inverse of `str.code-points`. An error for an element that is not a whole number in 0 to 0x10FFFF or is a surrogate (0xD800 to 0xDFFF) |
 | `str.replace(pattern, replacement, s)` | Replace all occurrences of regex `pattern` with `replacement` in string `s`. Pipeline: s str.replace(pat, rep) |
 | `str.contains?(pattern, s)` | True if string `s` contains a match for regex `pattern`. Pipeline: s str.contains?(pat) |
 | `str.trim` | Trim leading and trailing whitespace from string `s` |
@@ -10721,6 +11828,8 @@ a little more convenient to use interpolation instead..
 | `ch.n` |  |
 | `ch.t` |  |
 | `ch.dq` |  |
+| `ch.code-point` | The Unicode code point of the single character `c`, as a number; an error unless `c` is exactly one character |
+| `ch.of-code-point` | The one-character string with Unicode code point `n`; an error unless `n` is a whole number in 0 to 0x10FFFF and not a surrogate (0xD800 to 0xDFFF) |
 
 The `ch` namespace provides special characters:
 
@@ -10728,13 +11837,42 @@ The `ch` namespace provides special characters:
 - `ch.t` -- Tab
 - `ch.dq` -- Double quote
 
+`ch.code-point(c)` gives the Unicode code point of a one-character string and
+`ch.of-code-point(n)` is its inverse; see
+[Code Points](#code-points) for the string-level `str.code-points` and
+`str.from-code-points`.
+
 ### Encoding and Hashing Examples
 
 ```eu
 encoded: "hello" str.base64-encode    # "aGVsbG8="
 decoded: "aGVsbG8=" str.base64-decode # "hello"
 hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
+legacy: "abc" str.md5                 # "900150983cd24fb0d6963f7d28e17f72"
 ```
+
+`str.md5` hashes the UTF-8 bytes of the string and returns 32 lowercase hex
+digits. MD5 is not secure; use it only to match an existing checksum.
+
+### Code Points
+
+`str.code-points` and `str.from-code-points` convert between a string and the
+list of Unicode code points of its characters (one number per character, as
+`str.letters` splits it, so `"é"` is `[233]`, not two bytes). `ch.code-point`
+and `ch.of-code-point` do the same for a single character.
+
+```eu
+points:  "aé😀" str.code-points                    # [97, 233, 128512]
+text:    [104, 105] str.from-code-points           # "hi"
+shifted: "abc" str.code-points map(+ 1) str.from-code-points  # "bcd"
+one:     "é" ch.code-point                         # 233
+char:    128512 ch.of-code-point                   # "😀"
+```
+
+`str.from-code-points` and `ch.of-code-point` stop with an error for a number
+that is not a whole number from 0 to 0x10FFFF, or that is a surrogate (0xD800
+to 0xDFFF); `ch.code-point` stops unless its argument is exactly one
+character.
 
 ---
 
@@ -10744,6 +11882,8 @@ hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 
 | Function | Description |
 |----------|-------------|
+| `(l ∣ r)` | `true` if `l` divides `r`, i.e. `r % l = 0`; `3 ∣ 12` is `true`. Note `∣` is U+2223 (divides), not `\|` |
+| `(l ∤ r)` | `true` if `l` does not divide `r`, i.e. `not(l ∣ r)`; `5 ∤ 12` is `true` |
 | `(∸ x)` | Unary minus; negate |
 
 ## Numeric Functions
@@ -10767,6 +11907,9 @@ hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 | `mod(a, b)` | Floor modulus; same as `a % b` |
 | `quot(a, b)` | Truncation division; rounds toward zero |
 | `rem(a, b)` | Truncation remainder; result has same sign as dividend |
+| `mulmod(a, b, m)` | `a * b` modulo `m`, exact for all 64-bit signed integers (computed in 128 bits); result in `[0, m)` |
+| `powmod(b, e, m)` | `b` raised to the power `e` modulo `m`, exact for all 64-bit signed integers; `e` must be non-negative; result in `[0, m)` |
+| `modinv(a, m)` | The inverse of `a` modulo `m`: `x` in `[0, m)` with `mulmod(a, x, m) = 1 % m` (so `modinv(a, 1)` is 0); an error when `a` and `m` are not coprime |
 | `sum(l)` | Sum a list of numbers |
 | `product(l)` | Multiply a list of numbers |
 | `max(l, r)` | Return max of `l` and `r` by `>` |
@@ -10862,47 +12005,13 @@ hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 
 # Sets
 
-> **Sets hold primitives only.** Elements must be numbers, strings or
-> symbols. A list, block or other structured value is an error
-> (`expected a primitive value but found non-boxed constructor`).
-> To keep coordinates or other tuples in a set, encode each one as a
-> single number or string first (see below).
-
-## Cost
-
-| Operation | Cost |
-|-----------|------|
-| `set.from-list` | O(n log n) |
-| `set.contains?`, `∈`, `∉` | O(log n) |
-| `set.add`, `set.remove` | O(n) — each returns a fresh copy of the set |
-| `set.union`, `set.intersect`, `set.diff` | O(n + m) |
-| `set.to-list`, `set.size` | O(n), O(1) |
-
-Because `set.add` copies, building a large set by repeated `set.add` in
-a fold is quadratic. Collect the elements in a list and call
-`set.from-list` once instead.
-
-## Coordinate encoding
-
-Encode a coordinate pair as one number, choosing a multiplier larger
-than any coordinate:
-
-```eu
-key([x, y]): x * 100000 + y
-
-visited: [[0, 0], [3, 4], [3, 4]] map(key) set.from-list
-
-seen: ([3, 4] key) ∈ visited        //=> true
-unseen: ([9, 9] key) ∈ visited      //=> false
-count: visited set.size             //=> 2
-```
-
 ## Set Operations
 
 | Function | Description |
 |----------|-------------|
-| `set.from-list(xs)` | Create a set from list `xs` of primitive values |
-| `set.to-list` | Return sorted list of elements in set `s` |
+| `set.of` | Create a set from list `xs` of primitive values or lists of them, in one pass (duplicates removed) |
+| `set.from-list` | Alias of `set.of`: create a set from list `xs` of primitive values or lists of them |
+| `set.to-list` | Return sorted list of elements in set `s`: numbers, then strings, then symbols, then lists |
 | `set.add` | Add element `e` to set `s` |
 | `set.remove` | Remove element `e` from set `s` |
 | `set.contains?` | True if set `s` contains element `e` |
@@ -10911,13 +12020,13 @@ count: visited set.size             //=> 2
 | `set.union` | Return union of sets `a` and `b` |
 | `set.intersect` | Return intersection of sets `a` and `b` |
 | `set.diff` | Return elements in set `a` that are not in set `b` |
-| `set.sample(k, s, stream)` | Random monad action: pick `n` random elements from set `s`. Returns value/rest block |
+| `set.sample(k, s, stream)` | Random monad action: pick `n` random elements from set `s`. Returns value/rest block; a negative `n` samples nothing; a non-integer `n` is an error |
 | `∅` | The empty set |
 | `(l ∈ r)` | True if element `v` is a member of set `s` |
 | `(l ∉ r)` | True if element `v` is not a member of set `s` |
 
 ```eu
-s: set.from-list([1, 2, 3, 2, 1])
+s: set.of([1, 2, 3, 2, 1])
 # s contains {1, 2, 3} (duplicates removed)
 ```
 
@@ -10930,6 +12039,41 @@ u: set.union(a, b) set.to-list       # [1, 2, 3, 4]
 i: set.intersect(a, b) set.to-list   # [2, 3]
 d: set.diff(a, b) set.to-list        # [1]
 ```
+
+---
+
+# Dicts
+
+## Dict Operations
+
+> Functions for working with dicts — persistent dictionaries ordered by key. Keys are numbers, strings, symbols or lists of those; values are arbitrary and lazy.
+
+| Function | Description |
+|----------|-------------|
+| `dict.of` | Create a dict from list `pairs` of `[key, value]` pairs. Keys are evaluated fully; values stay lazy. Where keys are equal (`1` and `1.0` are equal keys), the first key and the last value are kept |
+| `dict.from-list` | Alias of `dict.of` |
+| `dict.empty` | The empty dict |
+| `dict.to-list` | Return the entries of dict `d` as `[key, value]` pairs in key order |
+| `dict.get` | Return the value at key `k` in dict `d`; an error naming the key if `d` does not hold it |
+| `dict.get-or` | Return the value at key `k` in dict `d`, or `default` if `d` does not hold it |
+| `dict.assoc` | Return dict `d` with key `k` mapped to the lazy value `v`. If `d` holds an equal key, that key is kept and only its value replaced |
+| `dict.dissoc` | Return dict `d` without key `k` |
+| `dict.contains?` | True if dict `d` holds key `k` |
+| `dict.size` | Return the number of entries in dict `d` |
+| `dict.empty?(d)` | True if dict `d` has no entries |
+| `dict.keys` | Return the keys of dict `d` in key order |
+| `dict.values` | Return the values of dict `d` in key order |
+| `dict.min` | Return `[key, value]` for the least key of dict `d`; an error if `d` is empty |
+| `dict.max` | Return `[key, value]` for the greatest key of dict `d`; an error if `d` is empty |
+| `dict.pop-min` | Return `[key, value, rest]` for the least key of dict `d`, where `rest` is `d` without it; an error if `d` is empty. With keys `[priority, item]` this makes a dict a priority queue |
+| `dict.pop-max` | Return `[key, value, rest]` for the greatest key of dict `d`, where `rest` is `d` without it; an error if `d` is empty |
+| `dict.range` | Return the dict of the entries of dict `d` whose keys `k` satisfy `lo ≤ k < hi` |
+| `dict.update` | Return dict `d` with key `k` mapped to the lazy value `f(old)`, where `old` is the value at `k`, or `default` if `d` does not hold `k` |
+| `dict.update-strict` | As `dict.update`, but `f(old)` is evaluated before it is stored, so repeated updates (such as counting) do not build up unevaluated values |
+| `dict.merge-with` | Return the union of dicts `a` and `b`. Where both hold a key, the value is the lazy `f(va, vb)`, with `a`'s value first, and `a`'s key is kept |
+| `dict.merge-with-strict(f, a, b)` | As `dict.merge-with`, but each combined value `f(va, vb)` is evaluated before it is stored |
+| `dict.from-block(b)` | Create a dict from block `b`, keyed by its symbol keys. Values stay lazy |
+| `dict.to-block` | Return a block of the entries of dict `d` in key order. Symbol keys are kept, string keys become symbols, and number keys become symbols of their rendered text. A list key, or two keys that become the same symbol (a string and a symbol with the same text, say), is an error |
 
 ---
 
@@ -10972,7 +12116,7 @@ eu --seed 42 example.eu
 | `random.split(s)` | State-monad action that splits the stream into two independent streams. Returns a value/rest block where value and rest are each independent streams |
 | `random.choice(lst, stream)` | State-monad action returning a random element from list |
 | `random.shuffle(lst)` | State-monad action returning a shuffled copy of list |
-| `random.sample(n, lst, stream)` | State-monad action returning n elements sampled without replacement |
+| `random.sample(n, lst, stream)` | State-monad action returning n elements sampled without replacement; a non-integer n is an error |
 | `random.run(action, stream)` | Run a random action on a stream; returns a value/rest block |
 | `random.eval(action, stream)` | Run a random action and return only the value |
 | `random.exec(action, stream)` | DEPRECATED: use random.run(action, stream).rest. Run a random action and return only the remaining stream |
@@ -11195,10 +12339,11 @@ has no metadata at all.
 | `alter?(k?, v!, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `update?(k?, f, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `vec.of` | Convert list `xs` of primitive values to a vec for O(1) indexed access |
+| `vec.from-list` | Alias of `vec.of`: convert list `xs` of primitive values to a vec |
 | `vec.len` | Return the number of elements in vec `v` |
 | `vec.nth` | Return the element at index `n` (0-based) in vec `v` |
 | `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v` |
-| `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement |
+| `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement; a negative `n` samples nothing; a non-integer `n` is an error |
 | `vec.shuffle(v, stream)` | Random monad action: return vec `v` in random order |
 | `vec.to-list` | Convert vec `v` back to a cons-list |
 | `arr.zeros` | Create an array of zeros with the given shape list |
@@ -11279,7 +12424,9 @@ eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
 ### Subcommands
 
 - `run` (default) - Evaluate eucalypt code
-- `test` - Run tests
+- `test` - Run tests in each file or directory given (the current
+  directory if none); `-o PATH` writes the HTML report to `PATH`; see
+  [Testing](../guide/testing.md#running-several-files)
 - `check` - Type-check eucalypt source files
 - `doc` - Extract documentation from eucalypt source files
 - `dump` - Dump intermediate representations
@@ -11718,6 +12865,65 @@ eu --statistics-file stats.json file.eu
 
 The statistics file is written regardless of whether evaluation succeeds.
 
+### Profiling
+
+`-S` gives totals; `--profile` (an `eu run` flag) shows where they go. It
+attributes every machine tick, allocation and allocated byte to the source
+location executing at the time, and prints the costliest locations to
+stderr when the run ends (also when it fails or is interrupted):
+
+```sh
+eu run --profile file.eu
+```
+
+```
+Profile: 920400 ticks, 160058 allocs, 32975520 bytes over 11 locations (top 5 by ticks)
+         ticks      %       allocs      %          bytes      %  location
+        220019  23.9%        20001  12.5%        8960704  27.2%  hot at prog.eu:1:19
+        160002  17.4%        20000  12.5%        5120000  15.5%  hot at prog.eu:1:35
+        160000  17.4%        40000  25.0%        5760000  17.5%  hot at prog.eu:1:29
+        140002  15.2%        20000  12.5%        5120000  15.5%  hot at prog.eu:1:44
+        140002  15.2%        20000  12.5%        5120000  15.5%  hot at prog.eu:1:48
+```
+
+- **ticks** are machine dispatches, the same unit as `-S` "Ticks"; the
+  column sums to the `-S` figure. **allocs** counts closure allocations
+  (the `-S` "Allocs" figure) and **bytes** counts heap bytes allocated by
+  evaluation (allocation outside it, such as rendering the result, is not
+  counted).
+- Each figure is *self* cost: work done by a location's own code, not by
+  the functions it calls. Attribution is per dispatch step and approximate
+  at its boundary: a step is charged to the location current when it ends,
+  so the step that enters or returns from a function is charged to the
+  location it moves to. When an intrinsic forces a thunk, the intrinsic's
+  own work is charged to its call site and the forced code to the thunk's.
+- A location is a user-file site (`name at file:line:col`, naming the
+  enclosing function and the expression's position, so one function can
+  have several rows) or a library function (`name (prelude)`, one row per
+  function).
+- Code inside the pre-compiled prelude carries no source information, so
+  its internals appear as one `<prelude internal>` row. Add the global
+  `--source-prelude` flag (`eu --source-prelude run --profile file.eu`) to
+  compile the prelude from source and name them. The two compilations differ
+  slightly, so their tick totals do too.
+- Lazy evaluation charges a thunk to the code that defines it, at the moment
+  something first forces it, so a cheap-looking function can show the cost
+  of data it is the first to touch. The folded stacks show who forced what,
+  including through intrinsics that force their arguments.
+
+Options:
+
+- `--profile-top N` — rows in the table (default 30).
+- `--profile-folded FILE` — also write folded stacks, one
+  `outer;…;inner count` line per distinct stack, the input format of
+  `flamegraph.pl` and similar tools. A stack is sampled every 1009 ticks and
+  keeps its innermost 64 frames. Implies `--profile`.
+
+Profiling slows a run by about 15% (1.02–1.42× across the benchmark
+suite). With the flag off the engine runs its unprofiled dispatch loops and
+there is no measurable cost. Both figures were measured on a single machine;
+see `docs/superpowers/reports/2026-11-14-eu-oaz72.37-profiler.md`.
+
 ### Heap Limit
 
 By default, `eu` allows the managed heap to grow up to 32 GiB. To cap it at
@@ -11733,6 +12939,15 @@ program whose live data is small stays small. If the live data left after a
 collection exceeds about 7/8 of the limit, evaluation stops with a
 `heap limit exceeded` error naming both sizes; raise the limit (or use 0)
 for such a program.
+
+The limit also bounds the memory the heap holds, not only its live data.
+Once the heap holds 7/8 of the limit, it collects whatever the allocation
+volume and returns empty blocks to the system. Live data spread thinly
+across many blocks can still hold the heap over the limit, which the
+collector cannot compact away, so a tolerance applies: half the limit, and
+at least 1 MiB. If two successive
+collections each leave more than the limit plus that tolerance, evaluation
+stops with the same `heap limit exceeded` error.
 
 ### Error Output Format
 
@@ -12343,6 +13558,21 @@ eu input.eu -o output.json  # infers JSON format
 eu input.eu -o output.toml  # infers TOML format
 ```
 
+## Dicts
+
+A [dict](../guide/dicts.md) renders in every format as a mapping of its
+entries in key order, exactly as the block `dict.to-block` would give: a
+symbol key renders as its name, a string key as its text, and a number key
+as its rendered text (`1`, `2.5`). Values are evaluated and rendered as
+block values are. Two cases are errors, since a mapping key in these formats
+is a single string-like scalar and appears once:
+
+- a list key (`[x, y]`), and
+- two keys with the same text, such as `1` and `"1"`, or `"x"` and `:x`.
+
+Render `d dict.to-list` instead to output such a dict as `[key, value]`
+pairs.
+
 ---
 
 # Error Messages Guide
@@ -12544,21 +13774,22 @@ importantly, a **`while evaluating (outermost first):`** note:
 ```text
 error: tried to call a number as a function
   help: only functions and blocks can be called with arguments
-  help: this often means too many arguments were passed to a function
-  ┌─ example.eu:1:11
+  ┌─ example.eu:3:16
   │
-1 │ result: 3(4)
-  │           ^
+3 │ result: x f(1) + 1
+  │                ^
   │
-  = a number value is not a function; check for a missing operator or extra argument
-  = note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as 'f(a + 1)'; add parentheses to disambiguate
+  = note: the value called here is the result of '+'
+  = while evaluating (outermost first):
+    - result at example.eu:3:16
 ```
 
-The last note is a recurring hint: because catenation binds very loosely,
-an unexpected "tried to call X as a function" often means an infix
-operator captured an argument you meant to apply separately. See
-[Syntax Gotchas](../appendices/syntax-gotchas.md) for the precedence
-traps behind these messages.
+The note states which operator's result was called. Behind it is a
+precedence trap: catenation binds more loosely than `+`, so `x f(1) + 1`
+calls the number `f(1) + 1` with `x`. Notes that guess at a cause are
+shown only when the source gives evidence for them, read through the
+eucalypt lexer. See [Syntax Gotchas](../appendices/syntax-gotchas.md) for
+the precedence traps behind these messages.
 
 ## Reading "while evaluating" traces and source locations
 
@@ -13162,8 +14393,8 @@ map: __MAP
 
 ```eu,notest
 # Named aliases in unit metadata
-{ types: { Point: "{x: number, y: number}"
-           Person: "{name: string, age: number, email: string | null, ..}" } }
+{ types: { Point: s"{x: number, y: number}"
+           Person: s"{name: string, age: number, email: string | null, ..}" } }
 
 # Alias using binding name (shorthand — `:type-def` or `type-def: true`)
 ` :type-def
@@ -13434,6 +14665,7 @@ From highest (tightest) to lowest binding:
 | 45 | append | left | `<<` | Deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -13565,12 +14797,18 @@ concat([[1,2], [3], [4,5]])   # [1, 2, 3, 4, 5]
 
 ```
 [1,2,3,4,5] take(3)          # [1, 2, 3]
+[1,2,3] take(1.5)            # error: take count 1.5 must be an integer
 ```
+
+A non-integer count or index is an error in `take`, `drop`, `split-at`,
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions. `range` takes bounds, not a count, and accepts non-integers.
 
 #### `drop(n, l)` — remove first n elements
 
 ```
 [1,2,3,4,5] drop(3)          # [4, 5]
+[1,2,3] drop(5)              # [] (stops at the end of the list)
 ```
 
 #### `any(p?, l)` — true if any element satisfies p?
@@ -13665,6 +14903,65 @@ Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
 { a: 1 b: 2 } dissoc([:z])             # { a: 1 b: 2 }
 { a: 1 } dissoc([:a])                  # {}
 ```
+
+### 3.2a Sets and Vecs
+
+Build a collection from a list with `of`; `from-list` is an alias of it
+(the same function), pairing with `to-list`. Vec elements must be
+primitives (numbers, strings, symbols); set elements may also be lists of
+them, keyed as dict keys are (`[[1, 2]] set.of set.contains?([1, 2])` is
+true), ordered after scalars.
+
+```
+s: [3, 1, 3, 2] set.of           # set of 1, 2, 3 (alias: set.from-list)
+s set.to-list                    # [1, 2, 3] — sorted, duplicates removed
+2 ∈ s                            # true
+v: [10, 20, 30] vec.of           # O(1) indexed access (alias: vec.from-list)
+v vec.nth(1)                     # 20
+```
+
+### 3.2b Dicts
+
+A dict is a persistent dictionary ordered by key, with O(log n) `get`,
+`assoc` and `dissoc`. Keys are numbers, strings, symbols, or lists of those
+(nested at most 32 deep); `1` and `1.0` are the same key. Values are lazy
+and computed at most once, so a dict can refer to itself as a memo table.
+Collection argument last, as for sets.
+
+```
+d: [[:b, 2], [:a, 1]] dict.of    # alias: dict.from-list
+d dict.get(:a)                   # 1 (an error if absent)
+d dict.get-or(:z, 0)             # 0
+d dict.assoc([3, 4], :pt)        # list keys, e.g. coordinates
+d dict.dissoc(:b) dict.size      # 1
+d dict.to-list                   # [[:a, 1], [:b, 2]] — key order
+```
+
+Ordered operations, updates and merges:
+
+```
+d dict.keys                      # [:a, :b] (dict.values: [1, 2])
+d dict.min                       # [:a, 1] (dict.max: [:b, 2])
+d dict.pop-min                   # [:a, 1, rest] — rest is d without :a
+d dict.range(:a, :b)             # the sub-dict with :a ≤ k < :b
+d dict.update(:a, + 1, 0)        # :a mapped to 2 (lazily); absent keys start from 0
+d dict.update-strict(:a, + 1, 0) # the same, evaluated now: use it for counting
+b dict.merge-with(+, a)          # union of a and b, a's value + b's on collisions
+{x: 1} dict.from-block           # dict keyed :x (dict.to-block converts back)
+```
+
+A dict keyed by `[priority, item]` is a priority queue: `pop-min` takes the
+next item, `assoc` pushes one. Updates and merges store lazy values; in a
+counting loop use `update-strict` or `merge-with-strict`, which evaluate each
+new value, so no chain of unevaluated additions builds up.
+
+Order across types: numbers < strings < symbols (by name) < lists
+(lexicographic). `dict.of` keeps the first of equal keys and the last value.
+A dict renders as a mapping in key order (number keys as their rendered
+text, string keys as their text, symbol keys as their name); a list key, or
+two keys with the same text (`1` and `"1"`), is an error, so render
+`dict.to-list` for those. Type: `dict(k, v)`, bare `dict` = `dict(any, any)`;
+not the block type `Dict(T)`.
 
 ### 3.3 String Functions (str namespace)
 
@@ -14141,7 +15438,7 @@ The following are commonly assumed but are **not** in the prelude:
 
 - `flatten` — use `concat` (flattens one level)
 - `unique` — does not exist in prelude
-- `even?` / `odd?` — do not exist (use `x % 2 = 0`)
+- `even?` / `odd?` — do not exist (use `2 ∣ x` / `2 ∤ x`, or `x % 2 = 0`; `∣` is U+2223 divides, not `|`)
 - `round` / `ceil` — use `floor` and `ceiling` (or bracket notation `⌊n⌋` and `⌈n⌉`)
 - `select(ks, b)` — **exists**: `{ a: 1, b: 2, c: 3 } select([:a, :c])` → `{ a: 1, c: 3 }`
 - `dissoc(ks, b)` — **exists**: `{ a: 1, b: 2 } dissoc([:a])` → `{ b: 2 }`
@@ -14154,6 +15451,7 @@ These **do exist** and are commonly available:
 - `str.starts-with?(re, s)` — true if `s` starts with regex match
 - `str.ends-with?(re, s)` — true if `s` ends with regex match
 - `abs(n)` — absolute value
+- `mulmod(a, b, m)`, `powmod(b, e, m)`, `modinv(a, m)` — exact modular arithmetic for 64-bit signed integers (no overflow from `a * b % m`); result in `[0, m)`
 - `str.to-upper(s)` / `str.to-lower(s)` — case conversion (not `str.upper` / `str.lower`)
 
 ### 5.12 str.split-on Uses Regex, Not Literal Strings
@@ -14421,6 +15719,10 @@ All functions verified against `lib/prelude.eu`:
 | `str.base64-encode` | `base64-encode(s)` | Base64 encode |
 | `str.base64-decode` | `base64-decode(s)` | Base64 decode |
 | `str.sha256` | `sha256(s)` | SHA-256 hash (lowercase hex) |
+| `str.md5` | `md5(s)` | MD5 hash of the UTF-8 bytes (lowercase hex) |
+| `str.code-points` | `code-points(s)` | List of Unicode code points, one per character |
+| `str.from-code-points` | `from-code-points(ns)` | String from a list of code points (error for a surrogate or value above 0x10FFFF) |
+| `ch.code-point` / `ch.of-code-point` | `ch.code-point(c)` / `ch.of-code-point(n)` | One character to its code point and back |
 
 ---
 
@@ -15843,7 +17145,7 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 ## Recursion
 
 - Prefer folds, scans, or specific prelude algorithms over explicit recursion where possible.
-- Mind cost when choosing a data structure: lists index in O(n), blocks look up linearly, and `set.add` copies the set. See the *Cost* notes in the [lists](reference/prelude/lists.md), [blocks](reference/prelude/blocks.md) and [sets](reference/prelude/sets.md) references.
+- Mind cost when choosing a data structure: lists index in O(n) and blocks look up linearly (use a `dict` or a set for large keyed tables or membership). See the *Cost* notes in the [lists](reference/prelude/lists.md) and [blocks](reference/prelude/blocks.md) references.
 
 ## Documentation
 
@@ -15945,14 +17247,14 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 
 ## Sets for membership
 
-- Use sets (`set.from-list`) for repeated membership testing of primitives (numbers, strings, symbols — **not** lists or blocks; encode coordinates as a single number, e.g. `x * 100000 + y`), not `any(= x)` over a list. Faster and reads better with `∈`:
+- Use sets (`set.of`) for repeated membership testing, not `any(= x)` over a list. Faster and reads better with `∈`:
   ```eu,notest
   # Before
   allowed: [:a, :b, :c]
   allowed any(= v)
 
   # After
-  allowed: set.from-list[:a, :b, :c]
+  allowed: set.of[:a, :b, :c]
   v ∈ allowed            # as expression
   v when(∈ allowed, f)   # section as predicate
   ```
@@ -16361,6 +17663,9 @@ the project is dual-licensed on the same terms.
 A dense single-page reference covering all syntax forms, operators,
 common patterns, and key prelude functions.
 
+For worked recipes — parsing puzzle input, grids, search, memoisation and
+loops — see the [Advent of Code cookbook](../guide/advent-of-code.md).
+
 ## Primitives
 
 | Type | Syntax | Examples |
@@ -16655,6 +17960,7 @@ From highest to lowest binding:
 | 45 | append | right | `++`, `<<` | List append, deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -16714,7 +18020,8 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `foldr(f, init)` | Right fold |
 | `sort-by(f)` | Sort by key function |
 | `take(n)` | First n elements (`[]` if n <= 0) |
-| `drop(n)` | Remove first n (list unchanged if n <= 0) |
+| `drop(n)` | Remove first n (list unchanged if n <= 0; `[]` if n exceeds the length) |
+| `nth(n)` | Element at index `n` from 0 (error if out of range) |
 | `zip` | Pair elements from two lists |
 | `zip-with(f)` | Combine elements with function |
 | `concat` | Flatten nested lists one level (use `concat`, not `flatten` — does not exist) |
@@ -16730,18 +18037,10 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `group-consecutive` | Group runs of equal adjacent elements (`group-consecutive-by(f)` for a key) |
 | `running-sum`, `running-max`, `running-min` | Cumulative sum / maximum / minimum of a number list |
 
-### Sets
-
-Sets hold **primitives only** (numbers, strings, symbols), not lists or blocks:
-encode a coordinate `[x, y]` as `x * 100000 + y`.
-
-| Function | Description |
-|----------|-------------|
-| `set.from-list` | Build a set (O(n log n)) |
-| `v ∈ s`, `v ∉ s` | Membership (O(log n)) |
-| `set.add(e)`, `set.remove(e)` | Copy with element added / removed (O(n) — do not add in a long fold) |
-| `set.union`, `set.intersect`, `set.diff` | Set algebra |
-| `set.size`, `set.to-list` | Count; sorted elements |
+A non-integer count or index is an error in `take`, `drop`, `split-at`,
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions; an integral
+float such as `2.0` is accepted.
 
 ### Blocks
 
@@ -16776,6 +18075,8 @@ encode a coordinate `[x, y]` as `x * 100000 + y`.
 | `str.replace(re, rep, s)` | Replace all regex matches |
 | `str.prefix(b, a)` | Prepend `b` onto `a` |
 | `str.suffix(b, a)` | Append `b` onto `a` |
+| `str.md5(s)` | MD5 of the UTF-8 bytes, lowercase hex (like `str.sha256`) |
+| `str.code-points(s)` / `str.from-code-points(ns)` | Unicode code points of the characters of `s`, and back; `ch.code-point(c)` / `ch.of-code-point(n)` for one character |
 
 **All str regex functions treat the pattern argument as a regular expression.**
 `str.split-on` and `str.contains?` are pipeline-friendly (data is last arg).
@@ -16817,7 +18118,8 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
-| `even?` / `odd?` | Do **not** exist — use `x % 2 = 0` / `x % 2 = 1` |
+| `mulmod(a, b, m)` / `powmod(b, e, m)` / `modinv(a, m)` | Exact modular arithmetic for 64-bit signed integers; result in `[0, m)` |
+| `even?` / `odd?` | Do **not** exist — use `2 ∣ x` / `2 ∤ x` (U+2223 divides, not `\|`) or `x % 2 = 0` |
 
 ### Lenses (`lens.eu`)
 
@@ -16868,6 +18170,36 @@ records over(each ∘ at(:score), * 2)          # scores doubled
 [3, 1, 2] over(parts-of(each), sort-nums)     # [1, 2, 3]
 ```
 
+### Dicts (`dict` namespace)
+
+Persistent dictionaries ordered by key. Keys are numbers, strings, symbols or
+lists of those (e.g. `[x, y]` coordinates); values are arbitrary and lazy,
+and each is computed at most once.
+
+| Expression | Description |
+|---|---|
+| `pairs dict.of` / `pairs dict.from-list` | Dict from `[key, value]` pairs (aliases); equal keys keep the first key and the last value |
+| `dict.empty` / `d dict.empty?` | The empty dict / has no entries? |
+| `d dict.get(k)` | Value at `k`; an error if absent |
+| `d dict.get-or(k, default)` | Value at `k`, or `default` |
+| `d dict.assoc(k, v)` / `d dict.dissoc(k)` | New dict with `k` set / removed (O(log n)) |
+| `d dict.contains?(k)` / `d dict.size` | Holds `k`? / number of entries |
+| `d dict.to-list` | `[key, value]` pairs in key order |
+| `d dict.keys` / `d dict.values` | Keys / values in key order |
+| `d dict.min` / `d dict.max` | `[key, value]` for the least / greatest key; an error if empty |
+| `d dict.pop-min` / `d dict.pop-max` | `[key, value, rest]`; with keys `[priority, item]`, a priority queue |
+| `d dict.range(lo, hi)` | Sub-dict of keys `lo ≤ k < hi` |
+| `d dict.update(k, f, default)` | Map `k` to `f(old)`, `old` defaulting to `default` (lazy) |
+| `d dict.update-strict(k, f, default)` | As `update`, evaluating `f(old)` now: `d dict.update-strict(k, + 1, 0)` counts |
+| `b dict.merge-with(f, a)` | Union; `f(va, vb)` where both hold a key (lazy; `merge-with-strict` evaluates it) |
+| `b dict.from-block` / `d dict.to-block` | Block to dict (symbol keys) / dict to block (string, symbol and number keys) |
+
+Keys order numbers < strings < symbols < lists; `1` and `1.0` are the same
+key. A dict renders as a mapping in key order, each key as its text; a list
+key, or two keys with the same text (`1` and `"1"`), is an error — render
+`dict.to-list` instead. Typed `dict(k, v)` (bare `dict` is `dict(any, any)`).
+See the [Dicts guide](../guide/dicts.md).
+
 ### Arrays (`arr` namespace)
 
 | Function | Description |
@@ -16895,6 +18227,17 @@ records over(each ∘ at(:score), * 2)          # scores doubled
 
 The standard `+`, `-`, `*`, `/` operators are polymorphic and apply element-wise when
 either operand is an array. Scalar broadcasting is supported.
+
+### Sets and Vecs (`set` / `vec` namespaces)
+
+| Expression | Description |
+|---|---|
+| `xs set.of` / `xs set.from-list` | Set of primitives (and lists of them) from a list (one pass; the names are aliases) |
+| `s set.to-list` | Sorted list of a set's elements |
+| `v ∈ s` / `v ∉ s` | Membership |
+| `∅` | The empty set |
+| `xs vec.of` / `xs vec.from-list` | Vec of primitives with O(1) indexed access (aliases) |
+| `v vec.nth(n)` / `vec.len(v)` | Element at index `n` (0-based; a negative or non-integer `n` is an error) / length |
 
 ### IO
 
@@ -16979,7 +18322,7 @@ double(x): x * 2
 
 ```eu,notest
 # In unit metadata
-{ types: { Person: "{name: string, age: number, ..}" } }
+{ types: { Person: s"{name: string, age: number, ..}" } }
 
 # Via type-def: on a canonical instance
 ` { type-def: "Point" }
@@ -17023,7 +18366,7 @@ origin: { x: 0, y: 0 }
 | `IO(T)`            | IO action producing T                  |
 | `Lens(a, b)`       | lens focusing on b within a            |
 | `Traversal(a, b)`  | traversal over b's within a            |
-| `set`              | ordered set of primitives              |
+| `set`              | ordered set of primitives and lists    |
 | `vec`              | flat vector of primitives              |
 | `array`            | n-dimensional number array             |
 
@@ -17132,10 +18475,26 @@ m: xs foldl(+, 0)
 n: m + 1
 ```
 
-**Error Messages**:
-- `cannot return function into case table without default` — the `+`
-  intrinsic receives a function (the partial application) instead of a
-  number.
+**Error Messages**: the error is raised at the operator — `type mismatch:
+expected number, found a function` when it receives the partial
+application, or `tried to call a number as a function` when its result is
+called with the pipeline. Either way it carries a note stating the parse,
+for example:
+
+```
+note: 'xs foldl(+, 0) + 1' was read as 'xs (foldl(+, 0) + 1)'; parenthesise the pipeline: '(xs foldl(+, 0)) + 1'
+```
+
+The note is shown only when the step's function is likely to be what the
+operator received: not when the step starts with a literal (`xs 1 + 2`),
+and not when an operator on the way took a right operand that may itself
+be a function, such as a call (`xs 1 + nth(0)`, `xs nth(0) = (k + 1)`).
+Parenthesising the pipeline would fix nothing there.
+
+The note appears only when the operator expression was written without
+parentheses as a pipeline step. Inside an expression-anaphor lambda, such
+as `map(_ nth(0) = 1)`, it states the parse but suggests no parentheses:
+`(_ nth(0))` would make the parentheses the anaphor's scope.
 
 **Rule of thumb**: If a pipeline result feeds into an infix operator,
 always use parentheses around the pipeline or bind it to a name first.
@@ -17195,6 +18554,15 @@ filter(has-y(target-y))   # Partial application
 **Important**: Each `_` introduces a **separate** parameter. `_ * _`
 is a 2-arg function (like `(_0 * _1)`), not `(_0 * _0)`. Use numbered
 anaphora `_0 * _0` when you need to reference the same parameter twice.
+
+**A lone anaphor inside a call is the identity function**: the argument's
+scope ends at the parentheses or comma round it, so `xs nth(_)` passes
+`nth` the identity function, not an index. When a function then arrives
+where a value was wanted, the error carries a note stating it:
+
+```
+note: in 'nth(_)', '_' is the whole argument, so the argument is the identity function: an expression anaphor's scope ends at the parentheses round it
+```
 
 **Reference**: See [Anaphora](../guide/anaphora.md) for detailed
 explanation of anaphora usage.

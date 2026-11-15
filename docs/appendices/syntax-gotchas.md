@@ -93,10 +93,26 @@ m: xs foldl(+, 0)
 n: m + 1
 ```
 
-**Error Messages**:
-- `cannot return function into case table without default` — the `+`
-  intrinsic receives a function (the partial application) instead of a
-  number.
+**Error Messages**: the error is raised at the operator — `type mismatch:
+expected number, found a function` when it receives the partial
+application, or `tried to call a number as a function` when its result is
+called with the pipeline. Either way it carries a note stating the parse,
+for example:
+
+```
+note: 'xs foldl(+, 0) + 1' was read as 'xs (foldl(+, 0) + 1)'; parenthesise the pipeline: '(xs foldl(+, 0)) + 1'
+```
+
+The note is shown only when the step's function is likely to be what the
+operator received: not when the step starts with a literal (`xs 1 + 2`),
+and not when an operator on the way took a right operand that may itself
+be a function, such as a call (`xs 1 + nth(0)`, `xs nth(0) = (k + 1)`).
+Parenthesising the pipeline would fix nothing there.
+
+The note appears only when the operator expression was written without
+parentheses as a pipeline step. Inside an expression-anaphor lambda, such
+as `map(_ nth(0) = 1)`, it states the parse but suggests no parentheses:
+`(_ nth(0))` would make the parentheses the anaphor's scope.
 
 **Rule of thumb**: If a pipeline result feeds into an infix operator,
 always use parentheses around the pipeline or bind it to a name first.
@@ -156,6 +172,15 @@ filter(has-y(target-y))   # Partial application
 **Important**: Each `_` introduces a **separate** parameter. `_ * _`
 is a 2-arg function (like `(_0 * _1)`), not `(_0 * _0)`. Use numbered
 anaphora `_0 * _0` when you need to reference the same parameter twice.
+
+**A lone anaphor inside a call is the identity function**: the argument's
+scope ends at the parentheses or comma round it, so `xs nth(_)` passes
+`nth` the identity function, not an index. When a function then arrives
+where a value was wanted, the error carries a note stating it:
+
+```
+note: in 'nth(_)', '_' is the whole argument, so the argument is the identity function: an expression anaphor's scope ends at the parentheses round it
+```
 
 **Reference**: See [Anaphora](../guide/anaphora.md) for detailed
 explanation of anaphora usage.

@@ -139,6 +139,11 @@ fn scan_native<'a>(
             // Push so the container scans (and evacuates) its heap storage.
             out.push(ScanPtr::from_non_null(scope, *ptr));
         }
+        Native::Dict(Some(ptr)) if marker.mark(*ptr) => {
+            // Push the root node so `DictNode::scan` traces the whole tree:
+            // children, key strings and lists, and values.
+            out.push(ScanPtr::from_non_null(scope, *ptr));
+        }
         Native::NdArray(ptr) if marker.mark(*ptr) => {
             // Push so the container scans (and evacuates) its heap storage.
             out.push(ScanPtr::from_non_null(scope, *ptr));
@@ -161,6 +166,11 @@ fn update_native(native: &mut Native, heap: &CollectorHeapView<'_>) {
             }
         }
         Native::Set(ptr) => {
+            if let Some(new_ptr) = heap.forwarded_to(*ptr) {
+                *ptr = new_ptr;
+            }
+        }
+        Native::Dict(Some(ptr)) => {
             if let Some(new_ptr) = heap.forwarded_to(*ptr) {
                 *ptr = new_ptr;
             }

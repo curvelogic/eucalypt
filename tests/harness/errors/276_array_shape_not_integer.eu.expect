@@ -1,0 +1,2 @@
+exit: 1
+stderr: "arr.from-flat dimension 2.5 must be an integer"

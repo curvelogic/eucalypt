@@ -1,0 +1,25 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/297_code_point_surrogate
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/297_code_point_surrogate.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/297_code_point_surrogate.eu:2:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid code point: 55296 (U+D800) is a surrogate (U+D800 to U+DFFF), not a Unicode scalar value
+  ┌─ tests/harness/errors/297_code_point_surrogate.eu:2:12
+  │
+2 │ x: [55296] str.from-code-points
+  │            ^^^

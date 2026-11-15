@@ -312,8 +312,8 @@ map: __MAP
 
 ```eu,notest
 # Named aliases in unit metadata
-{ types: { Point: "{x: number, y: number}"
-           Person: "{name: string, age: number, email: string | null, ..}" } }
+{ types: { Point: s"{x: number, y: number}"
+           Person: s"{name: string, age: number, email: string | null, ..}" } }
 
 # Alias using binding name (shorthand — `:type-def` or `type-def: true`)
 ` :type-def
@@ -584,6 +584,7 @@ From highest (tightest) to lowest binding:
 | 45 | append | left | `<<` | Deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -715,12 +716,18 @@ concat([[1,2], [3], [4,5]])   # [1, 2, 3, 4, 5]
 
 ```
 [1,2,3,4,5] take(3)          # [1, 2, 3]
+[1,2,3] take(1.5)            # error: take count 1.5 must be an integer
 ```
+
+A non-integer count or index is an error in `take`, `drop`, `split-at`,
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions. `range` takes bounds, not a count, and accepts non-integers.
 
 #### `drop(n, l)` — remove first n elements
 
 ```
 [1,2,3,4,5] drop(3)          # [4, 5]
+[1,2,3] drop(5)              # [] (stops at the end of the list)
 ```
 
 #### `any(p?, l)` — true if any element satisfies p?
@@ -815,6 +822,65 @@ Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
 { a: 1 b: 2 } dissoc([:z])             # { a: 1 b: 2 }
 { a: 1 } dissoc([:a])                  # {}
 ```
+
+### 3.2a Sets and Vecs
+
+Build a collection from a list with `of`; `from-list` is an alias of it
+(the same function), pairing with `to-list`. Vec elements must be
+primitives (numbers, strings, symbols); set elements may also be lists of
+them, keyed as dict keys are (`[[1, 2]] set.of set.contains?([1, 2])` is
+true), ordered after scalars.
+
+```
+s: [3, 1, 3, 2] set.of           # set of 1, 2, 3 (alias: set.from-list)
+s set.to-list                    # [1, 2, 3] — sorted, duplicates removed
+2 ∈ s                            # true
+v: [10, 20, 30] vec.of           # O(1) indexed access (alias: vec.from-list)
+v vec.nth(1)                     # 20
+```
+
+### 3.2b Dicts
+
+A dict is a persistent dictionary ordered by key, with O(log n) `get`,
+`assoc` and `dissoc`. Keys are numbers, strings, symbols, or lists of those
+(nested at most 32 deep); `1` and `1.0` are the same key. Values are lazy
+and computed at most once, so a dict can refer to itself as a memo table.
+Collection argument last, as for sets.
+
+```
+d: [[:b, 2], [:a, 1]] dict.of    # alias: dict.from-list
+d dict.get(:a)                   # 1 (an error if absent)
+d dict.get-or(:z, 0)             # 0
+d dict.assoc([3, 4], :pt)        # list keys, e.g. coordinates
+d dict.dissoc(:b) dict.size      # 1
+d dict.to-list                   # [[:a, 1], [:b, 2]] — key order
+```
+
+Ordered operations, updates and merges:
+
+```
+d dict.keys                      # [:a, :b] (dict.values: [1, 2])
+d dict.min                       # [:a, 1] (dict.max: [:b, 2])
+d dict.pop-min                   # [:a, 1, rest] — rest is d without :a
+d dict.range(:a, :b)             # the sub-dict with :a ≤ k < :b
+d dict.update(:a, + 1, 0)        # :a mapped to 2 (lazily); absent keys start from 0
+d dict.update-strict(:a, + 1, 0) # the same, evaluated now: use it for counting
+b dict.merge-with(+, a)          # union of a and b, a's value + b's on collisions
+{x: 1} dict.from-block           # dict keyed :x (dict.to-block converts back)
+```
+
+A dict keyed by `[priority, item]` is a priority queue: `pop-min` takes the
+next item, `assoc` pushes one. Updates and merges store lazy values; in a
+counting loop use `update-strict` or `merge-with-strict`, which evaluate each
+new value, so no chain of unevaluated additions builds up.
+
+Order across types: numbers < strings < symbols (by name) < lists
+(lexicographic). `dict.of` keeps the first of equal keys and the last value.
+A dict renders as a mapping in key order (number keys as their rendered
+text, string keys as their text, symbol keys as their name); a list key, or
+two keys with the same text (`1` and `"1"`), is an error, so render
+`dict.to-list` for those. Type: `dict(k, v)`, bare `dict` = `dict(any, any)`;
+not the block type `Dict(T)`.
 
 ### 3.3 String Functions (str namespace)
 
@@ -1291,7 +1357,7 @@ The following are commonly assumed but are **not** in the prelude:
 
 - `flatten` — use `concat` (flattens one level)
 - `unique` — does not exist in prelude
-- `even?` / `odd?` — do not exist (use `x % 2 = 0`)
+- `even?` / `odd?` — do not exist (use `2 ∣ x` / `2 ∤ x`, or `x % 2 = 0`; `∣` is U+2223 divides, not `|`)
 - `round` / `ceil` — use `floor` and `ceiling` (or bracket notation `⌊n⌋` and `⌈n⌉`)
 - `select(ks, b)` — **exists**: `{ a: 1, b: 2, c: 3 } select([:a, :c])` → `{ a: 1, c: 3 }`
 - `dissoc(ks, b)` — **exists**: `{ a: 1, b: 2 } dissoc([:a])` → `{ b: 2 }`
@@ -1304,6 +1370,7 @@ These **do exist** and are commonly available:
 - `str.starts-with?(re, s)` — true if `s` starts with regex match
 - `str.ends-with?(re, s)` — true if `s` ends with regex match
 - `abs(n)` — absolute value
+- `mulmod(a, b, m)`, `powmod(b, e, m)`, `modinv(a, m)` — exact modular arithmetic for 64-bit signed integers (no overflow from `a * b % m`); result in `[0, m)`
 - `str.to-upper(s)` / `str.to-lower(s)` — case conversion (not `str.upper` / `str.lower`)
 
 ### 5.12 str.split-on Uses Regex, Not Literal Strings
@@ -1571,6 +1638,10 @@ All functions verified against `lib/prelude.eu`:
 | `str.base64-encode` | `base64-encode(s)` | Base64 encode |
 | `str.base64-decode` | `base64-decode(s)` | Base64 decode |
 | `str.sha256` | `sha256(s)` | SHA-256 hash (lowercase hex) |
+| `str.md5` | `md5(s)` | MD5 hash of the UTF-8 bytes (lowercase hex) |
+| `str.code-points` | `code-points(s)` | List of Unicode code points, one per character |
+| `str.from-code-points` | `from-code-points(ns)` | String from a list of code points (error for a surrogate or value above 0x10FFFF) |
+| `ch.code-point` / `ch.of-code-point` | `ch.code-point(c)` / `ch.of-code-point(n)` | One character to its code point and back |
 
 ---
 

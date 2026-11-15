@@ -20,7 +20,8 @@
     "prebuilds/**",
     "bindings/node/*",
     "queries/*",
-    "src/**"
+    "src/**",
+    "tree-sitter-eucalypt.wasm"
   ],
   "author": "Greg Hawkins",
   "license": "MIT OR Apache-2.0",
@@ -37,15 +38,19 @@
     }
   },
   "devDependencies": {
+    "prebuildify": "^6.0.0",
     "tree-sitter-cli": "^0.22.0",
-    "prebuildify": "^6.0.0"
+    "web-tree-sitter": "0.22.6"
   },
   "scripts": {
     "build": "tree-sitter generate",
     "test": "tree-sitter test",
     "parse": "tree-sitter parse",
     "install": "node-gyp-build",
-    "prebuildify": "prebuildify --napi --strip"
+    "prebuildify": "prebuildify --napi --strip",
+    "build-wasm": "node scripts/build-wasm.mjs",
+    "check-wasm": "node scripts/build-wasm.mjs --check",
+    "test-wasm": "node scripts/test-wasm-page.cjs"
   },
   "tree-sitter": [
     {

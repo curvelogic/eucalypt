@@ -39,7 +39,28 @@ tests is a send-back. Each test must gate
 — a failing assertion fails `cargo test` — with each target's `RESULT`
 computed from its checks (`docs/guide/testing.md`; the pattern in
 `tests/harness/189_r9oy_union_as_spec.eu` and
-`tests/harness/182_typedata_alias_resolution.eu`).
+`tests/harness/182_typedata_alias_resolution.eu`). A target with checks
+must run: name it `test-*` or give it `verify:` metadata.
+
+Two exceptions. A lockfile-only change (dependency versions, no source
+change) needs no harness test. A change no `.eu` program can reach
+(an internal layer, or a path no program can currently trigger) is gated
+instead by unit tests that are fault-injection verified, and the PR says
+why no harness test is possible.
+
+**Harness layout.** New checks go into an existing topic file in
+`tests/harness/` (a new target, or new checks in an existing one) wherever
+one fits. A new file is only for a new topic: it is named by topic, uses a
+number no other file in its directory uses, and is never named after a bead
+or plan phase. Cite the bead in doc metadata instead. A bead-named or
+duplicate-numbered file is a send-back.
+
+**Eucalypt style.** Every `.eu` file in the diff, harness tests and error
+fixtures included, follows `docs/eucalypt-style.md`. In particular: `then`
+rather than `if` (or a two-way `cond`) for a simple two-way test;
+juxtaposed `f[…]` and `g{…}` calls rather than `f([…])` and `g({…})`; and
+backtick doc metadata rather than `#` comments to document a declaration.
+A violation is a send-back.
 
 **No clippy suppression.** A new `#[allow(...)]`, `#![allow(...)]` or
 `#[expect(...)]` for a clippy lint, or a lint relaxed in configuration, is a
@@ -167,6 +188,42 @@ the PR is merged. The owner sees these changes at release rather than per
 PR. Where release machinery is a workflow holding write access or a
 secret, or a script such a workflow runs, the owner-merges row above
 applies.
+
+## Review rounds
+
+This section sets the review round limit that the reviewer's definition
+defers to; it replaces that definition's default rather than competing with
+it as a stricter or looser rule. A PR gets two review rounds, the first
+review and one re-review, and then at most one **confirm review**. When
+round 2 still finds blocking items, its reviewer sends the PR back as in
+round 1 and posts no owner hold. Once the author has pushed fixes, a fresh
+`rig-review` runs the confirm review on the new head; its verdict line reads
+`rig-review round 3 (confirm): <verdict> at <head SHA>`:
+
+- **Scope.** It checks that each blocking finding raised in round 2 is
+  fixed, in round 2's verdict and, where a second independent review ran,
+  in that review too. It also reviews the diff between round 2's head and
+  the new head; if that head is no longer an ancestor (a rebase, a
+  force-push), it compares the PR's own changes at the two heads (as `git
+  range-diff` does), and anything master brought in is out of scope. It
+  is not a new open-ended review: anything else is out of scope this
+  round. CI on the new head is read first, as in every round.
+- **Two reviewers where two are required.** Where this file requires a
+  second independent review (the *Sensitive areas* rows that say so, and
+  an API specified in advance), the confirm round is two fresh `rig-review`s,
+  each forming its verdict without reading the other's.
+- **Pass.** If every round-2 blocker is fixed, nothing the fix commits
+  changed is blocking, and CI on the new head is green, an agent may merge
+  under this file as usual.
+- **Escalate.** If a round-2 blocker is still open (unfixed, or disputed
+  rather than fixed), or the confirm review finds a new blocking item, the
+  confirm reviewer (each of them, where there are two) posts one comment
+  listing each open blocker for the owner, with the hold "Do not merge —
+  owner review", and leaves the PR open. No further round runs.
+
+Unchanged: a PR this file reserves for the owner still goes to the owner
+after any pass, and an explicit hold still binds every agent and is
+released only by the owner (*Owner review filter*).
 
 ## Merging
 

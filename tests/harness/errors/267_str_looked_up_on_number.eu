@@ -1,0 +1,4 @@
+x: 42
+
+` "`x.str` treats `str` as a field: the `str` namespace note is shown (eu-oaz72.28)"
+r: x.str

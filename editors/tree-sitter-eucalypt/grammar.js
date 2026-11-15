@@ -18,7 +18,7 @@
 // ⊝ (U+229D CIRCLED MINUS — bitwise NOT).
 // Note: bracket characters (⟦⟧⟨⟩⟪⟫⌈⌉⌊⌋‹›) are intentionally excluded here;
 // they are handled by the bracket_expr rule instead.
-const OPER_CHARS = /[.!@£%^&*|><\/\\+\=\-~;?$∸∧∨∘‖✓▶⊝→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/;
+const OPER_CHARS = /[.!@£%^&*|><\/\\+\=\-~;?$∸∧∨∘‖✓▶⊝→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉∣∤⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/;
 
 // Unicode idiot bracket open characters (must match brackets.rs BUILTIN_BRACKET_PAIRS).
 //
@@ -31,6 +31,9 @@ const OPER_CHARS = /[.!@£%^&*|><\/\\+\=\-~;?$∸∧∨∘‖✓▶⊝→←⊕�
 // `tree-sitter generate`.
 const BRACKET_OPEN_RE = /[⟦⟨⟪⌈⌊⦃⦇⦉«‹【〔〖〘〚]/;
 const BRACKET_CLOSE_RE = /[⟧⟩⟫⌉⌋⦄⦈⦊»›】〕〗〙〛]/;
+
+// Identifiers (see the `identifier` rule for the character ranges).
+const IDENTIFIER_RE = /[•$?_a-zA-Z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF\u2100-\u214F][•$?_!*\-a-zA-Z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF\u2100-\u214F]*/;
 
 module.exports = grammar({
   name: 'eucalypt',
@@ -52,6 +55,7 @@ module.exports = grammar({
     [$.operator_declaration, $.name],
     [$.operator_declaration, $.soup],
     [$.soup],
+    [$._bracket_cons_pattern, $.name],
   ],
 
   rules: {
@@ -138,8 +142,8 @@ module.exports = grammar({
       // ⟦⟧ bracket pair as a function of x. The bracket's content is an
       // ordinary soup (often a list_pattern-shaped `[x]`, or a block for
       // inline monad definitions like ⟦{}⟧: { :monad ... }) — bracket_expr
-      // already parses all of that; it just wasn't reachable as a
-      // declaration head. Audit report §2.3.
+      // already parses all of that — or a cons pattern, as in
+      // ⌈ [f: lists] ⌉: (see bracket_expr). Audit report §2.3.
       $.bracket_expr,
     ),
 
@@ -367,8 +371,25 @@ module.exports = grammar({
       optional(choice(
         $.soup,
         repeat1(seq($.declaration, optional(','))),
+        // A cons pattern, for a bracket-pair declaration head that takes
+        // its operand apart: ⌈ [f: lists] ⌉: (tests/harness/097). As an
+        // expression, [f: lists] is a list holding a declaration colon,
+        // since a symbol's name must follow its colon immediately
+        // (eu-ioz21.7). Heads are plain names: a nested pattern head here
+        // would make every block and list in a bracket expression
+        // ambiguous with a pattern.
+        alias($._bracket_cons_pattern, $.cons_pattern),
       )),
       BRACKET_CLOSE_RE,
+    ),
+
+    _bracket_cons_pattern: $ => seq(
+      '[',
+      $.identifier,
+      repeat(seq(',', $.identifier)),
+      ':',
+      $.identifier,
+      ']',
     ),
 
     // === Literals ===
@@ -379,6 +400,7 @@ module.exports = grammar({
       $.c_string,
       $.r_string,
       $.t_string,
+      $.s_string,
       $.symbol,
     ),
 
@@ -408,6 +430,7 @@ module.exports = grammar({
         $.c_string_content,
         $.interpolation,
         $.c_escape_sequence,
+        $._c_lone_close_brace,
       )),
       '"',
     ),
@@ -434,6 +457,17 @@ module.exports = grammar({
     ),
 
     t_string_content: $ => token.immediate(prec(1, /[^"]+/)),
+
+    // S-string: a type-data literal, s"{x: number}" — opaque, like a
+    // t-string: the Rowan lexer reads the whole literal as one S_STRING
+    // token, with no interpolation and no escapes (eu-ioz21.7).
+    s_string: $ => seq(
+      's"',
+      optional($.s_string_content),
+      '"',
+    ),
+
+    s_string_content: $ => token.immediate(prec(1, /[^"]+/)),
 
     // String content rules use token.immediate() to prevent extras
     // (especially comments starting with #) from being injected inside
@@ -478,31 +512,19 @@ module.exports = grammar({
     ),
 
     // A format spec is ':' followed by everything up to the interpolation's
-    // closing '}' — normally a simple format string like ':.2f', but the
-    // type-DSL idiom (s"{ users: [{ name: string }] }") abuses this same
-    // "everything after the colon" slot to carry a whole nested
-    // block/list type expression. A flat /:[^}]+/ regex can't tell an
-    // OUTER closing '}' from an INNER one, so it stops at the first '}' it
-    // sees — wrong as soon as the spec contains a nested `{...}` pair
-    // (audit report §2.7). Made brace-aware via recursion instead: any
-    // '{'...'}' pair nested inside the spec is matched structurally
-    // (correctly balanced, arbitrarily deep) rather than by the regex.
-    format_spec: $ => seq(
+    // closing '}', as in the Rowan string lexer: {x:%5d}, {x: number}. The
+    // text after the colon is one immediate token. Both readings of
+    // `{x:badfmt}` survive to the closing '}' (the soup may go on with the
+    // symbol `:badfmt`), so a dynamic precedence picks the format spec, as
+    // the Rowan string lexer does (eu-ioz21.7). The type-DSL strings that nest
+    // braces in this position are s"..." literals (s_string), which are not
+    // interpolated.
+    format_spec: $ => prec.dynamic(1, seq(
       ':',
-      repeat(choice(
-        /[^{}]+/,
-        $._balanced_braces,
-      )),
-    ),
-
-    _balanced_braces: $ => seq(
-      '{',
-      repeat(choice(
-        /[^{}]+/,
-        $._balanced_braces,
-      )),
-      '}',
-    ),
+      // Trailing whitespace before the '}' is not part of the spec, as in
+      // the Rowan lexer ("{ s : up }" applies `up`).
+      optional(alias(token.immediate(prec(2, /[^}"]*[^}"\s]/)), $.format_spec_content)),
+    )),
 
     // A lone '}' in a plain or raw string is literal text, as in the Rowan
     // string lexer: "a}b", and "{x}}" (the interpolation's '}' then a
@@ -510,6 +532,10 @@ module.exports = grammar({
     // escape.
     _lone_close_brace: $ => alias('}', $.string_content),
     _r_lone_close_brace: $ => alias('}', $.r_string_content),
+    // In a c-string every unescaped '}' outside an interpolation is literal
+    // text ('}}' is not an escape there), as in the Rowan c-string lexer:
+    // c"\{lit}" is "{lit}" (eu-oaz72.114).
+    _c_lone_close_brace: $ => alias('}', $.c_string_content),
 
     // Brace escapes for plain and raw strings ({{ and }})
     brace_escape: $ => choice(
@@ -529,10 +555,24 @@ module.exports = grammar({
       /\\U[0-9a-fA-F]{8}/,
     ),
 
-    // Symbol: :name or :'quoted'
-    symbol: $ => choice(
-      seq(':', $.identifier),
-      seq(':', $.quoted_identifier),
+    // Symbol: :name or :'quoted'. The name follows the colon immediately,
+    // as in the Rowan lexer, where ':' followed by a name start or a quote
+    // is a SYMBOL token and any other ':' a COLON. With whitespace allowed
+    // after the colon, `x :y` would be a symbol (eu-ioz21.7). The children
+    // keep the identifier / quoted_identifier node types the highlight
+    // queries match on.
+    symbol: $ => seq(
+      ':',
+      choice(
+        alias(token.immediate(IDENTIFIER_RE), $.identifier),
+        alias($._immediate_quoted_identifier, $.quoted_identifier),
+      ),
+    ),
+
+    _immediate_quoted_identifier: $ => seq(
+      token.immediate("'"),
+      /[^']+/,
+      "'",
     ),
 
     // === Names and Identifiers ===
@@ -552,7 +592,7 @@ module.exports = grammar({
     // which are operator characters; Letterlike Symbols U+2100-U+214F
     // doesn't overlap OPER_CHARS (nearest operator range starts at
     // U+2190), so no such split is needed there.
-    identifier: $ => /[•$?_a-zA-Z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF\u2100-\u214F][•$?_!*\-a-zA-Z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF\u2100-\u214F]*/,
+    identifier: $ => IDENTIFIER_RE,
 
     quoted_identifier: $ => seq(
       "'",

@@ -28,10 +28,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 use std::time::Duration;
 
-use lsp_server::{Connection, Message, Notification, Request, Response};
+use crossbeam_channel::{Receiver, Sender};
+use lsp_server::{
+    Connection, ErrorCode, ExtractError, Message, Notification, Request, RequestId, Response,
+};
 use lsp_types::{
     notification::{
         DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification as _,
@@ -82,8 +85,12 @@ struct PipelineResult {
 /// This is the entry point called from the `eu lsp` subcommand.
 /// It establishes a connection over stdin/stdout, performs the
 /// LSP initialize handshake, then enters the main event loop
-/// until shutdown is requested.
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+/// until the client sends `exit` or closes stdin.
+///
+/// Returns the process exit code: 0 after `shutdown` then `exit`, or
+/// when stdin closes; 1 when `exit` arrives without a prior `shutdown`
+/// (as the LSP specification requires).
+pub fn run() -> Result<i32, Box<dyn std::error::Error>> {
     eprintln!("eucalypt language server starting");
 
     let (connection, io_threads) = Connection::stdio();
@@ -92,16 +99,49 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let capabilities_json = serde_json::to_value(server_capabilities)?;
 
     let init_params = connection.initialize(capabilities_json)?;
-    let _init_params: InitializeParams = serde_json::from_value(init_params)?;
+    let init_params: InitializeParams = serde_json::from_value(init_params)?;
+    let refresh = RefreshSupport::from_capabilities(&init_params.capabilities);
 
     eprintln!("eucalypt language server initialised");
 
-    main_loop(&connection)?;
+    // `main_loop` takes the connection by value and drops it on return:
+    // the stdout writer thread only ends once every sender is gone, so
+    // joining the I/O threads while the connection is alive would hang.
+    let exit_code = main_loop(connection, refresh)?;
 
     io_threads.join()?;
 
     eprintln!("eucalypt language server shut down");
-    Ok(())
+    Ok(exit_code)
+}
+
+/// Server-initiated refresh requests the client has said it handles.
+///
+/// Sending a request the client does not support is a protocol error
+/// some clients report to the user, so each refresh is gated on the
+/// matching `workspace.*.refreshSupport` client capability.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct RefreshSupport {
+    /// `workspace.inlayHint.refreshSupport`
+    inlay_hints: bool,
+    /// `workspace.semanticTokens.refreshSupport`
+    semantic_tokens: bool,
+}
+
+impl RefreshSupport {
+    fn from_capabilities(caps: &lsp_types::ClientCapabilities) -> Self {
+        let workspace = caps.workspace.as_ref();
+        Self {
+            inlay_hints: workspace
+                .and_then(|w| w.inlay_hint.as_ref())
+                .and_then(|c| c.refresh_support)
+                .unwrap_or(false),
+            semantic_tokens: workspace
+                .and_then(|w| w.semantic_tokens.as_ref())
+                .and_then(|c| c.refresh_support)
+                .unwrap_or(false),
+        }
+    }
 }
 
 /// Build the server capabilities advertised during initialisation.
@@ -256,17 +296,23 @@ struct ServerState {
     queries: QueryStore,
 
     /// Channel for receiving pipeline results from background threads.
-    pipeline_rx: mpsc::Receiver<PipelineResult>,
+    pipeline_rx: Receiver<PipelineResult>,
 
     /// Sender cloned to each background thread for delivering results.
-    pipeline_tx: mpsc::Sender<PipelineResult>,
+    pipeline_tx: Sender<PipelineResult>,
 
     /// Cancel flags per document URI for in-flight pipeline runs.
     cancel: HashMap<Url, Arc<AtomicBool>>,
+
+    /// Which refresh requests the client accepts.
+    refresh: RefreshSupport,
+
+    /// Counter for ids of server-initiated requests.
+    next_request_id: i32,
 }
 
 impl ServerState {
-    fn new() -> Self {
+    fn new(refresh: RefreshSupport) -> Self {
         // Write the embedded prelude to a temp file so go-to-definition
         // can navigate to real source locations instead of the non-existent
         // resource:prelude URI.
@@ -274,7 +320,7 @@ impl ServerState {
             Url::parse("resource:prelude")
                 .unwrap_or_else(|_| Url::parse("file:///prelude.eu").expect("fallback URI"))
         });
-        let (pipeline_tx, pipeline_rx) = mpsc::channel();
+        let (pipeline_tx, pipeline_rx) = crossbeam_channel::unbounded();
         Self {
             store: DocumentStore::new(),
             prelude_table: symbol_table::prelude_symbols(&prelude_uri),
@@ -282,6 +328,8 @@ impl ServerState {
             pipeline_rx,
             pipeline_tx,
             cancel: HashMap::new(),
+            refresh,
+            next_request_id: 0,
         }
     }
 
@@ -414,17 +462,29 @@ impl ServerState {
 
                 // Ask the client to re-request inlay hints now that
                 // pipeline-resolved types (lambda_params) are available.
-                // Also try semanticTokens/refresh as some clients respond to that.
-                for (id_suffix, method) in [
-                    ("inlay", "workspace/inlayHint/refresh"),
-                    ("semantic", "workspace/semanticTokens/refresh"),
-                ] {
-                    let refresh = lsp_server::Request::new(
-                        lsp_server::RequestId::from(format!("{id_suffix}-refresh")),
-                        method.to_string(),
-                        serde_json::Value::Null,
-                    );
-                    let _ = connection.sender.send(Message::Request(refresh));
+                // Also try semanticTokens/refresh as some clients respond to
+                // that.  Each is sent only if the client advertises support.
+                use lsp_types::request::Request as _;
+                let refreshes = [
+                    (
+                        self.refresh.inlay_hints,
+                        lsp_types::request::InlayHintRefreshRequest::METHOD,
+                    ),
+                    (
+                        self.refresh.semantic_tokens,
+                        lsp_types::request::SemanticTokensRefresh::METHOD,
+                    ),
+                ];
+                for (supported, method) in refreshes {
+                    if supported {
+                        self.next_request_id += 1;
+                        let refresh = Request::new(
+                            RequestId::from(format!("eu-refresh-{}", self.next_request_id)),
+                            method.to_string(),
+                            serde_json::Value::Null,
+                        );
+                        connection.sender.send(Message::Request(refresh))?;
+                    }
                 }
             }
             Err(err) => {
@@ -462,186 +522,154 @@ impl ServerState {
     }
 }
 
-/// The main event loop, processing messages until shutdown.
-fn main_loop(connection: &Connection) -> Result<(), Box<dyn std::error::Error>> {
-    let mut state = ServerState::new();
+/// The main event loop, processing client messages and background
+/// pipeline results until the client sends `exit` or closes stdin.
+///
+/// Pipeline results are applied as soon as they arrive, so type-check
+/// diagnostics reach an idle client without waiting for its next
+/// message.  Returns the process exit code (see [`run`]).
+fn main_loop(
+    connection: Connection,
+    refresh: RefreshSupport,
+) -> Result<i32, Box<dyn std::error::Error>> {
+    use lsp_types::notification::Exit;
+    use lsp_types::request::{Request as _, Shutdown};
 
-    for msg in &connection.receiver {
-        match msg {
-            Message::Request(req) => {
-                if connection.handle_shutdown(&req)? {
-                    return Ok(());
+    let mut state = ServerState::new(refresh);
+    let pipeline_rx = state.pipeline_rx.clone();
+    let mut shutdown_requested = false;
+
+    loop {
+        crossbeam_channel::select! {
+            recv(connection.receiver) -> msg => {
+                // A disconnected receiver means stdin closed.
+                let Ok(msg) = msg else { return Ok(0) };
+                match msg {
+                    Message::Request(req) if shutdown_requested => {
+                        let resp = Response::new_err(
+                            req.id,
+                            ErrorCode::InvalidRequest as i32,
+                            "server is shutting down".to_string(),
+                        );
+                        connection.sender.send(Message::Response(resp))?;
+                    }
+                    Message::Request(req) if req.method == Shutdown::METHOD => {
+                        shutdown_requested = true;
+                        let resp = Response::new_ok(req.id, ());
+                        connection.sender.send(Message::Response(resp))?;
+                    }
+                    Message::Request(req) => handle_request(&connection, &state, req)?,
+                    Message::Notification(notif) if notif.method == Exit::METHOD => {
+                        return Ok(if shutdown_requested { 0 } else { 1 });
+                    }
+                    Message::Notification(notif) => {
+                        if !shutdown_requested {
+                            handle_notification(&connection, &mut state, notif)?;
+                        }
+                    }
+                    Message::Response(_resp) => {
+                        // Responses to server-initiated requests (e.g.
+                        // workspace/inlayHint/refresh) — nothing to do.
+                    }
                 }
-                handle_request(connection, &state, req)?;
             }
-            Message::Notification(notif) => {
-                handle_notification(connection, &mut state, notif)?;
+            recv(pipeline_rx) -> result => {
+                // `state` holds a sender, so the channel never disconnects.
+                if let Ok(result) = result {
+                    if !shutdown_requested {
+                        state.apply_pipeline_result(&connection, result)?;
+                    }
+                }
             }
-            Message::Response(_resp) => {
-                // Responses to server-initiated requests (e.g.
-                // workspace/inlayHint/refresh) — nothing to do.
-            }
-        }
-
-        // Check for pipeline results from the background thread.
-        while let Ok(result) = state.pipeline_rx.try_recv() {
-            state.apply_pipeline_result(connection, result)?;
         }
     }
-    Ok(())
+}
+
+/// Decode a request's params as `R::Params` and answer it with `handler`.
+///
+/// Params that do not decode are answered with an `InvalidParams` error
+/// rather than failing the server.
+fn respond<R, T>(req: Request, handler: impl FnOnce(R::Params) -> T) -> Response
+where
+    R: lsp_types::request::Request,
+    T: serde::Serialize,
+{
+    let id = req.id.clone();
+    match req.extract::<R::Params>(R::METHOD) {
+        Ok((id, params)) => Response::new_ok(id, handler(params)),
+        Err(ExtractError::JsonError { method, error }) => {
+            eprintln!("invalid params for {method}: {error}");
+            Response::new_err(
+                id,
+                ErrorCode::InvalidParams as i32,
+                format!("invalid params for {method}: {error}"),
+            )
+        }
+        Err(ExtractError::MethodMismatch(req)) => Response::new_err(
+            id,
+            ErrorCode::MethodNotFound as i32,
+            format!("unhandled request: {}", req.method),
+        ),
+    }
 }
 
 /// Handle an incoming LSP request.
 ///
 /// Dispatches known request types. Unrecognised requests receive a
-/// method-not-found error response.
+/// method-not-found error response; requests whose params do not
+/// decode receive an invalid-params error response.
 fn handle_request(
     connection: &Connection,
     state: &ServerState,
     req: Request,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use lsp_types::request::Request as _;
+    use lsp_types::request::{PrepareRenameRequest, Request as _};
 
-    if req.method == DocumentSymbolRequest::METHOD {
-        let (id, params): (_, lsp_types::DocumentSymbolParams) =
-            req.extract(DocumentSymbolRequest::METHOD)?;
-        let result = on_document_symbol(&state.store, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == FoldingRangeRequest::METHOD {
-        let (id, params): (_, lsp_types::FoldingRangeParams) =
-            req.extract(FoldingRangeRequest::METHOD)?;
-        let result = on_folding_range(&state.store, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == SelectionRangeRequest::METHOD {
-        let (id, params): (_, lsp_types::SelectionRangeParams) =
-            req.extract(SelectionRangeRequest::METHOD)?;
-        let result = on_selection_range(&state.store, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == GotoDefinition::METHOD {
-        let (id, params): (_, lsp_types::GotoDefinitionParams) =
-            req.extract(GotoDefinition::METHOD)?;
-        let result = on_goto_definition(state, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == HoverRequest::METHOD {
-        let (id, params): (_, lsp_types::HoverParams) = req.extract(HoverRequest::METHOD)?;
-        let result = on_hover(state, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == Completion::METHOD {
-        let (id, params): (_, lsp_types::CompletionParams) = req.extract(Completion::METHOD)?;
-        let result = on_completion(state, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == SemanticTokensFullRequest::METHOD {
-        let (id, params): (_, lsp_types::SemanticTokensParams) =
-            req.extract(SemanticTokensFullRequest::METHOD)?;
-        let result = on_semantic_tokens_full(state, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == Formatting::METHOD {
-        let (id, params): (_, lsp_types::DocumentFormattingParams) =
-            req.extract(Formatting::METHOD)?;
-        let result = on_formatting(&state.store, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == RangeFormatting::METHOD {
-        let (id, params): (_, lsp_types::DocumentRangeFormattingParams) =
-            req.extract(RangeFormatting::METHOD)?;
-        let result = on_range_formatting(&state.store, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == References::METHOD {
-        let (id, params): (_, lsp_types::ReferenceParams) = req.extract(References::METHOD)?;
-        let result = on_references(state, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == CodeActionRequest::METHOD {
-        let (id, params): (_, lsp_types::CodeActionParams) =
-            req.extract(CodeActionRequest::METHOD)?;
-        let result = on_code_action(state, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == InlayHintRequest::METHOD {
-        let (id, params): (_, lsp_types::InlayHintParams) =
-            req.extract(InlayHintRequest::METHOD)?;
-        let result = on_inlay_hint(state, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == DocumentHighlightRequest::METHOD {
-        let (id, params): (_, lsp_types::DocumentHighlightParams) =
-            req.extract(DocumentHighlightRequest::METHOD)?;
-        let result = on_document_highlight(state, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    if req.method == Rename::METHOD {
-        let (id, params): (_, lsp_types::RenameParams) = req.extract(Rename::METHOD)?;
-        let result = on_rename(state, params);
-        let resp = Response::new_ok(id, result);
-        connection.sender.send(Message::Response(resp))?;
-        return Ok(());
-    }
-
-    {
-        use lsp_types::request::{PrepareRenameRequest, Request as _};
-        if req.method == PrepareRenameRequest::METHOD {
-            let (id, params): (_, lsp_types::TextDocumentPositionParams) =
-                req.extract(PrepareRenameRequest::METHOD)?;
-            let result = on_prepare_rename(state, params);
-            let resp = Response::new_ok(id, result);
-            connection.sender.send(Message::Response(resp))?;
-            return Ok(());
+    let resp = match req.method.as_str() {
+        DocumentSymbolRequest::METHOD => {
+            respond::<DocumentSymbolRequest, _>(req, |p| on_document_symbol(&state.store, p))
         }
-    }
-
-    eprintln!("unhandled request: {}", req.method);
-    let resp = Response::new_err(
-        req.id,
-        lsp_server::ErrorCode::MethodNotFound as i32,
-        format!("unhandled request: {}", req.method),
-    );
+        FoldingRangeRequest::METHOD => {
+            respond::<FoldingRangeRequest, _>(req, |p| on_folding_range(&state.store, p))
+        }
+        SelectionRangeRequest::METHOD => {
+            respond::<SelectionRangeRequest, _>(req, |p| on_selection_range(&state.store, p))
+        }
+        GotoDefinition::METHOD => {
+            respond::<GotoDefinition, _>(req, |p| on_goto_definition(state, p))
+        }
+        HoverRequest::METHOD => respond::<HoverRequest, _>(req, |p| on_hover(state, p)),
+        Completion::METHOD => respond::<Completion, _>(req, |p| on_completion(state, p)),
+        SemanticTokensFullRequest::METHOD => {
+            respond::<SemanticTokensFullRequest, _>(req, |p| on_semantic_tokens_full(state, p))
+        }
+        Formatting::METHOD => respond::<Formatting, _>(req, |p| on_formatting(&state.store, p)),
+        RangeFormatting::METHOD => {
+            respond::<RangeFormatting, _>(req, |p| on_range_formatting(&state.store, p))
+        }
+        References::METHOD => respond::<References, _>(req, |p| on_references(state, p)),
+        CodeActionRequest::METHOD => {
+            respond::<CodeActionRequest, _>(req, |p| on_code_action(state, p))
+        }
+        InlayHintRequest::METHOD => {
+            respond::<InlayHintRequest, _>(req, |p| on_inlay_hint(state, p))
+        }
+        DocumentHighlightRequest::METHOD => {
+            respond::<DocumentHighlightRequest, _>(req, |p| on_document_highlight(state, p))
+        }
+        Rename::METHOD => respond::<Rename, _>(req, |p| on_rename(state, p)),
+        PrepareRenameRequest::METHOD => {
+            respond::<PrepareRenameRequest, _>(req, |p| on_prepare_rename(state, p))
+        }
+        _ => {
+            eprintln!("unhandled request: {}", req.method);
+            Response::new_err(
+                req.id,
+                ErrorCode::MethodNotFound as i32,
+                format!("unhandled request: {}", req.method),
+            )
+        }
+    };
     connection.sender.send(Message::Response(resp))?;
     Ok(())
 }
@@ -655,21 +683,30 @@ fn handle_notification(
     state: &mut ServerState,
     notif: Notification,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // A notification cannot be answered, so params that do not decode
+    // are logged and the notification dropped rather than failing the
+    // server.
+    fn decode<P: serde::de::DeserializeOwned>(notif: Notification) -> Option<P> {
+        serde_json::from_value(notif.params)
+            .map_err(|e| eprintln!("invalid params for {}: {e}", notif.method))
+            .ok()
+    }
+
     match notif.method.as_str() {
         DidOpenTextDocument::METHOD => {
-            let params: lsp_types::DidOpenTextDocumentParams =
-                serde_json::from_value(notif.params)?;
-            on_document_open(connection, state, params)?;
+            if let Some(params) = decode(notif) {
+                on_document_open(connection, state, params)?;
+            }
         }
         DidChangeTextDocument::METHOD => {
-            let params: lsp_types::DidChangeTextDocumentParams =
-                serde_json::from_value(notif.params)?;
-            on_document_change(connection, state, params)?;
+            if let Some(params) = decode(notif) {
+                on_document_change(connection, state, params)?;
+            }
         }
         DidCloseTextDocument::METHOD => {
-            let params: lsp_types::DidCloseTextDocumentParams =
-                serde_json::from_value(notif.params)?;
-            on_document_close(state, params);
+            if let Some(params) = decode(notif) {
+                on_document_close(state, params);
+            }
         }
         _ => {
             eprintln!("unhandled notification: {}", notif.method);
@@ -1113,12 +1150,12 @@ fn extract_top_level_bindings(expr: &crate::core::expr::RcExpr, type_env: &mut T
 }
 
 /// Spawn a background thread that runs the full SourceLoader pipeline
-/// after a debounce delay. Results are sent via the mpsc channel.
+/// after a debounce delay. Results are sent via the pipeline channel.
 fn spawn_pipeline(
     uri: Url,
     text: String,
     path: Option<PathBuf>,
-    tx: mpsc::Sender<PipelineResult>,
+    tx: Sender<PipelineResult>,
     cancel: Arc<AtomicBool>,
 ) {
     std::thread::Builder::new()

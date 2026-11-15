@@ -1,0 +1,2 @@
+` "`.upper` written after a string literal looks a key up on a string: the `.` notes are shown (eu-oaz72.28)"
+r: "abc".upper

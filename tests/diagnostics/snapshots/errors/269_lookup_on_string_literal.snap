@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/269_lookup_on_string_literal
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/269_lookup_on_string_literal.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/269_lookup_on_string_literal.eu:2:4
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected block, found string
+  ┌─ tests/harness/errors/269_lookup_on_string_literal.eu:2:4
+  │
+2 │ r: "abc".upper
+  │    ^^^^^
+  │
+  = the '.' operator performs key lookup on blocks; strings do not have fields
+  = to apply string functions, use pipeline catenation, e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'
+  = while evaluating (outermost first):
+    - r at 269_lookup_on_string_literal.eu:2:4

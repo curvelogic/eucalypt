@@ -3,6 +3,9 @@
 A dense single-page reference covering all syntax forms, operators,
 common patterns, and key prelude functions.
 
+For worked recipes — parsing puzzle input, grids, search, memoisation and
+loops — see the [Advent of Code cookbook](../guide/advent-of-code.md).
+
 ## Primitives
 
 | Type | Syntax | Examples |
@@ -297,6 +300,7 @@ From highest to lowest binding:
 | 45 | append | right | `++`, `<<` | List append, deep merge |
 | 42 | map | left | `<$>` | Functor map |
 | 40 | eq | left | `=`, `!=` | Equality |
+| 40 | eq | left | `∣`, `∤` | Divides, does not divide: `3 ∣ 12` is `m % n = 0`; `∣` is U+2223, not `\|` |
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
@@ -356,7 +360,8 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `foldr(f, init)` | Right fold |
 | `sort-by(f)` | Sort by key function |
 | `take(n)` | First n elements (`[]` if n <= 0) |
-| `drop(n)` | Remove first n (list unchanged if n <= 0) |
+| `drop(n)` | Remove first n (list unchanged if n <= 0; `[]` if n exceeds the length) |
+| `nth(n)` | Element at index `n` from 0 (error if out of range) |
 | `zip` | Pair elements from two lists |
 | `zip-with(f)` | Combine elements with function |
 | `concat` | Flatten nested lists one level (use `concat`, not `flatten` — does not exist) |
@@ -372,18 +377,10 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `group-consecutive` | Group runs of equal adjacent elements (`group-consecutive-by(f)` for a key) |
 | `running-sum`, `running-max`, `running-min` | Cumulative sum / maximum / minimum of a number list |
 
-### Sets
-
-Sets hold **primitives only** (numbers, strings, symbols), not lists or blocks:
-encode a coordinate `[x, y]` as `x * 100000 + y`.
-
-| Function | Description |
-|----------|-------------|
-| `set.from-list` | Build a set (O(n log n)) |
-| `v ∈ s`, `v ∉ s` | Membership (O(log n)) |
-| `set.add(e)`, `set.remove(e)` | Copy with element added / removed (O(n) — do not add in a long fold) |
-| `set.union`, `set.intersect`, `set.diff` | Set algebra |
-| `set.size`, `set.to-list` | Count; sorted elements |
+A non-integer count or index is an error in `take`, `drop`, `split-at`,
+`rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
+functions; an integral
+float such as `2.0` is accepted.
 
 ### Blocks
 
@@ -418,6 +415,8 @@ encode a coordinate `[x, y]` as `x * 100000 + y`.
 | `str.replace(re, rep, s)` | Replace all regex matches |
 | `str.prefix(b, a)` | Prepend `b` onto `a` |
 | `str.suffix(b, a)` | Append `b` onto `a` |
+| `str.md5(s)` | MD5 of the UTF-8 bytes, lowercase hex (like `str.sha256`) |
+| `str.code-points(s)` / `str.from-code-points(ns)` | Unicode code points of the characters of `s`, and back; `ch.code-point(c)` / `ch.of-code-point(n)` for one character |
 
 **All str regex functions treat the pattern argument as a regular expression.**
 `str.split-on` and `str.contains?` are pipeline-friendly (data is last arg).
@@ -459,7 +458,8 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
-| `even?` / `odd?` | Do **not** exist — use `x % 2 = 0` / `x % 2 = 1` |
+| `mulmod(a, b, m)` / `powmod(b, e, m)` / `modinv(a, m)` | Exact modular arithmetic for 64-bit signed integers; result in `[0, m)` |
+| `even?` / `odd?` | Do **not** exist — use `2 ∣ x` / `2 ∤ x` (U+2223 divides, not `\|`) or `x % 2 = 0` |
 
 ### Lenses (`lens.eu`)
 
@@ -510,6 +510,36 @@ records over(each ∘ at(:score), * 2)          # scores doubled
 [3, 1, 2] over(parts-of(each), sort-nums)     # [1, 2, 3]
 ```
 
+### Dicts (`dict` namespace)
+
+Persistent dictionaries ordered by key. Keys are numbers, strings, symbols or
+lists of those (e.g. `[x, y]` coordinates); values are arbitrary and lazy,
+and each is computed at most once.
+
+| Expression | Description |
+|---|---|
+| `pairs dict.of` / `pairs dict.from-list` | Dict from `[key, value]` pairs (aliases); equal keys keep the first key and the last value |
+| `dict.empty` / `d dict.empty?` | The empty dict / has no entries? |
+| `d dict.get(k)` | Value at `k`; an error if absent |
+| `d dict.get-or(k, default)` | Value at `k`, or `default` |
+| `d dict.assoc(k, v)` / `d dict.dissoc(k)` | New dict with `k` set / removed (O(log n)) |
+| `d dict.contains?(k)` / `d dict.size` | Holds `k`? / number of entries |
+| `d dict.to-list` | `[key, value]` pairs in key order |
+| `d dict.keys` / `d dict.values` | Keys / values in key order |
+| `d dict.min` / `d dict.max` | `[key, value]` for the least / greatest key; an error if empty |
+| `d dict.pop-min` / `d dict.pop-max` | `[key, value, rest]`; with keys `[priority, item]`, a priority queue |
+| `d dict.range(lo, hi)` | Sub-dict of keys `lo ≤ k < hi` |
+| `d dict.update(k, f, default)` | Map `k` to `f(old)`, `old` defaulting to `default` (lazy) |
+| `d dict.update-strict(k, f, default)` | As `update`, evaluating `f(old)` now: `d dict.update-strict(k, + 1, 0)` counts |
+| `b dict.merge-with(f, a)` | Union; `f(va, vb)` where both hold a key (lazy; `merge-with-strict` evaluates it) |
+| `b dict.from-block` / `d dict.to-block` | Block to dict (symbol keys) / dict to block (string, symbol and number keys) |
+
+Keys order numbers < strings < symbols < lists; `1` and `1.0` are the same
+key. A dict renders as a mapping in key order, each key as its text; a list
+key, or two keys with the same text (`1` and `"1"`), is an error — render
+`dict.to-list` instead. Typed `dict(k, v)` (bare `dict` is `dict(any, any)`).
+See the [Dicts guide](../guide/dicts.md).
+
 ### Arrays (`arr` namespace)
 
 | Function | Description |
@@ -537,6 +567,17 @@ records over(each ∘ at(:score), * 2)          # scores doubled
 
 The standard `+`, `-`, `*`, `/` operators are polymorphic and apply element-wise when
 either operand is an array. Scalar broadcasting is supported.
+
+### Sets and Vecs (`set` / `vec` namespaces)
+
+| Expression | Description |
+|---|---|
+| `xs set.of` / `xs set.from-list` | Set of primitives (and lists of them) from a list (one pass; the names are aliases) |
+| `s set.to-list` | Sorted list of a set's elements |
+| `v ∈ s` / `v ∉ s` | Membership |
+| `∅` | The empty set |
+| `xs vec.of` / `xs vec.from-list` | Vec of primitives with O(1) indexed access (aliases) |
+| `v vec.nth(n)` / `vec.len(v)` | Element at index `n` (0-based; a negative or non-integer `n` is an error) / length |
 
 ### IO
 
@@ -621,7 +662,7 @@ double(x): x * 2
 
 ```eu,notest
 # In unit metadata
-{ types: { Person: "{name: string, age: number, ..}" } }
+{ types: { Person: s"{name: string, age: number, ..}" } }
 
 # Via type-def: on a canonical instance
 ` { type-def: "Point" }
@@ -665,7 +706,7 @@ origin: { x: 0, y: 0 }
 | `IO(T)`            | IO action producing T                  |
 | `Lens(a, b)`       | lens focusing on b within a            |
 | `Traversal(a, b)`  | traversal over b's within a            |
-| `set`              | ordered set of primitives              |
+| `set`              | ordered set of primitives and lists    |
 | `vec`              | flat vector of primitives              |
 | `array`            | n-dimensional number array             |
 

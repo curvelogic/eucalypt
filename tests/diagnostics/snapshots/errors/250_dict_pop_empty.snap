@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/250_dict_pop_empty
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_pop_empty.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_pop_empty.eu:2:20
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: dict.pop-min of an empty dict
+  ┌─ tests/harness/errors/250_dict_pop_empty.eu:2:20
+  │
+2 │ result: dict.empty dict.pop-min
+  │                    ^^^^
+  │
+  = test the dict with 'dict.empty?(d)' first
+  = while evaluating (outermost first):
+    - result at 250_dict_pop_empty.eu:2:20

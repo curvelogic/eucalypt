@@ -211,6 +211,7 @@ pub struct DecodedProgram {
     pub apply1_template: CodeRef,
     pub apply2_template: CodeRef,
     pub producer_tail_template: CodeRef,
+    pub cell_template: CodeRef,
     /// PAP trampoline templates, as ordinals (same indexing as
     /// `BytecodeProgram::pap`).
     pub pap: Vec<CodeRef>,
@@ -615,6 +616,7 @@ pub fn decode_program(
     let apply1_template = d.ordinal_for(prog.apply1_template);
     let apply2_template = d.ordinal_for(prog.apply2_template);
     let producer_tail_template = d.ordinal_for(prog.producer_tail_template);
+    let cell_template = d.ordinal_for(prog.cell_template);
     let pap: Vec<CodeRef> = prog.pap.iter().map(|p| d.ordinal_for(*p)).collect();
 
     d.run()?;
@@ -639,6 +641,7 @@ pub fn decode_program(
         apply1_template,
         apply2_template,
         producer_tail_template,
+        cell_template,
         pap,
         global_entries,
         off_of: d.off_of,

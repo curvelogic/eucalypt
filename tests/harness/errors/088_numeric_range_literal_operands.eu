@@ -1,0 +1,2 @@
+` "Overflow adding two computed literals: the caret is on the failing +, not on the second operand's ^."
+x: (2^62) + (2^62)

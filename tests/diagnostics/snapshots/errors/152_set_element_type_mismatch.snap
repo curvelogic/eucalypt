@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error[EU-EVAL-TYPE]: type mismatch: expected set, found set
+error[EU-EVAL-TYPE]: a set cannot be a set element: set elements must be numbers, strings or symbols, or lists of them
   ┌─ tests/harness/errors/152_set_element_type_mismatch.eu:1:11
   │
 1 │ result: ∅ set.add([1, 2, 3] set.from-list)
@@ -35,20 +35,18 @@ code: EU-EVAL-TYPE
 primary: user tests/harness/errors/152_set_element_type_mismatch.eu:1:11
 help-lines: 0
 note-lines: 0
-secondary-labels: 1
+secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error[EU-EVAL-TYPE]: type mismatch: expected set, found set
+error[EU-EVAL-TYPE]: a set cannot be a set element: set elements must be numbers, strings or symbols, or lists of them
   ┌─ tests/harness/errors/152_set_element_type_mismatch.eu:1:11
   │
 1 │ result: ∅ set.add([1, 2, 3] set.from-list)
-  │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  │           │
-  │           called from here
+  │           ^^^
   │
   = while evaluating (outermost first):
     - result at 152_set_element_type_mismatch.eu:1:11

@@ -10,7 +10,10 @@ use crate::{
         machine::intrinsic::{
             CallGlobal0, CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic,
         },
-        memory::{mutator::MutatorHeapView, syntax::Ref},
+        memory::{
+            mutator::MutatorHeapView,
+            syntax::{Native, Ref},
+        },
     },
 };
 
@@ -233,7 +236,9 @@ impl CallGlobal1 for IsList {}
 
 /// ISNUMBER(value)
 ///
-/// Return true if the value is a number, false otherwise
+/// Return true if the value is a number, false otherwise. A number is
+/// either boxed (a literal) or a bare native (the result of arithmetic),
+/// so both representations count.
 pub struct IsNumber;
 
 impl StgIntrinsic for IsNumber {
@@ -249,10 +254,10 @@ impl StgIntrinsic for IsNumber {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let closure = machine.resolve_closure(view, &args[0])?;
-        let result = matches!(
-            machine.data_tag(view, &closure),
-            Some(tag) if tag == DataConstructor::BoxedNumber.tag()
-        );
+        let result = match machine.data_tag(view, &closure) {
+            Some(tag) => tag == DataConstructor::BoxedNumber.tag(),
+            None => matches!(machine.value_native(view, &closure), Some(Native::Num(_))),
+        };
         machine_return_bool(machine, view, result)
     }
 }
@@ -261,7 +266,10 @@ impl CallGlobal1 for IsNumber {}
 
 /// ISSTRING(value)
 ///
-/// Return true if the value is a string, false otherwise
+/// Return true if the value is a string, false otherwise. Strings are
+/// normally boxed by their intrinsic's wrapper; the bare `Native::Str`
+/// form is accepted too, for any intrinsic that returns through
+/// `machine_return_str` without a boxing wrapper.
 pub struct IsString;
 
 impl StgIntrinsic for IsString {
@@ -277,10 +285,10 @@ impl StgIntrinsic for IsString {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let closure = machine.resolve_closure(view, &args[0])?;
-        let result = matches!(
-            machine.data_tag(view, &closure),
-            Some(tag) if tag == DataConstructor::BoxedString.tag()
-        );
+        let result = match machine.data_tag(view, &closure) {
+            Some(tag) => tag == DataConstructor::BoxedString.tag(),
+            None => matches!(machine.value_native(view, &closure), Some(Native::Str(_))),
+        };
         machine_return_bool(machine, view, result)
     }
 }
@@ -289,7 +297,8 @@ impl CallGlobal1 for IsString {}
 
 /// ISSYMBOL(value)
 ///
-/// Return true if the value is a symbol, false otherwise
+/// Return true if the value is a symbol, false otherwise. Boxed and
+/// bare native symbols both count.
 pub struct IsSymbol;
 
 impl StgIntrinsic for IsSymbol {
@@ -305,10 +314,10 @@ impl StgIntrinsic for IsSymbol {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let closure = machine.resolve_closure(view, &args[0])?;
-        let result = matches!(
-            machine.data_tag(view, &closure),
-            Some(tag) if tag == DataConstructor::BoxedSymbol.tag()
-        );
+        let result = match machine.data_tag(view, &closure) {
+            Some(tag) => tag == DataConstructor::BoxedSymbol.tag(),
+            None => matches!(machine.value_native(view, &closure), Some(Native::Sym(_))),
+        };
         machine_return_bool(machine, view, result)
     }
 }
@@ -375,7 +384,8 @@ impl CallGlobal1 for IsTypeData {}
 
 /// ISZDT(value)
 ///
-/// Return true if the value is a zoned datetime, false otherwise
+/// Return true if the value is a zoned datetime, false otherwise. Boxed
+/// and bare native datetimes both count.
 pub struct IsZdt;
 
 impl StgIntrinsic for IsZdt {
@@ -391,10 +401,10 @@ impl StgIntrinsic for IsZdt {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let closure = machine.resolve_closure(view, &args[0])?;
-        let result = matches!(
-            machine.data_tag(view, &closure),
-            Some(tag) if tag == DataConstructor::BoxedZdt.tag()
-        );
+        let result = match machine.data_tag(view, &closure) {
+            Some(tag) => tag == DataConstructor::BoxedZdt.tag(),
+            None => matches!(machine.value_native(view, &closure), Some(Native::Zdt(_))),
+        };
         machine_return_bool(machine, view, result)
     }
 }
@@ -569,3 +579,110 @@ impl StgIntrinsic for ListDrop {
 }
 
 impl CallGlobal2 for ListDrop {}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::eval::stg::{
+        boolean::{False, True},
+        runtime::Runtime,
+        syntax::{dsl::*, StgSyn},
+        testing,
+    };
+    use chrono::{FixedOffset, TimeZone};
+    use std::rc::Rc;
+
+    fn runtime() -> Box<dyn Runtime> {
+        testing::runtime(vec![
+            Box::new(IsNumber),
+            Box::new(IsString),
+            Box::new(IsSymbol),
+            Box::new(IsZdt),
+            Box::new(True),
+            Box::new(False),
+        ])
+    }
+
+    fn eval_bool(syntax: Rc<StgSyn>) -> Option<bool> {
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        m.bool_return()
+    }
+
+    /// Apply a predicate to a boxed value bound in a `let`.
+    fn boxed(
+        pred: impl Fn(crate::eval::stg::syntax::Ref) -> Rc<StgSyn>,
+        value_form: Rc<StgSyn>,
+    ) -> Rc<StgSyn> {
+        let_(vec![value(value_form)], pred(lref(0)))
+    }
+
+    fn a_datetime() -> chrono::DateTime<FixedOffset> {
+        FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(2024, 3, 15, 0, 0, 0)
+            .unwrap()
+    }
+
+    // eu-oaz72.93: each scalar type predicate recognises both the boxed
+    // form and the bare native form of its type.
+
+    #[test]
+    fn is_number_recognises_boxed_and_bare_numbers() {
+        assert_eq!(
+            eval_bool(boxed(|r| IsNumber.global(r), box_num(1))),
+            Some(true)
+        );
+        assert_eq!(eval_bool(IsNumber.global(num(1))), Some(true));
+        assert_eq!(eval_bool(IsNumber.global(str("1"))), Some(false));
+        assert_eq!(
+            eval_bool(boxed(|r| IsNumber.global(r), box_str("1"))),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn is_string_recognises_boxed_and_bare_strings() {
+        assert_eq!(
+            eval_bool(boxed(|r| IsString.global(r), box_str("a"))),
+            Some(true)
+        );
+        assert_eq!(eval_bool(IsString.global(str("a"))), Some(true));
+        assert_eq!(eval_bool(IsString.global(sym("a"))), Some(false));
+        assert_eq!(eval_bool(IsString.global(num(1))), Some(false));
+        assert_eq!(
+            eval_bool(boxed(|r| IsString.global(r), box_sym("a"))),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn is_symbol_recognises_boxed_and_bare_symbols() {
+        assert_eq!(
+            eval_bool(boxed(|r| IsSymbol.global(r), box_sym("a"))),
+            Some(true)
+        );
+        assert_eq!(eval_bool(IsSymbol.global(sym("a"))), Some(true));
+        assert_eq!(eval_bool(IsSymbol.global(str("a"))), Some(false));
+        assert_eq!(
+            eval_bool(boxed(|r| IsSymbol.global(r), box_str("a"))),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn is_zdt_recognises_boxed_and_bare_datetimes() {
+        assert_eq!(
+            eval_bool(boxed(|r| IsZdt.global(r), box_zdt(a_datetime()))),
+            Some(true)
+        );
+        assert_eq!(eval_bool(IsZdt.global(zdt(a_datetime()))), Some(true));
+        assert_eq!(eval_bool(IsZdt.global(str("a"))), Some(false));
+        assert_eq!(eval_bool(IsZdt.global(num(1))), Some(false));
+        assert_eq!(
+            eval_bool(boxed(|r| IsZdt.global(r), box_str("a"))),
+            Some(false)
+        );
+    }
+}

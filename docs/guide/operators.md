@@ -153,6 +153,43 @@ Precedence can be specified as:
 Associativity can be `:left`, `:right`, or omitted (defaults to
 `:left`).
 
+## Integer Overflow
+
+Integers are signed 64-bit. When `+`, `-`, `*` or `^` on two such integers
+gives a result outside that range, evaluation stops with a `numeric overflow` error
+pointing at the operator, rather than losing precision:
+
+```eu,notest
+a: 2 ^ 62    # 4611686018427387904, an integer
+b: 2.0 ^ 63  # a float, as an operand is a float
+c: 2 ^ 63    # error: numeric overflow
+```
+
+An integer raised to a negative integer power, such as `2 ^ (0 - 1)`, is
+a float (`0.5`).
+
+### Modular arithmetic
+
+`mulmod(a, b, m)`, `powmod(b, e, m)` and `modinv(a, m)` work modulo `m`
+without overflowing: they compute in 128 bits internally, so they are
+exact for any 64-bit signed operands and moduli, where `a * b % m` would stop
+with `numeric overflow` once `a * b` passes 2^63. Each returns the
+residue in `[0, m)`, so negative operands are normalised:
+
+```eu
+big: mulmod(9223372036854775807, 9223372036854775806, 9223372036854775783)  # 552
+pow: powmod(3, 1000000000000, 1000000007)                                   # 570188345
+inv: modinv(3, 7)                                                           # 5, as 3 * 5 = 15 = 1 (mod 7)
+neg: mulmod(-1, 1, 7)                                                       # 6
+```
+
+The modulus must be at least 1 and the operands whole numbers: a float
+such as `7.0` is read as `7`, and a fractional operand such as `2.5` is
+an error; `powmod` takes
+a non-negative exponent (for `b^-k`, use `powmod(modinv(b, m), k, m)`),
+and `modinv(a, m)` is an error when `a` and `m` share a factor, as
+`modinv(6, 9)` does.
+
 ## The Assertion Operators
 
 Two special operators are provided for testing:

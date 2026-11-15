@@ -35,9 +35,11 @@ pub fn language() -> Language {
 /// [`node-types.json`]: https://tree-sitter.github.io/tree-sitter/using-parsers#static-node-types
 pub const NODE_TYPES: &str = include_str!("../../src/node-types.json");
 
-// Uncomment these to include any queries that this grammar contains
+/// The syntax highlighting query for this grammar (`queries/highlights.scm`),
+/// for use with `tree-sitter-highlight`.
+pub const HIGHLIGHTS_QUERY: &str = include_str!("../../queries/highlights.scm");
 
-// pub const HIGHLIGHTS_QUERY: &str = include_str!("../../queries/highlights.scm");
+// The grammar has no injections, locals or tags queries yet.
 // pub const INJECTIONS_QUERY: &str = include_str!("../../queries/injections.scm");
 // pub const LOCALS_QUERY: &str = include_str!("../../queries/locals.scm");
 // pub const TAGS_QUERY: &str = include_str!("../../queries/tags.scm");
@@ -50,5 +52,11 @@ mod tests {
         parser
             .set_language(&super::language())
             .expect("Error loading Eucalypt grammar");
+    }
+
+    #[test]
+    fn test_highlights_query_compiles() {
+        tree_sitter::Query::new(&super::language(), super::HIGHLIGHTS_QUERY)
+            .expect("highlights.scm does not compile against the grammar");
     }
 }

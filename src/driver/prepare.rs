@@ -94,14 +94,14 @@ pub fn prepare(
             if can_continue {
                 // Report ALL errors — we're not returning one to the caller.
                 for e in &parse_errors {
-                    let diag = e.to_diagnostic(loader.source_map());
+                    let diag = e.to_diagnostic_with_source(loader.source_map(), loader.files());
                     loader.diagnose_to_stderr(&diag);
                 }
             } else {
                 // Report errors beyond the first — error[0] will be printed
                 // by the caller when it handles the returned Err.
                 for e in parse_errors.iter().skip(1) {
-                    let diag = e.to_diagnostic(loader.source_map());
+                    let diag = e.to_diagnostic_with_source(loader.source_map(), loader.files());
                     loader.diagnose_to_stderr(&diag);
                 }
                 return Err(parse_errors.into_iter().next().unwrap());
@@ -302,11 +302,12 @@ pub fn prepare(
     }
 
     // Check for assignment-style declarations (e.g. `result = 42`) before injecting
-    // the blob's inline cores.  The final verify pass normally catches this pattern
-    // by looking for `App(Var::Free("="), [Var::Free(name), ...])`, but after
-    // injection the `=` combinator is distributed and replaced, so the pattern
-    // becomes invisible.  Running verify here, while `=` is still a free variable,
-    // preserves the helpful diagnostic.
+    // the blob's inline cores.  The verifier looks for `App(=, [Var::Free(name),
+    // ...])` with `=` either free (blob path) or bound to the prelude's `=`
+    // (source path), and treats a blob prelude global as defined, so both
+    // prelude modes agree (eu-oaz72.134).  After injection the `=` combinator
+    // is distributed and replaced, so on the blob path the pattern is only
+    // visible here; the final verify below still catches it on the source path.
     {
         let errors = loader.verify()?;
         if !errors.is_empty() {
@@ -518,7 +519,7 @@ fn dump_core(expr: RcExpr, opt: &EucalyptOptions) -> io::Result<()> {
 /// stopping at the first one.
 fn diagnose_additional(loader: &SourceLoader, errors: &[EucalyptError]) {
     for e in errors.iter().skip(1) {
-        let diag = e.to_diagnostic(loader.source_map());
+        let diag = e.to_diagnostic_with_source(loader.source_map(), loader.files());
         loader.diagnose_to_stderr(&diag);
     }
 }

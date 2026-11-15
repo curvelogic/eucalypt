@@ -1,0 +1,2 @@
+exit: 1
+stderr: "'5' follows another expression with no operator between them"

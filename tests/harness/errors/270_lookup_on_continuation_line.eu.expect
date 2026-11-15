@@ -1,0 +1,2 @@
+exit: 1
+stderr: "performs key lookup on blocks, not lists"

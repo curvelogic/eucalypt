@@ -1,0 +1,114 @@
+{
+  "about": "Accepted disagreements for scripts/check-highlighting-consistency.js. A rule matches a disagreement when every field matches: highlighter (textmate, tree-sitter or *), kind (mismatch or missing), rowan and other (coarse classes, other joined with + when several, or *), text (an optional regular expression the whole token text must match) and files (optional globs, relative to the repository root). Every rule carries a reason and a reference: a group of docs/superpowers/reports/2026-11-13-textmate-vs-rowan-highlighting.md ('report group N'), a rowan defect filed as eu-oaz72.115, or a follow-up.",
+  "rules": [
+    {
+      "highlighter": "tree-sitter",
+      "kind": "mismatch",
+      "rowan": "name",
+      "other": "none",
+      "reason": "highlights.scm leaves plain name references uncaptured, in the editor's default face; rowan gives every reference a variable/function/property token",
+      "ref": "design: tree-sitter references"
+    },
+    {
+      "highlighter": "*",
+      "kind": "mismatch",
+      "rowan": "parameter",
+      "other": "declaration",
+      "reason": "rowan marks declarations in a block passed as a call argument (merge({ a: 1 }), point-x{x: 3 y: 4}, io.return({ RESULT: :PASS })) as parameters",
+      "ref": "eu-oaz72.115 (report group 5)"
+    },
+    {
+      "highlighter": "*",
+      "kind": "mismatch",
+      "rowan": "declaration",
+      "other": "parameter",
+      "reason": "rowan marks the operands of operator and bracket declarations ((l +++ r):, (¬¬ x):, ⟦ xs ⟧:) as property declarations, not parameters",
+      "ref": "eu-oaz72.115 (report group 5)"
+    },
+    {
+      "highlighter": "*",
+      "kind": "mismatch",
+      "rowan": "metadata",
+      "other": "parameter",
+      "reason": "rowan marks block-destructuring parameters (f{x y}:, f({x y}):) as metadata: the leading soup of a block is read as block metadata",
+      "ref": "eu-oaz72.115 (report group 5)"
+    },
+    {
+      "highlighter": "*",
+      "kind": "missing",
+      "rowan": "none",
+      "other": "string",
+      "text": "s?\"[^\"]*\"",
+      "reason": "rowan gives s\"...\" type-data literals no semantic token",
+      "ref": "eu-oaz72.115 (report group 5)"
+    },
+    {
+      "highlighter": "*",
+      "kind": "mismatch",
+      "rowan": "metadata",
+      "other": "name",
+      "reason": "rowan marks every identifier in a metadata expression as metadata, values included (` { requires-io: true }, { monad: id })",
+      "ref": "report group 6"
+    },
+    {
+      "highlighter": "tree-sitter",
+      "kind": "mismatch",
+      "rowan": "metadata",
+      "other": "none",
+      "reason": "rowan marks every identifier in a metadata expression as metadata, values included (` { requires-io: true }, { monad: id }); tree-sitter leaves those references uncaptured",
+      "ref": "report group 6"
+    },
+    {
+      "highlighter": "tree-sitter",
+      "kind": "mismatch",
+      "rowan": "metadata",
+      "other": "declaration",
+      "reason": "rowan marks every identifier in a metadata expression as metadata; tree-sitter marks only the top-level keys of a metadata block as metadata, so keys of nested blocks ({ types: { Json: ... } }) are declarations",
+      "ref": "report group 6"
+    },
+    {
+      "highlighter": "textmate",
+      "kind": "mismatch",
+      "rowan": "metadata",
+      "other": "declaration",
+      "reason": "TextMate cannot recognise a unit's leading metadata block ({ import: ... }) or a block's leading metadata ({ :monad namespace: id }), so their keys are declarations",
+      "ref": "report group 6"
+    },
+    {
+      "highlighter": "textmate",
+      "kind": "mismatch",
+      "rowan": "operator",
+      "other": "metadata",
+      "text": "//|//<<",
+      "reason": "TextMate scopes the metadata operators // and //<< as keyword.operator.metadata; rowan marks them as operators",
+      "ref": "design: TextMate metadata operators"
+    },
+    {
+      "highlighter": "tree-sitter",
+      "kind": "mismatch",
+      "rowan": "operator",
+      "other": "punctuation",
+      "text": "[⟦⟧⟨⟩⟪⟫⌈⌉⌊⌋«»‹›]",
+      "reason": "bracket-pair delimiters are anonymous regex tokens in the grammar, so highlights.scm can only capture the whole bracket_expr (@punctuation.special); rowan marks the delimiters as operators",
+      "ref": "follow-up: name the bracket delimiters in grammar.js"
+    },
+    {
+      "highlighter": "tree-sitter",
+      "kind": "mismatch",
+      "rowan": "name",
+      "other": "punctuation",
+      "text": "[\\p{L}_•$?][\\p{L}\\p{N}_$?!*\\-]*",
+      "reason": "uncaptured names inside a bracket expression (⟦ xs ⟧:, ‹element(...) _value›) inherit the whole bracket_expr's @punctuation.special",
+      "ref": "follow-up: name the bracket delimiters in grammar.js"
+    },
+    {
+      "highlighter": "tree-sitter",
+      "kind": "mismatch",
+      "rowan": "declaration",
+      "other": "punctuation",
+      "text": "[\\p{L}_•$?][\\p{L}\\p{N}_$?!*\\-]*",
+      "reason": "uncaptured names inside a bracket expression (⟦ xs ⟧:, ‹element(...) _value›) inherit the whole bracket_expr's @punctuation.special",
+      "ref": "follow-up: name the bracket delimiters in grammar.js"
+    }
+  ]
+}

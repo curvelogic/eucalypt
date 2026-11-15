@@ -1,0 +1,2 @@
+` "2^63 as a float is one past the 64-bit signed range, so it is not a bitwise operand (it used to round down to 2^63 - 1)"
+x: 9223372036854775808.0 & 1

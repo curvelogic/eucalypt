@@ -75,6 +75,7 @@ fn namespace_to_category(ns: &str) -> &'static str {
         "ch" => "strings",
         "cal" => "calendar",
         "set" => "sets",
+        "dict" => "dicts",
         "assertions" => "metadata",
         "random" => "random",
         _ => "io",
@@ -635,6 +636,13 @@ fn category_sections(category: &str) -> Option<(&'static str, Vec<SectionConfig<
                 source: SectionSource::All,
             }],
         ),
+        "dicts" => (
+            "Dicts",
+            vec![SectionConfig {
+                display: "Dict Operations",
+                source: SectionSource::All,
+            }],
+        ),
         "random" => (
             "Random Numbers",
             vec![SectionConfig {
@@ -827,6 +835,7 @@ fn generate_index_page(
         ),
         ("calendar", "Calendar", "date and time functions"),
         ("sets", "Sets", "set operations"),
+        ("dicts", "Dicts", "persistent ordered dictionaries"),
         (
             "random",
             "Random Numbers",
@@ -902,6 +911,7 @@ const CATEGORY_ORDER: &[&str] = &[
     "combinators",
     "calendar",
     "sets",
+    "dicts",
     "random",
     "metadata",
     "io",

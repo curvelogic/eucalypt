@@ -1,0 +1,4 @@
+xs: [1]
+
+` "`foo -> 1` is the const operator used correctly on a misspelt name: no arrow-function hint (eu-oaz72.28)"
+r: xs foo -> 1

@@ -18,7 +18,7 @@ with required nodes removed.
 Notable eucalypt techniques:
 - `sym` for dynamic symbol creation as block keys
 - `block` to build lookup tables from `[key, value]` pairs (linear-time lookup)
-- `set.add` / `set.contains?` for visited tracking (membership O(log n); `set.add` copies the set, O(n))
+- `set.add` / `set.contains?` for visited tracking (O(log n) add and membership)
 - `merge` for incremental block table construction
 - `filter-items(by-key(...))` and `map-values` for graph manipulation
 - inclusion-exclusion as four independent dynamic programming computations
@@ -49,7 +49,7 @@ remove-node(x, g):
 
 ` "DFS from node. Skips already-visited nodes. Prepends node to
 order AFTER all descendants, giving forward topological order.
-State threaded as [order_list, visited_set] using a set for O(log n) membership (but O(n) `set.add`).
+State threaded as [order_list, visited_set] using a set for O(log n) membership.
 Parameters ordered so partial application dfs-topo(g) matches foldl(acc, elem).
 NB: graph.topo-sort works on numeric adjacency lists; converting to/from
 string-keyed blocks is slower than processing directly."

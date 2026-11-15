@@ -12,8 +12,8 @@ primary: user tests/harness/errors/149_not_value_source_loc.eu:4:9
 help-lines: 1
 note-lines: 0
 secondary-labels: 0
-trace-frames: 1
-trace-user-frames: 1
+trace-frames: 0
+trace-user-frames: 0
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -24,6 +24,3 @@ error: expected a primitive value but found a let binding
   │
 4 │ result: str.of(f)
   │         ^^^^^^^^^
-  │
-  = while evaluating (outermost first):
-    - # Error: passing a function where a primitive value is expected — source location… at 149_not_value_source_loc.eu:1:1

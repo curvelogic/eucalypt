@@ -10,7 +10,7 @@ warnings: 1
 code: EU-EVAL-TYPE
 primary: user tests/harness/errors/228_type_warning_argument_span.eu:15:9
 help-lines: 0
-note-lines: 2
+note-lines: 1
 secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
@@ -33,6 +33,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "8"
    │                   expected number, found "8"
    │
    = to convert a string to a number, use 'num', e.g. 's num'
-   = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
    = while evaluating (outermost first):
      - result at 228_type_warning_argument_span.eu:15:9

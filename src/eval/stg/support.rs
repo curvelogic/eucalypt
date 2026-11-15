@@ -65,6 +65,7 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::NdArray(_) => IntrinsicType::Array,
         Native::Vec(_) => IntrinsicType::Vec,
         Native::Set(_) => IntrinsicType::Set,
+        Native::Dict(_) => IntrinsicType::Dict,
         Native::Prng(_) | Native::Producer(_) => IntrinsicType::Unknown,
     }
 }
@@ -113,15 +114,17 @@ pub fn num_arg(
             // (as this used to) mislabelled every function value as a block
             // and triggered the misdirecting 'did you mean block.field?'
             // hint for a value that was never a block (eu-1tkk.7.9).
-            if machine
-                .resolve_closure(view, arg)
-                .map(|c| c.arity() > 0)
-                .unwrap_or(false)
-            {
-                return Err(ExecutionError::UnexpectedFunction(
-                    machine.annotation(),
-                    "number",
-                ));
+            if let Ok(c) = machine.resolve_closure(view, arg) {
+                if c.arity() > 0 {
+                    // Carry the operand's own annotation (eu-oaz72.121): it
+                    // points at the under-applied call the user must fix,
+                    // not at the operator it was handed to.
+                    return Err(ExecutionError::UnexpectedFunction(
+                        machine.annotation(),
+                        "number",
+                        c.annotation(),
+                    ));
+                }
             }
             // Otherwise it is a genuine Cons (block/list). Inspect the tag
             // so the error message includes useful context.
@@ -425,8 +428,19 @@ pub fn resolve_native_unboxing(
     // closure and, if it is a boxed scalar, read its inner native via the
     // neutral ABI (`value_native` unboxes a boxed Cons's field 0).
     let closure = machine.resolve_closure(view, arg)?;
+    closure_native_unboxing(machine, view, &closure)
+}
+
+/// Read the native value of an already-resolved value handle (a list
+/// element, say), looking through boxed scalar constructors. Raises the
+/// same errors as [`resolve_native_unboxing`] for anything else.
+pub fn closure_native_unboxing(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    closure: &AbiClosure,
+) -> Result<Native, ExecutionError> {
     let dc: Option<DataConstructor> = machine
-        .data_tag(view, &closure)
+        .data_tag(view, closure)
         .and_then(|tag| tag.try_into().ok());
     match dc {
         Some(
@@ -436,7 +450,7 @@ pub fn resolve_native_unboxing(
             | DataConstructor::BoxedZdt
             | DataConstructor::BoxedTypeData,
         ) => machine
-            .value_native(view, &closure)
+            .value_native(view, closure)
             .ok_or_else(|| ExecutionError::Panic(Smid::default(), "empty boxed value".to_string())),
         Some(_) => Err(ExecutionError::NotValue(
             machine.annotation(),
@@ -467,27 +481,106 @@ pub fn list_value(
     Ok(acc)
 }
 
-/// Convert a Native value to a set/vec Primitive.
+/// The article-prefixed name of an intrinsic type, for element errors
+/// ("a list", "an array").
+fn with_article(ty: &IntrinsicType) -> String {
+    let name = ty.to_string();
+    match name.chars().next() {
+        Some('a' | 'e' | 'i' | 'o' | 'u') => format!("an {name}"),
+        _ => format!("a {name}"),
+    }
+}
+
+/// The error for a value that cannot be an element of `collection`
+/// (`IntrinsicType::Set` or `IntrinsicType::Vec`), located at `smid`.
+fn invalid_element(smid: Smid, collection: &IntrinsicType, found: String) -> ExecutionError {
+    ExecutionError::InvalidElement(smid, Box::new((collection.clone(), found)))
+}
+
+/// Convert a native value to a set/vec element.
 ///
-/// A string element shares the argument's `HeapString` (no copy).
-pub fn native_to_set_primitive(
+/// Numbers, strings and symbols are elements; anything else raises
+/// [`ExecutionError::InvalidElement`] for `collection` at `smid`. A
+/// string element shares the argument's `HeapString` (no copy).
+pub fn native_to_element(
     smid: Smid,
     native: &Native,
+    collection: &IntrinsicType,
 ) -> Result<crate::eval::memory::set::Primitive, ExecutionError> {
     use crate::eval::memory::set::Primitive as SetPrim;
     match native {
         Native::Num(n) => Ok(SetPrim::from_number(n)),
         Native::Str(s) => Ok(SetPrim::Str(*s)),
         Native::Sym(id) => Ok(SetPrim::Sym(*id)),
-        _ => Err(ExecutionError::TypeMismatch(
+        Native::Prng(_) => Err(invalid_element(
             smid,
-            Box::new((
-                crate::eval::types::IntrinsicType::Set,
-                native_type(native),
-                None,
-            )),
+            collection,
+            "a random number stream".to_string(),
+        )),
+        Native::Producer(_) => Err(invalid_element(smid, collection, "a stream".to_string())),
+        _ => Err(invalid_element(
+            smid,
+            collection,
+            with_article(&native_type(native)),
         )),
     }
+}
+
+/// Convert an evaluated value handle (a list element, say) to a set/vec
+/// element, looking through boxed scalars.
+///
+/// Anything but a number, string or symbol raises
+/// [`ExecutionError::InvalidElement`] for `collection`, located at the
+/// intrinsic's call site and naming what the element was.
+pub fn closure_to_element(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    item: &AbiClosure,
+    collection: &IntrinsicType,
+) -> Result<crate::eval::memory::set::Primitive, ExecutionError> {
+    let smid = machine.annotation();
+    if let Some(native) = machine.value_native(view, item) {
+        return native_to_element(smid, &native, collection);
+    }
+    let dc: Option<DataConstructor> = machine
+        .data_tag(view, item)
+        .and_then(|tag| tag.try_into().ok());
+    let found = match dc {
+        Some(
+            DataConstructor::BoxedNumber
+            | DataConstructor::BoxedString
+            | DataConstructor::BoxedSymbol
+            | DataConstructor::BoxedTypeData,
+        ) => {
+            let native = closure_native_unboxing(machine, view, item)?;
+            return native_to_element(smid, &native, collection);
+        }
+        // Forced only to its box, a datetime's inner value may still be a
+        // thunk; it is never an element either way.
+        Some(DataConstructor::BoxedZdt) => with_article(&IntrinsicType::ZonedDateTime),
+        Some(DataConstructor::ListNil | DataConstructor::ListCons) => "a list".to_string(),
+        Some(DataConstructor::Block) => "a block".to_string(),
+        Some(DataConstructor::BoolTrue | DataConstructor::BoolFalse) => "a boolean".to_string(),
+        Some(DataConstructor::Unit) => "null".to_string(),
+        Some(_) => "a structured value".to_string(),
+        // No data tag: an unsaturated lambda or partial application.
+        None => "a function".to_string(),
+    };
+    Err(invalid_element(smid, collection, found))
+}
+
+/// [`closure_to_element`] for an intrinsic argument.
+pub fn arg_to_element(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+    collection: &IntrinsicType,
+) -> Result<crate::eval::memory::set::Primitive, ExecutionError> {
+    if let Ok(native) = machine.resolve_native(view, arg) {
+        return native_to_element(machine.annotation(), &native, collection);
+    }
+    let closure = machine.resolve_closure(view, arg)?;
+    closure_to_element(machine, view, &closure, collection)
 }
 
 /// Convert a set/vec Primitive back to a Native value
@@ -495,9 +588,7 @@ pub fn set_primitive_to_native(prim: &crate::eval::memory::set::Primitive) -> Na
     use crate::eval::memory::set::Primitive as SetPrim;
     match prim {
         SetPrim::Num(n) => {
-            let num = serde_json::Number::from_f64(n.into_inner())
-                .unwrap_or_else(|| serde_json::Number::from(0));
-            Native::Num(num)
+            Native::Num(n.to_number().unwrap_or_else(|| serde_json::Number::from(0)))
         }
         SetPrim::Str(s) => Native::Str(*s),
         SetPrim::Sym(id) => Native::Sym(*id),
@@ -525,15 +616,68 @@ pub fn set_arg<'guard>(
     }
 }
 
-/// Return a set from intrinsic, copying `sorted` (already sorted and
-/// deduplicated) into the heap.
+/// Helper for intrinsics to access a dict arg: the root of its tree.
+pub fn dict_arg(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+) -> Result<crate::eval::memory::dict::Tree, ExecutionError> {
+    let closure = machine.resolve_closure(view, arg)?;
+    let tag: Option<DataConstructor> = machine
+        .data_tag(view, &closure)
+        .and_then(|tag| tag.try_into().ok());
+    let boxed = matches!(
+        tag,
+        None | Some(
+            DataConstructor::BoxedNumber
+                | DataConstructor::BoxedString
+                | DataConstructor::BoxedSymbol
+                | DataConstructor::BoxedZdt
+        )
+    );
+    let native = if boxed {
+        machine.value_native(view, &closure)
+    } else {
+        None
+    };
+    let Some(native) = native else {
+        // A structured value (block, list, boolean, ...): not a dict.
+        let found = match tag {
+            Some(DataConstructor::Block) => IntrinsicType::Record(Default::default()),
+            Some(DataConstructor::ListCons | DataConstructor::ListNil) => {
+                IntrinsicType::List(Box::new(IntrinsicType::Any))
+            }
+            Some(DataConstructor::BoolTrue | DataConstructor::BoolFalse) => IntrinsicType::Bool,
+            Some(DataConstructor::Unit) => IntrinsicType::Unit,
+            _ => IntrinsicType::Unknown,
+        };
+        return Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            Box::new((IntrinsicType::Dict, found, None)),
+        ));
+    };
+    if let Native::Dict(root) = native {
+        Ok(root)
+    } else {
+        Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            Box::new((
+                IntrinsicType::Dict,
+                native_type(&native),
+                describe_native(&native, machine, view),
+            )),
+        ))
+    }
+}
+
+/// Return a set over the element tree `root` (a fresh header, so set
+/// `=`, which compares by identity, sees a new set).
 pub fn machine_return_set(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    sorted: &[crate::eval::memory::set::Primitive],
+    root: crate::eval::memory::dict::Tree,
 ) -> Result<(), ExecutionError> {
-    let set = HeapSet::from_sorted(&view, sorted)?;
-    let ptr = view.alloc(set)?.as_ptr();
+    let ptr = view.alloc(HeapSet::new(root))?.as_ptr();
     machine.return_native(view, Native::Set(ptr))
 }
 
@@ -818,6 +962,10 @@ pub mod call {
 
         pub fn join(list: Ref, sep: Ref) -> Rc<StgSyn> {
             call_bif("JOIN", &[list, sep])
+        }
+
+        pub fn from_code_points(list: Ref) -> Rc<StgSyn> {
+            call_bif("FROM_CODE_POINTS", &[list])
         }
 
         pub fn contract_fail(headline: Ref, violations: Ref) -> Rc<StgSyn> {

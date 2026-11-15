@@ -1,0 +1,4 @@
+xs: [1, 2]
+
+` "`map(x -> y + 1)` writes `->` as lambda syntax inside a call argument: the arrow-function note is shown, although `x` is not used after the arrow (eu-oaz72.28)"
+r: xs map(x -> y + 1)

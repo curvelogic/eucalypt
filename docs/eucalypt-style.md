@@ -90,7 +90,7 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 ## Recursion
 
 - Prefer folds, scans, or specific prelude algorithms over explicit recursion where possible.
-- Mind cost when choosing a data structure: lists index in O(n), blocks look up linearly, and `set.add` copies the set. See the *Cost* notes in the [lists](reference/prelude/lists.md), [blocks](reference/prelude/blocks.md) and [sets](reference/prelude/sets.md) references.
+- Mind cost when choosing a data structure: lists index in O(n) and blocks look up linearly (use a `dict` or a set for large keyed tables or membership). See the *Cost* notes in the [lists](reference/prelude/lists.md) and [blocks](reference/prelude/blocks.md) references.
 
 ## Documentation
 
@@ -192,14 +192,14 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 
 ## Sets for membership
 
-- Use sets (`set.from-list`) for repeated membership testing of primitives (numbers, strings, symbols — **not** lists or blocks; encode coordinates as a single number, e.g. `x * 100000 + y`), not `any(= x)` over a list. Faster and reads better with `∈`:
+- Use sets (`set.of`) for repeated membership testing, not `any(= x)` over a list. Faster and reads better with `∈`:
   ```eu,notest
   # Before
   allowed: [:a, :b, :c]
   allowed any(= v)
 
   # After
-  allowed: set.from-list[:a, :b, :c]
+  allowed: set.of[:a, :b, :c]
   v ∈ allowed            # as expression
   v when(∈ allowed, f)   # section as predicate
   ```

@@ -1,0 +1,2 @@
+` "A non-integer count to `set.sample` is an error (eu-oaz72.58)."
+x: set.sample(1.5, set.of([1, 2, 3]), random.stream(42)).value

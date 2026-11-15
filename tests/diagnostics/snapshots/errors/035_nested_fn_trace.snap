@@ -24,7 +24,7 @@ error[EU-EVAL-TYPE]: type mismatch: expected string, found number
 2 │ middle(x): inner(x)
   │            ^^^^^^^^
   │
-  = to convert a number to a string, use 'str' or string interpolation
+  = to convert a number to a string, use 'str.of' or string interpolation
   = while evaluating (outermost first):
     - outer at 035_nested_fn_trace.eu:3:8
 
@@ -49,6 +49,6 @@ error[EU-EVAL-TYPE]: type mismatch: expected string, found number
 1 │ inner(x): str.letters(x)
   │           ^^^
   │
-  = to convert a number to a string, use 'str' or string interpolation
+  = to convert a number to a string, use 'str.of' or string interpolation
   = while evaluating (outermost first):
     - outer at 035_nested_fn_trace.eu:3:8

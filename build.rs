@@ -25,7 +25,7 @@ mod wire_format {
 use std::path::Path;
 use wire_format::{
     blob_source_hash, classify_blob, BlobFreshness, BLOB_PATH, BUILD_RERUN_PATHS,
-    INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH,
+    DEMAND_ANALYSIS_PATHS, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH,
 };
 
 fn main() {
@@ -59,7 +59,16 @@ fn verify_prelude_blob() {
         return;
     };
 
-    let expected = blob_source_hash(&prelude_source, &intrinsic_table);
+    let Ok(demand_analysis) = DEMAND_ANALYSIS_PATHS
+        .iter()
+        .map(|p| std::fs::read(Path::new(p)))
+        .collect::<Result<Vec<_>, _>>()
+    else {
+        println!("cargo:rustc-cfg=prelude_blob_stale");
+        return;
+    };
+
+    let expected = blob_source_hash(&prelude_source, &intrinsic_table, &demand_analysis);
     let blob = std::fs::read(Path::new(BLOB_PATH)).ok();
 
     let freshness = classify_blob(blob.as_deref(), &expected);

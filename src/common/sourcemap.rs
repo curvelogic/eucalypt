@@ -243,6 +243,58 @@ pub struct SourceMap {
     /// through `source` like any other) and until the first diagnostic on
     /// the blob path, where the prelude source is not otherwise loaded.
     prelude_file: Option<usize>,
+    /// Infix-operator applications that cook made the *function* operand of
+    /// a catenation, keyed by the operator's own span (eu-oaz72.29).
+    ///
+    /// `c nth(i) = 2` cooks to `(nth(i) = 2)(c)`: `=` binds tighter than
+    /// catenation, so the whole operator expression became the pipeline
+    /// step. Only an operator expression written without parentheses in
+    /// the source is recorded. A runtime error raised at one of these spans
+    /// because a function was called or received there states the parse.
+    catenation_operands: HashMap<(usize, Span), CatenationOperand>,
+    /// The token `Smid`s of expression anaphors that cook found alone in
+    /// their own scope (`_` in `nth(_)`), so that the lambda cook wrapped
+    /// round each is the identity function (eu-oaz72.132).
+    lone_anaphors: std::collections::HashSet<Smid>,
+    /// Juxtaposed calls with an argument that is a lone anaphor, keyed by
+    /// the call's own span (eu-oaz72.132).
+    lone_anaphor_calls: HashMap<(usize, Span), LoneAnaphorCall>,
+}
+
+/// A juxtaposed call `f(...)` with at least one argument that is a lone
+/// expression anaphor, which cook made the identity function
+/// (eu-oaz72.132): `nth(_)` passes `nth` the identity function.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LoneAnaphorCall {
+    /// The whole call, callee and argument tuple: `nth(_)`.
+    pub call: Smid,
+    /// The number of arguments in the tuple.
+    pub arity: usize,
+    /// Each lone-anaphor argument: its zero-based position and the
+    /// anaphor token's `Smid`.
+    pub anaphors: Vec<(usize, Smid)>,
+}
+
+/// The source extents of a catenation whose function operand is an
+/// unparenthesised infix-operator expression (eu-oaz72.29).
+///
+/// Each extent is a pair of atom `Smid`s (first and last atom of the soup
+/// it covers), so that an atom written in parentheses can be widened over
+/// them when the text is rendered.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatenationOperand {
+    /// The pipeline the step was applied to: `c` in `c nth(i) = 2`.
+    pub pipeline: (Smid, Smid),
+    /// The operator expression that became the step: `nth(i) = 2`.
+    pub step: (Smid, Smid),
+    /// The last atom of the operator expression's leftmost operand
+    /// (`nth(i)`), where the pipeline would end if parenthesised.
+    pub step_head_end: Smid,
+    /// Whether the pipeline or the step's leftmost operand holds an
+    /// expression anaphor (`_ nth(0) = 1`, `nth(0) _ = 1`). Parentheses
+    /// round them would scope the anaphor to them, so no parenthesisation
+    /// is suggested.
+    pub pipeline_has_anaphor: bool,
 }
 
 impl SourceMap {
@@ -262,6 +314,14 @@ impl SourceMap {
         absolute
             .checked_sub(self.foreign_floor)
             .and_then(|i| self.source.get(i))
+    }
+
+    /// Whether `smid` is a valid source annotation this map has no entry
+    /// for: one minted outside it — on the blob path, an annotation inside
+    /// the pre-compiled prelude, whose source info the blob does not carry
+    /// (eu-oaz72.37 labels these in profiles).
+    pub fn is_unmapped(&self, smid: Smid) -> bool {
+        smid.as_global_slot().is_none() && smid.get().is_some_and(|i| self.info_at(i).is_none())
     }
 
     /// Reserve the index range occupied by a *foreign* `Smid` space, so
@@ -527,6 +587,105 @@ impl SourceMap {
         }
     }
 
+    /// Record that the infix-operator application at `operator` (an
+    /// unparenthesised operator expression) is the function operand of a
+    /// catenation (eu-oaz72.29). Nothing is recorded when `operator` has no
+    /// source location.
+    pub fn record_catenation_operand(&mut self, operator: Smid, operand: CatenationOperand) {
+        if let Some(SourceInfo {
+            file: Some(file),
+            span: Some(span),
+            ..
+        }) = self.source_info_for_smid(operator)
+        {
+            let key = (*file, *span);
+            self.catenation_operands.insert(key, operand);
+        }
+    }
+
+    /// The catenation whose function operand is the operator expression at
+    /// `file`/`span`, if cook recorded one (eu-oaz72.29).
+    pub fn catenation_operand(&self, file: usize, span: Span) -> Option<&CatenationOperand> {
+        self.catenation_operands.get(&(file, span))
+    }
+
+    /// The catenation whose step's leftmost operand (its head, `nth(0)` in
+    /// `xs nth(0) + 1`) is at `file`/`span` (eu-oaz72.121). An operator
+    /// handed the step's partial application blames that operand's own
+    /// location, so the note is found from there as well as from the
+    /// operator.
+    pub fn catenation_operand_by_head(
+        &self,
+        file: usize,
+        span: Span,
+        source: &str,
+    ) -> Option<&CatenationOperand> {
+        self.catenation_operands.values().find(|operand| {
+            let start = self.source_info_for_smid(operand.step.0);
+            let end = self.source_info_for_smid(operand.step_head_end);
+            match (start, end) {
+                (
+                    Some(SourceInfo {
+                        file: Some(f1),
+                        span: Some(s1),
+                        ..
+                    }),
+                    Some(SourceInfo {
+                        file: Some(f2),
+                        span: Some(s2),
+                        ..
+                    }),
+                ) => {
+                    *f1 == file
+                        && *f2 == file
+                        && s1.start() == span.start()
+                        && s2.end() <= span.end()
+                        // The head's last atom may sit inside closing
+                        // brackets that belong to the head: `nth(0)`.
+                        && source
+                            .get(s2.end().to_usize()..span.end().to_usize())
+                            .is_some_and(|rest| {
+                                rest.chars().all(|c| matches!(c, ')' | ']' | '}') || c.is_whitespace())
+                            })
+                }
+                _ => false,
+            }
+        })
+    }
+
+    /// Record that the expression anaphor at `anaphor` was alone in its
+    /// scope, so cook wrapped the identity function round it
+    /// (eu-oaz72.132).
+    pub fn record_lone_anaphor(&mut self, anaphor: Smid) {
+        self.lone_anaphors.insert(anaphor);
+    }
+
+    /// Whether `anaphor` was recorded by [`SourceMap::record_lone_anaphor`].
+    pub fn is_lone_anaphor(&self, anaphor: Smid) -> bool {
+        self.lone_anaphors.contains(&anaphor)
+    }
+
+    /// Record a call with a lone-anaphor argument under the call's own
+    /// location (eu-oaz72.132). Nothing is recorded when the call has no
+    /// source location.
+    pub fn record_lone_anaphor_call(&mut self, call: LoneAnaphorCall) {
+        if let Some(SourceInfo {
+            file: Some(file),
+            span: Some(span),
+            ..
+        }) = self.source_info_for_smid(call.call)
+        {
+            let key = (*file, *span);
+            self.lone_anaphor_calls.insert(key, call);
+        }
+    }
+
+    /// The call with a lone-anaphor argument at `file`/`span`, if cook
+    /// recorded one (eu-oaz72.132).
+    pub fn lone_anaphor_call(&self, file: usize, span: Span) -> Option<&LoneAnaphorCall> {
+        self.lone_anaphor_calls.get(&(file, span))
+    }
+
     /// Mark a file ID as belonging to a resource (e.g. the prelude, a stdlib
     /// module).  Diagnostics can use `is_user_file` to avoid showing resource
     /// locations as the primary error site.
@@ -769,6 +928,26 @@ impl SourceMap {
         Some((name, location))
     }
 
+    /// A one-line description of `smid` for profiles (eu-oaz72.37): the
+    /// trace-entry name followed by `at file:line:col` for a user site or
+    /// `(library)` for a bundled-library one. A long source-snippet name is
+    /// truncated to 60 characters. `None` when the smid resolves to
+    /// nothing a user can recognise (internal machinery).
+    pub fn describe_smid(&self, smid: Smid, files: &SimpleFiles<String, String>) -> Option<String> {
+        let (name, location) = self.resolve_trace_entry(smid, files)?;
+        let name = if name.chars().count() > 60 {
+            let cut: String = name.chars().take(59).collect();
+            format!("{cut}…")
+        } else {
+            name
+        };
+        Some(match location {
+            Some(TraceLocation::Site(loc)) => format!("{name} at {loc}"),
+            Some(TraceLocation::Resource(res)) => format!("{name} ({res})"),
+            None => name,
+        })
+    }
+
     /// Format a stack / environment trace
     ///
     /// Produces source-level references where file locations are
@@ -955,6 +1134,9 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "FLOOR" => Some("floor"),
         "CEILING" => Some("ceiling"),
         "POW" => Some("pow"),
+        "MULMOD" => Some("mulmod"),
+        "POWMOD" => Some("powmod"),
+        "MODINV" => Some("modinv"),
 
         // Comparison operators
         "EQ" => Some("=="),
@@ -1026,10 +1208,15 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "BASE64_ENCODE" => Some("base64.encode"),
         "BASE64_DECODE" => Some("base64.decode"),
         "SHA256" => Some("sha256"),
+        "MD5" => Some("str.md5"),
+        "CODE_POINTS" => Some("str.code-points"),
+        "FROM_CODE_POINTS" => Some("str.from-code-points"),
+        "CODE_POINT" => Some("ch.code-point"),
+        "OF_CODE_POINT" => Some("ch.of-code-point"),
 
         // Set operations
         "SET.EMPTY" => Some("set.empty"),
-        "SET.FROM_LIST" => Some("set.from-list"),
+        "SET.OF" => Some("set.of"),
         "SET.TO_LIST" => Some("set.to-list"),
         "SET.ADD" => Some("set.add"),
         "SET.REMOVE" => Some("set.remove"),
@@ -1038,6 +1225,27 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "SET.UNION" => Some("set.union"),
         "SET.INTERSECT" => Some("set.intersect"),
         "SET.DIFF" => Some("set.diff"),
+
+        // Dict operations
+        "DICT.OF" => Some("dict.of"),
+        "DICT.TO_LIST" => Some("dict.to-list"),
+        "DICT.GET" => Some("dict.get"),
+        "DICT.GET_OR" => Some("dict.get-or"),
+        "DICT.ASSOC" => Some("dict.assoc"),
+        "DICT.DISSOC" => Some("dict.dissoc"),
+        "DICT.CONTAINS" => Some("dict.contains?"),
+        "DICT.SIZE" => Some("dict.size"),
+        "DICT.KEYS" => Some("dict.keys"),
+        "DICT.VALUES" => Some("dict.values"),
+        "DICT.MIN" => Some("dict.min"),
+        "DICT.MAX" => Some("dict.max"),
+        "DICT.POP_MIN" => Some("dict.pop-min"),
+        "DICT.POP_MAX" => Some("dict.pop-max"),
+        "DICT.RANGE" => Some("dict.range"),
+        "DICT.UPDATE" => Some("dict.update"),
+        "DICT.UPDATE_STRICT" => Some("dict.update-strict"),
+        "DICT.MERGE_WITH" => Some("dict.merge-with"),
+        "DICT.TO_BLOCK" => Some("dict.to-block"),
 
         // Lookup error path
         "LOOKUP_FAIL" => Some("lookup"),
@@ -1051,12 +1259,12 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "EMIT0" | "EMITx" | "EMITT" | "EMITF" | "EMIT[" | "EMIT]" | "EMIT{" | "EMIT}" | "EMIT<"
         | "EMIT>" | "EMITTAGx" | "EMITTAG[" | "EMITTAG{" | "NV.EMIT[*]" | "NV.EMIT{*}"
         | "Emit.RenderKV" | "RENDER" | "RENDER_ITEMS" | "RENDER_BLOCK_ITEMS" | "RENDER_KV"
-        | "RENDER_DOC" => None,
+        | "RENDER_DOC" | "DICT.RENDER_VIEW" => None,
         // Boolean / saturation / internal control
         "AND" | "OR" | "SATURATED" => None,
         // Internal block/list helpers
         "LOOKUPOR#" | "MATCHES_KEY" | "EXTRACT_VALUE" | "EXTRACT_KEY" | "PACK_PAIR"
-        | "BLOCK_PAIR" | "seqStrList" | "NV.ALL[*]" => None,
+        | "BLOCK_PAIR" | "seqStrList" | "seqKey" | "seqDictPairs" | "NV.ALL[*]" => None,
         // Internal constants and data constructors
         "KNIL" | "K[]" | "K{}" | "DQ" | "IFIELDS" | "SUPPRESSES" | "REQUIRES" => None,
 

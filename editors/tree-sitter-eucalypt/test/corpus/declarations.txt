@@ -177,6 +177,39 @@ emoji: c"\U0001F600"
           (c_escape_sequence))))))
 
 ================================================================================
+C-string escaped brace and lone close brace (eu-oaz72.114)
+================================================================================
+
+a: c"\{lit}"
+b: c"\{ {n}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (c_string
+          (c_escape_sequence)
+          (c_string_content)
+          (c_string_content)))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (c_string
+          (c_escape_sequence)
+          (c_string_content)
+          (interpolation
+            content: (interpolation_content
+              (soup
+                (name
+                  (identifier))))))))))
+
+================================================================================
 Raw string literal
 ================================================================================
 
@@ -1147,10 +1180,8 @@ pass — the ⌈[x]⌉/⌊[x]⌋ ceiling/floor notation declared in lib/prelude.
         (identifier)))))
 
 ================================================================================
-Row-polymorphic type-DSL string interpolation content (eu-2sa6.17
-prelude-parsing pass — audit report §2.7: `..r` isn't an identifier or
-dotted path, so interpolation_content had to be broadened from a narrow
-identifier/dotted-reference/number choice to a general soup)
+Row-polymorphic type-DSL s-string is one opaque literal (eu-ioz21.7: as in
+the Rowan lexer's S_STRING, s"..." is not interpolated, so `{..}` is text)
 ================================================================================
 
 x: s"string → IO({..})"
@@ -1162,16 +1193,9 @@ x: s"string → IO({..})"
     (declaration_head
       (identifier))
     (soup
-      (name
-        (identifier))
       (literal
-        (string
-          (string_content)
-          (interpolation
-            content: (interpolation_content
-              (soup
-                (operator))))
-          (string_content))))))
+        (s_string
+          (s_string_content))))))
 
 ================================================================================
 Comma-separated interpolation content (eu-2sa6.17 prelude-parsing pass —
@@ -1200,10 +1224,8 @@ x: "{a, b}"
                   (identifier))))))))))
 
 ================================================================================
-Doubly-nested braces inside string interpolation (eu-2sa6.17 prelude-parsing
-pass — audit report §2.7: format_spec's flat /:[^}]+/ regex stopped at the
-first '}' it saw, which is wrong as soon as the spec contains its own
-nested `{...}` pair; made brace-aware via recursion instead)
+Doubly-nested braces in a type-DSL s-string are text (eu-ioz21.7: the
+s-string is opaque, so `: string` is not a symbol or a format spec)
 ================================================================================
 
 x: s"{ users: [{ name: string }] }"
@@ -1215,16 +1237,9 @@ x: s"{ users: [{ name: string }] }"
     (declaration_head
       (identifier))
     (soup
-      (name
-        (identifier))
       (literal
-        (string
-          (interpolation
-            content: (interpolation_content
-              (soup
-                (name
-                  (identifier))))
-            (format_spec)))))))
+        (s_string
+          (s_string_content))))))
 
 ================================================================================
 Multi-head cons destructuring pattern (eu-2sa6.17 prelude-parsing pass —
@@ -1317,3 +1332,304 @@ x: ℕ
     (soup
       (name
         (identifier)))))
+
+================================================================================
+Several non-ASCII declarations in one block (eu-ioz21.9: the external
+scanner classified identifier characters with the C locale, so in a native
+build each declaration after the first non-ASCII one was swallowed by the
+previous declaration's value)
+================================================================================
+
+xs: {
+  α: 1
+  β: []
+  γ: δ
+  δ: x
+  ε: :sym
+  ℕ: 2
+  ж: 3
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (block
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (literal
+              (number))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (list)))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (name
+              (identifier))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (name
+              (identifier))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (literal
+              (symbol
+                (identifier)))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (literal
+              (number))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (literal
+              (number))))))))
+
+================================================================================
+Bullet anaphor in parentheses after a declaration (eu-ioz21.9: `•` starts
+but does not continue an identifier in the rowan lexer, so the scanner's
+lookahead must consume the start character before any continuations, or it
+loops forever)
+================================================================================
+
+a: 1
+f: (• + 1)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (paren_expr
+        (soup
+          (name
+            (identifier))
+          (operator)
+          (literal
+            (number)))))))
+
+================================================================================
+Symbol name must follow its colon (eu-ioz21.7: `x :y` is a symbol, `: y`
+is not; a juxtaposed list-parameter head after a value starts a new
+declaration rather than becoming the soup `range[lo, hi] :hi`)
+================================================================================
+
+a: x :y
+range[lo, hi]: hi - lo
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (literal
+        (symbol
+          (identifier)))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (identifier)
+        (identifier)))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Juxtaposed block-parameter head after a value (eu-ioz21.7: while a
+symbol's name could follow whitespace, `m{x: px}` joined the previous soup
+and `: px` became a symbol)
+================================================================================
+
+a: x
+m{x: px}: px
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (block_param
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (name
+              (identifier))))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Format spec is not a symbol (eu-ioz21.7: {x:fmt} and {y: number} are format
+specs, as in the Rowan string lexer)
+================================================================================
+
+a: "{x:badfmt} {y: number}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (string
+          (interpolation
+            content: (interpolation_content
+              (soup
+                (name
+                  (identifier))))
+            (format_spec
+              (format_spec_content)))
+          (string_content)
+          (interpolation
+            content: (interpolation_content
+              (soup
+                (name
+                  (identifier))))
+            (format_spec
+              (format_spec_content))))))))
+
+================================================================================
+Bracket declaration head with a cons pattern (eu-ioz21.7:
+tests/harness/097_idiot_brackets.eu)
+================================================================================
+
+a: x
+⌈ [f: lists] ⌉: lists
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (cons_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Bracket declaration head after a value (eu-ioz21.7)
+================================================================================
+
+a: x
+⟦ y ⟧: y
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (soup
+          (name
+            (identifier)))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Operator-like parentheses followed by a symbol continue the soup (eu-ioz21.7:
+`(x + y) :z` is not an operator declaration head)
+================================================================================
+
+a: g
+(x + y) :z
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (paren_expr
+        (soup
+          (name
+            (identifier))
+          (operator)
+          (name
+            (identifier))))
+      (literal
+        (symbol
+          (identifier))))))
+
+================================================================================
+Quoted name followed by a symbol continues the soup (eu-ioz21.7: `'q' :y` is
+not a declaration head)
+================================================================================
+
+a: f
+'q' :y
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (name
+        (quoted_identifier))
+      (literal
+        (symbol
+          (identifier))))))

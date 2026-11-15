@@ -1,0 +1,31 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/261_and_or_between_booleans
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/261_and_or_between_booleans.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/261_and_or_between_booleans.eu:2:19
+help-lines: 1
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tried to call a true as a function
+  help: only functions and blocks can be called with arguments
+  ┌─ tests/harness/errors/261_and_or_between_booleans.eu:2:19
+  │
+2 │ r: (1 > 0) and (2 > 1)
+  │                   ^
+  │
+  = note: the value called here is the result of '>'
+  = note: 'and' and 'or' are ordinary functions in eucalypt, not infix logical operators; use '&&' and '||' for logical conjunction and disjunction
+  = while evaluating (outermost first):
+    - r at 261_and_or_between_booleans.eu:2:19

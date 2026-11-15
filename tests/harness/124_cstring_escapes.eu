@@ -64,3 +64,20 @@ test-interpolation: {
   interp-len: interp str.len //= 4
   RESULT: interp-len then(:PASS, :FAIL)
 }
+
+` { target: :test-brace-interpolation
+    doc: "An escaped brace at the start of a literal run, next to an interpolation or a lone close brace (eu-oaz72.114). Expected values are plain strings, which escape braces by doubling them." }
+test-brace-interpolation: {
+  n: 1
+  open-then-interp: c"\{ {n}" = "{{ 1"
+  open-then-lone-close: c"\{lit}" = "{{lit}}"
+  braces-around-interp: c"\{{n}\}" = "{{1}}"
+  escape-after-interp: c"{n} \}" = "1 }}"
+  open-between-interps: c"{n}\{{n}" = "1{{1"
+  mid-run-open: c"a\{b" = "a{{b"
+  backslash-then-interp: c"\\{n}" = c"\\1"
+
+  RESULT: [open-then-interp, open-then-lone-close, braces-around-interp,
+           escape-after-interp, open-between-interps, mid-run-open,
+           backslash-then-interp] all-true? then(:PASS, :FAIL)
+}

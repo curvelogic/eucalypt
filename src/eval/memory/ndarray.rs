@@ -220,7 +220,8 @@ impl HeapNdArray {
                     .zip(offset.iter())
                     .zip(shape.iter())
                     .map(|((&c, &o), &dim)| {
-                        let nc = c as i64 + o;
+                        // An overflowing sum is out of bounds too.
+                        let nc = i64::try_from(c).ok()?.checked_add(o)?;
                         if nc < 0 || nc >= dim as i64 {
                             None
                         } else {
