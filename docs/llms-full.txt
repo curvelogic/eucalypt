@@ -11459,8 +11459,12 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 - [Sets](sets.md) -- set operations (15 entries)
 - [Dicts](dicts.md) -- persistent ordered dictionaries (24 entries)
 - [Random Numbers](random.md) -- random number generation, monadic random: namespace (15 entries)
+- [Vecs and Arrays](arrays.md) -- vecs (O(1) indexed access) and n-dimensional arrays (32 entries)
+- [Graph Algorithms](graphs.md) -- union-find, topological sort, Kruskal (3 entries)
+- [Bitwise Operations](bits.md) -- bitwise and, or, xor, shifts, bit counts (9 entries)
+- [Process Parallelism](parallel.md) -- experimental par-* combinators (5 entries)
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
-- [IO](io.md) -- environment, time, argument access, and monad utility (86 entries)
+- [IO](io.md) -- environment, time, argument access, and monad utility (37 entries)
 
 *412 documented entries in total.*
 
@@ -11546,7 +11550,7 @@ Repeated `!!` over the same list in a loop is quadratic.
 | Function | Description |
 |----------|-------------|
 | `zip-with` | Map function `f` over lists `l1` and `l2`, until the shorter is exhausted |
-| `zip` | List of pairs of elements  `l1` and `l2`, until the shorter is exhausted |
+| `zip` | List of pairs of elements `l1` and `l2`, until the shorter is exhausted |
 | `append(l1, l2)` | Concatenate two lists `l1` and `l2` |
 | `prepend` | Concatenate two lists with `l1` after `l2` |
 | `concat(ls)` | Concatenate all lists in `ls` together |
@@ -11624,10 +11628,8 @@ by-age: people sort-by-num(.age)         # sorted by age
 |----------|-------------|
 | `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
-| `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`.
-An error if `n` is out of range, negative or not an integer |
-| `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`.
-Returns `l` unchanged if no element matches |
+| `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`. An error if `n` is out of range, negative or not an integer |
+| `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |
 | `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
 | `tails(l)` | Return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]` |
 | `iota(n)` | Return infinite list of integers from `n` upwards |
@@ -11641,14 +11643,10 @@ Returns `l` unchanged if no element matches |
 | `group-consecutive` | Group consecutive equal elements into sublists |
 | `uniq(xs)` | Remove consecutive duplicates from a list |
 | `nub-by(key, xs)` | Remove duplicates from `xs`, keeping the first occurrence of each distinct `key(x)` value. Unlike `uniq`, works on non-consecutive duplicates |
-| `split-on(pred, xs)` | Split list `xs` into sublists, breaking on
-elements that satisfy `pred`. Matching elements are discarded |
-| `running-max` | Running maximum over a number list.
-`[3, 1, 4, 1]` → `[3, 3, 4, 4]`. (Rust-level intrinsic) |
-| `running-min` | Running minimum over a number list.
-`[3, 1, 4, 1]` → `[3, 1, 1, 1]`. (Rust-level intrinsic) |
-| `running-sum` | Cumulative sum over a number list.
-`[3, 1, 4, 1]` → `[3, 4, 8, 9]`. (Rust-level intrinsic) |
+| `split-on(pred, xs)` | Split list `xs` into sublists, breaking on elements that satisfy `pred`. Matching elements are discarded |
+| `running-max` | Running maximum over a number list. `[3, 1, 4, 1]` → `[3, 3, 4, 4]`. (Rust-level intrinsic) |
+| `running-min` | Running minimum over a number list. `[3, 1, 4, 1]` → `[3, 1, 1, 1]`. (Rust-level intrinsic) |
+| `running-sum` | Cumulative sum over a number list. `[3, 1, 4, 1]` → `[3, 4, 8, 9]`. (Rust-level intrinsic) |
 
 ---
 
@@ -11699,7 +11697,7 @@ large keyed tables, a set for membership, and a vec (`vec.of`) for indexed acces
 | `keys(b)` | Return keys of block `b` |
 | `values(b)` | Return values of block `b` |
 | `sort-keys(b)` | Return block `b` with keys sorted alphabetically |
-| `pair-key-lt(p1, p2)` |  |
+| `pair-key-lt(p1, p2)` | Helper: order two `[key, value]` pairs by key |
 | `bimap(f, g, pr)` | Apply f to first item of pair and g to second, return pair |
 | `map-first(f, prs)` | Apply f to first elements of all pairs in list of pairs `prs` |
 | `map-second(f, prs)` | Apply f to second elements of all pairs in list of pairs `prs` |
@@ -11837,9 +11835,9 @@ a little more convenient to use interpolation instead..
 
 | Function | Description |
 |----------|-------------|
-| `ch.n` |  |
-| `ch.t` |  |
-| `ch.dq` |  |
+| `ch.n` | A newline character, for interpolation |
+| `ch.t` | A tab character, for interpolation |
+| `ch.dq` | A double-quote character, for interpolation |
 | `ch.code-point` | The Unicode code point of the single character `c`, as a number; an error unless `c` is exactly one character |
 | `ch.of-code-point` | The one-character string with Unicode code point `n`; an error unless `n` is a whole number in 0 to 0x10FFFF and not a surrogate (0xD800 to 0xDFFF) |
 
@@ -12005,9 +12003,9 @@ character.
 
 | Function | Description |
 |----------|-------------|
-| `cal.ifields` |  |
-| `cal.now` |  |
-| `cal.epoch` |  |
+| `cal.ifields` | Break an epoch time `t` (seconds) into a block of date-time fields (`y`, `m`, `d`, `H`, `M`, `S`, ...) |
+| `cal.now` | The current time as a block of date-time fields (as `cal.ifields`), taken from `io.epoch-time` |
+| `cal.epoch` | The Unix epoch (time 0) as a block of date-time fields |
 | `cal.zdt` | Create zoned date time from datetime components and timezone string (e.g. '+0100') |
 | `cal.datetime(b)` | Convert block of time fields to zoned datetime (defaults: y=1, m=1, d=1, H=0, M=0, S=0, Z=UTC) |
 | `cal.parse` | Parse an ISO8601 formatted date string into a zoned date time |
@@ -12118,10 +12116,10 @@ eu --seed 42 example.eu
 
 | Function | Description |
 |----------|-------------|
-| `random-stream(seed)` |  |
-| `stream-advance(n, s)` |  |
-| `random-ret(v, stream)` |  |
-| `random-bind(m, f, stream)` |  |
+| `random-stream(seed)` | Deprecated compatibility alias for `random.stream(seed) random.as-list`. Returns a lazy list of floats in [0, 1) |
+| `stream-advance(n, s)` | Helper: advance the opaque random stream `s` by `n` steps (a count that is not positive leaves it unadvanced), returning the new stream |
+| `random-ret(v, stream)` | Return action for the random monad: yield `v` leaving the stream untouched |
+| `random-bind(m, f, stream)` | Bind for the random monad: run action `m` on the stream, feed its value to `f` and run the resulting action on the remaining stream |
 | `random.stream(seed)` | Create an opaque PRNG stream from integer seed |
 | `random.as-list(s)` | Convert an opaque random stream to a lazy cons-list of floats |
 | `random.float(s)` | State-monad action returning a random float in [0,1) |
@@ -12190,6 +12188,102 @@ stream: random.stream(12345)
 x: random.int(100, stream)
 # x.value is always the same for seed 12345
 ```
+
+---
+
+# Vecs and Arrays
+
+## Vecs
+
+> Functions for working with vecs — flat primitive sequences with O(1) indexed access.
+
+| Function | Description |
+|----------|-------------|
+| `vec.of` | Convert list `xs` of primitive values to a vec for O(1) indexed access |
+| `vec.from-list` | Alias of `vec.of`: convert list `xs` of primitive values to a vec |
+| `vec.len` | Return the number of elements in vec `v` |
+| `vec.nth` | Return the element at index `n` (0-based) in vec `v` |
+| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v` |
+| `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement; a negative `n` samples nothing; a non-integer `n` is an error |
+| `vec.shuffle(v, stream)` | Random monad action: return vec `v` in random order |
+| `vec.to-list` | Convert vec `v` back to a cons-list |
+
+## N-dimensional Arrays
+
+| Function | Description |
+|----------|-------------|
+| `arr.zeros` | Create an array of zeros with the given shape list |
+| `arr.fill` | Create an array filled with `val` with the given shape list |
+| `arr.from-flat` | Create an array from a flat list of numbers with the given shape |
+| `arr.get` | Get element at coordinate list `coords` in array `a`. Pipeline: `a arr.get(coords)` |
+| `arr.set` | Return new array with element at `coords` set to `val`. Pipeline: `a arr.set(coords, val)` |
+| `arr.shape` | Return shape of array `a` as a list of integers |
+| `arr.rank` | Return number of dimensions of array `a` |
+| `arr.length` | Return total number of elements in array `a` |
+| `arr.to-list` | Return flat list of elements in row-major order |
+| `arr.array?` | True if `x` is an array |
+| `arr.transpose` | Reverse all axes of array `a` |
+| `arr.reshape` | Reshape array `a` to new shape (total elements must match). Pipeline: `a arr.reshape(shape)` |
+| `arr.slice(axis, idx, a)` | Take a slice along `axis` at `idx`, reducing rank by 1. Pipeline: `a arr.slice(axis, idx)` |
+| `arr.add` | Element-wise addition; `b` may be a scalar |
+| `arr.sub` | Element-wise subtraction; `b` may be a scalar |
+| `arr.mul` | Element-wise multiplication; `b` may be a scalar |
+| `arr.div` | Element-wise division; `b` may be a scalar |
+| `arr.indices` | Return list of coordinate lists for all elements in row-major order |
+| `arr.map(f, a)` | Apply `f` to each element, return new array of same shape |
+| `arr.map-indexed(f, a)` | Apply `f(coords, val)` to each element, return new array of same shape |
+| `arr.fold(f, init, a)` | Left-fold `f` over all elements of `a` in row-major order |
+| `arr.neighbours(coords, offsets, a)` | Return list of values at valid neighbouring coordinates. Pipeline: `a arr.neighbours(coords, offsets)`. `offsets` is a list of offset lists (one per neighbour direction). Out-of-bounds neighbours are omitted |
+| `arr.unit-arrays(shape)` | List of arrays with a single 1 at each coordinate position |
+| `is-array?(x)` | True if `x` is an n-dimensional array |
+
+---
+
+# Graph Algorithms
+
+## Graph Functions
+
+> Graph algorithms on integer-indexed nodes [0..n-1]. EXPERIMENTAL.
+
+| Function | Description |
+|----------|-------------|
+| `graph.union-find(n, edges)` | Connected components via union-find. Given `n` nodes and `edges` as `[[i,j],...]`, return list of n component labels |
+| `graph.topo-sort(n, edges)` | Topological ordering via Kahn's algorithm. Given `n` nodes and directed `edges` as `[[from,to],...]`, return node ordering. Partial result if cycle exists (check count(result) = n) |
+| `graph.kruskal-edges(n, edges)` | Kruskal-order merge history. Process `edges` in order via union-find. Return flat list of `[edge-index, remaining-components, ...]` for each edge that merges two distinct components |
+
+---
+
+# Bitwise Operations
+
+## Bit Functions
+
+> Bitwise utility functions for integer bit manipulation.
+
+| Function | Description |
+|----------|-------------|
+| `bit.and(l, r)` | Bitwise AND of integers `l` and `r` |
+| `bit.or(l, r)` | Bitwise OR of integers `l` and `r` |
+| `bit.xor(l, r)` | Bitwise XOR of integers `l` and `r` |
+| `bit.not(n)` | Bitwise NOT of integer `n` |
+| `bit.shl(n, k)` | Left shift `n` by `k` bits |
+| `bit.shr(n, k)` | Arithmetic right shift `n` by `k` bits |
+| `bit.popcount(n)` | Count set bits in integer `n` |
+| `bit.ctz(n)` | Count trailing zeros in integer `n` (position of lowest set bit). Returns 64 if n is 0 |
+| `bit.clz(n)` | Count leading zeros in integer `n` |
+
+---
+
+# Process Parallelism
+
+## Parallel Combinators
+
+| Function | Description |
+|----------|-------------|
+| `par-map(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-map(f, xs)` - parallel map, order-preserving. Same value as `xs map(f)` but STRICT: it forces the spine of `xs` and every result, so it is unusable on an infinite or partially-consumed list and raises an error that `map` would have left unevaluated. `f` must be pure and return serialisable data |
+| `par-sum(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-sum(f, xs)` - parallel sum of `f(x)` over `xs`. Same value as `xs map(f) sum`; strict in the same way as par-map |
+| `par-max(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-max(f, xs)` - parallel max of `f(x)` over `xs`. Same value as `xs map(f) max-of`; strict in the same way as par-map |
+| `par-min(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-min(f, xs)` - parallel min of `f(x)` over `xs`. Same value as `xs map(f) min-of`; strict in the same way as par-map |
+| `par-concat(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-concat(f, xs)` - parallel map-then-concat. Same value as `xs map(f) concat`; strict in the same way as par-map |
 
 ---
 
@@ -12290,6 +12384,8 @@ has no metadata at all.
 
 ## Prelude Versioning
 
+> Namespace for metadata about the standard prelude.
+
 | Function | Description |
 |----------|-------------|
 | `eu.prelude` | Metadata about this version of the standard prelude |
@@ -12326,78 +12422,20 @@ has no metadata at all.
 | `deep-transform(rule, data)` | Recursively transform a nested structure. At each node, call `rule(node)`. If it returns non-null, use that as the replacement (stop recursing into that node). If it returns null, recurse into children (block values and list elements) |
 | `any?` | Predicate that matches any value. For use in match? patterns |
 | `match?(pat, target)` | Structural predicate. Returns true if `target` conforms to `pattern`. Pattern values are interpreted by type: blocks and lists recurse as sub-patterns, functions are applied as predicates, literals are exact equality checks. Open matching: extra keys in target are ignored |
-| `bit.and(l, r)` | Bitwise AND of integers `l` and `r` |
-| `bit.or(l, r)` | Bitwise OR of integers `l` and `r` |
-| `bit.xor(l, r)` | Bitwise XOR of integers `l` and `r` |
-| `bit.not(n)` | Bitwise NOT of integer `n` |
-| `bit.shl(n, k)` | Left shift `n` by `k` bits |
-| `bit.shr(n, k)` | Arithmetic right shift `n` by `k` bits |
-| `bit.popcount(n)` | Count set bits in integer `n` |
-| `bit.ctz(n)` | Count trailing zeros in integer `n` (position of lowest set bit). Returns 64 if n is 0 |
-| `bit.clz(n)` | Count leading zeros in integer `n` |
-| `par-map(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-map(f, xs)` - parallel map, order-preserving. Same value as `xs map(f)` but STRICT: it forces the spine of `xs` and every result, so it is unusable on an infinite or partially-consumed list and raises an error that `map` would have left unevaluated. `f` must be pure and return serialisable data |
-| `par-sum(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-sum(f, xs)` - parallel sum of `f(x)` over `xs`. Same value as `xs map(f) sum`; strict in the same way as par-map |
-| `par-max(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-max(f, xs)` - parallel max of `f(x)` over `xs`. Same value as `xs map(f) max-of`; strict in the same way as par-map |
-| `par-min(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-min(f, xs)` - parallel min of `f(x)` over `xs`. Same value as `xs map(f) min-of`; strict in the same way as par-map |
-| `par-concat(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-concat(f, xs)` - parallel map-then-concat. Same value as `xs map(f) concat`; strict in the same way as par-map |
 | `render(value)` | Serialise value to a YAML string |
 | `render-as(fmt, value)` | Serialise value to a string in the named format. Pipeline-friendly: data render-as(:json). Supported formats: :yaml, :json, :toml, :text, :edn, :html, :eu |
 | `parse-as(fmt, str)` | Parse a string of structured data in the named format and return eucalypt data. The inverse of render-as. Supported formats: :json, :yaml, :toml, :csv, :xml, :edn, :jsonl. Content is parsed as inert data; embedded eucalypt expressions (e.g. YAML !eu tags) are never evaluated |
 | `assert(p?, s, v)` | If `v p?` is true then return `v` otherwise error with message `s` |
-| `__dbg-render(v)` | Print value `v` to stderr and return `v` unchanged. opts keys: label (string) |
-| `dbg(opts, v)` |  |
-| `__dbg-val(v)` | Debug-trace value or function. On a value, prints it to stderr and returns it. On a function, returns a wrapped version that traces each output |
-| `__dbg-after(f, x)` |  |
-| `(▶ x)` |  |
+| `__dbg-render(v)` | Render a value for debug output: eu-syntax for blocks and lists, the debug representation for everything else |
+| `dbg(opts, v)` | Print value `v` to stderr and return `v` unchanged. `opts` is a block; the only key used is `label` (string), prefixed to the output. See also `▶` |
+| `__dbg-val(v)` | Debug-trace a value: print it to stderr and return it unchanged. Helper for `▶` |
+| `__dbg-after(f, x)` | Helper for `▶`: apply `f` to `x` and debug-trace the result |
+| `(▶ x)` | Debug-trace a value or function. On a value, prints it to stderr and returns it unchanged. On a function, returns a wrapped version that traces each output, so `▶ f` can replace `f` in a pipeline. See also `dbg` |
 | `alter?(k?, v!, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `update?(k?, f, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
-| `vec.of` | Convert list `xs` of primitive values to a vec for O(1) indexed access |
-| `vec.from-list` | Alias of `vec.of`: convert list `xs` of primitive values to a vec |
-| `vec.len` | Return the number of elements in vec `v` |
-| `vec.nth` | Return the element at index `n` (0-based) in vec `v` |
-| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v` |
-| `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement; a negative `n` samples nothing; a non-integer `n` is an error |
-| `vec.shuffle(v, stream)` | Random monad action: return vec `v` in random order |
-| `vec.to-list` | Convert vec `v` back to a cons-list |
-| `arr.zeros` | Create an array of zeros with the given shape list |
-| `arr.fill` | Create an array filled with `val` with the given shape list |
-| `arr.from-flat` | Create an array from a flat list of numbers with the given shape |
-| `arr.get` | Get element at coordinate list `coords` in array `a`. Pipeline: `a arr.get(coords)` |
-| `arr.set` | Return new array with element at `coords` set to `val`. Pipeline: `a arr.set(coords, val)` |
-| `arr.shape` | Return shape of array `a` as a list of integers |
-| `arr.rank` | Return number of dimensions of array `a` |
-| `arr.length` | Return total number of elements in array `a` |
-| `arr.to-list` | Return flat list of elements in row-major order |
-| `arr.array?` | True if `x` is an array |
-| `arr.transpose` | Reverse all axes of array `a` |
-| `arr.reshape` | Reshape array `a` to new shape (total elements must match). Pipeline: `a arr.reshape(shape)` |
-| `arr.slice(axis, idx, a)` | Take a slice along `axis` at `idx`, reducing rank by 1. Pipeline: `a arr.slice(axis, idx)` |
-| `arr.add` | Element-wise addition; `b` may be a scalar |
-| `arr.sub` | Element-wise subtraction; `b` may be a scalar |
-| `arr.mul` | Element-wise multiplication; `b` may be a scalar |
-| `arr.div` | Element-wise division; `b` may be a scalar |
-| `arr.indices` | Return list of coordinate lists for all elements in row-major order |
-| `arr.map(f, a)` | Apply `f` to each element, return new array of same shape |
-| `arr.map-indexed(f, a)` | Apply `f(coords, val)` to each element, return new array of same shape |
-| `arr.fold(f, init, a)` | Left-fold `f` over all elements of `a` in row-major order |
-| `arr.neighbours(coords, offsets, a)` | Return list of values at valid neighbouring coordinates. Pipeline: `a arr.neighbours(coords, offsets)`. `offsets` is a list of offset lists (one per neighbour direction). Out-of-bounds neighbours are omitted |
-| `arr.unit-arrays(shape)` | List of arrays with a single 1 at each coordinate position |
-| `is-array?(x)` | True if `x` is an n-dimensional array |
-| `graph.union-find(n, edges)` | Connected components via union-find.
-  Given `n` nodes and `edges` as `[[i,j],...]`, return list of n component labels |
-| `graph.topo-sort(n, edges)` | Topological ordering via Kahn's algorithm.
-  Given `n` nodes and directed `edges` as `[[from,to],...]`, return node ordering.
-  Partial result if cycle exists (check count(result) = n) |
-| `graph.kruskal-edges(n, edges)` | Kruskal-order merge history.
-  Process `edges` in order via union-find. Return flat list of
-  `[edge-index, remaining-components, ...]` for each edge that merges
-  two distinct components |
 | `let` | Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha |
 | `for` | List monad for list comprehensions. Each binding draws from a list; subsequent bindings can depend on earlier ones. Use [x] filter(pred?) for guards |
-| `as-spec(t)` | Convert type-data to a match?-compatible pattern.
-         Primitive types become predicates, records become block patterns,
-         lists become list predicates, unions become disjunctive predicates,
-         partials accept null or the inner type |
+| `as-spec(t)` | Convert type-data to a match?-compatible pattern. Primitive types become predicates, records become block patterns, lists become list predicates, unions become disjunctive predicates, partials accept null or the inner type |
 | `parse-args(defaults, args)` | Parse command-line argument list against a defaults block. Each key in `defaults` defines an option with its default value. Field metadata configures parsing: `short` (symbol for short flag), `doc` (description), `flag` (true for boolean toggle). Returns the `defaults` block updated with parsed values, plus an `args` key containing positional arguments as a list. Unknown options cause a runtime error. Use `--help` for auto-generated help text |
 
 ---

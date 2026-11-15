@@ -50,9 +50,9 @@ a little more convenient to use interpolation instead..
 
 | Function | Description |
 |----------|-------------|
-| `ch.n` |  |
-| `ch.t` |  |
-| `ch.dq` |  |
+| `ch.n` | A newline character, for interpolation |
+| `ch.t` | A tab character, for interpolation |
+| `ch.dq` | A double-quote character, for interpolation |
 | `ch.code-point` | The Unicode code point of the single character `c`, as a number; an error unless `c` is exactly one character |
 | `ch.of-code-point` | The one-character string with Unicode code point `n`; an error unless `n` is a whole number in 0 to 0x10FFFF and not a surrogate (0xD800 to 0xDFFF) |
 

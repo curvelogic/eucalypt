@@ -68,7 +68,7 @@ Repeated `!!` over the same list in a loop is quadratic.
 | Function | Description |
 |----------|-------------|
 | `zip-with` | Map function `f` over lists `l1` and `l2`, until the shorter is exhausted |
-| `zip` | List of pairs of elements  `l1` and `l2`, until the shorter is exhausted |
+| `zip` | List of pairs of elements `l1` and `l2`, until the shorter is exhausted |
 | `append(l1, l2)` | Concatenate two lists `l1` and `l2` |
 | `prepend` | Concatenate two lists with `l1` after `l2` |
 | `concat(ls)` | Concatenate all lists in `ls` together |
@@ -146,10 +146,8 @@ by-age: people sort-by-num(.age)         # sorted by age
 |----------|-------------|
 | `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
-| `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`.
-An error if `n` is out of range, negative or not an integer |
-| `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`.
-Returns `l` unchanged if no element matches |
+| `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`. An error if `n` is out of range, negative or not an integer |
+| `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |
 | `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
 | `tails(l)` | Return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]` |
 | `iota(n)` | Return infinite list of integers from `n` upwards |
@@ -163,11 +161,7 @@ Returns `l` unchanged if no element matches |
 | `group-consecutive` | Group consecutive equal elements into sublists |
 | `uniq(xs)` | Remove consecutive duplicates from a list |
 | `nub-by(key, xs)` | Remove duplicates from `xs`, keeping the first occurrence of each distinct `key(x)` value. Unlike `uniq`, works on non-consecutive duplicates |
-| `split-on(pred, xs)` | Split list `xs` into sublists, breaking on
-elements that satisfy `pred`. Matching elements are discarded |
-| `running-max` | Running maximum over a number list.
-`[3, 1, 4, 1]` → `[3, 3, 4, 4]`. (Rust-level intrinsic) |
-| `running-min` | Running minimum over a number list.
-`[3, 1, 4, 1]` → `[3, 1, 1, 1]`. (Rust-level intrinsic) |
-| `running-sum` | Cumulative sum over a number list.
-`[3, 1, 4, 1]` → `[3, 4, 8, 9]`. (Rust-level intrinsic) |
+| `split-on(pred, xs)` | Split list `xs` into sublists, breaking on elements that satisfy `pred`. Matching elements are discarded |
+| `running-max` | Running maximum over a number list. `[3, 1, 4, 1]` → `[3, 3, 4, 4]`. (Rust-level intrinsic) |
+| `running-min` | Running minimum over a number list. `[3, 1, 4, 1]` → `[3, 1, 1, 1]`. (Rust-level intrinsic) |
+| `running-sum` | Cumulative sum over a number list. `[3, 1, 4, 1]` → `[3, 4, 8, 9]`. (Rust-level intrinsic) |

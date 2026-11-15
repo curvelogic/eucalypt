@@ -45,7 +45,7 @@ large keyed tables, a set for membership, and a vec (`vec.of`) for indexed acces
 | `keys(b)` | Return keys of block `b` |
 | `values(b)` | Return values of block `b` |
 | `sort-keys(b)` | Return block `b` with keys sorted alphabetically |
-| `pair-key-lt(p1, p2)` |  |
+| `pair-key-lt(p1, p2)` | Helper: order two `[key, value]` pairs by key |
 | `bimap(f, g, pr)` | Apply f to first item of pair and g to second, return pair |
 | `map-first(f, prs)` | Apply f to first elements of all pairs in list of pairs `prs` |
 | `map-second(f, prs)` | Apply f to second elements of all pairs in list of pairs `prs` |

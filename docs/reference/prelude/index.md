@@ -14,8 +14,12 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 - [Sets](sets.md) -- set operations (15 entries)
 - [Dicts](dicts.md) -- persistent ordered dictionaries (24 entries)
 - [Random Numbers](random.md) -- random number generation, monadic random: namespace (15 entries)
+- [Vecs and Arrays](arrays.md) -- vecs (O(1) indexed access) and n-dimensional arrays (32 entries)
+- [Graph Algorithms](graphs.md) -- union-find, topological sort, Kruskal (3 entries)
+- [Bitwise Operations](bits.md) -- bitwise and, or, xor, shifts, bit counts (9 entries)
+- [Process Parallelism](parallel.md) -- experimental par-* combinators (5 entries)
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
-- [IO](io.md) -- environment, time, argument access, and monad utility (86 entries)
+- [IO](io.md) -- environment, time, argument access, and monad utility (37 entries)
 
 *412 documented entries in total.*
 
