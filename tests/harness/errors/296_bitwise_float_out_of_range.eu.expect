@@ -1,2 +1,2 @@
 exit: 1
-stderr: "bitwise operations require integer arguments \(9223372036854776000 is out of the i64 range for bitwise operations\)"
+stderr: "bitwise operations require integer arguments \(9223372036854775808 is out of the i64 range for bitwise operations\)"
