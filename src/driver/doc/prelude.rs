@@ -520,7 +520,13 @@ fn category_sections(category: &str) -> Option<(&'static str, Vec<SectionConfig<
                 },
                 SectionConfig {
                     display: "Folds and Scans",
-                    source: SectionSource::ByName(&["foldl", "foldr", "scanl", "scanr"]),
+                    source: SectionSource::ByName(&[
+                        "foldl",
+                        "foldl-strict",
+                        "foldr",
+                        "scanl",
+                        "scanr",
+                    ]),
                 },
                 SectionConfig {
                     display: "Predicates",

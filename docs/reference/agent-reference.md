@@ -645,7 +645,7 @@ Note: `foldl` takes 3 args and the catenated list supplies the last
 one, so both forms above work. You can also partially apply it:
 
 ```
-sum: foldl(+, 0)
+sum: foldl-strict(+, 0)
 [1,2,3,4,5] sum              # 15
 ```
 
