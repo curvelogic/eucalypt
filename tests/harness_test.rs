@@ -4744,6 +4744,11 @@ pub fn test_typecheck_124_coalesce_result_may_be_null() {
     run_typecheck_test("124_coalesce_result_may_be_null.eu");
 }
 
+#[test]
+pub fn test_typecheck_125_str_matches_flat_list() {
+    run_typecheck_test("125_str_matches_flat_list.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).

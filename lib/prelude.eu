@@ -1107,11 +1107,11 @@ str: {
   extract-or(re, d, s): s match-with(re) second-or(d)
 
   ` { doc: "matches(s, re) - return list of all matches in string `s` of regex `re`."
-      type: s"string → string → [[string]]" }
+      type: s"string → string → [string]" }
   matches: __MATCHES
 
   ` { doc: "matches-of(re, s) - return list of all matches in string `s` of regex `re`."
-      type: s"string → string → [[string]]" }
+      type: s"string → string → [string]" }
   matches-of: matches flip
 
   ` { doc: "matches?(re, s) - return true if `re` matches full string `s`."
