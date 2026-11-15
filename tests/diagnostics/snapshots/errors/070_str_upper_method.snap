@@ -19,7 +19,7 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: key 'upper' not found in block
-  help: available keys: 'of', 'split', 'split-on', 'join', 'join-on', 'match', 'match-with', 'extract' (and 28 more)
+  help: available keys: 'of', 'split', 'split-on', 'join', 'join-on', 'match', 'match-with', 'extract' (and 29 more)
   ┌─ tests/harness/errors/070_str_upper_method.eu:2:12
   │
 2 │ x: "hello" str.upper

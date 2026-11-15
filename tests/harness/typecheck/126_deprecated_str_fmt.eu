@@ -1,0 +1,3 @@
+# str.fmt is deprecated in favour of str.format (spec first, pipeline-friendly).
+# The prelude's deprecation table must make --strict fail on it.
+result: str.fmt(255, "%x")

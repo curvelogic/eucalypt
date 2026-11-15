@@ -19,7 +19,7 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: key 'gsub' not found in block
-  help: available keys: 'of', 'split', 'split-on', 'join', 'join-on', 'match', 'match-with', 'extract' (and 28 more)
+  help: available keys: 'of', 'split', 'split-on', 'join', 'join-on', 'match', 'match-with', 'extract' (and 29 more)
   ┌─ tests/harness/errors/144_str_replace_hint.eu:3:14
   │
 3 │ result: text str.gsub("o", "0")

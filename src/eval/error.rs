@@ -626,9 +626,11 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
         "encode" | "decode" => vec!["to encode a string as base64 use 'str.base64-encode', \
              to decode use 'str.base64-decode'"
             .to_string()],
-        "format" | "sprintf" | "printf" => vec!["to format a value as a string, use 'str.fmt', \
-             e.g. 'str.fmt(x, \"%.2f\")' for two decimal places"
-            .to_string()],
+        "format" | "sprintf" | "printf" => {
+            vec!["to format a value as a string, use 'str.format', \
+             e.g. 'x str.format(\"%.2f\")' for two decimal places"
+                .to_string()]
+        }
         "contains?" | "contains" | "includes?" | "includes" => vec![
             "use 'str.contains?(pattern, s)' to test if a string contains a pattern, \
              e.g. 'text str.contains?(\"word\")'"
@@ -655,8 +657,8 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
                 .to_string(),
         ],
         "pad" | "pad-left" | "pad-right" | "rpad" | "lpad" | "padStart" | "padEnd" => vec![
-            "to pad a string, use 'str.fmt' with a printf width specifier, \
-             e.g. `42 str.fmt(\"%10d\")` for right-padding"
+            "to pad a string, use 'str.format' with a printf width specifier, \
+             e.g. `42 str.format(\"%10d\")` for right-padding"
                 .to_string(),
         ],
         _ => vec![],
