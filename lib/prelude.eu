@@ -933,11 +933,11 @@ bit: {
 
 ` { doc: "`sum(l)` - sum a list of numbers."
     type: s"[number] → number" }
-sum(l): foldl(+, 0, l)
+sum(l): foldl-strict(+, 0, l)
 
 ` { doc: "`product(l)` - multiply a list of numbers."
     type: s"[number] → number" }
-product(l): foldl(*, 1, l)
+product(l): foldl-strict(*, 1, l)
 
 ` { doc: "`max(l, r)` - return max of `l` and `r` by `>`."
     type: s">(a, a) => a → a → a" }
@@ -1556,6 +1556,11 @@ repeat(i): __CONS(i, repeat(i))
     blame: :transparent }
 foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 
+` { doc: "`foldl-strict(op, i, l)` - as `foldl`, but the accumulator is evaluated to weak head normal form at each step, so a long fold runs in constant stack instead of building a chain of unevaluated `op` calls. Use it where `op` is strict in the accumulator, as `+` and `max` are. `op(i, x)` is evaluated even where `op` would ignore it, so an error there surfaces where `foldl` would have skipped it."
+    type: s"(b → a → b) → b → [a] → b"
+    blame: :transparent }
+foldl-strict(op, i, l): if(l nil?, i, { a: op(i, l head) }.(if(a list?, foldl-strict(op, a, l tail), foldl-strict(op, a, l tail))))
+
 ` { doc: "`reduce(op, l)` - left fold with no initial value; uses first element as seed. Panics on empty list."
     type: s"(a → a → a) → [a] → a" }
 reduce(op, l): foldl(op, l head, l tail)
@@ -1599,7 +1604,7 @@ range(b, e): ints-from(b) __take(e - b)
 
 ` { doc: "`count(l)` - return count of items in list `l`."
     type: s"[a] → number" }
-count(l): foldl({ n: • el: •}.(n inc), 0, l)
+count(l): foldl-strict({ n: • el: •}.(n inc), 0, l)
 
 ` { doc: "`last(l)` - return last element of list `l`."
     type: s"[a] → a" }

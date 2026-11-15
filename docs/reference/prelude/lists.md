@@ -148,6 +148,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`. An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |
+| `foldl-strict(op, i, l)` | As `foldl`, but the accumulator is evaluated to weak head normal form at each step, so a long fold runs in constant stack instead of building a chain of unevaluated `op` calls. Use it where `op` is strict in the accumulator, as `+` and `max` are. `op(i, x)` is evaluated even where `op` would ignore it, so an error there surfaces where `foldl` would have skipped it |
 | `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
 | `tails(l)` | Return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]` |
 | `iota(n)` | Return infinite list of integers from `n` upwards |

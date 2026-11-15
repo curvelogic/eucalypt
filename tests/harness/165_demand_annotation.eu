@@ -17,7 +17,9 @@
         and partial applications take the signature of the function they
         denote, and in blob mode a program's calls of prelude functions
         take their signatures; none of it may force a value a call does not
-        need."
+        need. eu-oaz72.78: `foldl-strict` evaluates its accumulator at each
+        step, so `sum`, `product` and `count` run in constant stack, while
+        `foldl` keeps its lazy accumulator."
 }
 
 ` { target: :test-annotation }
@@ -99,6 +101,30 @@ first-max(n): { min(a, b): (a > 9) then(a, min(a + 1, b)) }.(min(n, panic("min a
 
 ` "A local `min` of one argument, recursive so it is not inlined away."
 next-max(n): { min(x): (x > 9) then(x, min(x + 1)) }.(min(n))
+
+` { target: :strict-folds
+    verify: [:fold-values, :constant-stack] }
+strict-folds: {
+  summed: range(0, steps) sum
+  multiplied: repeat(1) take(steps) product
+  counted: range(0, steps) count
+  maxed: range(0, steps) foldl-strict(max, 0)
+}
+
+` "every fold computes its value"
+fold-values(context): {
+  r: context.result
+  checks: [r.summed = 4999950000, r.multiplied = 1, r.counted = 100000, r.maxed = 99999]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` { target: :test-foldl-strict
+    doc: "`foldl-strict` agrees with `foldl`, and `foldl` still leaves an accumulator step nobody needs unevaluated." }
+test-foldl-strict: {
+  same: foldl-strict(+, 10, [1, 2, 3]) = foldl(+, 10, [1, 2, 3])
+  empty: foldl-strict(+, 7, []) = 7
+  lazy-foldl: foldl(second-of, 0, [panic("step forced"), 5]) = 5
+  RESULT: [same, empty, lazy-foldl] all-true? then(:PASS, :FAIL)
+}
 
 ` { target: :test-laziness }
 test-laziness: {

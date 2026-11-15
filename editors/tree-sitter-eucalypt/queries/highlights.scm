@@ -42,7 +42,7 @@
     "true" "false" "null" "nil"
     "cons" "head" "tail" "first" "second"
     "head-or" "tail-or" "second-or"
-    "map" "filter" "foldl" "foldr" "scanl" "scanr"
+    "map" "filter" "foldl" "foldl-strict" "foldr" "scanl" "scanr"
     "and" "or" "not"
     "merge" "concat" "append" "prepend"
     "identity" "const" "compose" "apply" "flip"
