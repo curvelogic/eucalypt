@@ -1056,7 +1056,10 @@ fn modular_operand(
     };
     Err(ExecutionError::ModularArithmetic(
         machine.annotation(),
-        format!("{function} requires each argument to be {problem}, but the {role} is {n}"),
+        format!(
+            "{function} requires each argument to be {problem}, but the {role} is {}",
+            crate::eval::error::exact_number(&n)
+        ),
     ))
 }
 
@@ -1233,9 +1236,15 @@ fn require_i64(n: &Number, smid: crate::common::sourcemap::Smid) -> Result<i64, 
             format!("{u} is out of the i64 range for bitwise operations")
         } else if let Some(f) = n.as_f64() {
             if f.fract() == 0.0 {
-                format!("{f} is out of the i64 range for bitwise operations")
+                format!(
+                    "{} is out of the i64 range for bitwise operations",
+                    crate::eval::error::exact_f64(f)
+                )
             } else {
-                format!("got {f}, which is not a whole number")
+                format!(
+                    "got {}, which is not a whole number",
+                    crate::eval::error::exact_f64(f)
+                )
             }
         } else {
             "value cannot be represented as an integer".to_string()

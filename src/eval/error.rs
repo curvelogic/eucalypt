@@ -1069,6 +1069,34 @@ fn format_bad_datetime_components(
 }
 
 /// Convert a data tag number to a human-readable type name for error messages
+/// Render a number for an error message without losing digits.
+///
+/// `Display` for `f64` (and `serde_json::Number`) prints the shortest
+/// digits that round-trip, padding with zeros, so the exactly-representable
+/// float 2^63 appears as `9223372036854776000`. Floats of magnitude 2^53 or more
+/// (all whole) within the i128 range are printed from their exact integer value instead.
+pub fn exact_number(n: &Number) -> String {
+    if n.is_i64() || n.is_u64() {
+        return n.to_string();
+    }
+    match n.as_f64() {
+        Some(f) if f.is_finite() && f.abs() >= 2f64.powi(53) => exact_f64(f),
+        _ => n.to_string(),
+    }
+}
+
+/// As [`exact_number`], for a bare `f64`.
+pub fn exact_f64(f: f64) -> String {
+    // Below 2^53 the shortest form is already exact (and keeps `-1.0`
+    // looking like a float); 2^126 keeps the cast inside i128. Every float
+    // at or above 2^53 is whole.
+    if f.is_finite() && f.abs() >= 2f64.powi(53) && f.abs() < 2f64.powi(126) {
+        format!("{}", f as i128)
+    } else {
+        format!("{f}")
+    }
+}
+
 fn display_data_tag(tag: u8) -> String {
     match DataConstructor::try_from(tag) {
         Ok(dc) => dc.to_string(),
@@ -1238,11 +1266,11 @@ pub enum ExecutionError {
     NotSerialisable(Smid, Box<(String, String)>),
     #[error("{}", format_unknown_format(.0))]
     UnknownFormat(String),
-    #[error("cannot combine numbers ({1}, {2}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
+    #[error("cannot combine numbers ({}, {}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision", exact_number(.1), exact_number(.2))]
     NumericDomainError(Smid, Number, Number),
-    #[error("result of ({1})^({2}) is not a real number\n  help: raising a negative base to a fractional exponent yields a complex result; use a non-negative base or an integer exponent")]
+    #[error("result of ({})^({}) is not a real number\n  help: raising a negative base to a fractional exponent yields a complex result; use a non-negative base or an integer exponent", exact_number(.1), exact_number(.2))]
     ComplexResult(Smid, Number, Number),
-    #[error("numeric overflow: result of operating on {1} and {2} is out of range\n  help: the result exceeds the representable range for this numeric type")]
+    #[error("numeric overflow: result of operating on {} and {} is out of range\n  help: the result exceeds the representable range for this numeric type", exact_number(.1), exact_number(.2))]
     NumericRangeError(Smid, Number, Number),
     #[error("{}", format_division_by_zero(.1))]
     DivisionByZero(Smid, String),
