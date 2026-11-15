@@ -12,9 +12,9 @@
 ;; compiled grammar (the script passes it with --eval).
 ;;
 ;; The check:
-;;   0. (at load) the mode's capture-to-face table covers every capture
-;;      highlights.scm uses, else `require' fails; and the features of the
-;;      derived rules match the mode's feature list;
+;;   0. the mode's capture-to-face table covers every capture
+;;      highlights.scm uses, rules were derived, and their features match
+;;      the mode's feature list;
 ;;   1. compiles every font-lock query in `eucalypt-mode--font-lock-settings'
 ;;      (derived from highlights.scm, which the markdown-in-docstrings
 ;;      fontifier also uses) against the grammar, by
@@ -48,6 +48,11 @@
 
 (defun eucalypt-check--features ()
   "Check the derived rules and the feature list name the same features."
+  (eucalypt-mode--ensure-font-lock)
+  (unless eucalypt-mode--font-lock-settings
+    (eucalypt-check--fail "no font-lock rules derived from highlights.scm"))
+  (dolist (c eucalypt-mode--unmapped-captures)
+    (eucalypt-check--fail "highlights.scm capture @%s has no face" c))
   (let ((listed (apply #'append eucalypt-mode--font-lock-feature-list))
         (used (delete-dups (mapcar (lambda (s) (nth 2 s))
                                    eucalypt-mode--font-lock-settings))))
@@ -143,7 +148,22 @@
     ("x: \"a{b}\"\n" "b" font-lock-variable-use-face)
     ;; Emacs-specific addition, and markdown layered on docstrings.
     ("x: \u27e6 a \u27e7\n" "\u27e6 a \u27e7" eucalypt-unicode-bracket-face)
-    ("` \"see `code`\"\nx: 1\n" "code" font-lock-constant-face))
+    ("` \"see `code`\"\nx: 1\n" "code" font-lock-constant-face)
+    ;; Markdown also applies to doc strings in block-valued metadata.
+    ("` {doc: \"see `code`\"}\nx: 1\n" "code" font-lock-constant-face)
+    ("{ {doc: \"see `code`\"} x: 1 }\n" "code" font-lock-constant-face)
+    ("{ doc: \"see `code`\" }\nx: 1\n" "code" font-lock-constant-face)
+    ;; User bindings, keys and symbols keep their faces although they
+    ;; share a name with a prelude function.
+    ("f(key, value): key\n" "key" font-lock-variable-name-face)
+    ("x: { first: 1 count: 3 }\n" "count" font-lock-variable-name-face)
+    ("x: :count\n" "count" font-lock-constant-face)
+    ("map(f, xs): xs\n" "map" font-lock-function-name-face)
+    ;; Whole-node rules must not repaint the node's contents.
+    ("x: \u27e6 \"s\" \u27e7\n" "s" font-lock-string-face)
+    ("x: \u00ab f(1) \u00bb\n" "1" font-lock-number-face)
+    ;; A call of a prelude name keeps its keyword face.
+    ("x: map(f, xs)\n" "map" font-lock-keyword-face))
   "Literals and the face each must carry at level 4.")
 
 (defun eucalypt-check--literals ()
