@@ -13,6 +13,7 @@
 - [Blocks and Declarations](guide/blocks-and-declarations.md)
 - [Expressions and Pipelines](guide/expressions-and-pipelines.md)
 - [Lists and Transformations](guide/lists-and-transformations.md)
+- [Dicts](guide/dicts.md)
 - [Strings and Text](guide/string-interpolation.md)
 - [Functions and Combinators](guide/functions-and-combinators.md)
 - [Operators](guide/operators.md)
@@ -33,6 +34,7 @@
 - [The State Monad](guide/state-monad.md)
 - [Type Checking](guide/type-checking.md)
 - [Structural Contracts](guide/contracts.md)
+- [Advent of Code](guide/advent-of-code.md)
 - [Advanced Topics](guide/advanced-topics.md)
 
 # Reference
@@ -48,6 +50,7 @@
   - [Combinators](reference/prelude/combinators.md)
   - [Calendar](reference/prelude/calendar.md)
   - [Sets](reference/prelude/sets.md)
+  - [Dicts](reference/prelude/dicts.md)
   - [Random Numbers](reference/prelude/random.md)
   - [Vecs and Arrays](reference/prelude/arrays.md)
   - [Graph Algorithms](reference/prelude/graphs.md)

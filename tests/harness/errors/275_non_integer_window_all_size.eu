@@ -1,0 +1,2 @@
+` "A non-integer size to `window-all` is an error (eu-oaz72.58). It used to round up."
+x: [1, 2, 3] window-all(1.5, 1)

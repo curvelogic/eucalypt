@@ -525,7 +525,7 @@ lazy_static! {
             strict: vec![],
     },
     Intrinsic { // 94
-            name: "SET.FROM_LIST",
+            name: "SET.OF",
             ty: function(vec![list(), unk()]).unwrap(),
             strict: vec![0],
     },
@@ -1060,6 +1060,156 @@ lazy_static! {
             // wrapper() to force xs's spine ahead of the parallel driver.
             name: "seqSpine",
             ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 198
+            name: "seqKey",
+            ty: function(vec![any(), any()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 199
+            name: "seqDictPairs",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 200
+            name: "DICT.OF",
+            ty: function(vec![list(), dict_type()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 201
+            name: "DICT.TO_LIST",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 202
+            name: "DICT.GET",
+            ty: function(vec![any(), dict_type(), any()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 203
+            name: "DICT.GET_OR",
+            ty: function(vec![any(), any(), dict_type(), any()]).unwrap(),
+            strict: vec![0, 2],
+    },
+    Intrinsic { // 204
+            name: "DICT.ASSOC",
+            ty: function(vec![any(), any(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![0, 2],
+    },
+    Intrinsic { // 205
+            name: "DICT.DISSOC",
+            ty: function(vec![any(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 206
+            name: "DICT.CONTAINS",
+            ty: function(vec![any(), dict_type(), bool_()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 207
+            name: "DICT.SIZE",
+            ty: function(vec![dict_type(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 208
+            name: "DICT.KEYS",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 209
+            name: "DICT.VALUES",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 210
+            name: "DICT.MIN",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 211
+            name: "DICT.MAX",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 212
+            name: "DICT.POP_MIN",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 213
+            name: "DICT.POP_MAX",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 214
+            name: "DICT.RANGE",
+            ty: function(vec![any(), any(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 215
+            name: "DICT.UPDATE",
+            ty: function(vec![any(), any(), any(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![0, 3],
+    },
+    Intrinsic { // 216
+            name: "DICT.UPDATE_STRICT",
+            ty: function(vec![any(), any(), any(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![0, 3],
+    },
+    Intrinsic { // 217
+            name: "DICT.MERGE_WITH",
+            ty: function(vec![any(), dict_type(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![1, 2],
+    },
+    Intrinsic { // 218
+            name: "DICT.TO_BLOCK",
+            ty: function(vec![dict_type(), block()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 219
+            name: "DICT.RENDER_VIEW",
+            ty: function(vec![any(), any()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 220
+            name: "MULMOD",
+            ty: function(vec![num(), num(), num(), num()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 221
+            name: "POWMOD",
+            ty: function(vec![num(), num(), num(), num()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 222
+            name: "MODINV",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 223
+            name: "MD5",
+            ty: function(vec![str_(), str_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 224
+            name: "CODE_POINTS",
+            ty: function(vec![str_(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 225
+            name: "FROM_CODE_POINTS",
+            ty: function(vec![list(), str_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 226
+            name: "CODE_POINT",
+            ty: function(vec![str_(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 227
+            name: "OF_CODE_POINT",
+            ty: function(vec![num(), str_()]).unwrap(),
             strict: vec![0],
     },
     ];

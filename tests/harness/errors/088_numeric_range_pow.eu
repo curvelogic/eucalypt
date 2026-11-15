@@ -1,0 +1,2 @@
+# Error: numeric range overflow - integer power beyond the i64 range
+x: 3 + 2 ^ 63

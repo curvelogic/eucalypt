@@ -1,0 +1,27 @@
+# Operators, numbers, symbols and assertions
+
+integers: [0, 7, -7]
+floats: [3.14, -0.5]
+symbols: [:key, :active, :'quoted symbol']
+
+arithmetic: 1 + 2 * 3 - 4 / 2
+division: 7 ÷ 2
+modulo: 7 % 3
+power: 2 ^ 10
+comparison: (1 < 2) ∧ (3 >= 3) ∨ (4 != 5)
+negation: ¬ false
+not-null: 1✓
+divides: 3 ∣ 12
+append: [1] ++ [2]
+deep-merge: { a: 1 } << { b: 2 }
+nth: [1, 2, 3] !! 0
+safe-lookup: { a: 1 } ~ :a
+head: ↑[1, 2]
+
+assert-equal: 1 + 1 //=> 2
+expect-equal: 2 * 2 //= 4
+expect-true: (1 < 2) //!
+expect-predicate: 3 //=? pos?
+assert-predicate: [1] //=?> non-nil?
+with-meta: 5 // { note: "five" }
+merge-meta: (5 // { a: 1 }) //<< { b: 2 }

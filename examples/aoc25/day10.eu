@@ -68,8 +68,7 @@ solve-machine[target, buttons]: {
 
 ` "Sum of minimum presses across machines. Machines are independent, so
 the per-machine solves run under `par-sum` (same value as
-`map(parse-machine ; solve-machine) sum`; parallel on macOS/Linux when
-the machine list clears the size threshold)."
+`map(parse-machine ; solve-machine) sum`; parallel on macOS/Linux)."
 solve(data):
   data filter(!= "") par-sum(parse-machine ; solve-machine)
 

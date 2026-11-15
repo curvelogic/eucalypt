@@ -1,0 +1,5 @@
+` "`x` wrapped in `n` nested lists"
+nest(n, x): (n = 0) then(x, nest(n - 1, [x]))
+
+` "list keys nested more than 32 deep are an error, not unbounded recursion (eu-oaz72.21)."
+result: dict.empty dict.assoc(nest(33, 1), :v) dict.size

@@ -353,6 +353,42 @@ A closed record is a subtype of the corresponding `Dict` type when all
 its field values share a common type. An open or annotated-Dict record is
 consistent with `Dict(T)` for gradual typing purposes.
 
+### dict(k, v)
+
+`dict(k, v)` — lowercase, with two parameters — is the type of a
+[dict](dicts.md), the persistent dictionary ordered by key, with keys of
+type `k` and values of type `v`. It is a different type from the block type
+`Dict(T)` above. Bare `dict` means `dict(any, any)`. A dict is persistent,
+so `dict(k, v)` is covariant in both parameters: a `dict(number, never)` is
+a `dict(number, string)`.
+
+```eu,notest
+` { type: "dict([number], number)" }
+dist: dict.of[[[0, 0], 0]]
+```
+
+The `dict` functions carry these types, for example:
+
+| Function       | Type                                                     |
+|----------------|----------------------------------------------------------|
+| `dict.of`      | `[(k, v)] -> dict(k, v)`                                 |
+| `dict.get`     | `k -> dict(k, v) -> v`                                   |
+| `dict.get-or`  | `any -> d -> dict(k, v) -> (v \| d)`                     |
+| `dict.assoc`   | `j -> w -> dict(k, v) -> dict(k \| j, v \| w)`           |
+| `dict.update`  | `j -> ((v \| d) -> w) -> d -> dict(k, v) -> dict(k \| j, v \| w)` |
+| `dict.range`   | `any -> any -> dict(k, v) -> dict(k, v)`                 |
+| `dict.to-list` | `dict(k, v) -> [(k, v)]`                                 |
+| `dict.pop-min` | `dict(k, v) -> (k, v, dict(k, v))`                       |
+
+Results such as `pop-min`'s are fixed tuples, so destructuring them
+(`[k, v, rest]`) gives each part its own type. Keys of different types in
+one dict are allowed at run time (they order numbers < strings < symbols <
+lists), so the signatures do not tie a default, a new key or value, or a
+range bound to the dict's own types: `dict.get-or(:b, null)` on a dict of
+numbers, `dict.range(0, :z)`, and an `assoc` or `update` that brings in a
+new key or value type all check clean. `dict.get` keeps the precise
+`k -> dict(k, v) -> v`, so a lookup's result has the dict's value type.
+
 ### Row polymorphism
 
 **Named row variables** allow functions that preserve the shape of records
@@ -472,7 +508,7 @@ of a type constructor:
 
 - `*` — an ordinary type (e.g. `number`, `[string]`)
 - `* -> *` — a unary type constructor (e.g. `List`, `IO`)
-- `* -> * -> *` — a binary type constructor (e.g. `Lens`, `Dict`)
+- `* -> * -> *` — a binary type constructor (e.g. `Lens`, `dict`)
 
 Declare a constructor variable with a kind annotation using `::`:
 
@@ -1111,6 +1147,7 @@ b: { tags: [1, 2] }     match?(spec)   # => false
 | Named row variable       | `{k: T, ..r}` (`{{k: T, ..r}}` in string)       |
 | Row concatenation        | `{..r, ..s}` (`{{..r, ..s}}` in string)          |
 | Homogeneous dict         | `Dict(T)`                                        |
+| Ordered dict (`dict.*`)  | `dict(k, v)`; bare `dict` = `dict(any, any)`     |
 | IO action                | `IO(T)`                                          |
 | Lens                     | `Lens(a, b)`                                     |
 | Traversal                | `Traversal(a, b)`                                |

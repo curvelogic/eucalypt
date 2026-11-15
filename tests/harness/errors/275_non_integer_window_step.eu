@@ -1,0 +1,2 @@
+` "A non-integer step to `window` is an error (eu-oaz72.58). It used to round up."
+x: [1, 2, 3] window(2, 0.5)

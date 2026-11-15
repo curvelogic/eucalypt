@@ -78,6 +78,7 @@ fn namespace_to_category(ns: &str) -> &'static str {
         "ch" => "strings",
         "cal" => "calendar",
         "set" => "sets",
+        "dict" => "dicts",
         "assertions" => "metadata",
         "random" => "random",
         "vec" | "arr" => "arrays",
@@ -401,7 +402,12 @@ fn generate_table(entries: &[&FlatEntry]) -> String {
     ];
     for entry in entries {
         let sig = entry.signature.replace('|', "\\|");
-        let desc = &entry.description;
+        // A table row must stay on one line: collapse any line breaks.
+        let desc = entry
+            .description
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         lines.push(format!("| `{sig}` | {desc} |"));
     }
     lines.join("\n")
@@ -679,6 +685,13 @@ fn category_sections(category: &str) -> Option<(&'static str, Vec<SectionConfig<
                 source: SectionSource::All,
             }],
         ),
+        "dicts" => (
+            "Dicts",
+            vec![SectionConfig {
+                display: "Dict Operations",
+                source: SectionSource::All,
+            }],
+        ),
         "random" => (
             "Random Numbers",
             vec![SectionConfig {
@@ -871,6 +884,7 @@ fn generate_index_page(
         ),
         ("calendar", "Calendar", "date and time functions"),
         ("sets", "Sets", "set operations"),
+        ("dicts", "Dicts", "persistent ordered dictionaries"),
         (
             "random",
             "Random Numbers",
@@ -966,6 +980,7 @@ const CATEGORY_ORDER: &[&str] = &[
     "combinators",
     "calendar",
     "sets",
+    "dicts",
     "random",
     "arrays",
     "graphs",
@@ -1039,4 +1054,42 @@ pub fn render_prelude_multifile(
     eprintln!("\nDone. Generated pages in {}", output_dir.display());
 
     Ok(0)
+}
+
+#[cfg(test)]
+mod category_tests {
+    use super::*;
+
+    fn entry(name: &str, namespace: &str, section: &str) -> FlatEntry {
+        FlatEntry {
+            name: name.to_string(),
+            signature: name.to_string(),
+            description: String::new(),
+            section: section.to_string(),
+            namespace: namespace.to_string(),
+            is_operator: false,
+            is_suppressed: false,
+        }
+    }
+
+    #[test]
+    fn data_structure_namespaces_get_their_own_pages() {
+        assert_eq!(entry_category(&entry("get", "vec", "")), "arrays");
+        assert_eq!(entry_category(&entry("get", "arr", "")), "arrays");
+        assert_eq!(
+            entry_category(&entry("is-array?", "", "N-dimensional arrays (tensors)")),
+            "arrays"
+        );
+        assert_eq!(entry_category(&entry("topo-sort", "graph", "")), "graphs");
+        assert_eq!(entry_category(&entry("and", "bit", "")), "bits");
+    }
+
+    #[test]
+    fn par_combinators_are_filed_by_name() {
+        assert_eq!(entry_category(&entry("par-map", "", "")), "parallel");
+        assert_eq!(
+            entry_category(&entry("par-sum", "", "anything")),
+            "parallel"
+        );
+    }
 }

@@ -444,6 +444,11 @@ pub fn fmt(
                     "cannot format set".to_string(),
                 ))
             }
+            Native::Dict(_) => {
+                return Err(PrintfError::InvalidFormatString(
+                    "cannot format dict".to_string(),
+                ))
+            }
             Native::NdArray(_) => {
                 return Err(PrintfError::InvalidFormatString(
                     "cannot format array".to_string(),

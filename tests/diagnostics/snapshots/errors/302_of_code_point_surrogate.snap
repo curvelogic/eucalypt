@@ -1,0 +1,25 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/302_of_code_point_surrogate
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/302_of_code_point_surrogate.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/302_of_code_point_surrogate.eu:2:10
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid code point: 57343 (U+DFFF) is a surrogate (U+D800 to U+DFFF), not a Unicode scalar value
+  ┌─ tests/harness/errors/302_of_code_point_surrogate.eu:2:10
+  │
+2 │ x: 57343 ch.of-code-point
+  │          ^^

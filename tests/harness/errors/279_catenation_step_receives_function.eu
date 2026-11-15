@@ -1,0 +1,4 @@
+v: vec.of[3, 4]
+
+` "`v vec.nth(0) + 1` reads as `v (vec.nth(0) + 1)`: `+` receives the step's partial application `vec.nth(0)`, and the note states that parse (eu-oaz72.29)"
+r: v vec.nth(0) + 1

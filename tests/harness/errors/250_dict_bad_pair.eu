@@ -1,0 +1,2 @@
+` "a `dict.of` element must be a two-element `[key, value]` list (eu-oaz72.21)."
+result: dict.of[[1, 2], [3, 4, 5]] dict.size

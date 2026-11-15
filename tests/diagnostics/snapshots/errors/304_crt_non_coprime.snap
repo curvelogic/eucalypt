@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/304_crt_non_coprime
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/304_crt_non_coprime.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/304_crt_non_coprime.eu:2:4
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: modular arithmetic: 6 has no inverse modulo 9, because gcd(6, 9) = 3
+  help: modinv(a, m) exists only when a and m are coprime
+  ┌─ tests/harness/errors/304_crt_non_coprime.eu:2:4
+  │
+2 │ x: crt[[1, 6], [2, 9]]
+  │    ^^^^^^^^^^^^^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - x at 304_crt_non_coprime.eu:2:4

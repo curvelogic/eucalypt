@@ -197,21 +197,22 @@ importantly, a **`while evaluating (outermost first):`** note:
 ```text
 error: tried to call a number as a function
   help: only functions and blocks can be called with arguments
-  help: this often means too many arguments were passed to a function
-  ┌─ example.eu:1:11
+  ┌─ example.eu:3:16
   │
-1 │ result: 3(4)
-  │           ^
+3 │ result: x f(1) + 1
+  │                ^
   │
-  = a number value is not a function; check for a missing operator or extra argument
-  = note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as 'f(a + 1)'; add parentheses to disambiguate
+  = note: the value called here is the result of '+'
+  = while evaluating (outermost first):
+    - result at example.eu:3:16
 ```
 
-The last note is a recurring hint: because catenation binds very loosely,
-an unexpected "tried to call X as a function" often means an infix
-operator captured an argument you meant to apply separately. See
-[Syntax Gotchas](../appendices/syntax-gotchas.md) for the precedence
-traps behind these messages.
+The note states which operator's result was called. Behind it is a
+precedence trap: catenation binds more loosely than `+`, so `x f(1) + 1`
+calls the number `f(1) + 1` with `x`. Notes that guess at a cause are
+shown only when the source gives evidence for them, read through the
+eucalypt lexer. See [Syntax Gotchas](../appendices/syntax-gotchas.md) for
+the precedence traps behind these messages.
 
 ## Reading "while evaluating" traces and source locations
 

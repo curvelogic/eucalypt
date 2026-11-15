@@ -1,0 +1,5 @@
+` "Two consecutive integers as a vec: annotated user code that the bad element is computed by."
+pair(n): [n, n + 1] vec.of
+
+` "set.remove rejects the vec element: the error points at this set.remove call, not at pair's body."
+result: [1, 2] set.from-list set.remove(pair(1))

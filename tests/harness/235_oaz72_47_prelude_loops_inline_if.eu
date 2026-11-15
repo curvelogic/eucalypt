@@ -1,0 +1,56 @@
+{
+  title: "235 prelude loops inline their conditional in blob mode"
+  doc: "eu-oaz72.47: the pre-compiled prelude now resolves intrinsic
+        aliases in each binding body, as source mode does, so `foldl` and
+        the loops built on it branch on an inlined case instead of calling
+        the global `if` with thunked branches. The old blob exceeded each
+        tick budget below."
+}
+
+snd(a, b): b
+
+n: 100000
+
+# Ticks per element, with headroom: blob mode measured 127 / 181 / 167
+# before the fix, 107 / 135 / 131 after; source mode 79 / 108 / 87.
+budget(per-element, context): (context.stats.ticks < per-element * n) then(:PASS, :FAIL)
+
+` "foldl stays within 117 ticks per element"
+foldl-budget: budget(117)
+
+` "sum stays within 158 ticks per element"
+sum-budget: budget(158)
+
+` "count stays within 149 ticks per element"
+count-budget: budget(149)
+
+` { target: :foldl-loop
+    verify: [:foldl-value, :foldl-budget] }
+foldl-loop: range(0, n) foldl(snd, 0)
+
+` "foldl returns its last accumulator"
+foldl-value(context): (context.result = 99999) then(:PASS, :FAIL)
+
+` { target: :sum-loop
+    verify: [:sum-value, :sum-budget] }
+sum-loop: range(0, n) sum
+
+` "sum adds every element"
+sum-value(context): (context.result = 4999950000) then(:PASS, :FAIL)
+
+` { target: :count-loop
+    verify: [:count-value, :count-budget] }
+count-loop: range(0, n) count
+
+` "count counts every element"
+count-value(context): (context.result = n) then(:PASS, :FAIL)
+
+` { target: :test-semantics }
+semantics: {
+  # The loops still evaluate lazily and terminate on empty input.
+  empty-foldl: foldl(+, 7, []) = 7
+  empty-count: ([] count) = 0
+  lazy-op: foldl(snd, panic("seed evaluated"), [1, 2, 3]) = 3
+  as-value: { f: foldl }.(f(+, 0, [1, 2, 3])) = 6
+  RESULT: [empty-foldl, empty-count, lazy-op, as-value] all-true? then(:PASS, :FAIL)
+}

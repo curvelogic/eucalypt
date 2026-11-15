@@ -1,0 +1,2 @@
+` "eu-oaz72.25: a negative code point is rejected"
+x: [97, -1] str.from-code-points

@@ -15,7 +15,7 @@ use crate::eval::{
 
 use super::{
     syntax::{
-        dsl::{case, data, force, lambda, local, lref, switch, unbox_num, unbox_str},
+        dsl::{case, data, force, lambda, let_, local, lref, switch, unbox_num, unbox_str, value},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -104,7 +104,7 @@ impl CallGlobal1 for SeqNumList {}
 ///
 /// Unlike `SeqNumList` / `SeqStrList`, this accepts all primitive
 /// types (numbers, strings, symbols).  Used by `VecOf` and
-/// `SetFromList` which need fully-evaluated elements before their
+/// `SetOf` which need fully-evaluated elements before their
 /// `execute()` methods navigate heap closures.
 ///
 /// Uses the same pattern as `SeqNumList`: force head, force inner
@@ -184,6 +184,180 @@ impl StgIntrinsic for SeqList {
 }
 
 impl CallGlobal1 for SeqList {}
+
+/// SeqKey — deep-force a dict key (eu-oaz72.21).
+///
+/// A boxed scalar (number, string, symbol) is forced and returned unboxed;
+/// a list is rebuilt with every element deep-forced the same way, at any
+/// nesting depth; anything else is returned at WHNF unchanged, for the dict
+/// intrinsic to reject with a `BadDictKey` error naming its type. Never
+/// forces anything but the key.
+pub struct SeqKey;
+
+impl StgIntrinsic for SeqKey {
+    fn name(&self) -> &str {
+        "seqKey"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        // In a box branch: [inner] [x] → force inner → [forced] [inner] [x].
+        let force_inner = force(local(0), local(0));
+        lambda(
+            1, // [x]
+            case(
+                local(0),
+                vec![
+                    (DataConstructor::BoxedNumber.tag(), force_inner.clone()),
+                    (DataConstructor::BoxedString.tag(), force_inner.clone()),
+                    (DataConstructor::BoxedSymbol.tag(), force_inner),
+                    (
+                        DataConstructor::ListCons.tag(), // [h t] [x]
+                        force(
+                            SeqKey.global(lref(0)),
+                            // [sh] [h t] [x]
+                            force(
+                                SeqKey.global(lref(2)),
+                                // [st] [sh] [h t] [x]
+                                data(DataConstructor::ListCons.tag(), vec![lref(1), lref(0)]),
+                            ),
+                        ),
+                    ),
+                ],
+                // ListNil or any other value, at WHNF: [forced] [x]
+                local(0),
+            ),
+        )
+    }
+}
+
+impl CallGlobal1 for SeqKey {}
+
+/// SeqDictPairs — prepare `dict.of`'s list of `[key, value]` pairs
+/// (eu-oaz72.21).
+///
+/// Forces the list spine, each pair's two cons cells and the end of the
+/// pair, and deep-forces each key with [`SeqKey`]; values are never touched.
+/// Each well-formed pair becomes `BlockPair(forced_key, value)` in the
+/// rebuilt list, so the intrinsic reads keys without forcing; any other
+/// element (not a two-element list) is passed through as it is, at WHNF, for
+/// the intrinsic to reject with a `BadDictPair` error describing it.
+pub struct SeqDictPairs;
+
+impl StgIntrinsic for SeqDictPairs {
+    fn name(&self) -> &str {
+        "seqDictPairs"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        // A malformed element: rebuild `ListCons(element, rest)` where the
+        // element is at `p` and the original tail at `t` (both env indices
+        // before the recursive force pushes its result).
+        let pass_through = |p: usize, t: usize| {
+            force(
+                SeqDictPairs.global(lref(t)),
+                // [st] ... — every index shifts by one
+                data(DataConstructor::ListCons.tag(), vec![lref(p + 1), lref(0)]),
+            )
+        };
+
+        // The well-formed path, once `rest` (the cell after the value) is
+        // known to be `ListNil` (no fields bound):
+        //   [v rest] [fk] [k r] [fp] [p t] [xs]
+        //    0  1     2    3 4   5    6 7   8
+        let well_formed = force(
+            SeqDictPairs.global(lref(7)),
+            // [st] [v rest] [fk] [k r] [fp] [p t] [xs]
+            //  0    1  2     3    4 5   6    7 8   9
+            let_(
+                vec![value(data(
+                    DataConstructor::BlockPair.tag(),
+                    vec![lref(3), lref(1)],
+                ))],
+                // [pair] [st] ...
+                data(DataConstructor::ListCons.tag(), vec![lref(0), lref(1)]),
+            ),
+        );
+
+        lambda(
+            1, // [xs]
+            switch(
+                local(0),
+                vec![
+                    (DataConstructor::ListNil.tag(), local(0)),
+                    (
+                        DataConstructor::ListCons.tag(), // [p t] [xs]
+                        // Force the element and keep it bound, so a malformed
+                        // one is passed on evaluated: the error then describes
+                        // the value, not the alias it arrived as.
+                        force(
+                            local(0),
+                            // [fp] [p t] [xs]
+                            case(
+                                local(0),
+                                vec![(
+                                    DataConstructor::ListCons.tag(), // [k r] [fp] [p t] [xs]
+                                    force(
+                                        SeqKey.global(lref(0)),
+                                        // [fk] [k r] [fp] [p t] [xs]
+                                        //  0    1 2   3    4 5   6
+                                        case(
+                                            local(2),
+                                            vec![(
+                                                DataConstructor::ListCons.tag(),
+                                                // [v rest] [fk] [k r] [fp] [p t] [xs]
+                                                case(
+                                                    local(1),
+                                                    vec![(
+                                                        DataConstructor::ListNil.tag(),
+                                                        well_formed,
+                                                    )],
+                                                    // [frest] [v rest] [fk] [k r] [fp] [p t] [xs]
+                                                    //  0       1 2      3    4 5   6    7 8   9
+                                                    // Pass `fk : v : frest`, the
+                                                    // cells already forced, so the
+                                                    // error counts them.
+                                                    force(
+                                                        SeqDictPairs.global(lref(8)),
+                                                        // [st] [frest] [v rest] [fk] ...
+                                                        let_(
+                                                            vec![value(data(
+                                                                DataConstructor::ListCons.tag(),
+                                                                vec![lref(2), lref(1)],
+                                                            ))],
+                                                            // [c2] [st] [frest] [v rest] [fk] ...
+                                                            let_(
+                                                                vec![value(data(
+                                                                    DataConstructor::ListCons.tag(),
+                                                                    vec![lref(5), lref(0)],
+                                                                ))],
+                                                                // [c1] [c2] [st] ...
+                                                                data(
+                                                                    DataConstructor::ListCons.tag(),
+                                                                    vec![lref(0), lref(2)],
+                                                                ),
+                                                            ),
+                                                        ),
+                                                    ),
+                                                ),
+                                            )],
+                                            // [fr] [fk] [k r] [fp] [p t] [xs]
+                                            //  0    1    2 3   4    5 6   7
+                                            pass_through(4, 6),
+                                        ),
+                                    ),
+                                )],
+                                // [ffp] [fp] [p t] [xs]
+                                pass_through(0, 3),
+                            ),
+                        ),
+                    ),
+                ],
+            ),
+        )
+    }
+}
+
+impl CallGlobal1 for SeqDictPairs {}
 
 /// SeqSpine — force the SPINE of a list to its end (every `ListCons` cell's
 /// tail, down to `ListNil`), WITHOUT forcing/unboxing head elements and

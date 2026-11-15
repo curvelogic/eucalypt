@@ -1,0 +1,2 @@
+` "A negative arr.slice index is an error, not clamped to 0 (eu-oaz72.88)"
+r: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.slice(0, -1)

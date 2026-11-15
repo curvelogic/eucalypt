@@ -6,21 +6,22 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 
 - [Lists](lists.md) -- list construction, transformation, folding, sorting (91 entries)
 - [Blocks](blocks.md) -- block construction, access, merging, transformation (66 entries)
-- [Strings](strings.md) -- string manipulation, regex, formatting (36 entries)
-- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (30 entries)
+- [Strings](strings.md) -- string manipulation, regex, formatting (41 entries)
+- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (36 entries)
 - [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (12 entries)
 - [Combinators](combinators.md) -- function composition, application, utilities (14 entries)
 - [Calendar](calendar.md) -- date and time functions (8 entries)
-- [Sets](sets.md) -- set operations (14 entries)
+- [Sets](sets.md) -- set operations (15 entries)
+- [Dicts](dicts.md) -- persistent ordered dictionaries (24 entries)
 - [Random Numbers](random.md) -- random number generation, monadic random: namespace (15 entries)
-- [Vecs and Arrays](arrays.md) -- vecs (O(1) indexed access) and n-dimensional arrays (31 entries)
+- [Vecs and Arrays](arrays.md) -- vecs (O(1) indexed access) and n-dimensional arrays (32 entries)
 - [Graph Algorithms](graphs.md) -- union-find, topological sort, Kruskal (3 entries)
 - [Bitwise Operations](bits.md) -- bitwise and, or, xor, shifts, bit counts (9 entries)
 - [Process Parallelism](parallel.md) -- experimental par-* combinators (5 entries)
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
 - [IO](io.md) -- environment, time, argument access, and monad utility (37 entries)
 
-*375 documented entries in total.*
+*412 documented entries in total.*
 
 ## Standard Libraries
 

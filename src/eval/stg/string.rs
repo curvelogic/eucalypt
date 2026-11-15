@@ -17,11 +17,12 @@ use crate::{
 };
 
 use super::{
-    force::SeqStrList,
+    force::{SeqNumList, SeqStrList},
     printf::{self, PrintfError},
     support::{
-        machine_return_bool, machine_return_num, machine_return_str, machine_return_str_iter,
-        machine_return_str_list, machine_return_sym, str_arg, str_arg_ref, str_list_arg,
+        collect_num_list, machine_return_bool, machine_return_num, machine_return_str,
+        machine_return_str_iter, machine_return_str_list, machine_return_sym, num_arg, str_arg,
+        str_arg_ref, str_list_arg,
     },
     syntax::{
         dsl::{atom, box_str, case, data, force, lambda, let_, local, lref, str, unbox_str, value},
@@ -32,6 +33,7 @@ use super::{
 
 use regex::Regex;
 use serde_json::Number;
+use std::borrow::Cow;
 
 /// Get (or store and get) regex from machine rcache
 ///
@@ -126,6 +128,7 @@ impl StgIntrinsic for Str {
             Native::Num(n) => format!("{n}"),
             Native::Zdt(d) => format!("{d}"),
             Native::Set(_) => "<set>".to_string(),
+            d @ Native::Dict(_) => d.to_string(),
             Native::NdArray(_) => "<array>".to_string(),
             Native::Vec(_) => "<vec>".to_string(),
             Native::Prng(_) => "<prng>".to_string(),
@@ -298,7 +301,7 @@ impl StgIntrinsic for NumParse {
     ) -> Result<(), ExecutionError> {
         let string = str_arg(machine, view, &args[0])?;
 
-        if let Ok(num) = str::parse::<Number>(&string) {
+        if let Ok(num) = str::parse::<Number>(strip_leading_zeros(&string).as_ref()) {
             machine_return_num(machine, view, num)
         } else {
             Err(ExecutionError::BadNumberFormat(
@@ -310,6 +313,32 @@ impl StgIntrinsic for NumParse {
 }
 
 impl CallGlobal1 for NumParse {}
+
+/// Drop redundant leading zeros from the integer part of a decimal
+/// number string, keeping at least one digit: `"07"` → `"7"`,
+/// `"-007.5"` → `"-7.5"`, `"00"` → `"0"`.
+///
+/// `num` parses with `serde_json::Number`, whose JSON grammar rejects
+/// leading zeros. Fixed-width numeric fields are common in data, and a
+/// leading zero never means octal here: the digits are always read as
+/// decimal. Only the integer part (after an optional `-`) is touched;
+/// anything else the grammar rejects is still rejected, including a
+/// radix prefix such as `0x`, `0o` or `0b` (`"00x1f"` → `"0x1f"`).
+fn strip_leading_zeros(s: &str) -> Cow<'_, str> {
+    let (sign, digits) = match s.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", s),
+    };
+    let int_len = digits.bytes().take_while(u8::is_ascii_digit).count();
+    let zeros = digits.bytes().take_while(|&b| b == b'0').count();
+    // Keep the last digit of the integer part even when it is a zero.
+    let strip = zeros.min(int_len.saturating_sub(1));
+    if strip == 0 {
+        Cow::Borrowed(s)
+    } else {
+        Cow::Owned(format!("{sign}{}", &digits[strip..]))
+    }
+}
 
 /// FMT(obj, fmtstring) - format an object using platform fmt
 /// only supports number right now
@@ -451,6 +480,156 @@ impl StgIntrinsic for Letters {
 }
 
 impl CallGlobal1 for Letters {}
+
+/// CODE_POINTS(string) - the Unicode scalar values of a string's characters,
+/// one per character as split by `LETTERS`
+pub struct CodePoints;
+
+impl StgIntrinsic for CodePoints {
+    fn name(&self) -> &str {
+        "CODE_POINTS"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let string = str_arg_ref(machine, view, &args[0])?;
+        // Integers, not floats: they must render as `97`, not `97.0`.
+        let mut items = Vec::with_capacity(string.len());
+        for c in string.chars() {
+            let native = machine.native_value(view, Native::Num(Number::from(u32::from(c))))?;
+            items.push(machine.data_value(view, DataConstructor::BoxedNumber.tag(), &[native])?);
+        }
+        machine.return_closure_list(view, items)
+    }
+}
+
+impl CallGlobal1 for CodePoints {}
+
+/// Convert a number to a Unicode scalar value, or say why it is not one.
+fn scalar_value(value: f64) -> Result<char, String> {
+    if value.fract() != 0.0 || !value.is_finite() {
+        return Err(format!("{value} is not a whole number"));
+    }
+    if value < 0.0 {
+        return Err(format!("{value} is negative"));
+    }
+    if value > f64::from(char::MAX as u32) {
+        return Err(format!(
+            "{value} is above the largest code point, U+10FFFF (1114111)"
+        ));
+    }
+    let n = value as u32;
+    char::from_u32(n).ok_or_else(|| {
+        format!("{n} (U+{n:04X}) is a surrogate (U+D800 to U+DFFF), not a Unicode scalar value")
+    })
+}
+
+/// FROM_CODE_POINTS(list) - the string whose characters have the given code points
+pub struct FromCodePoints;
+
+impl StgIntrinsic for FromCodePoints {
+    fn name(&self) -> &str {
+        "FROM_CODE_POINTS"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
+            1, // [list]
+            force(
+                SeqNumList.global(lref(0)),
+                // [seqlist] [list]
+                let_(
+                    vec![value(call::bif::from_code_points(lref(0)))],
+                    data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
+                ),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
+        let points = collect_num_list(machine, view, args[0].clone())?;
+        let mut out = String::with_capacity(points.len());
+        for p in points {
+            out.push(
+                scalar_value(p).map_err(|detail| ExecutionError::InvalidCodePoint(smid, detail))?,
+            );
+        }
+        machine_return_str(machine, view, out)
+    }
+}
+
+impl CallGlobal1 for FromCodePoints {}
+
+/// CODE_POINT(string) - the code point of a one-character string
+pub struct CodePoint;
+
+impl StgIntrinsic for CodePoint {
+    fn name(&self) -> &str {
+        "CODE_POINT"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
+        let string = str_arg_ref(machine, view, &args[0])?;
+        let mut chars = string.chars();
+        match (chars.next(), chars.next()) {
+            (Some(c), None) => machine_return_num(machine, view, Number::from(u32::from(c))),
+            _ => Err(ExecutionError::InvalidCodePoint(
+                smid,
+                format!(
+                    "ch.code-point requires a string of exactly one character, but got {} characters\n  \
+                     help: use str.code-points for a longer string",
+                    string.chars().count()
+                ),
+            )),
+        }
+    }
+}
+
+impl CallGlobal1 for CodePoint {}
+
+/// OF_CODE_POINT(n) - the one-character string for a code point
+pub struct OfCodePoint;
+
+impl StgIntrinsic for OfCodePoint {
+    fn name(&self) -> &str {
+        "OF_CODE_POINT"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
+        let n = num_arg(machine, view, &args[0])?;
+        let value = n.as_f64().unwrap_or(f64::NAN);
+        let c = scalar_value(value).map_err(|d| ExecutionError::InvalidCodePoint(smid, d))?;
+        machine_return_str(machine, view, c.to_string())
+    }
+}
+
+impl CallGlobal1 for OfCodePoint {}
 
 /// __DQ - constant for the double quote character
 pub struct Dq;
@@ -598,6 +777,31 @@ mod tests {
             Box::new(Add),
             Box::new(Panic),
         ])
+    }
+
+    // ── NUMPARSE leading zeros ────────────────────────────────────
+
+    #[test]
+    fn test_strip_leading_zeros() {
+        for (input, expected) in [
+            ("07", "7"),
+            ("-07", "-7"),
+            ("00", "0"),
+            ("-00", "-0"),
+            ("007.5", "7.5"),
+            ("000e5", "0e5"),
+            ("0", "0"),
+            ("0.5", "0.5"),
+            ("10", "10"),
+            ("", ""),
+            ("-", "-"),
+            ("0x1f", "0x1f"),
+            ("00x1f", "0x1f"),
+            ("+07", "+07"),
+            (" 07", " 07"),
+        ] {
+            assert_eq!(strip_leading_zeros(input), expected, "input {input:?}");
+        }
     }
 
     // ── STR wrapper tests ─────────────────────────────────────────

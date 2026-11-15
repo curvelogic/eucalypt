@@ -10,7 +10,7 @@ warnings: 0
 code: EU-EVAL-TYPE
 primary: user tests/harness/errors/101_named_fn_source_loc.eu:4:9
 help-lines: 0
-note-lines: 2
+note-lines: 1
 secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
@@ -25,6 +25,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
   │         ^^^^^^^^^^^^^^^
   │
   = to convert a string to a number, use 'num', e.g. 's num'
-  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
   = while evaluating (outermost first):
     - result at 101_named_fn_source_loc.eu:4:9

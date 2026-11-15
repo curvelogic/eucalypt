@@ -14,5 +14,5 @@ expected_class = "list"
 # both the right answer ('map', column 15) and the wrong one (the '+' at column
 # 20, inside a section that is correct code and that 'map' merely happened to be
 # forcing) sit on line 6 — so region 6..6 passes either way. The golden snapshot
-# is what pins the column. Contrast metadata_span, whose 2..3 → 3..3 narrowing
-# does pin its direction at gate level.
+# is what pins the column. (metadata_span's 3..3 narrowing once pinned its
+# direction at gate level; eu-oaz72.63 widened it back to 2..3.)

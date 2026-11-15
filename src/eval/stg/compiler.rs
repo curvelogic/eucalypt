@@ -5,6 +5,7 @@ use std::{collections::HashMap, convert::TryInto, rc::Rc};
 use crate::core::binding::{BoundVar, Var};
 use crate::core::demand::Demand;
 use crate::{
+    common::evidence::{arrow_function_shape, LabelSource},
     common::sourcemap::{HasSmid, Smid, SourceMap},
     core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr, INTERNAL_FREE_VAR_PREFIX},
     eval::{
@@ -13,6 +14,7 @@ use crate::{
     },
 };
 use codespan_reporting::diagnostic::Diagnostic;
+use codespan_reporting::files::SimpleFiles;
 
 use thiserror::Error;
 
@@ -70,8 +72,29 @@ impl HasSmid for CompileError {
 }
 
 impl CompileError {
+    /// Build the diagnostic without access to source text: hints that need
+    /// evidence from the source (eu-oaz72.28) are omitted.
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
+        self.diagnostic_impl(source_map, None)
+    }
+
+    /// Build the diagnostic, reading `files` for the source evidence that
+    /// gates some hints (eu-oaz72.28).
+    pub fn to_diagnostic_with_source(
+        &self,
+        source_map: &SourceMap,
+        files: &SimpleFiles<String, String>,
+    ) -> Diagnostic<usize> {
+        self.diagnostic_impl(source_map, Some(files))
+    }
+
+    fn diagnostic_impl(
+        &self,
+        source_map: &SourceMap,
+        files: Option<&SimpleFiles<String, String>>,
+    ) -> Diagnostic<usize> {
         let diag = source_map.diagnostic(self);
+        let source = files.and_then(|f| LabelSource::of(&diag, f));
         match self {
             CompileError::FreeVar(_, name) => {
                 // Detect bindings that are internal to their unit (marked
@@ -102,19 +125,28 @@ impl CompileError {
                          its anonymous-function scope does not extend"
                             .to_string(),
                     );
-                    notes.push(
-                        "hint: 'f(_)' does not create a section — use a named function \
-                         or pass the function directly, e.g. 'map(double)' not \
-                         'map(double(_))'"
-                            .to_string(),
-                    );
+                    // Only when the '_' is written as a call argument,
+                    // `f(_)` or `f(a, _)` (eu-oaz72.28).
+                    if source.as_ref().is_some_and(|src| {
+                        src.text().trim() == "_" && src.before().trim_end().ends_with(['(', ','])
+                    }) {
+                        notes.push(
+                            "hint: 'f(_)' does not create a section — use a named function \
+                             or pass the function directly, e.g. 'map(double)' not \
+                             'map(double(_))'"
+                                .to_string(),
+                        );
+                    }
                     return friendly_diag.with_notes(notes);
                 }
-                // If the name is a single letter it almost certainly comes from an
-                // arrow-function expression like `x -> x + 1`.  Avoid showing this
-                // hint for longer names (e.g. `xs`, `zdt`) that are more likely
-                // genuine unresolved identifiers rather than misused lambda parameters.
-                if name.len() == 1 && name.chars().all(|c| c.is_alphanumeric()) {
+                // Only when the source shows an arrow-function shape, read
+                // through the lexer: `map(x -> y + 1)`, `(x, y) -> 1` or
+                // `x -> x + 1`, but not `xs foo -> 1`, which is the const
+                // operator used correctly (eu-oaz72.28).
+                if source.as_ref().is_some_and(|src| {
+                    src.text() == name.as_str()
+                        && arrow_function_shape(src.before(), src.after(), name)
+                }) {
                     notes.push(
                         "note: eucalypt has no arrow functions; '->' is the const \
                          operator, not lambda syntax"
@@ -528,14 +560,22 @@ pub struct Compiler<'rt> {
     /// Maps binding name → per-argument demand vector. Used when
     /// compiling `App(user_function, args)` to set per-argument demands.
     user_demand_sigs: crate::core::analyse_demand::NamedSignatureTable,
-    /// Per-prelude-function demand signatures for blob-mode globals.
+    /// Demand signatures of the prelude globals, by prelude slot.
     ///
-    /// Maps prelude function name → per-argument demand vector. Used as
-    /// a third fallback (after intrinsic and user sigs) when compiling
-    /// `App(global, args)` to set per-argument demands for eager Seq
-    /// wrapping of strict arguments.
-    prelude_demand_sigs: HashMap<String, Vec<crate::core::demand::Demand>>,
+    /// `prelude_demand_sigs[slot]` is the signature the demand analysis
+    /// derived for the binding at that slot when the blob was built
+    /// (`PreludeBlob::demand_signatures`, eu-oaz72.77). A call whose callee
+    /// is a `Var::Free` that `resolve_free_var` maps to a prelude global
+    /// takes the signature of that global's slot, so the signature follows
+    /// the binding the name refers to rather than the name.
+    prelude_demand_sigs: PreludeDemandSignatures,
 }
+
+/// Demand signatures of the prelude globals, indexed by prelude slot
+/// (relative to `INTRINSIC_COUNT`); `None` where a slot's signature is
+/// unknown. Shared, since every compile in a run uses the same table.
+pub type PreludeDemandSignatures =
+    std::sync::Arc<Vec<Option<crate::core::analyse_demand::DemandSignature>>>;
 
 /// An item which can be converted to STG syntax once the context in known
 ///
@@ -1131,6 +1171,7 @@ impl ProtoSyntax for ProtoAppGroup {
         let mut intrinsic_index = None;
         let mut intrinsic_name: Option<&str> = None;
         let mut callee_name: Option<&str> = None;
+        let mut prelude_slot: Option<usize> = None;
         let mut local_binder = LetBinder::synthetic_let(context);
 
         // Find a reference for the function.
@@ -1143,6 +1184,7 @@ impl ProtoSyntax for ProtoAppGroup {
                 }
                 Var::Free(name) => {
                     callee_name = Some(name.as_str());
+                    prelude_slot = compiler.prelude_slot(name);
                     let r = compiler.resolve_free_var(*s, name)?;
                     Box::new(ProtoRef::new(r))
                 }
@@ -1163,22 +1205,32 @@ impl ProtoSyntax for ProtoAppGroup {
             )?)),
         };
 
-        // Look up per-argument demands.  Try intrinsic signatures first,
-        // then user function signatures from demand analysis, then
-        // prelude function signatures for blob-mode globals.
+        // Look up per-argument demands by what the callee is: an intrinsic
+        // takes its catalogue signature; a bound variable (a user binding,
+        // or a prelude binding in source mode) takes the analysis' named
+        // signature; a free variable resolved to a prelude global takes the
+        // signature derived for that global's slot when the blob was built.
+        // Keying the last two by the callee's identity keeps a user helper's
+        // signature off a same-named prelude global, and a prelude signature
+        // off a same-named user binding (eu-oaz72.77).
+        //
+        // A signature describes a saturated call: only then does the
+        // callee's body run and force its strict parameters.  A partial
+        // application builds a closure that forces nothing yet, so it
+        // takes no signature (as in the analysis' `lookup_signature`).
         let arg_demands: Option<&[crate::core::demand::Demand]> = intrinsic_name
             .and_then(|name| compiler.intrinsic_demand_sigs.get(name))
             .map(|v| v.as_slice())
-            .or_else(|| {
-                callee_name
+            .or_else(|| match prelude_slot {
+                Some(slot) => compiler
+                    .prelude_demand_sigs
+                    .get(slot)
+                    .and_then(|sig| sig.as_deref()),
+                None => callee_name
                     .and_then(|name| compiler.user_demand_sigs.get(name))
-                    .map(|v| v.as_slice())
+                    .map(|v| v.as_slice()),
             })
-            .or_else(|| {
-                callee_name
-                    .and_then(|name| compiler.prelude_demand_sigs.get(name))
-                    .map(|v| v.as_slice())
-            });
+            .filter(|sigs| self.args.len() >= sigs.len());
 
         // Detect self-recursive call: callee name matches the
         // enclosing recursive binding.  The VM will resolve Ref::L
@@ -1266,9 +1318,10 @@ impl ProtoSyntax for ProtoAppGroup {
                 // 2. Arity > 0 and matches arg count exactly
                 //
                 // Demand signatures are only recorded for let-bound lambdas
-                // (user_demand_sigs) or hand-curated prelude/intrinsic tables,
-                // so their presence reliably indicates a Value lambda form
-                // whose arity is correct at resolution time.  The VM also
+                // (user_demand_sigs), prelude lambdas (derived per slot at
+                // blob build) and intrinsics, so their presence reliably
+                // indicates a lambda whose arity is correct at resolution
+                // time.  The VM also
                 // guards with a runtime arity check, falling back to normal
                 // App semantics on mismatch.
                 let direct = if let Some(sigs) = arg_demands {
@@ -1623,11 +1676,6 @@ impl<'rt> Compiler<'rt> {
         prelude_globals: Option<HashMap<String, usize>>,
     ) -> Self {
         let intrinsic_demand_sigs = crate::core::analyse_demand::build_intrinsic_signatures();
-        let prelude_demand_sigs = if prelude_globals.is_some() {
-            crate::core::analyse_demand::build_prelude_signatures()
-        } else {
-            HashMap::new()
-        };
         Compiler {
             generate_annotations,
             render_type,
@@ -1638,8 +1686,20 @@ impl<'rt> Compiler<'rt> {
             intrinsic_demand_sigs,
             prelude_globals,
             user_demand_sigs: Default::default(),
-            prelude_demand_sigs,
+            prelude_demand_sigs: Default::default(),
         }
+    }
+
+    /// Set the prelude globals' demand signatures, by prelude slot.
+    pub fn with_prelude_demand_sigs(mut self, sigs: PreludeDemandSignatures) -> Self {
+        self.prelude_demand_sigs = sigs;
+        self
+    }
+
+    /// The prelude slot (relative to `INTRINSIC_COUNT`) a free variable
+    /// resolves to, if it names a prelude global.
+    fn prelude_slot(&self, name: &str) -> Option<usize> {
+        self.prelude_globals.as_ref()?.get(name).copied()
     }
 
     /// Set the user function demand signature table.

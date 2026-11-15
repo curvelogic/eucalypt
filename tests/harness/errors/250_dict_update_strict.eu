@@ -1,0 +1,4 @@
+` "`dict.update-strict` evaluates the new value `f(old)` when the dict is built; `dict.update` would leave it unevaluated."
+boom(old): panic("evaluated")
+
+result: dict.empty dict.update-strict(:k, boom, 0) dict.size

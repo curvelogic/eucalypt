@@ -1,0 +1,3 @@
+exit: 1
+# the operator received the step's function; the parse is stated as fact (eu-oaz72.29)
+stderr: "(?s)found a function.*note: 'v vec\.nth\(0\) \+ 1' was read as 'v \(vec\.nth\(0\) \+ 1\)'; parenthesise the pipeline: '\(v vec\.nth\(0\)\) \+ 1'"

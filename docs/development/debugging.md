@@ -16,11 +16,13 @@ poison pattern in `mark()` — if a live GC root references memory
 that has been poisoned, the collector panics immediately with the
 object address and type name.
 
-Also enables **hole verification** in the bump allocator: when a
-recycled block's hole is about to be reused, the allocator checks
-that it does not contain anything that looks like a valid marked
-object, catching line-marking bugs where live data is classified
-as a free hole.
+Also enables **hole verification** in the bump allocator. When a
+block is recycled, every free hole in it is poisoned, not only the
+first. Until the next collection redraws the holes, the allocator
+checks each hole as it moves into it, and panics with `GC HOLE` if
+any byte is no longer poison. Anything else in a hole means a write
+through a stale pointer, or a live object in a line the collector
+failed to mark.
 
 Use this when investigating segfaults, heap corruption, or
 non-deterministic runtime failures.

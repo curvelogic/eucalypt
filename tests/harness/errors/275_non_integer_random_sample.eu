@@ -1,0 +1,2 @@
+` "A non-integer count to `random.sample` is an error (eu-oaz72.58). It used to round up."
+x: random.sample(1.5, [1, 2, 3])(random.stream(42)).value

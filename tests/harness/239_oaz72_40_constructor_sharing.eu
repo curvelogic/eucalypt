@@ -1,0 +1,39 @@
+{
+  title: "239 a binding used in a constructor is shared across reads"
+  doc: "eu-oaz72.40: a binding referred to once inside a block field or list
+        element can be read any number of times through the structure, so
+        demand analysis must not mark it AtMostOnce (which skips its update
+        frame). The tick gate is in `tests/harness_test.rs`, which runs these
+        targets with demand analysis on and requires each three-read target
+        to cost about one fold."
+}
+
+` "the target computes the right value"
+passes(context): (context.result.ok) then(:PASS, :FAIL)
+
+p(n): { m: range(0, n) foldl(+, 0) }.([m])
+h(n): { m: range(0, n) foldl(+, 0)  l: [m] }.l
+
+` { target: :fold
+    verify: [:passes] }
+fold: {
+  ok: (range(0, 20000) foldl(+, 0)) = 199990000
+}
+
+# A list literal as a block's body: three reads, one fold if shared.
+` { target: :list-body
+    verify: [:passes] }
+list-body: {
+  x: p(20000)
+  y: [x first, x first, x first]
+  ok: y = [199990000, 199990000, 199990000]
+}
+
+# A list held in a selected block field: three reads, one fold if shared.
+` { target: :list-field
+    verify: [:passes] }
+list-field: {
+  x: h(20000)
+  y: [x first, x first, x first]
+  ok: y = [199990000, 199990000, 199990000]
+}

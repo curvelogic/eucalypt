@@ -1,0 +1,2 @@
+` "a dict with a list key cannot render: a mapping key is a string, number or symbol, so the error names the key."
+result: dict.of[[[1, 2], :a], [3, :b]]

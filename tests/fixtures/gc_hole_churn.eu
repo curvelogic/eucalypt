@@ -1,0 +1,7 @@
+# List churn for the GC hole check (eu-oaz72.51): run under
+# EU_GC_POISON=1 at a small --heap-limit-mib so that the heap collects
+# hundreds of times and recycled blocks are reused hole by hole.
+
+xs(n): range(0, n) map(_ * 3) filter(_ > 10) reverse
+f(i): xs(300 + i) sum
+result: range(0, 100) map(f) sum

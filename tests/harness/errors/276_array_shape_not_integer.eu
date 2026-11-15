@@ -1,0 +1,2 @@
+` "A fractional dimension is a named error rather than silently truncated (eu-oaz72.96)"
+a: arr.from-flat([2.5], [1, 2])

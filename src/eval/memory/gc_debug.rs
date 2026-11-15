@@ -5,17 +5,32 @@
 //! - `EU_GC_POISON=1` — Fill swept (reclaimed) memory with a poison pattern
 //!   (`0xDE`). Before marking, check if the object looks poisoned. This
 //!   detects use-after-free: a live pointer leading to poisoned memory means
-//!   the target was swept while still referenced.
+//!   the target was swept while still referenced. Every hole of a
+//!   recycled block is poisoned, and the bump allocator checks that a
+//!   hole is still untouched when it enters it: anything else is a
+//!   write through a stale pointer or a live object in an unmarked line.
 //!
 //! - `EU_GC_VERIFY=1` — After the mark phase (before `defer_sweep`), walk
 //!   all marked objects and verify that every pointer they contain also
 //!   points to a marked object.  Any unmarked-but-referenced object is
-//!   about to be incorrectly swept.
+//!   about to be incorrectly swept.  Marking also panics when it meets a
+//!   forwarded header it may not: any forwarded header in a non-evacuating
+//!   collection, and one this collection did not mark in an evacuating
+//!   collection — an old copy reached through a pointer an update phase
+//!   missed (eu-oaz72.136).
 //!
 //! - `EU_GC_VERIFY=2` — Full multi-checkpoint structural verification of
 //!   the heap during garbage collection. Includes header validation,
 //!   pointer validity checks, line mark consistency, forwarding pointer
-//!   lifecycle, and block list integrity. Level 2 implies level 1.
+//!   lifecycle, and block list integrity, and, after an evacuating
+//!   collection's update phase, a traversal from the roots that panics if
+//!   any live pointer still reaches a forwarded header, before the old
+//!   copies are freed. Level 2 implies level 1.
+//!
+//! The level is cached on each `Heap` when it is made
+//! (`Heap::gc_verify_level`), and a collector view reduces the poison and
+//! forwarding settings to one flag, so with neither variable set marking
+//! tests that flag and does nothing more.
 
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};

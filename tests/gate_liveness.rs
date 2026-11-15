@@ -125,6 +125,15 @@ const REGISTRY: &[Gate] = &[
                     dev-dependency",
     },
     Gate {
+        path: "tests/gc_native_containers_test.rs",
+        cfg: "not(target_arch = \"wasm32\")",
+        supplier: Supplier::NativeTargetsOnly,
+        rationale: "spawns the eu binary to gate set, vec and ndarray \
+                    survival under collection (eu-oaz72.54); there is no \
+                    binary to spawn under wasm32, and it also needs \
+                    tempfile, a non-wasm32 dev-dependency",
+    },
+    Gate {
         path: "tests/gc_volume_trigger_test.rs",
         cfg: "not(target_arch = \"wasm32\")",
         supplier: Supplier::NativeTargetsOnly,

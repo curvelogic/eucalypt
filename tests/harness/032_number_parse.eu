@@ -1,3 +1,42 @@
-pass: __NUMPARSE("1234") + __NUMPARSE("3.4") //= 1237.4
+{ doc: "`num` parses decimal number strings. Leading zeros in the
+         integer part are read as decimal, never octal; a hex, octal or
+         binary prefix is an error, so a leading zero cannot suggest a
+         radix (eu-oaz72.11)."
+}
 
-RESULT: if(pass, :PASS, :FAIL)
+` { target: :test-decimal
+    doc: "decimal strings, with and without leading zeros" }
+decimal: {
+  sum: (("1234" num) + ("3.4" num)) = 1237.4
+  int: ("07" num) = 7
+  negative: ("-07" num) = -7
+  zeros: ("00" num) = 0
+  not-octal: ("010" num) = 10
+  wide: ("000123" num) = 123
+  float: ("007.5" num) = 7.5
+  negative-float: ("-00.25" num) = -0.25
+  exponent: ("01e3" num) = 1000
+  zero-float: ("0.5" num) = 0.5
+  RESULT: [sum, int, negative, zeros, not-octal, wide, float, negative-float, exponent, zero-float] all-true? then(:PASS, :FAIL)
+}
+
+` "the run failed with a bad number format error"
+rejected(context): ((context.exit ≠ 0) ∧ (context.stderr any(str.contains?("bad number format")))) then(:PASS, :FAIL)
+
+` { target: :test-hex verify: [:rejected] }
+hex: "0x1f" num
+
+` { target: :test-hex-upper verify: [:rejected] }
+hex-upper: "0X1F" num
+
+` { target: :test-hex-negative verify: [:rejected] }
+hex-negative: "-0x10" num
+
+` { target: :test-hex-zeros verify: [:rejected] }
+hex-zeros: "00x1f" num
+
+` { target: :test-octal verify: [:rejected] }
+octal: "0o7" num
+
+` { target: :test-binary verify: [:rejected] }
+binary: "0b101" num

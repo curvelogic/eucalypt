@@ -101,6 +101,15 @@ where
         }
     }
 
+    /// A thunk that will be updated after evaluation, keeping a source
+    /// annotation.
+    pub fn thunk_annotated(body: L, annotation: Smid) -> Self {
+        InfoTagged {
+            info: InfoFlags::new(true, 0, annotation),
+            body,
+        }
+    }
+
     /// A lambda form that is effectively a value - not worth updating
     pub fn value(body: L) -> Self {
         InfoTagged {

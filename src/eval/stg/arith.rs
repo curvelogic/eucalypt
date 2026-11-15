@@ -9,9 +9,12 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
-        machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
+        machine::intrinsic::{
+            CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
+        },
         memory::{
             mutator::MutatorHeapView,
+            number::ExactNum,
             syntax::{Native, Ref},
         },
     },
@@ -519,24 +522,19 @@ fn arithmetic_wrapper(index: usize) -> LambdaForm {
     binary_wrapper(index)
 }
 
-/// Ordering comparison between two numbers, trying i64, u64, then f64
-/// representations. Returns the `std::cmp::Ordering` or an error if
-/// the numbers cannot be compared.
+/// Ordering comparison between two numbers by exact value, agreeing
+/// with set, vec and dict key order ([`ExactNum`]). Returns an error if
+/// either is NaN, which has no place in the numeric order.
 fn num_ord(smid: Smid, x: &Number, y: &Number) -> Result<std::cmp::Ordering, ExecutionError> {
-    if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-        Ok(l.cmp(&r))
-    } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-        Ok(l.cmp(&r))
-    } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-        l.partial_cmp(&r)
-            .ok_or_else(|| ExecutionError::NumericDomainError(smid, x.clone(), y.clone()))
-    } else {
-        Err(ExecutionError::NumericDomainError(
+    let is_nan = |n: &Number| n.as_f64().is_some_and(f64::is_nan);
+    if is_nan(x) || is_nan(y) {
+        return Err(ExecutionError::NumericDomainError(
             smid,
             x.clone(),
             y.clone(),
-        ))
+        ));
     }
+    Ok(ExactNum::from_number(x).cmp(&ExactNum::from_number(y)))
 }
 
 /// Polymorphic ordered comparison. Dispatches on native type, computes
@@ -754,7 +752,10 @@ impl CallGlobal1 for Floor {}
 /// POW(base, exp) - raise base to the power exp
 ///
 /// For integer base and non-negative integer exponent, returns an
-/// integer result. Otherwise uses f64 arithmetic via powf.
+/// integer result, raising a numeric range (overflow) error when the
+/// result is out of range, as `ADD` and `MUL` do. A float result only
+/// when an operand is a float, or for a negative integer exponent
+/// (whose result is not in general an integer); these use f64 powf.
 pub struct Pow;
 
 impl StgIntrinsic for Pow {
@@ -772,18 +773,27 @@ impl StgIntrinsic for Pow {
         let base = num_arg(machine, view, &args[0])?;
         let exp = num_arg(machine, view, &args[1])?;
 
-        // Integer base with non-negative integer exponent: integer result
-        if let (Some(b), Some(e)) = (base.as_i64(), exp.as_u64()) {
-            if let Some(result) = checked_int_pow(b, e) {
-                return machine_return_num(machine, view, Number::from(result));
-            }
-        } else if let (Some(b), Some(e)) = (base.as_u64(), exp.as_u64()) {
-            if let Some(result) = b.checked_pow(e.try_into().unwrap_or(u32::MAX)) {
-                return machine_return_num(machine, view, Number::from(result));
+        // Integer base with non-negative integer exponent: integer
+        // result or overflow error, never a silent float.
+        if !base.is_f64() {
+            if let Some(e) = exp.as_u64() {
+                let result = match (base.as_i64(), base.as_u64()) {
+                    (Some(b), _) => checked_int_pow(b, e).map(Number::from),
+                    (None, Some(b)) => checked_uint_pow(b, e).map(Number::from),
+                    (None, None) => None,
+                };
+                return match result {
+                    Some(n) => machine_return_num(machine, view, n),
+                    None => Err(ExecutionError::NumericRangeError(
+                        machine.annotation(),
+                        base,
+                        exp,
+                    )),
+                };
             }
         }
 
-        // Fall back to f64
+        // Float operand or negative integer exponent: f64 arithmetic
         if let (Some(b), Some(e)) = (base.as_f64(), exp.as_f64()) {
             let result = b.powf(e);
             if let Some(ret) = Number::from_f64(result) {
@@ -814,10 +824,17 @@ impl StgIntrinsic for Pow {
 
 /// Integer exponentiation with overflow checking
 fn checked_int_pow(base: i64, exp: u64) -> Option<i64> {
-    if exp > u32::MAX as u64 {
-        return None;
+    match base {
+        // Bases whose powers never grow, whatever the exponent
+        0 | 1 => Some(if exp == 0 { 1 } else { base }),
+        -1 => Some(if exp.is_multiple_of(2) { 1 } else { -1 }),
+        _ => base.checked_pow(u32::try_from(exp).ok()?),
     }
-    base.checked_pow(exp as u32)
+}
+
+/// Exponentiation of a base above `i64::MAX` with overflow checking
+fn checked_uint_pow(base: u64, exp: u64) -> Option<u64> {
+    base.checked_pow(u32::try_from(exp).ok()?)
 }
 
 impl CallGlobal2 for Pow {}
@@ -992,33 +1009,239 @@ impl StgIntrinsic for Rem {
 
 impl CallGlobal2 for Rem {}
 
+// ── Modular arithmetic (eu-oaz72.24) ─────────────────────────────────
+//
+// `mulmod`, `powmod` and `modinv` take i64 operands and moduli and compute
+// in i128, so `a * b % m` and modular exponentiation are exact across the
+// whole i64 range: both factors are reduced into [0, m) first, so their
+// product is below 2^126. Results are the non-negative residue in [0, m).
+
+/// The value of `n` as an i64 if it is a whole number in the i64 range,
+/// whether stored as an integer or as a float such as `7.0`. The one rule
+/// for reading an integer operand, shared by the modular-arithmetic and
+/// bitwise intrinsics (`require_i64`).
+fn whole_i64(n: &Number) -> Option<i64> {
+    if let Some(i) = n.as_i64() {
+        Some(i)
+    } else if let Some(u) = n.as_u64() {
+        i64::try_from(u).ok()
+    } else {
+        // 2^63 is exactly representable and is the first float past i64::MAX.
+        n.as_f64()
+            .filter(|f| f.fract() == 0.0 && *f >= -(2f64.powi(63)) && *f < 2f64.powi(63))
+            .map(|f| f as i64)
+    }
+}
+
+/// Extract an i64 operand for a modular-arithmetic intrinsic, rejecting
+/// fractional numbers and numbers outside the i64 range.
+fn modular_operand(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+    function: &str,
+    role: &str,
+) -> Result<i128, ExecutionError> {
+    let n = num_arg(machine, view, arg)?;
+    if let Some(i) = whole_i64(&n) {
+        return Ok(i128::from(i));
+    }
+    let fractional = n
+        .as_f64()
+        .is_some_and(|f| f.fract() != 0.0 || !f.is_finite());
+    let problem = if fractional {
+        "a whole number"
+    } else {
+        "in the 64-bit signed range"
+    };
+    Err(ExecutionError::ModularArithmetic(
+        machine.annotation(),
+        format!("{function} requires each argument to be {problem}, but the {role} is {n}"),
+    ))
+}
+
+/// Extract a modulus, which must be a positive integer.
+fn modular_modulus(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+    function: &str,
+) -> Result<i128, ExecutionError> {
+    let m = modular_operand(machine, view, arg, function, "modulus")?;
+    if m <= 0 {
+        return Err(ExecutionError::ModularArithmetic(
+            machine.annotation(),
+            format!(
+                "{function} requires a positive modulus, but the modulus is {m}\n  \
+                 help: the result of {function} lies in [0, m), so m must be at least 1"
+            ),
+        ));
+    }
+    Ok(m)
+}
+
+/// `a * b mod m` for `0 <= a, b < m <= i64::MAX`: exact in i128.
+fn mulmod_i128(a: i128, b: i128, m: i128) -> i128 {
+    (a * b) % m
+}
+
+/// `b ^ e mod m` by square-and-multiply, for `e >= 0` and `m >= 1`.
+fn powmod_i128(b: i128, mut e: i128, m: i128) -> i128 {
+    let mut base = b.rem_euclid(m);
+    let mut acc = 1 % m;
+    while e > 0 {
+        if e & 1 == 1 {
+            acc = mulmod_i128(acc, base, m);
+        }
+        base = mulmod_i128(base, base, m);
+        e >>= 1;
+    }
+    acc
+}
+
+/// Inverse of `a` modulo `m >= 1` by the extended Euclidean algorithm:
+/// `Ok(x)` with `0 <= x < m` and `a * x = 1 (mod m)`, or `Err(gcd)` when
+/// `gcd(a, m) != 1` and no inverse exists.
+fn modinv_i128(a: i128, m: i128) -> Result<i128, i128> {
+    let (mut r0, mut r1) = (a.rem_euclid(m), m);
+    let (mut s0, mut s1) = (1i128, 0i128);
+    while r1 != 0 {
+        let q = r0 / r1;
+        (r0, r1) = (r1, r0 - q * r1);
+        (s0, s1) = (s1, s0 - q * s1);
+    }
+    // r0 = gcd(a mod m, m); for m = 1 every value is invertible (to 0).
+    if r0 == 1 || m == 1 {
+        Ok(s0.rem_euclid(m))
+    } else {
+        Err(r0)
+    }
+}
+
+/// Return an i128 residue in [0, m) with m <= i64::MAX as a number.
+fn return_residue(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    r: i128,
+) -> Result<(), ExecutionError> {
+    // A residue lies in [0, m) and m <= i64::MAX, so this cannot fail.
+    let r = i64::try_from(r).map_err(|_| {
+        ExecutionError::Panic(
+            machine.annotation(),
+            format!("modular residue {r} out of the i64 range"),
+        )
+    })?;
+    machine_return_num(machine, view, Number::from(r))
+}
+
+/// MULMOD(a, b, m) - `a * b mod m`, exact for all i64 operands
+pub struct MulMod;
+
+impl StgIntrinsic for MulMod {
+    fn name(&self) -> &str {
+        "MULMOD"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let a = modular_operand(machine, view, &args[0], "mulmod", "first factor")?;
+        let b = modular_operand(machine, view, &args[1], "mulmod", "second factor")?;
+        let m = modular_modulus(machine, view, &args[2], "mulmod")?;
+        let r = mulmod_i128(a.rem_euclid(m), b.rem_euclid(m), m);
+        return_residue(machine, view, r)
+    }
+}
+
+impl CallGlobal3 for MulMod {}
+
+/// POWMOD(b, e, m) - `b ^ e mod m` for `e >= 0`, exact for all i64 operands
+pub struct PowMod;
+
+impl StgIntrinsic for PowMod {
+    fn name(&self) -> &str {
+        "POWMOD"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let b = modular_operand(machine, view, &args[0], "powmod", "base")?;
+        let e = modular_operand(machine, view, &args[1], "powmod", "exponent")?;
+        let m = modular_modulus(machine, view, &args[2], "powmod")?;
+        if e < 0 {
+            return Err(ExecutionError::ModularArithmetic(
+                machine.annotation(),
+                format!(
+                    "powmod requires a non-negative exponent, but the exponent is {e}\n  \
+                     help: for b^-k mod m, use powmod(modinv(b, m), k, m)"
+                ),
+            ));
+        }
+        let r = powmod_i128(b, e, m);
+        return_residue(machine, view, r)
+    }
+}
+
+impl CallGlobal3 for PowMod {}
+
+/// MODINV(a, m) - the inverse of `a` modulo `m`, an error if none exists
+pub struct ModInv;
+
+impl StgIntrinsic for ModInv {
+    fn name(&self) -> &str {
+        "MODINV"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let a = modular_operand(machine, view, &args[0], "modinv", "value")?;
+        let m = modular_modulus(machine, view, &args[1], "modinv")?;
+        match modinv_i128(a, m) {
+            Ok(r) => return_residue(machine, view, r),
+            Err(g) => Err(ExecutionError::ModularArithmetic(
+                machine.annotation(),
+                format!(
+                    "{a} has no inverse modulo {m}, because gcd({a}, {m}) = {g}\n  \
+                     help: modinv(a, m) exists only when a and m are coprime"
+                ),
+            )),
+        }
+    }
+}
+
+impl CallGlobal2 for ModInv {}
+
 /// Extract an i64 from a Number, accepting integer-valued floats
 /// (which arise from intrinsics like `sort-nums` that convert via f64).
 fn require_i64(n: &Number, smid: crate::common::sourcemap::Smid) -> Result<i64, ExecutionError> {
-    if let Some(i) = n.as_i64() {
-        Ok(i)
-    } else if let Some(u) = n.as_u64() {
-        i64::try_from(u).map_err(|_| {
-            ExecutionError::BitwiseIntegerRequired(
-                smid,
-                format!("{u} is out of the i64 range for bitwise operations"),
-            )
-        })
-    } else if let Some(f) = n.as_f64() {
-        if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
-            Ok(f as i64)
+    whole_i64(n).ok_or_else(|| {
+        let detail = if let Some(u) = n.as_u64() {
+            format!("{u} is out of the i64 range for bitwise operations")
+        } else if let Some(f) = n.as_f64() {
+            if f.fract() == 0.0 {
+                format!("{f} is out of the i64 range for bitwise operations")
+            } else {
+                format!("got {f}, which is not a whole number")
+            }
         } else {
-            Err(ExecutionError::BitwiseIntegerRequired(
-                smid,
-                format!("got {f}, which is not a whole number"),
-            ))
-        }
-    } else {
-        Err(ExecutionError::BitwiseIntegerRequired(
-            smid,
-            "value cannot be represented as an integer".to_string(),
-        ))
-    }
+            "value cannot be represented as an integer".to_string()
+        };
+        ExecutionError::BitwiseIntegerRequired(smid, detail)
+    })
 }
 
 /// BITAND(l, r) - bitwise AND

@@ -8,26 +8,24 @@ exit: 1
 errors: 1
 warnings: 0
 code: EU-EVAL-TYPE
-primary: user tests/harness/errors/108_secondary_labels.eu:4:1
+primary: user tests/harness/errors/108_secondary_labels.eu:4:31
 help-lines: 0
 note-lines: 2
 secondary-labels: 2
-trace-frames: 1
-trace-user-frames: 1
+trace-frames: 0
+trace-user-frames: 0
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error[EU-EVAL-TYPE]: type mismatch: expected number, found string "a"
-  ┌─ tests/harness/errors/108_secondary_labels.eu:4:1
+  ┌─ tests/harness/errors/108_secondary_labels.eu:4:31
   │
 4 │ transform(items): items map(_ + 1)
-  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  │                         │     │
-  │                         │     called from here
-  │                         called from here
+  │ ------------------------------^---
+  │ │                       │
+  │ │                       called from here
+  │ called from here
   │
   = to convert a string to a number, use 'num', e.g. 's num'
   = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
-  = while evaluating (outermost first):
-    - transform at 108_secondary_labels.eu:4:1

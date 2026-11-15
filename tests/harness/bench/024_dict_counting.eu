@@ -1,0 +1,51 @@
+"Counting-by-key benchmark (dict, design note
+docs/superpowers/plans/2026-11-12-dict-design.md §10 item 3). Stone
+counting with public rules: a 0 becomes 1; a number with an even count of
+digits splits into its two halves; any other number is multiplied by
+2024. Eight synthetic starting stones, 75 blinks. Each blink rebuilds a
+dict of counts keyed by stone with `dict.update-strict`, so the counts
+(about 3.2e14 in total, 3634 distinct stones at the end) stay exact and
+no chain of unevaluated additions builds up.
+
+Expected total computed independently (Python, collections.Counter)."
+
+` "the number of decimal digits of `n`"
+digits(n): (n < 10) then(1, 1 + digits(n / 10))
+
+` "ten to the power `k`"
+pow10(k): (k = 0) then(1, 10 * pow10(k - 1))
+
+` "the halves of `n`, which has `d` digits (an even number)"
+halves(n, d): { p: pow10(d / 2) }.[n / p, n % p]
+
+` "the stones one stone `s` becomes after a blink"
+children(s): { d: digits(s) }.(cond[s = 0 => [1], d % 2 = 0 => halves(s, d), [s * 2024]])
+
+` "add `n` stones `c` to the counts `acc`"
+add(n, acc, c): acc dict.update-strict(c, + n, 0)
+
+` "add the children of the `n` stones `s` to the counts `acc`"
+spawn(acc, [s, n]): s children foldl(add(n), acc)
+
+` "the counts after one blink"
+blink(counts): counts dict.to-list foldl(spawn, dict.empty)
+
+` "the counts after `k` blinks"
+blinks(k, counts): (k = 0) then(counts, blinks(k - 1, counts blink))
+
+` "one stone `s`, as a `[stone, count]` entry"
+one(s): [s, 1]
+
+` :suppress
+start: [0, 7, 125, 17, 4048, 9999, 802, 31415926] map(one) dict.of
+
+` :suppress
+final: blinks(75, start)
+
+` { target: :bench-dict-counting
+    verify: ["default-expectation"] }
+bench-dict-counting: {
+  total: final dict.values sum
+  distinct: final dict.size
+  RESULT: (total = 315290635574411 ∧ distinct = 3634) then(:PASS, :FAIL)
+}

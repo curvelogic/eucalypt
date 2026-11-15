@@ -9,7 +9,7 @@ errors: 1
 warnings: 0
 code: -
 primary: user tests/harness/errors/055_list_not_callable.eu:5:9
-help-lines: 2
+help-lines: 1
 note-lines: 2
 secondary-labels: 0
 trace-frames: 1
@@ -20,7 +20,6 @@ rust-panic: no
 --- stderr ---
 error: tried to call a list as a function
   help: only functions and blocks can be called with arguments
-  help: this often means too many arguments were passed to a function
   ┌─ tests/harness/errors/055_list_not_callable.eu:5:9
   │
 5 │ result: items(2)

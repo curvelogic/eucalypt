@@ -76,6 +76,11 @@ pub struct BytecodeProgram {
     /// `BcClosure(producer_tail_template, env{handle})`; forcing it advances
     /// the producer once, memoised by the machine's `Update` continuation.
     pub producer_tail_template: CodeRef,
+    /// Fixed-shape dict value-cell template: an `Atom(L0)` node. A lazy dict
+    /// value is stored as `BcClosure(cell_template, env{thunk})` with the
+    /// thunk's update flag set, so entering it memoises the value in the
+    /// shared frame (eu-oaz72.21; design note §5).
+    pub cell_template: CodeRef,
 }
 
 /// Maximum function arity supported by the PAP trampoline table.

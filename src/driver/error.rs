@@ -41,6 +41,11 @@ pub enum EucalyptError {
     /// OS-level reason (e.g. "Permission denied", "No space left on device").
     #[error("{}", format_file_could_not_be_written(.0, .1.as_deref()))]
     FileCouldNotBeWritten(String, Option<String>),
+    /// `eu test` found no test files in the inputs it was given.
+    ///
+    /// The field names the inputs searched.
+    #[error("no test files found in {0}")]
+    NoTestsFound(String),
 }
 
 /// Format a "file could not be read" error message including the OS reason when available.
@@ -89,6 +94,19 @@ impl EucalyptError {
             EucalyptError::Source(e) => e.to_diagnostic(source_map),
             EucalyptError::Execution(e) => e.to_diagnostic(source_map),
             e => default_diagnostic(e),
+        }
+    }
+
+    /// Convert to a diagnostic, reading `files` for the source evidence
+    /// that gates some hints (eu-oaz72.28).
+    pub fn to_diagnostic_with_source(
+        &self,
+        source_map: &SourceMap,
+        files: &codespan_reporting::files::SimpleFiles<String, String>,
+    ) -> Diagnostic<usize> {
+        match self {
+            EucalyptError::Execution(e) => e.to_diagnostic_with_source(source_map, files),
+            e => e.to_diagnostic(source_map),
         }
     }
 }

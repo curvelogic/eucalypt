@@ -1,0 +1,2 @@
+` "A negative vec.slice bound is an error, not clamped to 0 (eu-oaz72.88)"
+r: vec.of[10, 20, 30] vec.slice(-1, 2)

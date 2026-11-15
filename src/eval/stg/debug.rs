@@ -90,6 +90,7 @@ fn render_native(n: &Native, view: MutatorHeapView<'_>, machine: &dyn IntrinsicM
         Native::Sym(id) => format!(":{}", machine.symbol_pool().resolve(*id)),
         Native::Zdt(dt) => dt.to_rfc3339(),
         Native::Set(_) => "<set>".to_string(),
+        Native::Dict(_) => n.to_string(),
         Native::NdArray(ptr) => {
             let arr = view.scoped(*ptr);
             let shape = arr

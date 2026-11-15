@@ -18,7 +18,7 @@ use smallvec::SmallVec;
 
 use crate::common::sourcemap::Smid;
 use crate::eval::emit::{Emitter, NullEmitter};
-use crate::eval::error::ExecutionError;
+use crate::eval::error::{ExecutionError, NOT_VALUE_FUNCTION_APPLICATION};
 use crate::eval::machine::intrinsic::{AbiClosure, IntrinsicMachine, StgIntrinsic};
 use crate::eval::machine::metrics::{Clock, Metrics, ThreadOccupation};
 use crate::eval::machine::vm::interrupted;
@@ -39,8 +39,8 @@ use crate::eval::stg::tags::{DataConstructor, Tag};
 use super::program::{read_u32, read_u8};
 use super::{
     decode_program, BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, BytecodeProgram,
-    CodeRef, DecodedProgram, GlobalForm, Op, FORM_LAMBDA, FORM_THUNK, NO_BRANCH, REF_G, REF_L,
-    REF_V,
+    CodeRef, DecodedProgram, GlobalForm, Op, Profiler, FOLDED_STACK_DEPTH, FORM_LAMBDA, FORM_THUNK,
+    NO_BRANCH, REF_G, REF_L, REF_V,
 };
 
 /// Inline-capacity buffers for per-instruction operand decoding. On nearly
@@ -146,7 +146,7 @@ fn not_value_description(op: Option<Op>, code: &[u8], pc: &mut usize) -> &'stati
             Ok(DataConstructor::Block) => "a block",
             _ => "a data constructor",
         },
-        Some(Op::App) | Some(Op::DirectApp) => "a function application",
+        Some(Op::App) | Some(Op::DirectApp) => NOT_VALUE_FUNCTION_APPLICATION,
         Some(Op::Bif) => "an intrinsic function call",
         Some(Op::Case) => "a case expression",
         Some(Op::Let) | Some(Op::LetRec) => "a let binding",
@@ -263,8 +263,14 @@ pub struct BcMachineState {
     ///
     /// This is a **scope-accurate** register: it tracks the source location of
     /// the code currently being evaluated. `Op::Ann` and closure entry set it;
-    /// popping a `SeqBind`/`ApplyTo` continuation restores the annotation that
-    /// was live where that continuation was pushed — *including* when that is
+    /// popping a `SeqBind`/`ApplyTo` continuation, and resuming a case
+    /// continuation (`Branch`/`BranchPredecoded`, `FusedPrimopLeft`/`Right`)
+    /// into a branch body, fallback, next operand or fused intrinsic, restores
+    /// the annotation that was live where that continuation was pushed. A
+    /// value scrutinised by a `case` therefore no longer leaks the location
+    /// of whatever annotated code computed it into the code that continues —
+    /// an intrinsic forcing its arguments reports its own call site
+    /// (eu-oaz72.63). The restore applies *including* when the annotation is
     /// `Smid::default()`, which is what a synthetic (library-generated) frame
     /// such as the render loop's per-item `force` carries. Restoring the
     /// default is essential: without it a valid annotation established while
@@ -340,6 +346,10 @@ pub struct BcMachineState {
     /// mirrors `MachineState::stripped_meta` in `vm.rs`. A live heap handle,
     /// so it is scanned and pointer-updated with the other roots.
     pub stripped_meta: Option<BcValue>,
+    /// Source-level profiler (`eu run --profile`, eu-oaz72.37). `None` —
+    /// the default — selects the unprofiled dispatch loops, which never
+    /// touch it. Holds no heap pointers, so it is not a GC root.
+    pub profiler: Option<Box<Profiler>>,
 }
 
 impl BcMachineState {
@@ -373,6 +383,7 @@ impl BcMachineState {
             allocs: 0,
             diagnostics: Vec::new(),
             stripped_meta: None,
+            profiler: None,
         }
     }
 
@@ -419,10 +430,40 @@ impl BcMachineState {
     /// still has no force-site annotation of its own, so it keeps borrowing
     /// its environment's.
     pub fn stack_trace(&self, view: MutatorHeapView<'_>) -> Vec<Smid> {
-        let capacity = self.stack.len().min(64);
-        let mut trace = Vec::with_capacity(capacity);
+        self.stack_trace_capped(view, usize::MAX)
+    }
+
+    /// [`Self::stack_trace`], stopping once `cap` frames are collected (the
+    /// innermost `cap`), so a profiler sample on a deep stack stays cheap.
+    pub fn stack_trace_capped(&self, view: MutatorHeapView<'_>, cap: usize) -> Vec<Smid> {
+        Self::continuation_trace(self.stack.iter().rev(), view, cap)
+    }
+
+    /// The `--profile` folded-stack trace (eu-oaz72.37): the live stack,
+    /// then the stacks suspended under each enclosing force sub-run, so a
+    /// sample taken while an intrinsic forces a thunk keeps its callers.
+    /// Innermost first, at most `cap` frames.
+    pub fn profile_trace(&self, view: MutatorHeapView<'_>, cap: usize) -> Vec<Smid> {
+        let frames = self.stack.iter().rev().chain(
+            self.suspended_stacks
+                .iter()
+                .rev()
+                .flat_map(|stack| stack.iter().rev()),
+        );
+        Self::continuation_trace(frames, view, cap)
+    }
+
+    fn continuation_trace<'s>(
+        frames: impl Iterator<Item = &'s BcContinuation>,
+        view: MutatorHeapView<'_>,
+        cap: usize,
+    ) -> Vec<Smid> {
+        let mut trace = Vec::with_capacity(cap.min(64));
         let mut prev = Smid::default();
-        for cont in self.stack.iter().rev() {
+        for cont in frames {
+            if trace.len() >= cap {
+                break;
+            }
             let smid = match cont {
                 BcContinuation::Branch { annotation, .. }
                 | BcContinuation::BranchPredecoded { annotation, .. }
@@ -453,6 +494,57 @@ impl BcMachineState {
             }
         }
         trace
+    }
+}
+
+/// The source location a profiled tick is charged to: the live annotation
+/// when valid; else the annotation of the closure being evaluated; else that
+/// of its environment (stamped where the closure was created); else the last
+/// valid annotation, so library plumbing with no annotation of its own is
+/// charged to the code that reached it.
+fn profile_location(state: &BcMachineState, heap: &Heap) -> Smid {
+    if state.annotation.is_valid() {
+        return state.annotation;
+    }
+    if let Some(c) = state.current.as_closure() {
+        let ann = c.annotation();
+        if ann.is_valid() {
+            return ann;
+        }
+        let env_ann = MutatorHeapView::new(heap).scoped(c.env()).annotation();
+        if env_ann.is_valid() {
+            return env_ann;
+        }
+    }
+    state.last_annotation
+}
+
+/// Profiled-loop hook (eu-oaz72.37): attribute the dispatch just completed,
+/// and any allocation since the previous record, to the live annotation, and
+/// take a folded-stack sample when one is due. Called only from the
+/// `PROFILE = true` instantiations of the dispatch loops.
+#[inline(never)]
+fn profile_tick(state: &mut BcMachineState, heap: &Heap) {
+    let location = profile_location(state, heap);
+    let allocs = state.allocs;
+    let due = match state.profiler.as_deref_mut() {
+        Some(p) => p.record(location, allocs, heap.bytes_allocated()),
+        None => return,
+    };
+    if let Some(charged) = due {
+        let trace = state.profile_trace(MutatorHeapView::new(heap), FOLDED_STACK_DEPTH);
+        if let Some(p) = state.profiler.as_deref_mut() {
+            p.sample(charged, trace);
+        }
+    }
+}
+
+/// Profiled force sub-run entry (eu-oaz72.37): charge what the forcing
+/// intrinsic has allocated so far to its own dispatch's location.
+fn profile_enter_force(state: &mut BcMachineState, heap: &Heap, location: Smid) {
+    let allocs = state.allocs;
+    if let Some(p) = state.profiler.as_deref_mut() {
+        p.enter_force(location, allocs, heap.bytes_allocated());
     }
 }
 
@@ -501,6 +593,10 @@ fn scan_const<'a>(
             // Push so the container scans (and evacuates) its heap storage.
             out.push(ScanPtr::from_non_null(scope, *ptr));
         }
+        Ref::V(Native::Dict(Some(ptr))) if marker.mark(*ptr) => {
+            // Push the root node so `DictNode::scan` traces the whole tree.
+            out.push(ScanPtr::from_non_null(scope, *ptr));
+        }
         Ref::V(Native::NdArray(ptr)) if marker.mark(*ptr) => {
             // Push so the container scans (and evacuates) its heap storage.
             out.push(ScanPtr::from_non_null(scope, *ptr));
@@ -523,6 +619,11 @@ fn update_const(r: &mut Ref, heap: &CollectorHeapView<'_>) {
             }
         }
         Ref::V(Native::Set(ptr)) => {
+            if let Some(new) = heap.forwarded_to(*ptr) {
+                *ptr = new;
+            }
+        }
+        Ref::V(Native::Dict(Some(ptr))) => {
             if let Some(new) = heap.forwarded_to(*ptr) {
                 *ptr = new;
             }
@@ -594,6 +695,10 @@ fn gc_poll(
         // collect on every poll or grow past the limit (eu-oaz72.4).
         if let Some((live_mib, limit_mib)) = heap.heap_limit_exceeded() {
             return Err(ExecutionError::HeapLimitExceeded(live_mib, limit_mib));
+        }
+        // Nor may the blocks held outgrow it (eu-oaz72.73).
+        if let Some((held_mib, limit_mib)) = heap.enforce_footprint_limit() {
+            return Err(ExecutionError::HeapLimitExceeded(held_mib, limit_mib));
         }
     }
     Ok(())
@@ -896,11 +1001,9 @@ fn env_from_data_args_copy(
 
     // An unevaluated update thunk is bound as an alias over its atom so that
     // forcing it updates the slot it lives in, not a copy.
-    let share = |v: BcValue, j: usize| match (&v, atoms.get(j)) {
-        (BcValue::Closure(c), Some(atom)) if c.update() => {
-            BcValue::Closure(BcClosure::new(*atom, cons_env))
-        }
-        _ => v,
+    let share = |v: BcValue, j: usize| match atoms.get(j) {
+        Some(atom) => share_unevaluated(v, *atom, cons_env),
+        None => v,
     };
 
     let mut array = Array::with_capacity(&view, args.len());
@@ -1020,6 +1123,22 @@ fn pair_key_symbol(
     value_symbol(prog, decoded, state, view, key)
 }
 
+/// A constructor field's value as it may be handed out of the constructor:
+/// an unevaluated update thunk becomes a lazy alias closure over the field's
+/// `OP_ATOM` node (`atom`, a closure code ref) in the constructor's env
+/// `env`; anything else is returned as it is. Forcing a copy of the thunk
+/// would update the copy and leave the constructor's slot unevaluated, so
+/// every later read would recompute it; forcing the alias enters,
+/// black-holes and updates the original slot. Used when a constructor is
+/// taken apart (`env_from_data_args_copy`, eu-oaz72.36) and when a block
+/// field is read with `.` (`bc_lookup_in_block`, eu-oaz72.87).
+fn share_unevaluated(value: BcValue, atom: CodeRef, env: RefPtr<BcEnvFrame>) -> BcValue {
+    match &value {
+        BcValue::Closure(c) if c.update() => BcValue::Closure(BcClosure::new(atom, env)),
+        _ => value,
+    }
+}
+
 /// Literal-key lookup on a forced block (`DataConstructor::Block`). Linear
 /// scan of the entry list of `BlockPair`s (the perf index is skipped — a
 /// linear scan yields the identical result). `None` on miss / non-block.
@@ -1053,12 +1172,28 @@ fn bc_lookup_in_block(
         let head_ref = arg_ref(prog.code.as_slice(), *loffs.first()?).ok()?;
         let pair = resolve_ref(view, &state.constants, c.env(), state.globals, head_ref).ok()?;
         if pair_key_symbol(prog, decoded, state, view, &pair) == Some(target) {
-            let BcValue::Closure(pc) = &pair else {
+            let BcValue::Closure(pair_closure) = &pair else {
                 return None;
             };
-            let (_, poffs) = decode_cons(prog, decoded, pc)?;
-            let val_ref = arg_ref(prog.code.as_slice(), *poffs.get(1)?).ok()?;
-            return resolve_ref(view, &state.constants, pc.env(), state.globals, val_ref).ok();
+            let (_, poffs) = decode_cons(prog, decoded, pair_closure)?;
+            let val_off = *poffs.get(1)?;
+            let val_ref = arg_ref(prog.code.as_slice(), val_off).ok()?;
+            let value = resolve_ref(
+                view,
+                &state.constants,
+                pair_closure.env(),
+                state.globals,
+                val_ref,
+            )
+            .ok()?;
+            // Returning a copy of an unevaluated field would leave the
+            // pair's slot unevaluated, so every `.key` lookup on the block
+            // would recompute the field (eu-oaz72.87).
+            return Some(share_unevaluated(
+                value,
+                peek_code_ref(decoded, val_off),
+                pair_closure.env(),
+            ));
         }
         let tail_ref = arg_ref(prog.code.as_slice(), *loffs.get(1)?).ok()?;
         current = resolve_ref(view, &state.constants, c.env(), state.globals, tail_ref).ok()?;
@@ -1095,6 +1230,7 @@ pub fn return_data(
                 None
             };
             if let Some(body) = body {
+                state.set_annotation(annotation);
                 let env = if args.is_empty() {
                     environment
                 } else {
@@ -1102,6 +1238,7 @@ pub fn return_data(
                 };
                 state.current = BcValue::Closure(BcClosure::new(body, env));
             } else if let Some(fb) = fallback {
+                state.set_annotation(annotation);
                 let cur = state.current.clone();
                 let env = view.from_value(cur, environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fb, env));
@@ -1130,6 +1267,7 @@ pub fn return_data(
             // off-heap `branches` pool instead of a GC `Array`.
             let body = branch_pool_match(decoded, branch_start, branch_len, min_tag, tag);
             if let Some(body) = body {
+                state.set_annotation(annotation);
                 let env = if args.is_empty() {
                     environment
                 } else {
@@ -1137,6 +1275,7 @@ pub fn return_data(
                 };
                 state.current = BcValue::Closure(BcClosure::new(body, env));
             } else if fallback != NO_BRANCH {
+                state.set_annotation(annotation);
                 let cur = state.current.clone();
                 let env = view.from_value(cur, environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fallback, env));
@@ -1281,6 +1420,7 @@ pub fn return_data(
                 // Non-boxed data operand (bool/list/block/…): bind the whole
                 // value; `execute()`'s `num_arg`/`ordered_cmp` classify and
                 // error on it exactly as the unfused path does.
+                state.set_annotation(annotation);
                 let resolved = state.current.clone();
                 state.stack.push(BcContinuation::FusedPrimopRight {
                     primop_id,
@@ -1308,6 +1448,7 @@ pub fn return_data(
                 });
                 state.current = field;
             } else {
+                state.set_annotation(annotation);
                 let resolved = state.current.clone();
                 finish_fused_primop(state, view, primop_id, left, resolved, environment)?;
             }
@@ -1423,10 +1564,12 @@ pub fn return_native(
         BcContinuation::Branch {
             fallback,
             environment,
+            annotation,
             ..
         } => {
             // Case fallbacks handle natives; the native is bound as slot 0.
             if let Some(fb) = fallback {
+                state.set_annotation(annotation);
                 let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fb, env));
             } else {
@@ -1439,11 +1582,13 @@ pub fn return_native(
         BcContinuation::BranchPredecoded {
             fallback,
             environment,
+            annotation,
             ..
         } => {
             // A native only ever takes the fallback (it matches no data tag), so
             // the branch pool is not consulted here.
             if fallback != NO_BRANCH {
+                state.set_annotation(annotation);
                 let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fallback, env));
             } else {
@@ -1514,6 +1659,7 @@ pub fn return_native(
             environment,
             annotation,
         } => {
+            state.set_annotation(annotation);
             state.stack.push(BcContinuation::FusedPrimopRight {
                 primop_id,
                 left: BcValue::Native(value),
@@ -1526,8 +1672,9 @@ pub fn return_native(
             primop_id,
             left,
             environment,
-            ..
+            annotation,
         } => {
+            state.set_annotation(annotation);
             finish_fused_primop(
                 state,
                 view,
@@ -1593,6 +1740,7 @@ pub fn return_fun(
         } => {
             // Dynamic typing: code may `case` a value and find it is a lambda.
             if let Some(body) = fallback {
+                state.set_annotation(annotation);
                 let env = view.from_value(BcValue::Closure(fun), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(body, env));
             } else {
@@ -1619,6 +1767,7 @@ pub fn return_fun(
             // Dynamic typing: a `case` scrutinee may resolve to a lambda; it
             // takes the fallback, or errors listing the branched tags.
             if fallback != NO_BRANCH {
+                state.set_annotation(annotation);
                 let env = view.from_value(BcValue::Closure(fun), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fallback, env));
             } else {
@@ -1692,6 +1841,7 @@ pub fn return_fun(
             // `return_data`'s non-boxed-native fallback, and let `execute()`'s
             // `resolve_native`/`num_arg`/`ordered_cmp` raise the identical
             // type error the unfused path raises today.
+            state.set_annotation(annotation);
             state.stack.push(BcContinuation::FusedPrimopRight {
                 primop_id,
                 left: BcValue::Closure(fun),
@@ -1704,8 +1854,9 @@ pub fn return_fun(
             primop_id,
             left,
             environment,
-            ..
+            annotation,
         } => {
+            state.set_annotation(annotation);
             finish_fused_primop(
                 state,
                 view,
@@ -2410,13 +2561,13 @@ pub fn handle_op(
             // Resolve the object (a local or global) to a closure.
             let (obj_slot, obj_value) = match obj {
                 DecodedRef::Local(i) => (
-                    Some(i as usize),
+                    (env, i as usize),
                     view.scoped(env)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
                 ),
                 DecodedRef::Global(i) => (
-                    None,
+                    (state.globals, i as usize),
                     view.scoped(state.globals)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadGlobalIndex(i as usize))?,
@@ -2436,6 +2587,13 @@ pub fn handle_op(
             };
 
             // Fast path: the object is already a WHNF block — look up now.
+            // An unevaluated field is shared by `share_unevaluated`, as on
+            // the forced path. No gating test reaches this with one
+            // (eu-oaz72.94): the compiler binds each local `.key` object to
+            // a per-use alias thunk, so a local arrives unforced and takes
+            // the slow path; a WHNF object here is in practice an
+            // already-forced prelude namespace global (blob mode), whose
+            // thunk members are cheap CAFs such as `cal.epoch`.
             let is_block = decode_cons(prog, decoded, &obj_closure)
                 .is_some_and(|(t, _)| t == DataConstructor::Block.tag());
             if is_block {
@@ -2450,17 +2608,24 @@ pub fn handle_op(
                     smid,
                     default_closure,
                 });
-                // Black-hole + Update if the object is a local thunk.
-                if let (Some(i), true) = (obj_slot, obj_closure.update()) {
-                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
-                    view.scoped(env).update(&view, i, hole)?;
+                // Black-hole + Update if the object is a thunk, in the frame
+                // it lives in: the local env, or the shared globals frame. A
+                // prelude namespace (`set`, `str`, ...) is a global arity-0
+                // thunk in blob mode; without the Update, every `set.size`
+                // that reached it unforced rebuilt the namespace block
+                // (eu-oaz72.94), as `enter_global` (eu-fhoo) prevents for a
+                // plain reference.
+                if obj_closure.update() {
+                    let (frame, i) = obj_slot;
+                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, frame));
+                    view.scoped(frame).update(&view, i, hole)?;
                     let annotation = if state.annotation.is_valid() {
                         state.annotation
                     } else {
                         target_annotation(prog, decoded, &obj_closure)
                     };
                     state.stack.push(BcContinuation::Update {
-                        environment: env,
+                        environment: frame,
                         index: i,
                         annotation,
                     });
@@ -2880,13 +3045,13 @@ pub fn handle_op_predecoded(
 
             let (obj_slot, obj_value) = match instr.second_ref() {
                 DecodedRef::Local(i) => (
-                    Some(i as usize),
+                    (env, i as usize),
                     view.scoped(env)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
                 ),
                 DecodedRef::Global(i) => (
-                    None,
+                    (state.globals, i as usize),
                     view.scoped(state.globals)
                         .get(&view, i as usize)
                         .ok_or(ExecutionError::BadGlobalIndex(i as usize))?,
@@ -2907,6 +3072,7 @@ pub fn handle_op_predecoded(
 
             let is_block = decode_cons(prog, decoded, &obj_closure)
                 .is_some_and(|(t, _)| t == DataConstructor::Block.tag());
+            // Fast path: see the comment in `handle_op`.
             if is_block {
                 state.current =
                     bc_lookup_in_block(prog, decoded, state, view, &obj_closure, sym_id)
@@ -2917,16 +3083,17 @@ pub fn handle_op_predecoded(
                     smid,
                     default_closure,
                 });
-                if let (Some(i), true) = (obj_slot, obj_closure.update()) {
-                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
-                    view.scoped(env).update(&view, i, hole)?;
+                if obj_closure.update() {
+                    let (frame, i) = obj_slot;
+                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, frame));
+                    view.scoped(frame).update(&view, i, hole)?;
                     let annotation = if state.annotation.is_valid() {
                         state.annotation
                     } else {
                         target_annotation(prog, decoded, &obj_closure)
                     };
                     state.stack.push(BcContinuation::Update {
-                        environment: env,
+                        environment: frame,
                         index: i,
                         annotation,
                     });
@@ -3202,6 +3369,7 @@ impl<'a> BytecodeMachine<'a> {
             program.apply1_template = d.apply1_template;
             program.apply2_template = d.apply2_template;
             program.producer_tail_template = d.producer_tail_template;
+            program.cell_template = d.cell_template;
             program.pap = d.pap.clone();
             d
         } else {
@@ -3270,6 +3438,19 @@ impl<'a> BytecodeMachine<'a> {
     /// Run to termination (or `limit` ticks), returning the process exit
     /// code. Polls for GC every 500 ticks (mirrors `Machine::run`, spec §6).
     pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
+        // The profiled loop is a separate instantiation, selected once per
+        // run, so the unprofiled loop carries no profiling code (eu-oaz72.37).
+        if self.state.profiler.is_some() {
+            self.run_loop::<true>(limit)
+        } else {
+            self.run_loop::<false>(limit)
+        }
+    }
+
+    fn run_loop<const PROFILE: bool>(
+        &mut self,
+        limit: Option<usize>,
+    ) -> Result<Option<u8>, ExecutionError> {
         self.clock.switch(ThreadOccupation::Mutator);
         let gc_check_freq: u32 = 500;
         let mut gc_countdown: u32 = gc_check_freq;
@@ -3290,7 +3471,11 @@ impl<'a> BytecodeMachine<'a> {
                     self.dump_heap,
                 )?;
             }
-            self.dispatch()?;
+            let dispatched = self.dispatch();
+            if PROFILE {
+                profile_tick(&mut self.state, &self.heap);
+            }
+            dispatched?;
         }
 
         if self.heap.policy_requires_collection() {
@@ -3303,6 +3488,22 @@ impl<'a> BytecodeMachine<'a> {
         }
         self.clock.stop();
         Ok(self.exit_code())
+    }
+
+    /// Turn on source-level profiling (`eu run --profile`, eu-oaz72.37)
+    /// from this point on; `folded` also samples folded stacks. Every later
+    /// `run`/force loop takes its profiled instantiation.
+    pub fn enable_profiler(&mut self, folded: bool) {
+        self.state.profiler = Some(Box::new(Profiler::new(
+            self.state.allocs,
+            self.heap.bytes_allocated(),
+            folded,
+        )));
+    }
+
+    /// The accumulated profile, if profiling was enabled.
+    pub fn profiler(&self) -> Option<&Profiler> {
+        self.state.profiler.as_deref()
     }
 
     /// Machine metrics (ticks, max stack) accumulated across every phase.
@@ -3721,6 +3922,14 @@ impl BytecodeMachine<'_> {
     /// on return. Mirroring `run`'s tail here keeps `-S` clock semantics
     /// identical across the two engines.
     fn drive_whnf(&mut self) -> Result<(), ExecutionError> {
+        if self.state.profiler.is_some() {
+            self.drive_whnf_loop::<true>()
+        } else {
+            self.drive_whnf_loop::<false>()
+        }
+    }
+
+    fn drive_whnf_loop<const PROFILE: bool>(&mut self) -> Result<(), ExecutionError> {
         self.clock.switch(ThreadOccupation::Mutator);
         let gc_check_freq: u32 = 500;
         let mut gc_countdown: u32 = gc_check_freq;
@@ -3735,7 +3944,11 @@ impl BytecodeMachine<'_> {
                     self.dump_heap,
                 )?;
             }
-            self.dispatch()?;
+            let dispatched = self.dispatch();
+            if PROFILE {
+                profile_tick(&mut self.state, &self.heap);
+            }
+            dispatched?;
         }
 
         if self.heap.policy_requires_collection() {
@@ -4498,8 +4711,16 @@ impl BcBifContext<'_, '_> {
         // sub-run error, so an intrinsic that swallows the force error resumes
         // on the intact caller stack (was: the error was propagated first,
         // leaving the caller on the truncated sub-run stack).
+        // The forcing intrinsic's site, taken before the sub-run puts the
+        // thunk in `current` (whose location the fallback would otherwise
+        // pick when the annotation register is invalid).
+        let force_site = self
+            .state
+            .profiler
+            .is_some()
+            .then(|| profile_location(self.state, self.heap));
         let saved_terminated = enter_whnf_subrun(self.state, value);
-        let run_result = self.drive_to_whnf();
+        let run_result = self.drive_to_whnf(force_site);
         exit_whnf_subrun(
             self.state,
             run_result,
@@ -4512,7 +4733,22 @@ impl BcBifContext<'_, '_> {
     /// The re-entrant dispatch loop for `run_to_whnf`: drives `step` (with a
     /// NullEmitter and the `Bif` dispatch tail) until the sub-evaluation
     /// terminates. Mirrors `evaluate_to_whnf_impl` (`vm.rs`).
-    fn drive_to_whnf(&mut self) -> Result<(), ExecutionError> {
+    /// `force_site` is `Some` exactly when profiling: the location of the
+    /// intrinsic's dispatch that is forcing.
+    fn drive_to_whnf(&mut self, force_site: Option<Smid>) -> Result<(), ExecutionError> {
+        if let Some(site) = force_site {
+            profile_enter_force(self.state, self.heap, site);
+            let result = self.drive_to_whnf_loop::<true>();
+            if let Some(p) = self.state.profiler.as_deref_mut() {
+                p.exit_force();
+            }
+            result
+        } else {
+            self.drive_to_whnf_loop::<false>()
+        }
+    }
+
+    fn drive_to_whnf_loop<const PROFILE: bool>(&mut self) -> Result<(), ExecutionError> {
         let mut null = NullEmitter;
         let gc_check_freq: u32 = 500;
         let mut gc_countdown: u32 = gc_check_freq;
@@ -4554,6 +4790,9 @@ impl BcBifContext<'_, '_> {
             // HeapSyn's `evaluate_to_whnf_impl` (vm.rs) exactly, keeping the two
             // engines byte-identical.
             self.run_subrun_capture_lifecycle()?;
+            if PROFILE {
+                profile_tick(self.state, self.heap);
+            }
         }
         Ok(())
     }
@@ -4614,6 +4853,12 @@ impl BcBifContext<'_, '_> {
         result
     }
 }
+
+/// The most data constructors `memo_cell` rebuilds for one stored value
+/// (`BcBifContext::detach`): enough for a tuple or small record, while a
+/// large evaluated structure is stored as it is rather than copied on every
+/// update.
+const DETACH_BUDGET: usize = 64;
 
 impl IntrinsicMachine for BcBifContext<'_, '_> {
     fn rcache(&mut self) -> &mut LruCache<String, Regex> {
@@ -4983,6 +5228,145 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
             &InfoTagged::thunk(self.program.producer_tail_template),
             env,
         ))))
+    }
+
+    fn memo_cell(
+        &self,
+        view: MutatorHeapView<'_>,
+        value: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError> {
+        let AbiClosure::Byte(original) = value;
+        // An argument usually arrives as an `OP_ATOM` alias over the caller's
+        // frame. Storing the alias would keep that frame alive — and the
+        // frame can hold the previous version of the very dict being updated
+        // (`acc dict.assoc(k, v)` in a loop), so every version would be
+        // retained. Look through aliases to the value they name.
+        let target = self.follow_aliases(view, original.clone(), false)?;
+        let c = match &target {
+            BcValue::Native(_) => return Ok(AbiClosure::Byte(target)),
+            BcValue::Closure(c) => *c,
+        };
+        let target = AbiClosure::Byte(target);
+        if self.data_tag(view, &target).is_some() {
+            // An evaluated data constructor closes over the frame it was
+            // built in — for a let-bound `[i, i]` or `{a: i}`, the caller's
+            // frame — so it is rebuilt over fresh frames where it can be
+            // (`detach`); otherwise it is stored as it is.
+            let AbiClosure::Byte(value) = &target;
+            let mut budget = DETACH_BUDGET;
+            return Ok(match self.detach(view, value.clone(), &mut budget)? {
+                Some(detached) => AbiClosure::Byte(detached),
+                None => target,
+            });
+        }
+        if (c.arity() > 0 && !c.update()) || c.code() == self.program.cell_template {
+            // A lambda or partial application, or an existing cell.
+            return Ok(target);
+        }
+        // Not yet evaluated. Cell the original value: entering an alias
+        // enters (and memoises) the slot it names, so the value is shared
+        // with any other reader of that slot; the cell then memoises the
+        // result itself, dropping the alias once evaluated. The update flag
+        // (keeping code, env and annotation) makes entering the cell's slot
+        // memoise even a non-updatable thunk.
+        let BcValue::Closure(oc) = original else {
+            return Ok(target);
+        };
+        let thunk = BcValue::Closure(BcClosure::close(
+            &InfoTagged::thunk_annotated(oc.code(), oc.annotation()),
+            oc.env(),
+        ));
+        let frame = view.from_value(thunk, self.state.root_env, self.state.annotation)?;
+        Ok(AbiClosure::Byte(BcValue::Closure(BcClosure::new(
+            self.program.cell_template,
+            frame,
+        ))))
+    }
+}
+
+impl BcBifContext<'_, '_> {
+    /// Rebuild an evaluated value over fresh env frames (parent: the root
+    /// env), so it no longer keeps alive the frames it was built in
+    /// (eu-oaz72.70, dict design note §12). A native is returned as it is;
+    /// a data constructor is rebuilt field by field, following `OP_ATOM`
+    /// aliases, and a nullary constructor over the root env is kept.
+    ///
+    /// All or nothing: `None` if any reachable field is not a native or a
+    /// data constructor (a thunk, a function, a cell — each of which pins
+    /// its own frame, so copying the rest would gain nothing), or if more
+    /// than `budget` constructors would be rebuilt. Never forces; nothing is
+    /// collected while it runs, since an intrinsic does not reach a safe
+    /// point between allocations.
+    fn detach(
+        &self,
+        view: MutatorHeapView<'_>,
+        value: BcValue,
+        budget: &mut usize,
+    ) -> Result<Option<BcValue>, ExecutionError> {
+        // An updatable `Atom` thunk (`thunk ✳i`, as a let-bound list element
+        // naming a variable) is looked through too: its value is the value
+        // its slot names, and a value that is not yet evaluated is refused
+        // below anyway.
+        let value = self.follow_aliases(view, value, true)?;
+        let closure = AbiClosure::Byte(value);
+        let Some((tag, env, offsets)) = self.cons_of(&closure) else {
+            let AbiClosure::Byte(value) = closure;
+            return Ok(matches!(value, BcValue::Native(_)).then_some(value));
+        };
+        if offsets.is_empty() && env == self.state.root_env {
+            let AbiClosure::Byte(value) = closure;
+            return Ok(Some(value));
+        }
+        if *budget == 0 {
+            return Ok(None);
+        }
+        *budget -= 1;
+        let mut fields = Vec::with_capacity(offsets.len());
+        for idx in 0..offsets.len() {
+            let Some(AbiClosure::Byte(field)) = self.data_field(view, &closure, idx) else {
+                return Ok(None);
+            };
+            match self.detach(view, field, budget)? {
+                Some(f) => fields.push(f),
+                None => return Ok(None),
+            }
+        }
+        self.build_data(view, tag, &fields).map(Some)
+    }
+
+    /// Follow `OP_ATOM` alias closures to the value they name (at most a
+    /// bounded number of hops; a longer chain is returned where it stops).
+    /// An updatable alias (a thunk) is followed only if `through_thunks`:
+    /// the caller must then accept the target only if it is evaluated, since
+    /// otherwise storing the target would bypass the thunk's memoisation.
+    fn follow_aliases(
+        &self,
+        view: MutatorHeapView<'_>,
+        mut value: BcValue,
+        through_thunks: bool,
+    ) -> Result<BcValue, ExecutionError> {
+        for _ in 0..64 {
+            let BcValue::Closure(c) = &value else {
+                break;
+            };
+            if (c.update() && !through_thunks) || c.arity() > 0 {
+                break;
+            }
+            let code = self.program.code.as_slice();
+            let mut pc = peek_pc(self.decoded, c);
+            if Op::from_u8(read_u8(code, &mut pc)) != Some(Op::Atom) {
+                break;
+            }
+            let dref = read_ref(code, &mut pc)?;
+            value = resolve_ref(
+                view,
+                &self.state.constants,
+                c.env(),
+                self.state.globals,
+                dref,
+            )?;
+        }
+        Ok(value)
     }
 }
 
@@ -6039,11 +6423,12 @@ mod tests {
     /// heap blocks (string elements interleaved with unrooted fillers), with
     /// the containers reachable only through a bif frame.
     fn native_containers_fixture(heap: &Heap) -> NativeContainers {
+        use crate::eval::memory::dict::Dict;
         use crate::eval::memory::ndarray::{self, HeapNdArray};
-        use crate::eval::memory::set::{sort_dedup, HeapSet, Primitive};
+        use crate::eval::memory::set::{HeapSet, Primitive};
         use crate::eval::memory::string::HeapString;
+        use crate::eval::memory::symbol::SymbolPool;
         use crate::eval::memory::vec::HeapVec;
-        use ordered_float::OrderedFloat;
 
         let view = MutatorHeapView::new(heap);
         let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
@@ -6054,7 +6439,7 @@ mod tests {
                 .unwrap()
                 .as_ptr();
             elems.push(Primitive::Str(s));
-            elems.push(Primitive::Num(OrderedFloat(i as f64)));
+            elems.push(Primitive::Num((i as f64).into()));
             for _ in 0..128 {
                 view.alloc(HeapString::from_str(&view, "filler-0123456789abcdef"))
                     .unwrap();
@@ -6064,9 +6449,9 @@ mod tests {
             .alloc(HeapVec::from_slice(&view, &elems).unwrap())
             .unwrap()
             .as_ptr();
-        let sorted = sort_dedup(&view, elems);
+        let pool = SymbolPool::new();
         let set = view
-            .alloc(HeapSet::from_sorted(&view, &sorted).unwrap())
+            .alloc(HeapSet::from_elements(&Dict::new(view, &pool), elems).unwrap())
             .unwrap()
             .as_ptr();
         let flat: Vec<f64> = (0..600).map(|i| i as f64).collect();
@@ -6083,6 +6468,15 @@ mod tests {
             vec,
             arr,
         }
+    }
+
+    /// The address of a set's root tree node (its storage, which an
+    /// evacuating collection moves).
+    fn set_root_addr(
+        view: &MutatorHeapView<'_>,
+        set: RefPtr<crate::eval::memory::set::HeapSet>,
+    ) -> usize {
+        view.scoped(set).root().map_or(0, |p| p.as_ptr() as usize)
     }
 
     /// Assert the fixture's containers read back intact.
@@ -6102,11 +6496,15 @@ mod tests {
                 Some(format!("elem-{i:03}").as_str()),
                 "vec string element {i} lost across GC"
             );
-            assert!(matches!(v.get(2 * i + 1), Some(Primitive::Num(n)) if n.0 == i as f64));
+            assert!(matches!(v.get(2 * i + 1), Some(Primitive::Num(n)) if n.as_f64() == i as f64));
         }
         let s = view.scoped(set);
         assert_eq!(s.len(), 128);
-        for (i, e) in s.elements()[64..].iter().enumerate() {
+        let pool = crate::eval::memory::symbol::SymbolPool::new();
+        let d = crate::eval::memory::dict::Dict::new(view, &pool);
+        d.check_invariants(s.root())
+            .expect("set tree intact across GC");
+        for (i, e) in s.elements(&d)[64..].iter().enumerate() {
             assert_eq!(
                 e.str_in(&view),
                 Some(format!("elem-{i:03}").as_str()),
@@ -6144,7 +6542,7 @@ mod tests {
         let old_backings = {
             let view = MutatorHeapView::new(&heap);
             [
-                view.scoped(set).elements().as_ptr() as usize,
+                set_root_addr(&view, set),
                 view.scoped(vec).elements().as_ptr() as usize,
                 view.scoped(arr).shape().as_ptr() as usize,
                 view.scoped(arr).view().as_ptr() as usize,
@@ -6191,7 +6589,7 @@ mod tests {
         assert_native_containers_intact(&heap, set, vec, arr);
         let view = MutatorHeapView::new(&heap);
         let new_backings = [
-            view.scoped(set).elements().as_ptr() as usize,
+            set_root_addr(&view, set),
             view.scoped(vec).elements().as_ptr() as usize,
             view.scoped(arr).shape().as_ptr() as usize,
             view.scoped(arr).view().as_ptr() as usize,
@@ -6253,7 +6651,7 @@ mod tests {
                 )
                 .unwrap();
             let old = [
-                view.scoped(set).elements().as_ptr() as usize,
+                set_root_addr(&view, set),
                 view.scoped(vec).elements().as_ptr() as usize,
                 view.scoped(arr).view().as_ptr() as usize,
             ];
@@ -6280,7 +6678,7 @@ mod tests {
             _ => panic!("env frame slots changed shape"),
         };
         let new_backings = [
-            view.scoped(set).elements().as_ptr() as usize,
+            set_root_addr(&view, set),
             view.scoped(vec).elements().as_ptr() as usize,
             view.scoped(arr).view().as_ptr() as usize,
         ];
@@ -6301,8 +6699,9 @@ mod tests {
         // blocks holding their backing arrays.
         use crate::eval::machine::metrics::ThreadOccupation;
         use crate::eval::memory::collect::collect;
+        use crate::eval::memory::dict::Dict;
         use crate::eval::memory::set::{HeapSet, Primitive};
-        use ordered_float::OrderedFloat;
+        use crate::eval::memory::symbol::SymbolPool;
 
         let mut heap = Heap::new();
         let mut clock = Clock::default();
@@ -6311,10 +6710,12 @@ mod tests {
             let view = MutatorHeapView::new(&heap);
             let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
             let elems: Vec<Primitive> = (0..1000)
-                .map(|i| Primitive::Num(OrderedFloat(i as f64)))
+                .map(|i| Primitive::Num((i as f64).into()))
                 .collect();
+            let pool = SymbolPool::new();
+            let d = Dict::new(view, &pool);
             for _ in 0..200 {
-                view.alloc(HeapSet::from_sorted(&view, &elems).unwrap())
+                view.alloc(HeapSet::from_elements(&d, elems.clone()).unwrap())
                     .unwrap();
             }
             root
@@ -6381,6 +6782,114 @@ mod tests {
         assert!(
             m.state.capture_end_pending,
             "capture_end_pending must be left untouched (HeapSyn parity)"
+        );
+    }
+
+    /// eu-oaz72.37: a profiled force sub-run (`BcBifContext::force` →
+    /// `drive_to_whnf`) keeps the forcing intrinsic's own allocations on its
+    /// call site, both before and after the force, charges the forced
+    /// thunk's work to the thunk, and a folded-stack sample taken inside the
+    /// force keeps the suspended caller's frames.
+    ///
+    /// Fault injection: removing the `profile_enter_force` call in
+    /// `drive_to_whnf` fails the pre-force assertion (the intrinsic's
+    /// allocations move to the thunk); removing `exit_force` fails the
+    /// post-force assertion (the intrinsic's later work lands on the thunk's
+    /// annotation); sampling `stack_trace_capped` instead of `profile_trace`
+    /// in `profile_tick` fails the folded-stack assertion.
+    #[test]
+    fn profiled_force_attributes_intrinsic_and_thunk_separately() {
+        let intrinsic_site = Smid::fake(7001);
+        let thunk_site = Smid::fake(7002);
+        let caller_site = Smid::fake(7003);
+
+        // The thunk: an annotated `let` allocating two closures, returning
+        // a number.
+        let syn = dsl::ann(
+            thunk_site,
+            dsl::let_(
+                vec![
+                    dsl::thunk(dsl::atom(dsl::num(5))),
+                    dsl::thunk(dsl::atom(dsl::num(6))),
+                ],
+                dsl::atom(dsl::num(1)),
+            ),
+        );
+        let (prog, root, gforms) = encode(&syn, &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+        let thunk = m.state.current;
+        m.state.current = BcValue::Native(num(0));
+        m.enable_profiler(true);
+
+        // A caller frame suspended under the force.
+        let args = MutatorHeapView::new(&m.heap).array(&[]);
+        m.state.stack.push(BcContinuation::ApplyTo {
+            args,
+            annotation: caller_site,
+        });
+
+        // The intrinsic, dispatched at `intrinsic_site`, allocates before
+        // forcing.
+        m.state.annotation = intrinsic_site;
+        m.state.allocs += 7;
+        if let Some(p) = m.state.profiler.as_deref_mut() {
+            // The first record inside the force takes a folded sample.
+            p.set_ticks(crate::eval::bytecode::profile::FOLDED_SAMPLE_INTERVAL - 1);
+        }
+        {
+            let mut ctx = BcBifContext {
+                state: &mut m.state,
+                program: &m.program,
+                symbol_pool: &mut m.symbol_pool,
+                rcache: &mut m.rcache,
+                test_mode: m.test_mode,
+                heap: &mut m.heap,
+                intrinsics: &m.intrinsics,
+                metrics: &mut m.metrics,
+                clock: &mut m.clock,
+                dump_heap: m.dump_heap,
+                predecode: m.predecode,
+                decoded: &m.decoded,
+            };
+            let forced = ctx.force(AbiClosure::Byte(thunk)).unwrap();
+            let AbiClosure::Byte(v) = forced;
+            assert!(matches!(v, BcValue::Native(_)), "thunk forced to WHNF");
+        }
+
+        // Back in the intrinsic: it allocates more, then its dispatch ends.
+        m.state.allocs += 3;
+        profile_tick(&mut m.state, &m.heap);
+
+        let p = m.profiler().unwrap();
+        let at = |s: Smid| p.locations().get(&s).copied().unwrap_or_default();
+        let intrinsic = at(intrinsic_site);
+        let thunk_counts = at(thunk_site);
+        assert_eq!(
+            intrinsic.allocs,
+            10,
+            "the intrinsic's allocations before and after the force stay on its site: {:?}",
+            p.locations()
+        );
+        assert_eq!(
+            intrinsic.ticks,
+            1,
+            "the intrinsic's own dispatch is charged to its site: {:?}",
+            p.locations()
+        );
+        assert_eq!(
+            thunk_counts.allocs,
+            2,
+            "the forced thunk's let is charged to the thunk: {:?}",
+            p.locations()
+        );
+        assert!(thunk_counts.ticks >= 1, "the thunk's dispatches are ticked");
+
+        let folded = p.folded_samples().unwrap();
+        assert!(
+            folded
+                .keys()
+                .any(|trace| trace.first() == Some(&thunk_site) && trace.contains(&caller_site)),
+            "a sample inside the force keeps the suspended caller frame: {folded:?}"
         );
     }
 }

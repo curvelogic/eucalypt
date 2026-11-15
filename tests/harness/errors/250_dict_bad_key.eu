@@ -1,0 +1,2 @@
+` "a block cannot be a dict key (eu-oaz72.21)."
+result: dict.of[[{a: 1}, 2]] dict.size

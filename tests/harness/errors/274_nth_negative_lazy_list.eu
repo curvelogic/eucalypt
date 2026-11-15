@@ -1,0 +1,2 @@
+` "A negative index is reported before `nth` looks at the list, in blob mode as in source mode: the list argument is not strict (eu-oaz72.77)"
+r: nth(-1, panic("list forced"))

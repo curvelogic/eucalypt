@@ -1,0 +1,2 @@
+exit: 1
+stderr: "invalid dict key: a block cannot be a key"

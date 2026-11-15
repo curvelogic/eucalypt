@@ -1,0 +1,4 @@
+xs: [3, 1, 2]
+
+` "`_` alone in `nth(_)` is that argument's whole scope, so `nth` receives the identity function rather than an index, and the note states it (eu-oaz72.132)"
+r: xs nth(_)

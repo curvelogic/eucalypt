@@ -13,6 +13,7 @@ pub mod compiler;
 pub mod constant;
 pub mod contract;
 pub mod debug;
+pub mod dict;
 pub mod embed;
 pub mod emit;
 pub mod encoding;
@@ -178,8 +179,13 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(encoding::Base64Encode));
     rt.add(Box::new(encoding::Base64Decode));
     rt.add(Box::new(encoding::Sha256Hash));
+    rt.add(Box::new(encoding::Md5Hash));
+    rt.add(Box::new(string::CodePoints));
+    rt.add(Box::new(string::FromCodePoints));
+    rt.add(Box::new(string::CodePoint));
+    rt.add(Box::new(string::OfCodePoint));
     rt.add(Box::new(set::SetEmpty));
-    rt.add(Box::new(set::SetFromList));
+    rt.add(Box::new(set::SetOf));
     rt.add(Box::new(set::SetToList));
     rt.add(Box::new(set::SetAdd));
     rt.add(Box::new(set::SetRemove));
@@ -267,6 +273,31 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(typedata::TypeFromString));
     rt.add(Box::new(parallel::intrinsic::ParMap));
     rt.add(Box::new(force::SeqSpine));
+    rt.add(Box::new(force::SeqKey));
+    rt.add(Box::new(force::SeqDictPairs));
+    rt.add(Box::new(dict::DictOf));
+    rt.add(Box::new(dict::DictToList));
+    rt.add(Box::new(dict::DictGet));
+    rt.add(Box::new(dict::DictGetOr));
+    rt.add(Box::new(dict::DictAssoc));
+    rt.add(Box::new(dict::DictDissoc));
+    rt.add(Box::new(dict::DictContains));
+    rt.add(Box::new(dict::DictSize));
+    rt.add(Box::new(dict::DictKeys));
+    rt.add(Box::new(dict::DictValues));
+    rt.add(Box::new(dict::DictMin));
+    rt.add(Box::new(dict::DictMax));
+    rt.add(Box::new(dict::DictPopMin));
+    rt.add(Box::new(dict::DictPopMax));
+    rt.add(Box::new(dict::DictRange));
+    rt.add(Box::new(dict::DictUpdate));
+    rt.add(Box::new(dict::DictUpdateStrict));
+    rt.add(Box::new(dict::DictMergeWith));
+    rt.add(Box::new(dict::DictToBlock));
+    rt.add(Box::new(dict::DictRenderView));
+    rt.add(Box::new(arith::MulMod));
+    rt.add(Box::new(arith::PowMod));
+    rt.add(Box::new(arith::ModInv));
     rt.prepare(source_map);
     Box::new(rt)
 }
@@ -340,6 +371,10 @@ pub struct StgSettings {
     /// Maps binding name → per-argument demand vector. Used by the STG
     /// compiler to apply per-argument demands at user function call sites.
     pub user_demand_sigs: crate::core::analyse_demand::NamedSignatureTable,
+    /// Demand signatures of the prelude globals, by prelude slot, from
+    /// `PreludeBlob::demand_signatures` (eu-oaz72.77). Used with
+    /// `prelude_globals` for calls whose callee resolves to a prelude global.
+    pub prelude_demand_sigs: compiler::PreludeDemandSignatures,
 }
 
 /// Compile core syntax to STG ready for execution
@@ -359,7 +394,8 @@ pub fn compile(
         runtime.intrinsics(),
         settings.prelude_globals.clone(),
     )
-    .with_user_demand_sigs(settings.user_demand_sigs.clone());
+    .with_user_demand_sigs(settings.user_demand_sigs.clone())
+    .with_prelude_demand_sigs(settings.prelude_demand_sigs.clone());
     compiler.compile(expr)
 }
 
@@ -389,6 +425,7 @@ pub fn compile_named(
         runtime.intrinsics(),
         settings.prelude_globals.clone(),
     )
-    .with_user_demand_sigs(settings.user_demand_sigs.clone());
+    .with_user_demand_sigs(settings.user_demand_sigs.clone())
+    .with_prelude_demand_sigs(settings.prelude_demand_sigs.clone());
     compiler.compile_with_self_recurse(expr, self_recurse)
 }

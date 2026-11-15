@@ -1,4 +1,5 @@
 ---
+interpolated: hello 2 world
 replaced: hello eucalypt
 split-result:
   - a
