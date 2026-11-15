@@ -9,10 +9,10 @@ files, powered by tree-sitter.
 
 Full tree-sitter-based font-lock with four levels of detail:
 
-- **Level 1** — comments, strings (plain, c-strings, raw strings)
-- **Level 2** — numbers, symbols, keywords (`if`, `then`, `cond`, `true`, `false`, `null`), builtins (`__ADD` etc.)
-- **Level 3** — declarations (properties vs functions), operator declarations, parameters (including destructuring patterns), function calls
-- **Level 4** — brackets, operators, string interpolation, anaphora, metadata annotations, prelude functions
+- **Level 1** — comments, strings (plain, c-strings, raw strings, t- and s-strings)
+- **Level 2** — numbers, symbols, keywords and prelude functions (`if`, `then`, `map`, `filter`, … — whatever `highlights.scm` lists as `@keyword`), builtins (`__ADD` etc.)
+- **Level 3** — declarations (properties vs functions, including operator declarations), parameters (including destructuring patterns), function calls
+- **Level 4** — brackets, operators, string interpolation, anaphora, metadata annotations, docstrings
 
 ### Indentation
 
@@ -165,10 +165,15 @@ git clone https://github.com/curvelogic/eucalypt.git ~/path/to/eucalypt
  '(eucalypt-mode :type git
                  :host github
                  :repo "curvelogic/eucalypt"
-                 :files ("editors/emacs/*.el")))
+                 :files ("editors/emacs/*.el"
+                         "editors/tree-sitter-eucalypt/queries/highlights.scm")))
 ```
 
-Then install the tree-sitter grammar as above.
+The scm lands beside the mode, where it is found by default.
+
+Without `highlights.scm` the mode still loads (commands, indentation) but
+warns and does no syntax highlighting. Then install the tree-sitter grammar
+as above.
 
 ## Customisation
 
@@ -180,6 +185,7 @@ All options are in the `eucalypt` customisation group (`M-x customize-group RET 
 | `eucalypt-eu-command` | `"eu"` | Path to the `eu` executable |
 | `eucalypt-eu-global-opts` | `""` | Default options passed to `eu` |
 | `eucalypt-eu-file-opts` | `nil` | Per-file options (set via file-local variables) |
+| `eucalypt-highlights-file` | `nil` | `highlights.scm` to derive font-lock from (nil: search beside the mode, then the repository) |
 
 ### Per-file options example
 
@@ -218,7 +224,18 @@ EU=target/release/eu scripts/check-emacs-mode.sh
 
 ### Against the grammar
 
-The mode's font-lock queries name tree-sitter node types, so a grammar
+The mode has no highlight queries of its own: at load it derives its
+font-lock rules from the grammar's `queries/highlights.scm` (found next to
+`eucalypt-mode.el`, then in `../tree-sitter-eucalypt/queries`; override with
+`eucalypt-highlights-file`, which is read when the mode is first used). Each capture name is renamed to an Emacs face
+by the table `eucalypt-mode--capture-faces`, which also assigns the
+feature (and so the `treesit-font-lock-level`); `#match?`, `#eq?` and
+`#any-of?` are rewritten to Emacs's `#match`/`#equal`. A capture missing
+from the table is reported as a warning and its pattern skipped (the batch check below fails on it). The only Emacs-specific rule is the
+face for Unicode idiot brackets.
+When packaging the mode, copy `highlights.scm` beside it.
+
+The derived queries name tree-sitter node types, so a grammar
 change can break them: a query that no longer matches the grammar raises
 `treesit-query-error` and switches off every feature at that
 `treesit-font-lock-level`. After changing the grammar or the queries, run

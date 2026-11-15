@@ -137,144 +137,283 @@ Set via file-local variables, e.g.:
   "Keymap for `eucalypt-mode'.")
 
 ;;; Font-lock
+;;
+;; The highlight rules are not written here: they are derived from the
+;; grammar's own `queries/highlights.scm' (editors/tree-sitter-eucalypt),
+;; the single source of truth shared with other tree-sitter editors.  At
+;; load time that file is split into patterns, each capture name
+;; (`@keyword') is renamed to an Emacs face through
+;; `eucalypt-mode--capture-faces', the standard predicates are rewritten
+;; for Emacs, and the patterns are grouped by feature.
 
-(defvar eucalypt-mode--font-lock-settings
-  (treesit-font-lock-rules
-   :language 'eucalypt
-   :feature 'comment
-   '((comment) @font-lock-comment-face)
+(defcustom eucalypt-highlights-file nil
+  "Path of the tree-sitter `highlights.scm' the mode derives font-lock from.
+When nil the mode looks next to `eucalypt-mode.el' (for a packaged copy) and
+then in the grammar's `queries' directory of the eucalypt repository."
+  :type '(choice (const :tag "Search" nil) file)
+  :group 'eucalypt)
 
-   :language 'eucalypt
-   :feature 'string
-   '(;; Plain strings
-     (string) @font-lock-string-face
-     (string_content) @font-lock-string-face
-     ;; C-strings (with C-style escapes)
-     (c_string) @font-lock-string-face
-     (c_string_content) @font-lock-string-face
-     (c_escape_sequence) @font-lock-escape-face
-     ;; Raw strings
-     (r_string) @font-lock-string-face
-     (r_string_content) @font-lock-string-face
-     ;; T-strings (ZDT / zoned date-time literals — no interpolation)
-     (t_string) @font-lock-constant-face
-     (t_string_content) @font-lock-constant-face
-     ;; S-strings (type-data literals — opaque, no interpolation)
-     (s_string) @font-lock-string-face
-     (s_string_content) @font-lock-string-face
-     ;; Brace escapes ({{ and }} in plain/raw strings)
-     (brace_escape) @font-lock-escape-face)
+(defconst eucalypt-mode--capture-faces
+  '(("comment"               font-lock-comment-face       comment)
+    ("string"                font-lock-string-face        string)
+    ("string.escape"         font-lock-escape-face        string)
+    ("string.special"        font-lock-constant-face      string)
+    ("number"                font-lock-number-face        number)
+    ("keyword"               font-lock-keyword-face       keyword)
+    ("function.builtin"      font-lock-builtin-face       builtin)
+    ("constant"              font-lock-constant-face      symbol)
+    ("operator"              font-lock-operator-face      operator)
+    ("punctuation.delimiter" font-lock-delimiter-face     bracket)
+    ("punctuation.bracket"   font-lock-bracket-face       bracket)
+    ("punctuation.special"   font-lock-preprocessor-face  interpolation)
+    ("variable"              font-lock-variable-use-face  interpolation)
+    ("property"              font-lock-variable-name-face declaration)
+    ("function"              font-lock-function-name-face declaration)
+    ("parameter"             font-lock-variable-name-face parameter)
+    ("function.call"         font-lock-function-call-face function-call)
+    ("variable.special"      font-lock-type-face          anaphor)
+    ("attribute"             font-lock-preprocessor-face  metadata)
+    ("comment.documentation" font-lock-doc-face           docstring))
+  "Map from `highlights.scm' capture names to (FACE FEATURE).
+A pattern's FEATURE is that of its first capture; every capture is renamed
+to its own FACE.  The order is the order rules are applied in: the prelude
+names (`@keyword') come first so that the more specific rules for user
+bindings, keys and symbols, which override, repaint them.")
 
-   :language 'eucalypt
-   :feature 'number
-   '((number) @font-lock-number-face)
+(defconst eucalypt-mode--override-features
+  '(keyword builtin symbol interpolation declaration parameter anaphor
+    metadata docstring)
+  "Features whose rules replace faces set by earlier rules.
+`function-call' does not, so a call of a prelude name keeps its keyword
+face.")
 
-   :language 'eucalypt
-   :feature 'symbol
-   '((symbol (identifier) @font-lock-constant-face)
-     (symbol (quoted_identifier) @font-lock-constant-face))
+(defconst eucalypt-mode--replaced-nodes '("bracket_expr")
+  "Node types whose whole-node patterns in `highlights.scm' are not used.
+The Emacs-specific rule in `eucalypt-mode--extra-queries' replaces them: a
+whole-node capture must not repaint the faces of the node's contents.")
 
-   :language 'eucalypt
-   :feature 'operator
-   '((operator) @font-lock-operator-face)
+(defconst eucalypt-mode--font-lock-feature-list
+  '((comment string)
+    (number symbol keyword builtin)
+    (declaration parameter function-call)
+    (bracket operator interpolation anaphor metadata docstring))
+  "The `treesit-font-lock-feature-list' of `eucalypt-mode'.")
 
-   :language 'eucalypt
-   :feature 'bracket
-   '(["(" ")" "[" "]" "{" "}"] @font-lock-bracket-face
-     [":" ","] @font-lock-delimiter-face
-     ["`"] @font-lock-preprocessor-face
-     ;; Idiot bracket expressions: ⟦ expr ⟧, «expr», etc.
-     (bracket_expr) @eucalypt-unicode-bracket-face)
+(defconst eucalypt-mode--extra-queries
+  '(:language eucalypt :feature bracket
+    ((bracket_expr) @eucalypt-unicode-bracket-face))
+  "Emacs-specific addition to `highlights.scm': Unicode idiot brackets.")
 
-   :language 'eucalypt
-   :feature 'interpolation
-   '((interpolation
-      "{" @font-lock-bracket-face
-      "}" @font-lock-bracket-face)
-     (format_spec) @font-lock-type-face)
+(defun eucalypt-mode--highlights-file ()
+  "Locate `highlights.scm', or signal an error."
+  (let* ((here (file-name-directory
+                (or load-file-name buffer-file-name
+                    (locate-library "eucalypt-mode") "")))
+         (file (or eucalypt-highlights-file
+                   (seq-find #'file-readable-p
+                             (list (expand-file-name "highlights.scm" here)
+                                   (expand-file-name
+                                    "../tree-sitter-eucalypt/queries/highlights.scm"
+                                    here))))))
+    (unless (and file (file-readable-p file))
+      (signal 'file-missing
+              (list "Cannot find eucalypt highlights.scm; set \
+`eucalypt-highlights-file' (no syntax highlighting without it)")))
+    file))
 
-   :language 'eucalypt
-   :feature 'declaration
-   '((declaration
-      (declaration_head (identifier) @font-lock-variable-name-face))
-     (declaration
-      (declaration_head
-       (identifier) @font-lock-function-name-face
-       (parameter_list)))
-     ;; Juxtaposed block definition: f{x y}: ...
-     (declaration
-      (declaration_head
-       (identifier) @font-lock-function-name-face
-       (block_param)))
-     ;; Juxtaposed list definition: f[x, y]: ...
-     (declaration
-      (declaration_head
-       (identifier) @font-lock-function-name-face
-       (list_param))))
+(defun eucalypt-mode--split-patterns (text)
+  "Split the query source TEXT into its top-level patterns (strings).
+Comments are dropped.  A pattern is one balanced form followed by any
+captures or quantifiers attached to it."
+  (let ((patterns nil) (pos 0) (len (length text)))
+    (cl-flet ((read-form (start)
+                ;; Return the end of the balanced form starting at START.
+                (let ((i start) (depth 0) (done nil))
+                  (while (and (not done) (< i len))
+                    (let ((c (aref text i)))
+                      (cond
+                       ((eq c ?\") (setq i (1+ i))
+                        (while (not (eq (aref text i) ?\"))
+                          (when (eq (aref text i) ?\\) (setq i (1+ i)))
+                          (setq i (1+ i)))
+                        (setq i (1+ i))
+                        (when (zerop depth) (setq done t)))
+                       ((memq c '(?\( ?\[)) (setq depth (1+ depth) i (1+ i)))
+                       ((memq c '(?\) ?\])) (setq depth (1- depth) i (1+ i))
+                        (when (zerop depth) (setq done t)))
+                       ((eq c ?\;) (while (and (< i len) (/= (aref text i) ?\n))
+                                     (setq i (1+ i))))
+                       (t (setq i (1+ i))))))
+                  i)))
+      (while (string-match "[^ \t\n]" text pos)
+        (let ((start (match-beginning 0)))
+          (if (eq (aref text start) ?\;)
+              (setq pos (or (string-search "\n" text start) len))
+            (let ((end (read-form start)))
+              ;; Absorb trailing captures and quantifiers.
+              (while (and (string-match "[ \t\n]*[@?*+][^ \t\n()]*" text end)
+                          (= (match-beginning 0) end))
+                (setq end (match-end 0)))
+              (push (substring text start end) patterns)
+              (setq pos end))))))
+    (nreverse patterns)))
 
-   :language 'eucalypt
-   :feature 'operator-declaration
-   '((operator_declaration
-      (operator) @font-lock-function-name-face))
+(defun eucalypt-mode--strip-comments (text)
+  "Return TEXT without `;' comments (outside strings)."
+  (with-temp-buffer
+    (insert text)
+    (goto-char (point-min))
+    (while (not (eobp))
+      (cond ((eq (char-after) ?\")
+             (forward-char)
+             (while (not (eq (char-after) ?\"))
+               (when (eq (char-after) ?\\) (forward-char))
+               (forward-char))
+             (forward-char))
+            ((eq (char-after) ?\;)
+             (delete-region (point) (line-end-position)))
+            (t (forward-char))))
+    (buffer-string)))
 
-   :language 'eucalypt
-   :feature 'parameter
-   '(;; Simple parameters
-     (parameter_list (identifier) @font-lock-variable-name-face)
-     (operator_declaration (identifier) @font-lock-variable-name-face)
-     ;; Block destructuring pattern, shorthand fields: {x y}
-     (block_pattern (identifier) @font-lock-variable-name-face)
-     ;; Renamed or nested fields: {x: a} or {x: [a, b]} (the nested
-     ;; patterns' own identifiers are matched by the rules below)
-     (block_pattern_field (identifier) @font-lock-variable-name-face)
-     ;; Fixed-length list destructuring pattern: [a, b, c]
-     (list_pattern (identifier) @font-lock-variable-name-face)
-     ;; Cons pattern: [h : t]
-     (cons_pattern (identifier) @font-lock-variable-name-face)
-     ;; Juxtaposed block param: f{x y}
-     (block_param (identifier) @font-lock-variable-name-face)
-     ;; Juxtaposed list param: f[x, y] or f[h : t]
-     (list_param (identifier) @font-lock-variable-name-face))
+(defun eucalypt-mode--translate-predicates (pattern)
+  "Rewrite the standard predicates in PATTERN for Emacs.
+`#eq?' becomes `#equal', `#match?' becomes `#match', and `#any-of?'
+becomes a `#match' on an anchored alternation of the quoted strings."
+  (let ((case-fold-search nil))
+    (setq pattern
+          (replace-regexp-in-string
+           "(#eq\\?[ \t\n]+\\(@[^ )]+\\)[ \t\n]+" "(#equal \\1 " pattern t))
+    (setq pattern
+          (replace-regexp-in-string
+           "(#match\\?[ \t\n]+\\(@[^ )]+\\)[ \t\n]+\\(\"[^\"]*\"\\)[ \t\n]*)" "(#match \\2 \\1)"
+           pattern t))
+    (while (string-match
+            "(#any-of\\? \\(@[^ )]+\\)\\(\\(?:[ \t\n]+\"[^\"]*\"\\)+\\)[ \t\n]*)"
+            pattern)
+      (let ((capture (match-string 1 pattern))
+            (from (match-beginning 0)) (to (match-end 0))
+            (names nil) (args (match-string 2 pattern)) (i 0))
+        (while (string-match "\"\\([^\"]*\\)\"" args i)
+          (push (regexp-quote (match-string 1 args)) names)
+          (setq i (match-end 0)))
+        (setq pattern
+              (concat (substring pattern 0 from)
+                      (format "(#match %S %s)"
+                              (concat "^\\(?:"
+                                      (mapconcat #'identity (nreverse names)
+                                                 "\\|")
+                                      "\\)$")
+                              capture)
+                      (substring pattern to)))))
+    pattern))
 
-   :language 'eucalypt
-   :feature 'function-call
-   '((application
-      (name (identifier) @font-lock-function-call-face)))
+(defvar eucalypt-mode--unmapped-captures nil
+  "Captures of `highlights.scm' with no entry in `eucalypt-mode--capture-faces'.")
 
-   :language 'eucalypt
-   :feature 'builtin
-   :override t
-   '(((identifier) @font-lock-builtin-face
-      (:match "^__[A-Z]+" @font-lock-builtin-face)))
+(defun eucalypt-mode--rename-captures (pattern)
+  "Return (FEATURE . PATTERN) with captures in PATTERN renamed to faces.
+FEATURE is that of the first mapped capture, or nil when there is none.
+Helper captures (`@_name') are left alone.  A pattern with an unmapped
+capture is skipped (FEATURE nil) and the capture recorded in
+`eucalypt-mode--unmapped-captures', so a capture added to the shared scm
+for another editor cannot take the mode down."
+  (let ((feature nil) (i 0) (out "") (ok t))
+    (while (string-match "@\\([A-Za-z_][A-Za-z0-9_.-]*\\)" pattern i)
+      (let* ((name (match-string 1 pattern))
+             (entry (assoc name eucalypt-mode--capture-faces)))
+        (setq out (concat out (substring pattern i (match-beginning 0))))
+        (cond ((string-prefix-p "_" name) (setq out (concat out "@" name)))
+              (entry (setq feature (or feature (nth 2 entry))
+                           out (concat out "@" (symbol-name (nth 1 entry)))))
+              (t (setq ok nil)
+                 (cl-pushnew name eucalypt-mode--unmapped-captures
+                             :test #'equal)))
+        (setq i (match-end 0))))
+    (cons (and ok feature) (concat out (substring pattern i)))))
 
-   :language 'eucalypt
-   :feature 'keyword
-   :override t
-   '(((identifier) @font-lock-keyword-face
-      (:match "^\\(if\\|then\\|when\\|cond\\|true\\|false\\|null\\|nil\\)$"
-              @font-lock-keyword-face)))
+(defvar eucalypt-mode--font-lock-settings nil
+  "Font-lock settings for `eucalypt-mode', derived from `highlights.scm'.")
 
-   :language 'eucalypt
-   :feature 'prelude
-   '(((identifier) @font-lock-builtin-face
-      (:match "^\\(cons\\|head\\|tail\\|first\\|second\\|map\\|filter\\|foldl\\|foldr\\|and\\|or\\|not\\|merge\\|concat\\|identity\\|const\\|compose\\|take\\|drop\\|take-while\\|drop-while\\|all\\|any\\|all-true\\?\\|any-true\\?\\|keys\\|values\\|lookup\\|has\\|range\\|repeat\\|iterate\\|cycle\\|zip\\|zip-with\\|reverse\\|remove\\|mapcat\\|group-by\\|qsort\\|partition\\|negate\\|inc\\|dec\\|floor\\|ceiling\\|max\\|min\\|abs\\|num\\|panic\\|assert\\|append\\|prepend\\|head-or\\|tail-or\\|second-or\\|flip\\|apply\\|scanl\\|scanr\\|deep-merge\\|merge-all\\|elements\\|block\\|lookup-in\\|lookup-or\\|lookup-or-in\\|lookup-alts\\|lookup-across\\|lookup-path\\|complement\\|curry\\|uncurry\\|juxt\\|fnil\\|with-meta\\|meta\\|merge-meta\\|assertions\\|split-at\\|take-until\\|drop-until\\|split-after\\|split-when\\|nth\\|count\\|last\\|map2\\|zip-apply\\|window\\|over-sliding-pairs\\|differences\\|discriminate\\|key\\|value\\|bimap\\|map-first\\|map-second\\|map-kv\\|map-as-block\\|pair\\|zip-kv\\|with-keys\\|map-values\\|map-keys\\|filter-items\\|by-key\\|by-key-name\\|by-key-match\\|by-value\\|match-filter-values\\|filter-values\\|alter-value\\|update-value\\|alter\\|update\\|update-value-or\\|set-value\\|tongue\\|merge-at\\|nil\\?\\|zero\\?\\|pos\\?\\|neg\\?\\|any\\?\\|non-nil\\?\\|block\\?\\|bool\\?\\|list\\?\\|number\\?\\|string\\?\\|symbol\\?\\|is-array\\?\\|match\\?\\|max-of\\|min-of\\|max-of-by\\|max-of-or\\|min-of-by\\|min-of-or\\|sym\\|ch\\|str\\|arr\\|monad\\|random\\|vec\\|render\\|render-as\\|parse-as\\|parse-args\\|deep-transform\\|deep-fold\\|deep-find\\|deep-find-first\\|deep-find-paths\\|deep-query\\|deep-query-first\\|deep-query-fold\\|deep-query-paths\\|deep-merge-at\\|sort-by\\|sort-by-num\\|sort-by-str\\|sort-by-zdt\\|sort-keys\\|sort-nums\\|sort-strs\\|sort-zdts\\|kv-block\\|map-elements\\|coalesce\\|group-consecutive\\|group-consecutive-by\\|iota\\|reduce\\|rotate\\|tails\\|update-nth\\|update-first\\|interleave\\|unzip\\|butlast\\|ints-from\\|snoc\\|cross\\|sum\\|product\\|running-sum\\|running-max\\|running-min\\|nub-by\\|uniq\\|partition-all\\|window-all\\|div\\|mod\\|rem\\|quot\\|pow\\|dbg\\|eu\\|io\\|cal\\|iosm\\)$"
-              @font-lock-builtin-face)))
+(defvar eucalypt-mode--font-lock-sources nil
+  "Alist (FEATURE . QUERY-STRING) derived from `highlights.scm'.")
 
-   :language 'eucalypt
-   :feature 'anaphor
-   '((anaphor) @font-lock-type-face)
+(defvar eucalypt-mode--doc-query nil
+  "Query string of every `highlights.scm' pattern capturing documentation.
+Whatever feature such a pattern belongs to, the markdown fontifier uses it.")
 
-   :language 'eucalypt
-   :feature 'metadata
-   '((metadata) @font-lock-preprocessor-face
-     ;; Block-valued unit metadata (non-docstring)
-     (unit_metadata (block) @font-lock-doc-face))
+(defun eucalypt-mode--derive-sources ()
+  "Derive the per-feature queries from `highlights.scm'.
+Set `eucalypt-mode--font-lock-sources' and `eucalypt-mode--doc-query'.
+The patterns of each feature are joined in file order; features are in the
+order of `eucalypt-mode--capture-faces'."
+  (let ((by-feature nil) (doc nil)
+        (text (eucalypt-mode--strip-comments
+               (with-temp-buffer
+                 (insert-file-contents (eucalypt-mode--highlights-file))
+                 (buffer-string)))))
+    (setq eucalypt-mode--unmapped-captures nil)
+    (dolist (pattern (eucalypt-mode--split-patterns text))
+      (unless (string-match
+               (concat "\\`(" (regexp-opt eucalypt-mode--replaced-nodes)
+                       ")")
+               pattern)
+        (let ((renamed (eucalypt-mode--rename-captures
+                        (eucalypt-mode--translate-predicates pattern))))
+          (when (car renamed)
+            (push (cdr renamed) (alist-get (car renamed) by-feature))
+            (when (string-match-p "@font-lock-doc-face" (cdr renamed))
+              (push (cdr renamed) doc))))))
+    (dolist (entry eucalypt-mode--capture-faces)
+      (let ((feature (nth 2 entry)))
+        (when (and (alist-get feature by-feature)
+                   (not (assq feature eucalypt-mode--font-lock-sources)))
+          (push (cons feature (mapconcat #'identity
+                                         (reverse (alist-get feature by-feature))
+                                         "\n"))
+                eucalypt-mode--font-lock-sources))))
+    (setq eucalypt-mode--font-lock-sources
+          (nreverse eucalypt-mode--font-lock-sources)
+          eucalypt-mode--doc-query
+          (mapconcat #'identity (nreverse doc) "\n"))
+    (when eucalypt-mode--unmapped-captures
+      (display-warning
+       'eucalypt (format "highlights.scm captures %s have no face; add them to \
+`eucalypt-mode--capture-faces'"
+                         (mapconcat (lambda (c) (concat "@" c))
+                                    eucalypt-mode--unmapped-captures ", "))))))
 
-   :language 'eucalypt
-   :feature 'docstring
-   '(;; String-valued metadata aliased to docstring by the grammar
-     (docstring) @font-lock-doc-face))
-  "Font-lock settings for `eucalypt-mode'.")
+(defvar eucalypt-mode--warned-missing nil
+  "Non-nil once the missing-`highlights.scm' warning has been shown.")
+
+(defun eucalypt-mode--ensure-font-lock ()
+  "Derive the font-lock settings from `highlights.scm' once.
+When `highlights.scm' cannot be found the mode still loads, without
+highlighting, and a warning says how to fix that."
+  (unless eucalypt-mode--font-lock-settings
+    (setq eucalypt-mode--font-lock-sources nil eucalypt-mode--doc-query nil)
+    (condition-case err
+        (progn
+          (eucalypt-mode--derive-sources)
+          (setq eucalypt-mode--font-lock-settings
+                (append
+                 (apply #'append
+                        (mapcar
+                         (lambda (source)
+                           (treesit-font-lock-rules
+                            :language 'eucalypt
+                            :feature (car source)
+                            :override (and (memq (car source)
+                                                 eucalypt-mode--override-features)
+                                           t)
+                            (cdr source)))
+                         eucalypt-mode--font-lock-sources))
+                 (apply #'treesit-font-lock-rules
+                        eucalypt-mode--extra-queries))))
+      (file-missing
+       (unless eucalypt-mode--warned-missing
+         (setq eucalypt-mode--warned-missing t)
+         (display-warning 'eucalypt (error-message-string err)))
+       nil))))
 
 ;;; Indentation
 
@@ -1009,87 +1148,22 @@ region is active.  Skips replacements inside strings and comments."
       (put-text-property (match-beginning 2) (match-end 2)
                          'face 'italic))))
 
-(defconst eucalypt--docstring-doc-queries
-  '(((metadata
-     (block
-      (declaration
-       (declaration_head (identifier) @_key)
-       (soup (literal (string) @ds)))))
-    (:equal @_key "doc"))
-   ((metadata
-     (block
-      (declaration
-       (declaration_head (identifier) @_key)
-       (soup (literal (c_string) @ds)))))
-    (:equal @_key "doc"))
-   ((metadata
-     (block
-      (declaration
-       (declaration_head (identifier) @_key)
-       (soup (literal (r_string) @ds)))))
-    (:equal @_key "doc"))
-   ((unit_metadata
-     (block
-      (declaration
-       (declaration_head (identifier) @_key)
-       (soup (literal (string) @ds)))))
-    (:equal @_key "doc"))
-   ((unit_metadata
-     (block
-      (declaration
-       (declaration_head (identifier) @_key)
-       (soup (literal (c_string) @ds)))))
-    (:equal @_key "doc"))
-   ((unit_metadata
-     (block
-      (declaration
-       (declaration_head (identifier) @_key)
-       (soup (literal (r_string) @ds)))))
-    (:equal @_key "doc"))
-   ((block_metadata
-     (block
-      (declaration
-       (declaration_head (identifier) @_key)
-       (soup (literal (string) @ds)))))
-    (:equal @_key "doc"))
-   ((block_metadata
-     (block
-      (declaration
-       (declaration_head (identifier) @_key)
-       (soup (literal (c_string) @ds)))))
-    (:equal @_key "doc"))
-   ((block_metadata
-     (block
-      (declaration
-       (declaration_head (identifier) @_key)
-       (soup (literal (r_string) @ds)))))
-    (:equal @_key "doc")))
-  "Queries capturing (as @ds) `doc' string values inside block-valued metadata.
-Matches ` {doc: \"...\"}, { {doc: \"...\"} x: 1 } and { doc: \"...\" } at
-file level, for plain, c- and raw strings.")
-
 (defun eucalypt--fontify-markdown-in-docstrings (beg end)
-  "Apply markdown highlighting within docstring regions between BEG and END."
-  (when (and (treesit-ready-p 'eucalypt t)
+  "Apply markdown highlighting within docstring regions between BEG and END.
+The docstrings are whatever `highlights.scm' captures as documentation
+\(`@comment.documentation'), restricted to string nodes."
+  (when (and eucalypt-mode--doc-query
+             (treesit-ready-p 'eucalypt t)
              (treesit-buffer-root-node 'eucalypt))
-    (let ((root (treesit-buffer-root-node 'eucalypt)))
-      ;; Direct docstring nodes (string-valued metadata, aliased by grammar)
-      (dolist (cap (treesit-query-capture root '((docstring) @ds) beg end))
-        (when (eq (car cap) 'ds)
-          (eucalypt--apply-markdown-faces
-           (treesit-node-start (cdr cap))
-           (treesit-node-end (cdr cap)))))
-      ;; Doc values inside block-valued metadata (declaration, unit, block)
-      ;; Matches: ` {doc: "..."}, { {doc: "..."} x: 1 }, and { doc: "..." } at file level
-      (dolist (query eucalypt--docstring-doc-queries)
-        ;; Each element is one pattern with its predicate, so wrap it: a
-        ;; bare list is read as a sequence of patterns, which would make
-        ;; the predicate a pattern of its own.
-        (dolist (cap (treesit-query-capture root (list query) beg end))
-          (when (eq (car cap) 'ds)
-            (eucalypt--apply-markdown-faces
-             (treesit-node-start (cdr cap))
-             (treesit-node-end (cdr cap)))))))))
+    (dolist (cap (treesit-query-capture
+                  (treesit-buffer-root-node 'eucalypt)
+                  eucalypt-mode--doc-query beg end))
+      (when (and (eq (car cap) 'font-lock-doc-face)
+                 (member (treesit-node-type (cdr cap))
+                         '("docstring" "string" "c_string" "r_string")))
+        (eucalypt--apply-markdown-faces
+         (treesit-node-start (cdr cap))
+         (treesit-node-end (cdr cap)))))))
 
 ;;; Mode definition
 
@@ -1119,12 +1193,10 @@ Key bindings:
   (setq-local treesit-simple-indent-rules eucalypt-mode--indent-rules)
 
   ;; Font-lock
+  (eucalypt-mode--ensure-font-lock)
   (setq-local treesit-font-lock-settings eucalypt-mode--font-lock-settings)
   (setq-local treesit-font-lock-feature-list
-              '((comment string)
-                (number symbol keyword builtin)
-                (declaration operator-declaration parameter function-call)
-                (bracket operator interpolation anaphor metadata prelude docstring)))
+              eucalypt-mode--font-lock-feature-list)
 
   ;; Navigation
   (setq-local treesit-defun-type-regexp "declaration")
