@@ -1068,6 +1068,39 @@ fn format_bad_datetime_components(
     )
 }
 
+/// Render a number for an error message without losing digits.
+///
+/// `Display` for `f64` (and `serde_json::Number`) prints the shortest
+/// digits that round-trip, so the exactly-representable float 2^63 appears
+/// as `9223372036854776000` or `9.223372036854776e18`. Floats of magnitude
+/// 2^53 or more (all of them whole) are printed with their exact decimal
+/// digits instead; smaller values keep the usual rendering.
+pub fn exact_number(n: &Number) -> String {
+    match n.as_f64() {
+        Some(f) if !n.is_i64() && !n.is_u64() && f.abs() >= 2f64.powi(53) => exact_f64(f),
+        _ => n.to_string(),
+    }
+}
+
+/// As [`exact_number`], for a bare `f64`.
+pub fn exact_f64(f: f64) -> String {
+    if f.is_finite() && f.abs() >= 2f64.powi(53) {
+        format!("{f:.0}")
+    } else {
+        format!("{f}")
+    }
+}
+
+/// Like [`exact_number`] but keeps the compact scientific form for
+/// magnitudes of 2^126 and above, where a full digit string would be
+/// unreadably long and the exact value adds nothing.
+fn display_number(n: &Number) -> String {
+    match n.as_f64() {
+        Some(f) if !n.is_i64() && !n.is_u64() && f.abs() >= 2f64.powi(126) => n.to_string(),
+        _ => exact_number(n),
+    }
+}
+
 /// Convert a data tag number to a human-readable type name for error messages
 fn display_data_tag(tag: u8) -> String {
     match DataConstructor::try_from(tag) {
@@ -1238,11 +1271,11 @@ pub enum ExecutionError {
     NotSerialisable(Smid, Box<(String, String)>),
     #[error("{}", format_unknown_format(.0))]
     UnknownFormat(String),
-    #[error("cannot combine numbers ({1}, {2}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
+    #[error("cannot combine numbers ({}, {}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision", display_number(.1), display_number(.2))]
     NumericDomainError(Smid, Number, Number),
-    #[error("result of ({1})^({2}) is not a real number\n  help: raising a negative base to a fractional exponent yields a complex result; use a non-negative base or an integer exponent")]
+    #[error("result of ({})^({}) is not a real number\n  help: raising a negative base to a fractional exponent yields a complex result; use a non-negative base or an integer exponent", display_number(.1), display_number(.2))]
     ComplexResult(Smid, Number, Number),
-    #[error("numeric overflow: result of operating on {1} and {2} is out of range\n  help: the result exceeds the representable range for this numeric type")]
+    #[error("numeric overflow: result of operating on {} and {} is out of range\n  help: the result exceeds the representable range for this numeric type", display_number(.1), display_number(.2))]
     NumericRangeError(Smid, Number, Number),
     #[error("{}", format_division_by_zero(.1))]
     DivisionByZero(Smid, String),
@@ -2195,6 +2228,47 @@ impl ExecutionError {
             ExecutionError::UnrenderableShape(..) => Some("EU-RENDER-SHAPE"),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod exact_number_tests {
+    use super::*;
+
+    fn num(f: f64) -> Number {
+        Number::from_f64(f).unwrap()
+    }
+
+    #[test]
+    fn two_pow_63_is_exact() {
+        assert_eq!(exact_f64(2f64.powi(63)), "9223372036854775808");
+        assert_eq!(exact_number(&num(2f64.powi(63))), "9223372036854775808");
+    }
+
+    #[test]
+    fn threshold_edges() {
+        assert_eq!(exact_f64(2f64.powi(53)), "9007199254740992");
+        assert_eq!(exact_f64(-(2f64.powi(53))), "-9007199254740992");
+        assert_eq!(exact_number(&num(-1.0)), "-1.0");
+        assert_eq!(
+            exact_number(&Number::from(i64::MIN)),
+            "-9223372036854775808"
+        );
+    }
+
+    #[test]
+    fn beyond_i128_is_exact() {
+        assert_eq!(
+            exact_f64(2f64.powi(130)),
+            "1361129467683753853853498429727072845824"
+        );
+    }
+
+    #[test]
+    fn display_keeps_scientific_above_2_pow_126() {
+        let big = num(2f64.powi(1000));
+        assert_eq!(display_number(&big), big.to_string());
+        assert_eq!(display_number(&num(2f64.powi(63))), "9223372036854775808");
     }
 }
 

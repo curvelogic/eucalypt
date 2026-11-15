@@ -1,0 +1,2 @@
+` "eu-oaz72.154: a large whole float operand in a numeric error prints its exact digits"
+x: (0 - 9223372036854775808.0) ^ 0.5

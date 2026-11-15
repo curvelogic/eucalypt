@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: bitwise operations require integer arguments (9223372036854776000 is out of the i64 range for bitwise operations)
+error: bitwise operations require integer arguments (9223372036854775808 is out of the i64 range for bitwise operations)
   ┌─ tests/harness/errors/296_bitwise_float_out_of_range.eu:2:26
   │
 2 │ x: 9223372036854775808.0 & 1
