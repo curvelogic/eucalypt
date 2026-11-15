@@ -1,0 +1,33 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/250_dict_detached_label
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_detached_label.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_detached_label.eu:3:10
+help-lines: 1
+note-lines: 2
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tried to call a list as a function
+  help: only functions and blocks can be called with arguments
+  ┌─ tests/harness/errors/250_dict_detached_label.eu:3:10
+  │
+2 │ f(i): dict.empty dict.assoc(:k, [i, i])
+  │                  ---------------------- called from here
+3 │ v: (f(3) dict.get(:k))(1)
+  │          ^^^^^^^^^^^^^^^^
+  │
+  = lists are not callable; to access elements by index use 'nth(index, list)' or pipeline form 'list nth(index)'
+  = for the first element use 'list head'; for the rest use 'list tail'
+  = while evaluating (outermost first):
+    - v at 250_dict_detached_label.eu:3:10

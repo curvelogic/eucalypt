@@ -5331,7 +5331,33 @@ impl BcBifContext<'_, '_> {
                 None => return Ok(None),
             }
         }
-        self.build_data(view, tag, &fields).map(Some)
+        // Keep the original frame's annotation (eu-oaz72.83): it is the call
+        // site an error trace reports as "called from here". Falling back to
+        // the intrinsic's own site would blame the dict operation instead. (A
+        // closure annotation is not observable in any trace, so it is not
+        // copied.)
+        if fields.is_empty() {
+            return self.build_data(view, tag, &fields).map(Some);
+        }
+        let frame_ann = view.scoped(env).annotation();
+        let code = self
+            .program
+            .templates
+            .get(tag as usize)
+            .copied()
+            .ok_or_else(|| {
+                ExecutionError::Panic(
+                    self.state.annotation,
+                    format!("bytecode: no constructor template for tag {tag}"),
+                )
+            })?;
+        let new_env = view.from_values(
+            fields.iter().cloned(),
+            fields.len(),
+            self.state.root_env,
+            frame_ann,
+        )?;
+        Ok(Some(BcValue::Closure(BcClosure::new(code, new_env))))
     }
 
     /// Follow `OP_ATOM` alias closures to the value they name (at most a
