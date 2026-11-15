@@ -5574,3 +5574,18 @@ pub fn test_error_306_complex_result_large_float() {
 pub fn test_error_250_dict_detached_label() {
     run_error_test(&error_opts("250_dict_detached_label.eu"));
 }
+
+#[test]
+pub fn test_error_250_dict_detached_budget_64() {
+    run_error_test(&error_opts("250_dict_detached_budget_64.eu"));
+}
+
+#[test]
+pub fn test_error_250_dict_detached_budget_65() {
+    run_error_test(&error_opts("250_dict_detached_budget_65.eu"));
+}
+
+#[test]
+pub fn test_error_250_dict_detached_atom() {
+    run_error_test(&error_opts("250_dict_detached_atom.eu"));
+}
