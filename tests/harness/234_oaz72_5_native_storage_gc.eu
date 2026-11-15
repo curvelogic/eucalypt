@@ -3,9 +3,12 @@
 # Set and vec contents used to be Rust-owned (never freed when swept);
 # they now live in the GC heap, and their string elements are heap strings
 # the collector traces. This file checks the semantics (contents, order and
-# set algebra) are unchanged. It runs in-process with no heap limit, so it
-# does not itself collect: the GC paths are gated by the machine.rs
-# `native_container*` unit tests, which collect and evacuate deterministically.
+# set algebra) are unchanged. Run in-process with no heap limit it does not
+# collect; `tests/gc_native_containers_test.rs` runs this same file under a
+# 32 MiB `--heap-limit-mib` with `EU_GC_STRESS=1`, where `gc-checks` below
+# holds a set, a vec and an ndarray live across many collections and
+# evacuations. The machine.rs `native_container*` unit tests also gate the
+# collector paths deterministically.
 
 # `key(n)` builds a fresh heap string on every call, so the strings inside
 # `churned` and `vs` are reachable only through the set or vec themselves.
@@ -86,11 +89,48 @@ vec-checks: {
   ]
 }
 
+` "Containers held live across many collections (see the header)"
+
+gc-s0: range(0, 200) map(key) set.from-list
+
+gc-v0: range(0, 200) map(key) vec.of
+
+gc-a0: arr.from-flat([2, 3], [1, 2, 3, 4, 5, 6])
+
+` "Allocates far more than the collection trigger; the containers are live as arguments"
+
+gc-loop(i, s, v, a, acc): if(acc < 0, acc, if(i = 0, acc, gc-loop(i - 1, s, v, a, acc + 1)))
+
+` "Each step derives fresh containers from the last"
+
+gc-evolve(i, s, v, a): (i = 0) then({ set: s, array: a }, gc-evolve(i - 1, s set.add(key(1000 + i % 7)), v, a arr.set([i % 2, i % 3], i)))
+
+gc-evolved: gc-evolve(2000, gc-s0, gc-v0, gc-a0)
+
+gc-checks: {
+  trues: [
+    gc-loop(300000, gc-s0, gc-v0, gc-a0, 0) = 300000,
+    (gc-s0 set.size) = 200,
+    (gc-s0 set.to-list head) = "k-0",
+    gc-s0 set.contains?("k-150"),
+    (gc-v0 vec.len) = 200,
+    (gc-v0 vec.nth(199)) = "k-199",
+    (gc-v0 vec.to-list) = (range(0, 200) map(key)),
+    (gc-a0 arr.shape) = [2, 3],
+    (gc-a0 arr.to-list) = [1, 2, 3, 4, 5, 6],
+    (gc-evolved.set set.size) = 207,
+    gc-evolved.set set.contains?("k-1003"),
+    (gc-evolved.array arr.get([0, 0])) = 6,
+    (gc-evolved.array arr.get([1, 1])) = 1
+  ]
+}
+
 pass: [
   churn-checks.trues all-true?,
   add-checks.trues all-true?,
   algebra-checks.trues all-true?,
-  vec-checks.trues all-true?
+  vec-checks.trues all-true?,
+  gc-checks.trues all-true?
 ] all-true?
 
-RESULT: if(pass, :PASS, :FAIL)
+RESULT: pass then(:PASS, :FAIL)
