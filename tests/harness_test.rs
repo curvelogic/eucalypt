@@ -4705,6 +4705,11 @@ pub fn test_typecheck_115_deprecated_prelude_member() {
 }
 
 #[test]
+pub fn test_typecheck_126_deprecated_str_fmt() {
+    run_typecheck_test("126_deprecated_str_fmt.eu");
+}
+
+#[test]
 pub fn test_typecheck_116_dict_typed_no_warning() {
     run_typecheck_test("116_dict_typed_no_warning.eu");
 }

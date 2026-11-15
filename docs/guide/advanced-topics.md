@@ -544,6 +544,7 @@ results:
 | `%u` | Unsigned decimal integer | `{42:%u}` → `42` |
 | `%o` | Octal | `{255:%o}` → `377` |
 | `%x`, `%X` | Hexadecimal (lower/upper) | `{255:%x}` → `ff` |
+| `%b` | Binary (negatives as 64-bit two's complement) | `{5:%08b}` → `00000101` |
 | `%f`, `%F` | Decimal notation | `{3.14:%.1f}` → `3.1` |
 | `%e`, `%E` | Scientific notation | `{1000:%e}` → `1e3` |
 | `%g`, `%G` | Auto (decimal or scientific) | `{0.001:%g}` → `0.001` |
