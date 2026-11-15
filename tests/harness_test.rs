@@ -5534,3 +5534,8 @@ pub fn test_error_305_exact_error_number() {
 pub fn test_error_306_complex_result_large_float() {
     run_error_test(&error_opts("306_complex_result_large_float.eu"));
 }
+
+#[test]
+pub fn test_error_dict_detached_value_label() {
+    run_error_test(&error_opts("dict_detached_value_label.eu"));
+}
