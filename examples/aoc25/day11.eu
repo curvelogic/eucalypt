@@ -12,13 +12,13 @@ removed.
 
 Approach: DFS-based topological sort, then dynamic programming path counting over
 reverse topological order. Block-based lookup tables (sym(name) keys)
-provide O(log n) access. Part 2 runs four dynamic programming passes on graph variants
+are searched linearly (O(n) per lookup). Part 2 runs four dynamic programming passes on graph variants
 with required nodes removed.
 
 Notable eucalypt techniques:
 - `sym` for dynamic symbol creation as block keys
-- `block` to build O(log n) lookup tables from `[key, value]` pairs
-- `set.add` / `set.contains?` for O(log n) visited tracking
+- `block` to build lookup tables from `[key, value]` pairs (linear-time lookup)
+- `set.add` / `set.contains?` for visited tracking (O(log n) add and membership)
 - `merge` for incremental block table construction
 - `filter-items(by-key(...))` and `map-values` for graph manipulation
 - inclusion-exclusion as four independent dynamic programming computations
@@ -33,12 +33,12 @@ parse-line(line): {
   dests: parts second str.split-on(" ")
 }.[name, dests]
 
-` "Parse input into a block mapping sym(name) to [dest_strs] for O(log n) lookup."
+` "Parse input into a block mapping sym(name) to [dest_strs] (lookups are linear)."
 parse-graph(data):
   data filter(!= "") map(parse-line) map-first(sym) block
 
 ` "Get destinations for a node. Returns [] for nodes not in graph (e.g. 'out').
-Graph is a block (sym(name) -> [dest_strs]) for O(log n) lookups.
+Graph is a block (sym(name) -> [dest_strs]); lookups are linear.
 NB: use merge(a, b) not `a merge b` — catenation parses the latter
 as a(merge)(b) which fails."
 dests-of(g, name): lookup-or(sym(name), [], g)
@@ -49,7 +49,7 @@ remove-node(x, g):
 
 ` "DFS from node. Skips already-visited nodes. Prepends node to
 order AFTER all descendants, giving forward topological order.
-State threaded as [order_list, visited_set] using set for O(log n) membership.
+State threaded as [order_list, visited_set] using a set for O(log n) membership.
 Parameters ordered so partial application dfs-topo(g) matches foldl(acc, elem).
 NB: graph.topo-sort works on numeric adjacency lists; converting to/from
 string-keyed blocks is slower than processing directly."
@@ -91,9 +91,7 @@ By inclusion-exclusion over graph variants with required nodes removed:
   through_both = total - no_dac - no_fft + neither
 The four dynamic programming passes are independent, so they run under
 `par-map` over the graph variants (counts come back in variant order:
-total, no-dac, no-fft, neither; parallel on macOS/Linux when the
-variant list clears the size threshold — four elements need
-EU_PP_THRESHOLD lowered to fork)."
+total, no-dac, no-fft, neither; parallel on macOS/Linux)."
 solve2(data): {
   g: parse-graph(data)
   variants: [g,

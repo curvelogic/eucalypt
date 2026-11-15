@@ -37,7 +37,7 @@ best-from(ps): ps tail map(area(ps head)) max-of
 ` "Max area over all distinct pairs of points.
 Each suffix's best area is independent of the others, so the per-suffix
 maxima run under `par-max` (same value as `map(best-from) max-of`;
-parallel on macOS/Linux when the suffix list clears the size threshold)."
+parallel on macOS/Linux)."
 best-area(pts): {
   tls: tails(pts) filter(count ; (> 1))
 }.(tls par-max(best-from))
