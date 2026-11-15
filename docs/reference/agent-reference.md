@@ -1640,6 +1640,10 @@ All functions verified against `lib/prelude.eu`:
 | `str.base64-encode` | `base64-encode(s)` | Base64 encode |
 | `str.base64-decode` | `base64-decode(s)` | Base64 decode |
 | `str.sha256` | `sha256(s)` | SHA-256 hash (lowercase hex) |
+| `str.md5` | `md5(s)` | MD5 hash of the UTF-8 bytes (lowercase hex) |
+| `str.code-points` | `code-points(s)` | List of Unicode code points, one per character |
+| `str.from-code-points` | `from-code-points(ns)` | String from a list of code points (error for a surrogate or value above 0x10FFFF) |
+| `ch.code-point` / `ch.of-code-point` | `ch.code-point(c)` / `ch.of-code-point(n)` | One character to its code point and back |
 
 ---
 

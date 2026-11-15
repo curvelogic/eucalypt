@@ -411,6 +411,8 @@ float such as `2.0` is accepted.
 | `str.replace(re, rep, s)` | Replace all regex matches |
 | `str.prefix(b, a)` | Prepend `b` onto `a` |
 | `str.suffix(b, a)` | Append `b` onto `a` |
+| `str.md5(s)` | MD5 of the UTF-8 bytes, lowercase hex (like `str.sha256`) |
+| `str.code-points(s)` / `str.from-code-points(ns)` | Unicode code points of the characters of `s`, and back; `ch.code-point(c)` / `ch.of-code-point(n)` for one character |
 
 **All str regex functions treat the pattern argument as a regular expression.**
 `str.split-on` and `str.contains?` are pipeline-friendly (data is last arg).

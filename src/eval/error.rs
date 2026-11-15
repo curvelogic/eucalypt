@@ -1298,6 +1298,12 @@ pub enum ExecutionError {
     InvalidBase64(Smid, String),
     #[error("str.base64-decode: decoded bytes are not valid UTF-8: {1}")]
     InvalidBase64Utf8(Smid, String),
+    /// A code-point intrinsic (`str.from-code-points`, `ch.of-code-point`,
+    /// `ch.code-point`) received an argument outside its domain. The string
+    /// is the complete message after the "invalid code point: " prefix
+    /// (eu-oaz72.25).
+    #[error("invalid code point: {1}")]
+    InvalidCodePoint(Smid, String),
     #[error("assertion failed: expected {}, got {}", .1.1, .1.0)]
     AssertionFailed(Smid, Box<(String, String)>),
     #[error("shift amount {1} is out of range: must be between 0 and 63 for 64-bit integers")]
@@ -1452,6 +1458,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::VersionRequirementFailed(s, _) => *s,
             ExecutionError::InvalidBase64(s, _) => *s,
             ExecutionError::InvalidBase64Utf8(s, _) => *s,
+            ExecutionError::InvalidCodePoint(s, _) => *s,
             ExecutionError::AssertionFailed(s, _) => *s,
             ExecutionError::BitshiftRangeError(s, _) => *s,
             ExecutionError::UnknownRenderFormat(s, _) => *s,
