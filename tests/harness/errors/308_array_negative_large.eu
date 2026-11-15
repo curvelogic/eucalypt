@@ -1,0 +1,2 @@
+` "eu-oaz72.156: a large negative float in an array index error prints exactly"
+r: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.slice(0, 0 - (2.0 ^ 63))
