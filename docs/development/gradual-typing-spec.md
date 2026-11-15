@@ -557,7 +557,7 @@ Some functions are genuinely hard to type precisely:
 lookup: __LOOKUP
 
 # Recursive structural transform
-` { type: "(any -> any | null) -> any -> any" }
+` { type: "(any -> (any | null)) -> any -> any" }
 deep-transform(rule, data): ...
 
 # Block construction from pairs
