@@ -26,24 +26,36 @@ struct DeclParts {
 }
 
 impl DeclParts {
+    /// Width of the single-line layout (`head: body`), measured without
+    /// cloning. `usize::MAX` when it cannot be laid out on one line.
+    fn inline_width(&self, fmt: &Formatter) -> usize {
+        let body = match &self.body {
+            Some(body) => fmt.flat_width(body),
+            None => 0,
+        };
+        fmt.flat_width(&self.head)
+            .saturating_add(2)
+            .saturating_add(body)
+    }
+
     /// `head: body`, without metadata (single-line block layout).
-    fn inline(&self) -> RcDoc<'static, ()> {
-        let doc = self.head.clone().append(RcDoc::text(": "));
-        match &self.body {
-            Some(body) => doc.append(body.clone()),
+    fn into_inline(self) -> RcDoc<'static, ()> {
+        let doc = self.head.append(RcDoc::text(": "));
+        match self.body {
+            Some(body) => doc.append(body),
             None => doc,
         }
     }
 
     /// Metadata on its own line, then `head: body`.
-    fn multi_line(&self) -> RcDoc<'static, ()> {
+    fn into_multi_line(self) -> RcDoc<'static, ()> {
         let mut doc = RcDoc::nil();
-        if let Some(meta) = &self.meta {
-            doc = doc.append(meta.clone()).append(RcDoc::hardline());
+        if let Some(meta) = self.meta {
+            doc = doc.append(meta).append(RcDoc::hardline());
         }
-        doc = doc.append(self.head.clone()).append(RcDoc::text(":"));
-        match &self.body {
-            Some(body) => doc.append(RcDoc::space()).append(body.clone()),
+        doc = doc.append(self.head).append(RcDoc::text(":"));
+        match self.body {
+            Some(body) => doc.append(RcDoc::space()).append(body),
             None => doc,
         }
     }
@@ -91,15 +103,58 @@ const SINGLE_LINE_MARGIN: usize = 10;
 /// The main formatter struct
 pub struct Formatter {
     config: FormatterConfig,
+    /// Sorted start offsets of every comment token in the unit being
+    /// formatted, so "does this node contain a comment?" is a binary
+    /// search rather than a subtree walk (which would be quadratic in
+    /// nesting depth).
+    comment_starts: std::cell::RefCell<Vec<rowan::TextSize>>,
 }
 
 impl Formatter {
     pub fn new(config: FormatterConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            comment_starts: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    /// Record the comment positions of the tree rooted at `root`.
+    fn index_comments(&self, root: &SyntaxNode) {
+        let mut starts: Vec<_> = root
+            .descendants_with_tokens()
+            .filter_map(|e| e.into_token())
+            .filter(|t| t.kind() == SyntaxKind::COMMENT)
+            .map(|t| t.text_range().start())
+            .collect();
+        starts.sort();
+        *self.comment_starts.borrow_mut() = starts;
+    }
+
+    /// Does `node` contain a comment token anywhere inside it?
+    fn contains_comment(&self, node: &SyntaxNode) -> bool {
+        let range = node.text_range();
+        let starts = self.comment_starts.borrow();
+        let i = starts.partition_point(|s| *s < range.start());
+        starts.get(i).is_some_and(|s| *s < range.end())
+    }
+
+    /// Source text of `node` with whitespace violations fixed but layout
+    /// and comments untouched. Used instead of re-laying-out a node that
+    /// contains comments, which the pretty printer cannot place (it would
+    /// silently drop them).
+    fn verbatim_with_comments(&self, node: &SyntaxNode) -> RcDoc<'static, ()> {
+        // Trivia at the edges of a node (a trailing blank line after unit
+        // metadata, say) belongs to the layout around it: keeping it would
+        // add blank lines on every pass.
+        let mut text = String::new();
+        let mut col = 0;
+        self.process_node_conservative(node, &mut text, &mut col);
+        RcDoc::text(text.trim().to_string())
     }
 
     /// Format a Unit (top-level file)
     pub fn format_unit(&self, unit: &rowan_ast::Unit) -> Result<String, String> {
+        self.index_comments(unit.syntax());
         let doc = self.format_unit_doc(unit);
         let mut result = self.render_doc(doc)?;
         // Ensure trailing newline
@@ -115,6 +170,7 @@ impl Formatter {
     /// newline). Used by range formatting to reformat individual
     /// declarations rather than the entire file.
     pub fn format_declaration(&self, decl: &rowan_ast::Declaration) -> Result<String, String> {
+        self.index_comments(&Self::root_of(decl.syntax()));
         let doc = if self.config.reformat {
             self.reformat_declaration(decl)
         } else {
@@ -125,8 +181,13 @@ impl Formatter {
 
     /// Format a Soup (expression)
     pub fn format_soup(&self, soup: &rowan_ast::Soup) -> Result<String, String> {
+        self.index_comments(&Self::root_of(soup.syntax()));
         let doc = self.format_soup_doc(soup);
         self.render_doc(doc)
+    }
+
+    fn root_of(node: &SyntaxNode) -> SyntaxNode {
+        node.ancestors().last().unwrap_or_else(|| node.clone())
     }
 
     /// Render a document to string
@@ -181,34 +242,40 @@ impl Formatter {
         comments
     }
 
-    /// Extract comments that precede a declaration
-    fn extract_declaration_leading_comments(&self, decl: &rowan_ast::Declaration) -> Vec<String> {
-        let mut found_comments = Vec::new();
-        // Look at the previous siblings to find comments
+    /// Extract every comment in the gap between the previous declaration
+    /// (or the start of the unit) and `decl`, each with whether a blank
+    /// line separates it from what follows it in the source. A blank line
+    /// no longer discards the comments above it: those are standalone
+    /// comments, not documentation of `decl`, but they are still content.
+    fn extract_declaration_leading_comments(
+        &self,
+        decl: &rowan_ast::Declaration,
+    ) -> Vec<(String, bool)> {
+        let mut found: Vec<(String, bool)> = Vec::new();
+        let mut blank_after = false;
         let mut prev = decl.syntax().prev_sibling_or_token();
 
         while let Some(sibling) = prev {
             match &sibling {
-                rowan::NodeOrToken::Token(t) => {
-                    if t.kind() == SyntaxKind::COMMENT {
-                        found_comments.push(t.text().to_string());
-                    } else if t.kind() == SyntaxKind::WHITESPACE {
-                        // Check if whitespace contains blank line (resets comment association)
-                        if t.text().chars().filter(|&c| c == '\n').count() > 1 {
-                            break;
-                        }
-                    } else {
-                        break;
+                rowan::NodeOrToken::Token(t) => match t.kind() {
+                    SyntaxKind::COMMENT => {
+                        found.push((t.text().to_string(), blank_after));
+                        blank_after = false;
                     }
-                }
+                    SyntaxKind::WHITESPACE => {
+                        if t.text().chars().filter(|&c| c == '\n').count() > 1 {
+                            blank_after = true;
+                        }
+                    }
+                    _ => break,
+                },
                 rowan::NodeOrToken::Node(_) => break,
             }
             prev = sibling.prev_sibling_or_token();
         }
 
-        // Reverse since we collected in reverse order
-        found_comments.reverse();
-        found_comments
+        found.reverse();
+        found
     }
 
     fn reformat_unit(&self, unit: &rowan_ast::Unit) -> RcDoc<'static, ()> {
@@ -228,8 +295,20 @@ impl Formatter {
 
         // Handle metadata if present
         if let Some(meta) = unit.meta() {
-            result = result.append(self.reformat_block_metadata(&meta));
+            // The parser puts comments that follow the metadata (up to the
+            // first declaration) inside the metadata soup. Emit them as
+            // comments of the declaration, not as part of the metadata.
+            let (meta_doc, trailing) = self.split_meta_trailing_comments(&meta);
+            result = result.append(meta_doc);
             result = result.append(RcDoc::hardline()).append(RcDoc::hardline());
+            for (comment, blank_after) in trailing {
+                result = result
+                    .append(RcDoc::text(comment))
+                    .append(RcDoc::hardline());
+                if blank_after {
+                    result = result.append(RcDoc::hardline());
+                }
+            }
         }
 
         // Format each declaration with its leading comments
@@ -238,14 +317,18 @@ impl Formatter {
             if i > 0 {
                 // Blank line between declarations
                 result = result.append(RcDoc::hardline());
-
-                // Extract and add comments that precede this declaration (not the first one,
-                // as those are already handled by extract_leading_comments)
-                let decl_comments = self.extract_declaration_leading_comments(decl);
-                for comment in &decl_comments {
+            }
+            // Comments before the first declaration are already emitted:
+            // as the header by extract_leading_comments, or, after unit
+            // metadata, by split_meta_trailing_comments.
+            if i > 0 {
+                for (comment, blank_after) in self.extract_declaration_leading_comments(decl) {
                     result = result
-                        .append(RcDoc::text(comment.clone()))
+                        .append(RcDoc::text(comment))
                         .append(RcDoc::hardline());
+                    if blank_after {
+                        result = result.append(RcDoc::hardline());
+                    }
                 }
             }
 
@@ -255,11 +338,104 @@ impl Formatter {
             }
         }
 
+        // Comments after the last declaration belong to no declaration.
+        if !declarations.is_empty() {
+            for comment in self.extract_trailing_comments(unit.syntax()) {
+                result = result
+                    .append(RcDoc::hardline())
+                    .append(RcDoc::text(comment));
+            }
+        }
+
         result
     }
 
+    /// Unit metadata, split from the comments that trail it inside its
+    /// soup. Each trailing comment carries whether a blank line follows it.
+    fn split_meta_trailing_comments(
+        &self,
+        meta: &rowan_ast::BlockMetadata,
+    ) -> (RcDoc<'static, ()>, Vec<(String, bool)>) {
+        let Some(soup) = meta.soup() else {
+            return (RcDoc::nil(), Vec::new());
+        };
+        let children: Vec<_> = soup.syntax().children_with_tokens().collect();
+        // Index of the first comment of the trailing run of comments and
+        // whitespace.
+        let mut first = children.len();
+        for (i, c) in children.iter().enumerate().rev() {
+            match c {
+                rowan::NodeOrToken::Token(t)
+                    if matches!(t.kind(), SyntaxKind::COMMENT | SyntaxKind::WHITESPACE) =>
+                {
+                    if t.kind() == SyntaxKind::COMMENT {
+                        first = i;
+                    }
+                }
+                _ => break,
+            }
+        }
+        if first == children.len() {
+            return (self.reformat_block_metadata(meta), Vec::new());
+        }
+
+        let mut trailing: Vec<(String, bool)> = Vec::new();
+        for c in &children[first..] {
+            if let rowan::NodeOrToken::Token(t) = c {
+                match t.kind() {
+                    SyntaxKind::COMMENT => trailing.push((t.text().to_string(), false)),
+                    _ if t.text().matches('\n').count() > 1 => {
+                        if let Some(last) = trailing.last_mut() {
+                            last.1 = true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut text = String::new();
+        let mut col = 0;
+        for c in &children[..first] {
+            match c {
+                rowan::NodeOrToken::Node(n) => {
+                    self.process_node_conservative(n, &mut text, &mut col)
+                }
+                rowan::NodeOrToken::Token(t) => {
+                    self.process_token_conservative(t, &mut text, &mut col)
+                }
+            }
+        }
+        (RcDoc::text(text.trim().to_string()), trailing)
+    }
+
+    /// Comments that follow the last declaration of `node`, as direct
+    /// children, with the blank line separating them kept.
+    fn extract_trailing_comments(&self, node: &SyntaxNode) -> Vec<String> {
+        let mut out = Vec::new();
+        for child in node
+            .children_with_tokens()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
+            match child {
+                rowan::NodeOrToken::Token(t) if t.kind() == SyntaxKind::COMMENT => {
+                    out.push(t.text().to_string());
+                }
+                rowan::NodeOrToken::Token(t) if t.kind() == SyntaxKind::WHITESPACE => {}
+                _ => break,
+            }
+        }
+        out.reverse();
+        out
+    }
+
     fn reformat_declaration(&self, decl: &rowan_ast::Declaration) -> RcDoc<'static, ()> {
-        self.declaration_parts(decl).multi_line()
+        if self.contains_comment(decl.syntax()) {
+            return self.verbatim_with_comments(decl.syntax());
+        }
+        self.declaration_parts(decl).into_multi_line()
     }
 
     /// Format each part of a declaration once, so a caller choosing
@@ -341,6 +517,9 @@ impl Formatter {
     }
 
     fn reformat_soup(&self, soup: &rowan_ast::Soup) -> RcDoc<'static, ()> {
+        if self.contains_comment(soup.syntax()) {
+            return self.verbatim_with_comments(soup.syntax());
+        }
         let elements: Vec<_> = soup.elements().collect();
         if elements.is_empty() {
             return RcDoc::nil();
@@ -467,6 +646,9 @@ impl Formatter {
     }
 
     fn reformat_block(&self, block: &rowan_ast::Block) -> RcDoc<'static, ()> {
+        if self.contains_comment(block.syntax()) {
+            return self.verbatim_with_comments(block.syntax());
+        }
         let decls: Vec<_> = block.declarations().collect();
         let meta = block.meta().map(|m| self.reformat_block_metadata(&m));
 
@@ -486,26 +668,37 @@ impl Formatter {
             && !self.has_nested_block(block)
             && parts.iter().all(|p| p.meta.is_none());
 
+        // Documents are measured by reference and then moved into the
+        // chosen layout: cloning a document copies its whole subtree, which
+        // made layout cost quadratic in nesting depth.
         if may_single_line {
-            // Single line: { meta a: 1, b: 2 }
-            let mut docs = vec![RcDoc::text("{ ")];
+            // `{ ` + meta + space + decls joined by `, ` + ` }`
+            let mut width = 4usize;
             if let Some(meta) = &meta {
-                docs.push(meta.clone());
-                docs.push(RcDoc::space());
+                width = width
+                    .saturating_add(self.flat_width(meta))
+                    .saturating_add(1);
             }
-            for (i, part) in parts.iter().enumerate() {
-                if i > 0 {
-                    docs.push(RcDoc::text(", "));
-                }
-                docs.push(part.inline());
+            for part in &parts {
+                width = width.saturating_add(part.inline_width(self));
             }
-            docs.push(RcDoc::text(" }"));
-            let single_line = RcDoc::concat(docs);
+            width = width.saturating_add(2 * (parts.len() - 1));
 
-            if self.flat_width(&single_line)
-                <= self.config.line_width.saturating_sub(SINGLE_LINE_MARGIN)
-            {
-                return single_line;
+            if width <= self.config.line_width.saturating_sub(SINGLE_LINE_MARGIN) {
+                // Single line: { meta a: 1, b: 2 }
+                let mut docs = vec![RcDoc::text("{ ")];
+                if let Some(meta) = meta {
+                    docs.push(meta);
+                    docs.push(RcDoc::space());
+                }
+                for (i, part) in parts.into_iter().enumerate() {
+                    if i > 0 {
+                        docs.push(RcDoc::text(", "));
+                    }
+                    docs.push(part.into_inline());
+                }
+                docs.push(RcDoc::text(" }"));
+                return RcDoc::concat(docs);
             }
         }
 
@@ -515,7 +708,7 @@ impl Formatter {
         if let Some(meta) = meta {
             inner_docs.push(meta);
         }
-        inner_docs.extend(parts.iter().map(DeclParts::multi_line));
+        inner_docs.extend(parts.into_iter().map(DeclParts::into_multi_line));
 
         let inner = RcDoc::intersperse(inner_docs, RcDoc::hardline());
 
@@ -527,6 +720,9 @@ impl Formatter {
     }
 
     fn reformat_list(&self, list: &rowan_ast::List) -> RcDoc<'static, ()> {
+        if self.contains_comment(list.syntax()) {
+            return self.verbatim_with_comments(list.syntax());
+        }
         let items: Vec<_> = list.items().collect();
 
         if items.is_empty() {
@@ -549,15 +745,16 @@ impl Formatter {
 
         let docs: Vec<_> = items.iter().map(|s| self.reformat_soup(s)).collect();
 
-        // Single line: [a, b, c]
-        let single_line = RcDoc::text("[")
-            .append(RcDoc::intersperse(docs.clone(), RcDoc::text(", ")))
-            .append(RcDoc::text("]"));
+        // Single line: [a, b, c] — measured by reference, see reformat_block.
+        let mut width = 2usize.saturating_add(2 * (docs.len() - 1));
+        for d in &docs {
+            width = width.saturating_add(self.flat_width(d));
+        }
 
-        if self.flat_width(&single_line)
-            <= self.config.line_width.saturating_sub(SINGLE_LINE_MARGIN)
-        {
-            single_line
+        if width <= self.config.line_width.saturating_sub(SINGLE_LINE_MARGIN) {
+            RcDoc::text("[")
+                .append(RcDoc::intersperse(docs, RcDoc::text(", ")))
+                .append(RcDoc::text("]"))
         } else {
             // Multi-line - same pattern as blocks for consistent indentation
             let indent = self.config.indent_size;
@@ -571,6 +768,9 @@ impl Formatter {
     }
 
     fn reformat_paren_expr(&self, pe: &rowan_ast::ParenExpr) -> RcDoc<'static, ()> {
+        if self.contains_comment(pe.syntax()) {
+            return self.verbatim_with_comments(pe.syntax());
+        }
         let inner = pe
             .soup()
             .map(|s| self.reformat_soup(&s))
@@ -579,6 +779,9 @@ impl Formatter {
     }
 
     fn reformat_apply_tuple(&self, at: &rowan_ast::ApplyTuple) -> RcDoc<'static, ()> {
+        if self.contains_comment(at.syntax()) {
+            return self.verbatim_with_comments(at.syntax());
+        }
         let items: Vec<_> = at.items().collect();
 
         if items.is_empty() {
@@ -673,6 +876,18 @@ impl Formatter {
         let kind = token.kind();
 
         match kind {
+            SyntaxKind::WHITESPACE if Self::in_interpolation(token) => {
+                // Whitespace inside a string interpolation (target or format
+                // spec) is part of the string's meaning: keep it byte for byte.
+                for c in text.chars() {
+                    if c == '\n' {
+                        *line_col = 0;
+                    } else {
+                        *line_col += 1;
+                    }
+                }
+                result.push_str(text);
+            }
             SyntaxKind::WHITESPACE => {
                 // Convert tabs to spaces and normalize excessive whitespace
                 let normalized = self.normalize_whitespace(text, *line_col);
@@ -708,6 +923,12 @@ impl Formatter {
                 result.push_str(text);
             }
         }
+    }
+
+    fn in_interpolation(token: &SyntaxToken) -> bool {
+        token
+            .parent_ancestors()
+            .any(|n| n.kind() == SyntaxKind::STRING_INTERPOLATION)
     }
 
     /// Normalize whitespace: convert tabs to spaces while preserving alignment
@@ -767,20 +988,47 @@ impl Formatter {
     /// original source, so they depend only on the syntax tree and a
     /// second pass makes the same decisions (idempotence).
     fn flat_width(&self, doc: &RcDoc<'static, ()>) -> usize {
-        let mut out = Vec::new();
+        // Rendering stops as soon as the text passes the line width or
+        // contains a break, so the cost of a layout decision is bounded by
+        // the line width rather than by the size of the subtree (deeply
+        // nested input would otherwise be quadratic).
+        struct Capped {
+            buf: Vec<u8>,
+            cap: usize,
+        }
+        impl std::io::Write for Capped {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                if bytes.contains(&b'\n') || self.buf.len() + bytes.len() > self.cap {
+                    return Err(std::io::Error::other("too wide"));
+                }
+                self.buf.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        // Bytes bound characters from above, so this never cuts a fitting
+        // layout short.
+        let mut out = Capped {
+            buf: Vec::new(),
+            cap: self.config.line_width.saturating_mul(4).max(1),
+        };
         if doc.render(usize::MAX, &mut out).is_err() {
             return usize::MAX;
         }
-        match String::from_utf8(out) {
-            Ok(text) if !text.contains('\n') => text.chars().count(),
+        match String::from_utf8(out.buf) {
+            Ok(text) => text.chars().count(),
             _ => usize::MAX,
         }
     }
 
     fn has_nested_block(&self, block: &rowan_ast::Block) -> bool {
-        let meta_has_block = block.meta().and_then(|m| m.soup()).is_some_and(|soup| {
-            soup.elements()
-                .any(|elem| matches!(elem, rowan_ast::Element::Block(_)))
+        // Block metadata can nest a block at any depth (`{ f({a: 1}) a: 1 }`).
+        let meta_has_block = block.meta().is_some_and(|m| {
+            m.syntax()
+                .descendants()
+                .any(|n| n.kind() == SyntaxKind::BLOCK)
         });
         if meta_has_block {
             return true;
@@ -1469,6 +1717,83 @@ mod correctness_tests {
             !result.contains("f(["),
             "Juxtaposed list definition must not gain parens: {}",
             result
+        );
+    }
+
+    // ========================================================================
+    // eu-oaz72.57: fmt follow-ups
+    // ========================================================================
+
+    #[test]
+    fn test_reformat_keeps_every_comment() {
+        let source = "# lead\n\
+            a: 1 # trailing\n\
+            b: {\n  # inside block\n  x: 1 # t2\n  # before y\n  y: 2\n}\n\
+            c: f(1, # arg comment\n  2)\n\
+            d: [1, # list comment\n  2]\n\
+            # standalone\n\n\
+            e: (1 + # paren comment\n 2)\n\
+            # final\n";
+        let once = reformat(source);
+        for comment in [
+            "# lead",
+            "# trailing",
+            "# inside block",
+            "# t2",
+            "# before y",
+            "# arg comment",
+            "# list comment",
+            "# standalone",
+            "# paren comment",
+            "# final",
+        ] {
+            assert!(once.contains(comment), "lost {comment:?}:\n{once}");
+        }
+        assert!(crate::syntax::rowan::parse_unit(&once).errors().is_empty());
+        assert_eq!(once, reformat(&once), "not idempotent:\n{once}");
+    }
+
+    #[test]
+    fn test_reformat_keeps_comment_after_unit_metadata() {
+        // The comment stays attached to the declaration it precedes.
+        let once = reformat("{ :m }\n\n# about a\na: 1\n");
+        assert_eq!(once, "{ :m }\n\n# about a\na: 1\n");
+        assert_eq!(once, reformat(&once));
+        // A blank line after the comment is kept.
+        let once = reformat("{ :m }\n\n# about\n\n# a\na: 1\n");
+        assert_eq!(once, "{ :m }\n\n# about\n\n# a\na: 1\n");
+    }
+
+    #[test]
+    fn test_conservative_keeps_tabs_in_interpolations() {
+        let source = "a: \"x {n\t} y\tz\"\nb: \"{n:%s\t}\"\n";
+        let out = format_source(source, &FormatterConfig::default()).unwrap();
+        assert_eq!(out, source);
+    }
+
+    #[test]
+    fn test_nested_block_metadata_forces_multi_line() {
+        // A block nested anywhere in block metadata, not only at its top
+        // level, rules out the single-line layout.
+        let out = reformat("x: { f({a: 1}) y: 2 }\n");
+        assert!(out.contains("{\n  f("), "{out}");
+    }
+
+    #[test]
+    fn test_deep_nesting_is_not_quadratic() {
+        // Layout decisions used to clone whole subtrees at every level
+        // (about 3 s at this depth in a debug build, now tens of ms).
+        let d = 1600;
+        let src = format!("x: {}1{}\n", "{ a: ".repeat(d), " }".repeat(d));
+        let parsed = crate::syntax::rowan::parse_unit(&src);
+        let unit = parsed.tree();
+        let formatter = Formatter::new(FormatterConfig::new(80, 2, true));
+        let start = std::time::Instant::now();
+        formatter.format_unit(&unit).unwrap();
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(1500),
+            "formatting depth {d} took {:?}",
+            start.elapsed()
         );
     }
 }
