@@ -637,12 +637,11 @@ where idiomatic (catenated argument is always the **last** parameter).
 
 ```
 foldl(+, 0, [1,2,3,4,5])     # 15
-[1,2,3] foldl(+, 0)          # ERROR: use foldl(+, 0, [1,2,3])
+[1,2,3,4,5] foldl(+, 0)      # 15 (the list is the last argument)
 ```
 
-Note: `foldl` takes 3 args. In pipeline: the list is the last arg, so
-`[1,2,3,4,5] foldl(+, 0)` does NOT work — you must call
-`foldl(+, 0, [1,2,3,4,5])` directly, or partially apply:
+Note: `foldl` takes 3 args and the catenated list supplies the last
+one, so both forms above work. You can also partially apply it:
 
 ```
 sum: foldl(+, 0)
@@ -1170,9 +1169,8 @@ When using pipeline style, the catenated value becomes the **last**
 parameter. `[1,2,3] map(inc)` means `map(inc, [1,2,3])` because the
 list is the last argument.
 
-For `foldl(op, init, list)`, you cannot write
-`[1,2,3] foldl(+, 0)` — you need either `foldl(+, 0, [1,2,3])` or
-define a partial: `sum: foldl(+, 0)` then `[1,2,3] sum`.
+So `foldl(op, init, list)` can be written `[1,2,3] foldl(+, 0)`, or
+partially applied: `sum: foldl(+, 0)` then `[1,2,3] sum`.
 
 ### 5.2 Dot Binds Tighter Than Catenation
 

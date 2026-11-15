@@ -32,7 +32,7 @@ fresh-bit(ranges, id): is-fresh?(ranges, id) then(1, 0)
 
 ` "Count of fresh IDs. Each ID's range test is independent, so the tests
 run under `par-sum` (same value as `filter(is-fresh?(ranges)) count`;
-parallel on macOS/Linux when the ID list clears the size threshold)."
+parallel on macOS/Linux)."
 solve(ranges, ids): ids par-sum(fresh-bit(ranges))
 
 ` "Merge a new range into [merged-so-far, current-range].  If the new
@@ -41,7 +41,7 @@ and start fresh."
 merge-step([merged, cur], [r-lo, r-hi]): {
   cur-lo: cur first
   cur-hi: cur second
-}.(if(r-lo <= cur-hi + 1,
+}.(r-lo <= cur-hi + 1 then(
      [merged, [cur-lo, max(cur-hi, r-hi)]],
      [merged ++ [cur], [r-lo, r-hi]]))
 

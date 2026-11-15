@@ -367,6 +367,23 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `any(p?)` | Does any element match? |
 | `all(p?)` | Do all elements match? |
 | `nub-by(f)` | Deduplicate by key function (no `unique` in prelude) |
+| `window(n, step)` | Sliding windows of size `n` (`window(2, 1)` gives adjacent pairs) |
+| `tails` | All suffixes: `[1,2,3] tails` is `[[1,2,3],[2,3],[3]]` |
+| `group-consecutive` | Group runs of equal adjacent elements (`group-consecutive-by(f)` for a key) |
+| `running-sum`, `running-max`, `running-min` | Cumulative sum / maximum / minimum of a number list |
+
+### Sets
+
+Sets hold **primitives only** (numbers, strings, symbols), not lists or blocks:
+encode a coordinate `[x, y]` as `x * 100000 + y`.
+
+| Function | Description |
+|----------|-------------|
+| `set.from-list` | Build a set (O(n log n)) |
+| `v ∈ s`, `v ∉ s` | Membership (O(log n)) |
+| `set.add(e)`, `set.remove(e)` | Copy with element added / removed (O(n) — do not add in a long fold) |
+| `set.union`, `set.intersect`, `set.diff` | Set algebra |
+| `set.size`, `set.to-list` | Count; sorted elements |
 
 ### Blocks
 

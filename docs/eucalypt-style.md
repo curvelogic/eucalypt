@@ -7,7 +7,8 @@ Here is some general style guidance for writing eucalypt idiomatically.
 ## List access
 
 - **`head`/`tail`** for list decomposition (variable-length, processing elements sequentially)
-- **`first`/`second`/`!! n`** for positional access into fixed-size tuples or records
+- **Destructuring parameters** (`f([a, b]): ...`, `f([h : t]): ...`, `f({x y}): ...`) for fixed-size tuples, records and head/tail splits: name the parts in the parameter list instead of calling accessors. See [Destructuring Parameters](guide/functions-and-combinators.md#destructuring-parameters).
+- **`first`/`second`/`!! n`** for positional access into a tuple you have not destructured (for example in the middle of a pipeline)
 
 Don't mix idioms on the same context. If you use `second(xs)`, use `first(xs)` not `head(xs)`. If you use `!! 2`, use `!! 0` and `!! 1` not `first` and `second`.
 
@@ -89,6 +90,7 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 ## Recursion
 
 - Prefer folds, scans, or specific prelude algorithms over explicit recursion where possible.
+- Mind cost when choosing a data structure: lists index in O(n), blocks look up linearly, and `set.add` copies the set. See the *Cost* notes in the [lists](reference/prelude/lists.md), [blocks](reference/prelude/blocks.md) and [sets](reference/prelude/sets.md) references.
 
 ## Documentation
 
@@ -190,7 +192,7 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 
 ## Sets for membership
 
-- Use sets (`set.from-list`) for repeated membership testing, not `any(= x)` over a list. Faster and reads better with `∈`:
+- Use sets (`set.from-list`) for repeated membership testing of primitives (numbers, strings, symbols — **not** lists or blocks; encode coordinates as a single number, e.g. `x * 100000 + y`), not `any(= x)` over a list. Faster and reads better with `∈`:
   ```eu,notest
   # Before
   allowed: [:a, :b, :c]
