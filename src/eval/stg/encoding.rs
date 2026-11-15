@@ -13,6 +13,11 @@ use crate::eval::{
 
 use super::support::{machine_return_str, str_arg};
 
+/// Encode bytes as a lowercase hexadecimal string (shared by the digest intrinsics).
+fn hex_lower(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// BASE64_ENCODE(s) — encode a string as base64 (standard alphabet, with padding)
 pub struct Base64Encode;
 
@@ -95,7 +100,7 @@ impl StgIntrinsic for Base64Decode {
 
 impl CallGlobal1 for Base64Decode {}
 
-/// SHA256(s) — return the SHA-256 hash of a string as lowercase hex
+/// SHA256(s) — return the SHA-256 digest of a string as lowercase hex
 pub struct Sha256Hash;
 
 impl StgIntrinsic for Sha256Hash {
@@ -112,14 +117,13 @@ impl StgIntrinsic for Sha256Hash {
     ) -> Result<(), ExecutionError> {
         let input = str_arg(machine, view, &args[0])?;
         let hash = Sha256::digest(input.as_bytes());
-        let hex = hash.iter().map(|b| format!("{b:02x}")).collect::<String>();
-        machine_return_str(machine, view, hex)
+        machine_return_str(machine, view, hex_lower(&hash))
     }
 }
 
 impl CallGlobal1 for Sha256Hash {}
 
-/// MD5(s) — return the MD5 hash of a string (its UTF-8 bytes) as lowercase hex
+/// MD5(s) — return the MD5 digest of a string (its UTF-8 bytes) as lowercase hex
 pub struct Md5Hash;
 
 impl StgIntrinsic for Md5Hash {
@@ -136,8 +140,7 @@ impl StgIntrinsic for Md5Hash {
     ) -> Result<(), ExecutionError> {
         let input = str_arg(machine, view, &args[0])?;
         let hash = Md5::digest(input.as_bytes());
-        let hex = hash.iter().map(|b| format!("{b:02x}")).collect::<String>();
-        machine_return_str(machine, view, hex)
+        machine_return_str(machine, view, hex_lower(&hash))
     }
 }
 
