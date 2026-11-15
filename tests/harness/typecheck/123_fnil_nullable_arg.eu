@@ -1,0 +1,6 @@
+{ doc: "fnil takes a nullable argument a | null, so a string for a number function warns (eu-oaz72.137; unparenthesised, the nullable parsed as part of an arrow union)." }
+
+` { type: "number → number" }
+dbl(n): n * 2
+
+result: fnil(dbl, 1, "x")

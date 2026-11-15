@@ -51,7 +51,7 @@ fn signatures(src: &str) -> Vec<String> {
 fn prelude_signatures_have_no_unparenthesised_union_of_arrows() {
     let mut bad = vec![];
     let mut checked = 0;
-    for entry in fs::read_dir("lib").unwrap() {
+    for entry in fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/lib")).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().is_none_or(|e| e != "eu") {
             continue;
@@ -67,7 +67,7 @@ fn prelude_signatures_have_no_unparenthesised_union_of_arrows() {
             }
         }
     }
-    assert!(checked > 100, "only {checked} signatures checked");
+    assert!(checked > 300, "only {checked} signatures checked");
     assert!(
         bad.is_empty(),
         "union of arrows (missing parentheses after →?):\n{}",

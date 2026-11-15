@@ -1,0 +1,3 @@
+{ doc: "coalesce returns (a | null): the result may be null, so feeding it to a function that rejects null warns (eu-oaz72.137)." }
+
+result: ["a", "b"] coalesce str.len

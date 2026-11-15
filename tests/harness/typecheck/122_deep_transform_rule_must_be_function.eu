@@ -1,0 +1,3 @@
+{ doc: "deep-transform takes a rule of type any → (any | null); null is not a function and warns (eu-oaz72.137; unparenthesised, the rule parsed as (any → any) | null and accepted null)." }
+
+result: deep-transform(null, 1)
