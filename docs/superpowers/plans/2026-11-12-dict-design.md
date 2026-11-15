@@ -460,7 +460,7 @@ the new `dict.*` names.
 | 8 | List elements in sets | allow |
 | 9 | Clash with block type `Dict(T)` | rename block type to `Block(T)`, deprecate `Dict(T)` |
 | 10 | Keys hold heap strings/key lists vs "no heap references" | accept: no references to lazy or user structure |
-| 11 | Key equality differs from `=` above 2^53 (and NaN, should it ever occur) | accept and document |
+| 11 | ~~Key equality differs from `=` above 2^53 (and NaN, should it ever occur)~~ | **Moot**: numeric comparison is now exact (e.g. `9007199254740993 = 9007199254740992` is false), so keys and `=` agree |
 | 12 | `=` on dicts | reference identity, as sets today |
 | — | Exact numbers in sets change `set.to-list` for >2^53 (§6) | accept; closes eu-oaz72.10's set half |
 | — | Additions beyond the owner's list: `empty`, `empty?`, `update` default, result shapes (OPEN 4) | as §7 |

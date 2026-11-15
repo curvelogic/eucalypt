@@ -1,0 +1,25 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/299_code_point_fractional
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/299_code_point_fractional.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/299_code_point_fractional.eu:2:8
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid code point: 1.5 is not a whole number
+  ┌─ tests/harness/errors/299_code_point_fractional.eu:2:8
+  │
+2 │ x: 1.5 ch.of-code-point
+  │        ^^

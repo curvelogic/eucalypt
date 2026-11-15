@@ -372,6 +372,10 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `any(p?)` | Does any element match? |
 | `all(p?)` | Do all elements match? |
 | `nub-by(f)` | Deduplicate by key function (no `unique` in prelude) |
+| `window(n, step)` | Sliding windows of size `n` (`window(2, 1)` gives adjacent pairs) |
+| `tails` | All suffixes: `[1,2,3] tails` is `[[1,2,3],[2,3],[3]]` |
+| `group-consecutive` | Group runs of equal adjacent elements (`group-consecutive-by(f)` for a key) |
+| `running-sum`, `running-max`, `running-min` | Cumulative sum / maximum / minimum of a number list |
 
 A non-integer count or index is an error in `take`, `drop`, `split-at`,
 `rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
@@ -411,6 +415,8 @@ float such as `2.0` is accepted.
 | `str.replace(re, rep, s)` | Replace all regex matches |
 | `str.prefix(b, a)` | Prepend `b` onto `a` |
 | `str.suffix(b, a)` | Append `b` onto `a` |
+| `str.md5(s)` | MD5 of the UTF-8 bytes, lowercase hex (like `str.sha256`) |
+| `str.code-points(s)` / `str.from-code-points(ns)` | Unicode code points of the characters of `s`, and back; `ch.code-point(c)` / `ch.of-code-point(n)` for one character |
 
 **All str regex functions treat the pattern argument as a regular expression.**
 `str.split-on` and `str.contains?` are pipeline-friendly (data is last arg).

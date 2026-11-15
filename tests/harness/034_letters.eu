@@ -4,4 +4,28 @@ tests: {
   γ: "กႢ" str.letters //= ["ก", "Ⴂ"]
 }
 
-RESULT: tests values all-true? then(:PASS, :FAIL)
+` "str.code-points, str.from-code-points, ch.code-point, ch.of-code-point (eu-oaz72.25). Code points are integers, so str.of shows 97, not 97.0"
+code-point-tests: {
+  α: "" str.code-points //= []
+  β: "abc" str.code-points //= [97, 98, 99]
+  γ: "é→😀" str.code-points //= [233, 8594, 128512]
+  δ: ("é→😀" str.code-points count) //= ("é→😀" str.letters count)
+  ε: "a" str.code-points head str.of //= "97"
+  ζ: str.from-code-points[] //= ""
+  η: str.from-code-points[104, 105] //= "hi"
+  θ: str.from-code-points[233, 8594, 128512] //= "é→😀"
+  ι: "héllo, wörld → 😀" str.code-points str.from-code-points //= "héllo, wörld → 😀"
+  κ: [0, 55295, 57344, 1114111] str.from-code-points str.code-points //= [0, 55295, 57344, 1114111]
+  λ: ch.code-point("a") //= 97
+  μ: ch.code-point("😀") //= 128512
+  ν: ch.code-point("a") str.of //= "97"
+  ξ: ch.of-code-point(97) //= "a"
+  ο: ch.of-code-point(128512) //= "😀"
+  π: ch.of-code-point(97.0) //= "a"
+  ρ: ch.of-code-point(ch.code-point("é")) //= "é"
+  σ: ch.code-point(ch.of-code-point(8594)) //= 8594
+  τ: ch.code-point(ch.dq) //= 34
+  υ: ("héllo" str.letters map(ch.code-point)) //= str.code-points("héllo")
+}
+
+RESULT: [tests values all-true?, code-point-tests values all-true?] all-true? then(:PASS, :FAIL)

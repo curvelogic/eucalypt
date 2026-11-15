@@ -55,8 +55,7 @@ Requires pts to be x-sorted so that nearby indices approximate spatial
 proximity. Low values of w may miss close pairs that are far apart in x.
 Each suffix's pair batch is independent, so generation runs under
 `par-concat` (same value as `zip-with(pairs-at(w), ℕ) concat` over the
-tails; parallel on macOS/Linux when the point count clears the size
-threshold)."
+tails; parallel on macOS/Linux)."
 window-pairs(w, pts): {
   batch([i, suffix]): pairs-at(w, i, suffix)
 }.(zip(ℕ, tails(pts)) par-concat(batch))

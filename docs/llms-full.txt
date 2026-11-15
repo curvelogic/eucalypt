@@ -3565,6 +3565,28 @@ c: 2 ^ 63    # error: numeric overflow
 An integer raised to a negative integer power, such as `2 ^ (0 - 1)`, is
 a float (`0.5`).
 
+### Modular arithmetic
+
+`mulmod(a, b, m)`, `powmod(b, e, m)` and `modinv(a, m)` work modulo `m`
+without overflowing: they compute in 128 bits internally, so they are
+exact for any 64-bit signed operands and moduli, where `a * b % m` would stop
+with `numeric overflow` once `a * b` passes 2^63. Each returns the
+residue in `[0, m)`, so negative operands are normalised:
+
+```eu
+big: mulmod(9223372036854775807, 9223372036854775806, 9223372036854775783)  # 552
+pow: powmod(3, 1000000000000, 1000000007)                                   # 570188345
+inv: modinv(3, 7)                                                           # 5, as 3 * 5 = 15 = 1 (mod 7)
+neg: mulmod(-1, 1, 7)                                                       # 6
+```
+
+The modulus must be at least 1 and the operands whole numbers: a float
+such as `7.0` is read as `7`, and a fractional operand such as `2.5` is
+an error; `powmod` takes
+a non-negative exponent (for `b^-k`, use `powmod(modinv(b, m), k, m)`),
+and `modinv(a, m)` is an error when `a` and `m` share a factor, as
+`modinv(6, 9)` does.
+
 ## The Assertion Operators
 
 Two special operators are provided for testing:
@@ -11417,8 +11439,8 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 
 - [Lists](lists.md) -- list construction, transformation, folding, sorting (91 entries)
 - [Blocks](blocks.md) -- block construction, access, merging, transformation (66 entries)
-- [Strings](strings.md) -- string manipulation, regex, formatting (36 entries)
-- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (32 entries)
+- [Strings](strings.md) -- string manipulation, regex, formatting (41 entries)
+- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (35 entries)
 - [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (12 entries)
 - [Combinators](combinators.md) -- function composition, application, utilities (14 entries)
 - [Calendar](calendar.md) -- date and time functions (8 entries)
@@ -11428,7 +11450,7 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
 - [IO](io.md) -- environment, time, argument access, and monad utility (86 entries)
 
-*403 documented entries in total.*
+*411 documented entries in total.*
 
 ## Standard Libraries
 
@@ -11443,6 +11465,20 @@ ship with eucalypt:
 ---
 
 # Lists
+
+## Cost
+
+Lists are singly linked: a list is consumed from the front.
+
+| Operation | Cost |
+|-----------|------|
+| `head`, `tail`, `cons` | O(1) |
+| `nth`, `!!`, `take(n)`, `drop(n)` | O(n) in the index on lists (`!!` is O(1) on arrays) — convert to a vec (`vec.of`) for O(1) indexed access |
+| `count`, `last`, `reverse` | O(n) |
+| `xs ++ ys` | O(length of `xs`) |
+| `sort-nums`, `sort-strs`, `sort-by*` | O(n log n) |
+
+Repeated `!!` over the same list in a loop is quadratic.
 
 ## Basic Operations
 
@@ -11606,6 +11642,14 @@ elements that satisfy `pred`. Matching elements are discarded |
 
 # Blocks
 
+## Cost
+
+A block is searched linearly by key; there is no index. `lookup`,
+`lookup-or` and `has` are all O(n) in the number of keys, and `merge` is linear in the size of
+both operands. A block is the right shape for records and small configuration, but not for a
+large lookup table queried in a loop: use a `dict` (see the [dicts reference](dicts.md)) for
+large keyed tables, a set for membership, and a vec (`vec.of`) for indexed access to numbers.
+
 ## Block Construction and Merging
 
 | Function | Description |
@@ -11763,6 +11807,9 @@ hosts: data deep-query("*.config.host")
 | `str.base64-encode` | Encode string `s` as base64 |
 | `str.base64-decode` | Decode base64 string `s` back to its original string |
 | `str.sha256` | Return the SHA-256 hash of string `s` as lowercase hex |
+| `str.md5` | Return the MD5 hash of string `s` (its UTF-8 bytes) as lowercase hex. MD5 is not secure: use it only to match existing checksums |
+| `str.code-points` | The Unicode code points of the characters of string `s` (one per character, as `str.letters` splits it), as a list of numbers |
+| `str.from-code-points` | The string whose characters have the Unicode code points `ns`; the inverse of `str.code-points`. An error for an element that is not a whole number in 0 to 0x10FFFF or is a surrogate (0xD800 to 0xDFFF) |
 | `str.replace(pattern, replacement, s)` | Replace all occurrences of regex `pattern` with `replacement` in string `s`. Pipeline: s str.replace(pat, rep) |
 | `str.contains?(pattern, s)` | True if string `s` contains a match for regex `pattern`. Pipeline: s str.contains?(pat) |
 | `str.trim` | Trim leading and trailing whitespace from string `s` |
@@ -11781,6 +11828,8 @@ a little more convenient to use interpolation instead..
 | `ch.n` |  |
 | `ch.t` |  |
 | `ch.dq` |  |
+| `ch.code-point` | The Unicode code point of the single character `c`, as a number; an error unless `c` is exactly one character |
+| `ch.of-code-point` | The one-character string with Unicode code point `n`; an error unless `n` is a whole number in 0 to 0x10FFFF and not a surrogate (0xD800 to 0xDFFF) |
 
 The `ch` namespace provides special characters:
 
@@ -11788,13 +11837,42 @@ The `ch` namespace provides special characters:
 - `ch.t` -- Tab
 - `ch.dq` -- Double quote
 
+`ch.code-point(c)` gives the Unicode code point of a one-character string and
+`ch.of-code-point(n)` is its inverse; see
+[Code Points](#code-points) for the string-level `str.code-points` and
+`str.from-code-points`.
+
 ### Encoding and Hashing Examples
 
 ```eu
 encoded: "hello" str.base64-encode    # "aGVsbG8="
 decoded: "aGVsbG8=" str.base64-decode # "hello"
 hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
+legacy: "abc" str.md5                 # "900150983cd24fb0d6963f7d28e17f72"
 ```
+
+`str.md5` hashes the UTF-8 bytes of the string and returns 32 lowercase hex
+digits. MD5 is not secure; use it only to match an existing checksum.
+
+### Code Points
+
+`str.code-points` and `str.from-code-points` convert between a string and the
+list of Unicode code points of its characters (one number per character, as
+`str.letters` splits it, so `"é"` is `[233]`, not two bytes). `ch.code-point`
+and `ch.of-code-point` do the same for a single character.
+
+```eu
+points:  "aé😀" str.code-points                    # [97, 233, 128512]
+text:    [104, 105] str.from-code-points           # "hi"
+shifted: "abc" str.code-points map(+ 1) str.from-code-points  # "bcd"
+one:     "é" ch.code-point                         # 233
+char:    128512 ch.of-code-point                   # "😀"
+```
+
+`str.from-code-points` and `ch.of-code-point` stop with an error for a number
+that is not a whole number from 0 to 0x10FFFF, or that is a surrogate (0xD800
+to 0xDFFF); `ch.code-point` stops unless its argument is exactly one
+character.
 
 ---
 
@@ -11829,6 +11907,9 @@ hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 | `mod(a, b)` | Floor modulus; same as `a % b` |
 | `quot(a, b)` | Truncation division; rounds toward zero |
 | `rem(a, b)` | Truncation remainder; result has same sign as dividend |
+| `mulmod(a, b, m)` | `a * b` modulo `m`, exact for all 64-bit signed integers (computed in 128 bits); result in `[0, m)` |
+| `powmod(b, e, m)` | `b` raised to the power `e` modulo `m`, exact for all 64-bit signed integers; `e` must be non-negative; result in `[0, m)` |
+| `modinv(a, m)` | The inverse of `a` modulo `m`: `x` in `[0, m)` with `mulmod(a, x, m) = 1 % m` (so `modinv(a, 1)` is 0); an error when `a` and `m` are not coprime |
 | `sum(l)` | Sum a list of numbers |
 | `product(l)` | Multiply a list of numbers |
 | `max(l, r)` | Return max of `l` and `r` by `>` |
@@ -12783,6 +12864,65 @@ eu --statistics-file stats.json file.eu
 ```
 
 The statistics file is written regardless of whether evaluation succeeds.
+
+### Profiling
+
+`-S` gives totals; `--profile` (an `eu run` flag) shows where they go. It
+attributes every machine tick, allocation and allocated byte to the source
+location executing at the time, and prints the costliest locations to
+stderr when the run ends (also when it fails or is interrupted):
+
+```sh
+eu run --profile file.eu
+```
+
+```
+Profile: 920400 ticks, 160058 allocs, 32975520 bytes over 11 locations (top 5 by ticks)
+         ticks      %       allocs      %          bytes      %  location
+        220019  23.9%        20001  12.5%        8960704  27.2%  hot at prog.eu:1:19
+        160002  17.4%        20000  12.5%        5120000  15.5%  hot at prog.eu:1:35
+        160000  17.4%        40000  25.0%        5760000  17.5%  hot at prog.eu:1:29
+        140002  15.2%        20000  12.5%        5120000  15.5%  hot at prog.eu:1:44
+        140002  15.2%        20000  12.5%        5120000  15.5%  hot at prog.eu:1:48
+```
+
+- **ticks** are machine dispatches, the same unit as `-S` "Ticks"; the
+  column sums to the `-S` figure. **allocs** counts closure allocations
+  (the `-S` "Allocs" figure) and **bytes** counts heap bytes allocated by
+  evaluation (allocation outside it, such as rendering the result, is not
+  counted).
+- Each figure is *self* cost: work done by a location's own code, not by
+  the functions it calls. Attribution is per dispatch step and approximate
+  at its boundary: a step is charged to the location current when it ends,
+  so the step that enters or returns from a function is charged to the
+  location it moves to. When an intrinsic forces a thunk, the intrinsic's
+  own work is charged to its call site and the forced code to the thunk's.
+- A location is a user-file site (`name at file:line:col`, naming the
+  enclosing function and the expression's position, so one function can
+  have several rows) or a library function (`name (prelude)`, one row per
+  function).
+- Code inside the pre-compiled prelude carries no source information, so
+  its internals appear as one `<prelude internal>` row. Add the global
+  `--source-prelude` flag (`eu --source-prelude run --profile file.eu`) to
+  compile the prelude from source and name them. The two compilations differ
+  slightly, so their tick totals do too.
+- Lazy evaluation charges a thunk to the code that defines it, at the moment
+  something first forces it, so a cheap-looking function can show the cost
+  of data it is the first to touch. The folded stacks show who forced what,
+  including through intrinsics that force their arguments.
+
+Options:
+
+- `--profile-top N` — rows in the table (default 30).
+- `--profile-folded FILE` — also write folded stacks, one
+  `outer;…;inner count` line per distinct stack, the input format of
+  `flamegraph.pl` and similar tools. A stack is sampled every 1009 ticks and
+  keeps its innermost 64 frames. Implies `--profile`.
+
+Profiling slows a run by about 15% (1.02–1.42× across the benchmark
+suite). With the flag off the engine runs its unprofiled dispatch loops and
+there is no measurable cost. Both figures were measured on a single machine;
+see `docs/superpowers/reports/2026-11-14-eu-oaz72.37-profiler.md`.
 
 ### Heap Limit
 
@@ -14579,12 +14719,11 @@ where idiomatic (catenated argument is always the **last** parameter).
 
 ```
 foldl(+, 0, [1,2,3,4,5])     # 15
-[1,2,3] foldl(+, 0)          # ERROR: use foldl(+, 0, [1,2,3])
+[1,2,3,4,5] foldl(+, 0)      # 15 (the list is the last argument)
 ```
 
-Note: `foldl` takes 3 args. In pipeline: the list is the last arg, so
-`[1,2,3,4,5] foldl(+, 0)` does NOT work — you must call
-`foldl(+, 0, [1,2,3,4,5])` directly, or partially apply:
+Note: `foldl` takes 3 args and the catenated list supplies the last
+one, so both forms above work. You can also partially apply it:
 
 ```
 sum: foldl(+, 0)
@@ -15177,9 +15316,8 @@ When using pipeline style, the catenated value becomes the **last**
 parameter. `[1,2,3] map(inc)` means `map(inc, [1,2,3])` because the
 list is the last argument.
 
-For `foldl(op, init, list)`, you cannot write
-`[1,2,3] foldl(+, 0)` — you need either `foldl(+, 0, [1,2,3])` or
-define a partial: `sum: foldl(+, 0)` then `[1,2,3] sum`.
+So `foldl(op, init, list)` can be written `[1,2,3] foldl(+, 0)`, or
+partially applied: `sum: foldl(+, 0)` then `[1,2,3] sum`.
 
 ### 5.2 Dot Binds Tighter Than Catenation
 
@@ -15313,6 +15451,7 @@ These **do exist** and are commonly available:
 - `str.starts-with?(re, s)` — true if `s` starts with regex match
 - `str.ends-with?(re, s)` — true if `s` ends with regex match
 - `abs(n)` — absolute value
+- `mulmod(a, b, m)`, `powmod(b, e, m)`, `modinv(a, m)` — exact modular arithmetic for 64-bit signed integers (no overflow from `a * b % m`); result in `[0, m)`
 - `str.to-upper(s)` / `str.to-lower(s)` — case conversion (not `str.upper` / `str.lower`)
 
 ### 5.12 str.split-on Uses Regex, Not Literal Strings
@@ -15580,6 +15719,10 @@ All functions verified against `lib/prelude.eu`:
 | `str.base64-encode` | `base64-encode(s)` | Base64 encode |
 | `str.base64-decode` | `base64-decode(s)` | Base64 decode |
 | `str.sha256` | `sha256(s)` | SHA-256 hash (lowercase hex) |
+| `str.md5` | `md5(s)` | MD5 hash of the UTF-8 bytes (lowercase hex) |
+| `str.code-points` | `code-points(s)` | List of Unicode code points, one per character |
+| `str.from-code-points` | `from-code-points(ns)` | String from a list of code points (error for a surrogate or value above 0x10FFFF) |
+| `ch.code-point` / `ch.of-code-point` | `ch.code-point(c)` / `ch.of-code-point(n)` | One character to its code point and back |
 
 ---
 
@@ -16919,7 +17062,8 @@ Here is some general style guidance for writing eucalypt idiomatically.
 ## List access
 
 - **`head`/`tail`** for list decomposition (variable-length, processing elements sequentially)
-- **`first`/`second`/`!! n`** for positional access into fixed-size tuples or records
+- **Destructuring parameters** (`f([a, b]): ...`, `f([h : t]): ...`, `f({x y}): ...`) for fixed-size tuples, records and head/tail splits: name the parts in the parameter list instead of calling accessors. See [Destructuring Parameters](guide/functions-and-combinators.md#destructuring-parameters).
+- **`first`/`second`/`!! n`** for positional access into a tuple you have not destructured (for example in the middle of a pipeline)
 
 Don't mix idioms on the same context. If you use `second(xs)`, use `first(xs)` not `head(xs)`. If you use `!! 2`, use `!! 0` and `!! 1` not `first` and `second`.
 
@@ -17001,6 +17145,7 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 ## Recursion
 
 - Prefer folds, scans, or specific prelude algorithms over explicit recursion where possible.
+- Mind cost when choosing a data structure: lists index in O(n) and blocks look up linearly (use a `dict` or a set for large keyed tables or membership). See the *Cost* notes in the [lists](reference/prelude/lists.md) and [blocks](reference/prelude/blocks.md) references.
 
 ## Documentation
 
@@ -17887,6 +18032,10 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `any(p?)` | Does any element match? |
 | `all(p?)` | Do all elements match? |
 | `nub-by(f)` | Deduplicate by key function (no `unique` in prelude) |
+| `window(n, step)` | Sliding windows of size `n` (`window(2, 1)` gives adjacent pairs) |
+| `tails` | All suffixes: `[1,2,3] tails` is `[[1,2,3],[2,3],[3]]` |
+| `group-consecutive` | Group runs of equal adjacent elements (`group-consecutive-by(f)` for a key) |
+| `running-sum`, `running-max`, `running-min` | Cumulative sum / maximum / minimum of a number list |
 
 A non-integer count or index is an error in `take`, `drop`, `split-at`,
 `rotate`, `nth`, `update-nth`, `window`, `window-all` and the `sample`
@@ -17926,6 +18075,8 @@ float such as `2.0` is accepted.
 | `str.replace(re, rep, s)` | Replace all regex matches |
 | `str.prefix(b, a)` | Prepend `b` onto `a` |
 | `str.suffix(b, a)` | Append `b` onto `a` |
+| `str.md5(s)` | MD5 of the UTF-8 bytes, lowercase hex (like `str.sha256`) |
+| `str.code-points(s)` / `str.from-code-points(ns)` | Unicode code points of the characters of `s`, and back; `ch.code-point(c)` / `ch.of-code-point(n)` for one character |
 
 **All str regex functions treat the pattern argument as a regular expression.**
 `str.split-on` and `str.contains?` are pipeline-friendly (data is last arg).
@@ -17967,6 +18118,7 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
+| `mulmod(a, b, m)` / `powmod(b, e, m)` / `modinv(a, m)` | Exact modular arithmetic for 64-bit signed integers; result in `[0, m)` |
 | `even?` / `odd?` | Do **not** exist — use `2 ∣ x` / `2 ∤ x` (U+2223 divides, not `\|`) or `x % 2 = 0` |
 
 ### Lenses (`lens.eu`)

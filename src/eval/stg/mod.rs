@@ -179,6 +179,11 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(encoding::Base64Encode));
     rt.add(Box::new(encoding::Base64Decode));
     rt.add(Box::new(encoding::Sha256Hash));
+    rt.add(Box::new(encoding::Md5Hash));
+    rt.add(Box::new(string::CodePoints));
+    rt.add(Box::new(string::FromCodePoints));
+    rt.add(Box::new(string::CodePoint));
+    rt.add(Box::new(string::OfCodePoint));
     rt.add(Box::new(set::SetEmpty));
     rt.add(Box::new(set::SetOf));
     rt.add(Box::new(set::SetToList));
