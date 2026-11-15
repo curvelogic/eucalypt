@@ -382,6 +382,9 @@ order of `eucalypt-mode--capture-faces'."
                          (mapconcat (lambda (c) (concat "@" c))
                                     eucalypt-mode--unmapped-captures ", "))))))
 
+(defvar eucalypt-mode--warned-missing nil
+  "Non-nil once the missing-`highlights.scm' warning has been shown.")
+
 (defun eucalypt-mode--ensure-font-lock ()
   "Derive the font-lock settings from `highlights.scm' once.
 When `highlights.scm' cannot be found the mode still loads, without
@@ -407,7 +410,9 @@ highlighting, and a warning says how to fix that."
                  (apply #'treesit-font-lock-rules
                         eucalypt-mode--extra-queries))))
       (file-missing
-       (display-warning 'eucalypt (error-message-string err))
+       (unless eucalypt-mode--warned-missing
+         (setq eucalypt-mode--warned-missing t)
+         (display-warning 'eucalypt (error-message-string err)))
        nil))))
 
 ;;; Indentation

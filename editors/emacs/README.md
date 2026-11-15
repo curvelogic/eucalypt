@@ -165,15 +165,11 @@ git clone https://github.com/curvelogic/eucalypt.git ~/path/to/eucalypt
  '(eucalypt-mode :type git
                  :host github
                  :repo "curvelogic/eucalypt"
-                 :files ("editors/emacs/*.el")))
-
-;; The build holds only the .el file, so point the mode at the checkout's
-;; highlights.scm (set before the mode is first used):
-(setq eucalypt-highlights-file
-      (expand-file-name
-       "repos/eucalypt/editors/tree-sitter-eucalypt/queries/highlights.scm"
-       straight-base-dir))
+                 :files ("editors/emacs/*.el"
+                         "editors/tree-sitter-eucalypt/queries/highlights.scm")))
 ```
+
+The scm lands beside the mode, where it is found by default.
 
 Without `highlights.scm` the mode still loads (commands, indentation) but
 warns and does no syntax highlighting. Then install the tree-sitter grammar
