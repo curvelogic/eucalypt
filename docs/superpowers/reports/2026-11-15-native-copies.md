@@ -28,3 +28,21 @@ view rebuild, so (2) is a correctness-neutral simplification, not a speedup.
   write-into-heap-buffer allocation API in `Array`, which is unsafe-adjacent
   and touches every ndarray intrinsic; not cheap. Follow-up bead suggested.
 - (3) `set.sample` string comparison: sets are now dict trees; re-assess.
+
+## GC walk of a numeric vec (item 4), measured
+Workload (not committed; one-off): a 300,000-element numeric vec stays live
+while 60 steps each allocate 20,000-element lists, so 60 collections each
+mark the vec.
+
+    big: range(0, 300000) vec.of
+    step(i): (range(0, 20000) map(+ i) count) + (big vec.nth(i))
+    go: range(0, 60) map(step) sum
+
+`eu go.eu -e go -S`, interleaved release binaries (before = master), 5 runs
+each, GC "Mark Time": before 1.70 1.73 1.74 1.85 1.92 s (median 1.74); after
+1.58 1.61 1.69 1.72 1.75 s (median 1.69). About 3% of mark time, within the
+spread. Label: measured-single. The vec walk is about 0.3 ms of a roughly
+28 ms collection here, so the saving is real but small; it grows with the
+number and size of live numeric vecs. The skip is gated by harness 234
+(forcing `has_strings` false panics with `bad str data`), verified by both
+reviewers.
