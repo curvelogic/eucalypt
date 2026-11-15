@@ -1,2 +1,2 @@
 ` "eu-oaz72.24: crt rejects moduli that share a factor"
-x: crt([[1, 6], [2, 9]])
+x: crt[[1, 6], [2, 9]]

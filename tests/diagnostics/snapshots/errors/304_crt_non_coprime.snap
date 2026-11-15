@@ -22,8 +22,8 @@ error: modular arithmetic: 6 has no inverse modulo 9, because gcd(6, 9) = 3
   help: modinv(a, m) exists only when a and m are coprime
   ┌─ tests/harness/errors/304_crt_non_coprime.eu:2:4
   │
-2 │ x: crt([[1, 6], [2, 9]])
-  │    ^^^^^^^^^^^^^^^^^^^^^
+2 │ x: crt[[1, 6], [2, 9]]
+  │    ^^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
     - x at 304_crt_non_coprime.eu:2:4

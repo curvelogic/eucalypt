@@ -3592,12 +3592,12 @@ list of `[remainder, modulus]` pairs and returns the least non-negative `x`
 that leaves each remainder, built on `mulmod` and `modinv`:
 
 ```eu
-x: crt([[2, 3], [3, 5], [2, 7]]) //=> 23
+x: crt[[2, 3], [3, 5], [2, 7]] //=> 23
 ```
 
-The moduli must be pairwise coprime, so `crt([[1, 6], [2, 9]])` is an
+The moduli must be pairwise coprime, so `crt[[1, 6], [2, 9]]` is an
 error even though that system has a solution, and their product must fit in
-64 bits. Negative remainders are normalised, and `crt([])` is `0`.
+64 bits: the running product of the moduli, taken in list order, past 2^63 stops with `numeric overflow`. Negative remainders are normalised, and `[] crt` is `0`.
 
 ## The Assertion Operators
 
@@ -11922,7 +11922,7 @@ character.
 | `mulmod(a, b, m)` | `a * b` modulo `m`, exact for all 64-bit signed integers (computed in 128 bits); result in `[0, m)` |
 | `powmod(b, e, m)` | `b` raised to the power `e` modulo `m`, exact for all 64-bit signed integers; `e` must be non-negative; result in `[0, m)` |
 | `modinv(a, m)` | The inverse of `a` modulo `m`: `x` in `[0, m)` with `mulmod(a, x, m) = 1 % m` (so `modinv(a, 1)` is 0); an error when `a` and `m` are not coprime |
-| `crt(congruences)` | Chinese remainder theorem: given `[[r, m], ...]`, the least non-negative `x` with `x ≡ r (mod m)` for every pair; the moduli must be pairwise coprime (otherwise an error from `modinv`) and their product must fit in 64 bits. Remainders are normalised; the empty list gives 0 |
+| `crt(congruences)` | Chinese remainder theorem: given `[[r, m], ...]`, the least non-negative `x` with `x ≡ r (mod m)` for every pair; the moduli must be pairwise coprime (otherwise an error from `modinv`) and the running product of the moduli must stay within 64 bits (past 2^63 it is a `numeric overflow` error, even if the answer would fit). Remainders are normalised; the empty list gives 0 |
 | `sum(l)` | Sum a list of numbers |
 | `product(l)` | Multiply a list of numbers |
 | `max(l, r)` | Return max of `l` and `r` by `>` |
@@ -15465,7 +15465,7 @@ These **do exist** and are commonly available:
 - `str.ends-with?(re, s)` — true if `s` ends with regex match
 - `abs(n)` — absolute value
 - `mulmod(a, b, m)`, `powmod(b, e, m)`, `modinv(a, m)` — exact modular arithmetic for 64-bit signed integers (no overflow from `a * b % m`); result in `[0, m)`
-- `crt([[r, m], ...])` — Chinese remainder theorem: least `x ≥ 0` with `x ≡ r (mod m)` for every pair; moduli must be pairwise coprime (else a `modinv` error); `crt([])` is 0
+- `crt[[r, m], ...]` — Chinese remainder theorem: least `x ≥ 0` with `x ≡ r (mod m)` for every pair; moduli must be pairwise coprime (else a `modinv` error); `[] crt` is 0
 - `str.to-upper(s)` / `str.to-lower(s)` — case conversion (not `str.upper` / `str.lower`)
 
 ### 5.12 str.split-on Uses Regex, Not Literal Strings
@@ -18133,7 +18133,7 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
 | `mulmod(a, b, m)` / `powmod(b, e, m)` / `modinv(a, m)` | Exact modular arithmetic for 64-bit signed integers; result in `[0, m)` |
-| `crt([[r, m], ...])` | Chinese remainder theorem: least `x ≥ 0` with `x ≡ r (mod m)` for each pair (moduli pairwise coprime) |
+| `crt[[r, m], ...]` | Chinese remainder theorem: least `x ≥ 0` with `x ≡ r (mod m)` for each pair (moduli pairwise coprime) |
 | `even?` / `odd?` | Do **not** exist — use `2 ∣ x` / `2 ∤ x` (U+2223 divides, not `\|`) or `x % 2 = 0` |
 
 ### Lenses (`lens.eu`)
