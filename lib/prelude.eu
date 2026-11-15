@@ -1559,6 +1559,9 @@ foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 ` { doc: "`foldl-strict(op, i, l)` - as `foldl`, but the accumulator is evaluated to weak head normal form at each step, so a long fold runs in constant stack instead of building a chain of unevaluated `op` calls. Use it where `op` is strict in the accumulator, as `+` and `max` are. `op(i, x)` is evaluated even where `op` would ignore it, so an error there surfaces where `foldl` would have skipped it."
     type: s"(b → a → b) → b → [a] → b"
     blame: :transparent }
+## The two identical branches are deliberate: `a list?` evaluates the accumulator
+## to WHNF whichever way it answers, and this inline shape is the one that runs in
+## constant stack (a helper or a local thunk for the recursive call does not).
 foldl-strict(op, i, l): if(l nil?, i, { a: op(i, l head) }.(if(a list?, foldl-strict(op, a, l tail), foldl-strict(op, a, l tail))))
 
 ` { doc: "`reduce(op, l)` - left fold with no initial value; uses first element as seed. Panics on empty list."
