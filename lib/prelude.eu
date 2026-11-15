@@ -839,6 +839,12 @@ powmod(b, e, m): __POWMOD(b, e, m)
     type: s"number → number → number" }
 modinv(a, m): __MODINV(a, m)
 
+` { doc: "`crt(congruences)` - Chinese remainder theorem: given `[[r, m], ...]`, the least non-negative `x` with `x ≡ r (mod m)` for every pair; the moduli must be pairwise coprime (otherwise an error from `modinv`) and their product must fit in 64 bits. Remainders are normalised; the empty list gives 0."
+    type: s"[[number]] → number" }
+crt(congruences): {
+  step([x, big], [r, m]): [x + (big * mulmod(r - x, modinv(big, m), m)), big * m]
+}.(congruences foldl(step, [0, 1]) first)
+
 # --- Bitwise operators ---
 
 ` { doc: "`l & r` - bitwise AND of integers `l` and `r`."

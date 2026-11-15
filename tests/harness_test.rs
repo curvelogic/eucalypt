@@ -5470,3 +5470,8 @@ pub fn test_error_302_of_code_point_surrogate() {
 pub fn test_error_303_of_code_point_too_large() {
     run_error_test(&error_opts("303_of_code_point_too_large.eu"));
 }
+
+#[test]
+pub fn test_error_304_crt_non_coprime() {
+    run_error_test(&error_opts("304_crt_non_coprime.eu"));
+}
