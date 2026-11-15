@@ -5,6 +5,8 @@ sha256-tests: {
   β: str.sha256("") //= "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   γ: str.sha256("abc") //= "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
   δ: str.sha256("hello world") str.len //= 64
+  ε: str.sha256("é") //= "4a99557e4033c3539de2eb65472017cad5f9557f7a0625a09f1c3f6e2ba69c4c"
+  ζ: str.sha256("é") str.len //= 64
 }
 
 ` "str.md5 matches the RFC 1321 appendix A.5 test suite (eu-oaz72.25); the hash is over UTF-8 bytes (value from Python hashlib)"
