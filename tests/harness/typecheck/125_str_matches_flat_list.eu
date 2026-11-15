@@ -1,0 +1,4 @@
+{ doc: "str.matches and str.matches-of return a flat [string] of full matches, not [[string]]; the numeric-extraction idiom must check clean under --strict (eu-oaz72.13)." }
+
+nums: "a1 b-22 c" str.matches-of("-?\d+") map(num)
+words: str.matches("a1 b22", "[a-z]") map(str.len)
