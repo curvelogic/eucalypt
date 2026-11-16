@@ -853,7 +853,7 @@ fn validate_shape(smid: Smid, function: &str, dims: &[f64]) -> Result<Vec<usize>
     let mut shape = Vec::with_capacity(dims.len());
     let mut count: usize = 1;
     for &d in dims {
-        if d > limit as f64 {
+        if d.is_finite() && d > limit as f64 {
             return Err(too_large());
         }
         let n = array_index(function, "dimension", Some(d), smid)?;
