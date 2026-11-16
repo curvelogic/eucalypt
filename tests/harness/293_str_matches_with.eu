@@ -1,0 +1,13 @@
+#!/usr/bin/env eu
+# eu-oaz72.26: str.matches-with(re, s) returns every match of `re` in `s`,
+# each as [whole, g1, ...] (matches-of(re) map(match-with(re))).
+
+kv: "a=1, bb=22, c=3" str.matches-with("(\w+)=(\d+)")
+
+t1: kv = [["a=1", "a", "1"], ["bb=22", "bb", "22"], ["c=3", "c", "3"]]
+t2: (kv map(second)) = ["a", "bb", "c"]
+t3: ("xyz" str.matches-with("\d+")) = []
+t4: ("a1b2" str.matches-with("\d")) = [["1"], ["2"]]
+t5: (str.matches-with("(\d)", "a1b2") map(second)) = ["1", "2"]
+
+RESULT: [t1, t2, t3, t4, t5] all-true? then(:PASS, :FAIL)
