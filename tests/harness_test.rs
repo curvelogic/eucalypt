@@ -5576,3 +5576,25 @@ pub fn test_error_314() {
 pub fn test_error_315() {
     run_error_test(&error_opts("315_bitwise_operand_capped.eu"));
 }
+
+/// Prelude sites converted to constant-stack strict forms (eu-oaz72.165,
+/// owner decisions 40 and 41).
+#[test]
+pub fn test_300_strict_prelude_sites() {
+    run_test(&opts("300_strict_prelude_sites.eu"));
+}
+
+#[test]
+pub fn test_error_330_reduce_forces_each_step() {
+    run_error_test(&error_opts("330_reduce_forces_each_step.eu"));
+}
+
+#[test]
+pub fn test_error_331_iterate_applies_f_at_cell() {
+    run_error_test(&error_opts("331_iterate_applies_f_at_cell.eu"));
+}
+
+#[test]
+pub fn test_error_332_scanl_applies_op_at_cell() {
+    run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
+}

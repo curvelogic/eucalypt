@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/332_scanl_applies_op_at_cell
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/332_scanl_applies_op_at_cell.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/332_scanl_applies_op_at_cell.eu:2:13
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: op applied
+  ┌─ tests/harness/errors/332_scanl_applies_op_at_cell.eu:2:13
+  │
+2 │ boom(a, b): panic("op applied")
+  │             ^^^^^^^^^^^^^^^^^^^
+3 │ x: scanl(boom, 0, [1, 2]) take(2) count
+  │    ---------------------- called from here
+  │
+  = while evaluating (outermost first):
+    - x at 332_scanl_applies_op_at_cell.eu:3:35

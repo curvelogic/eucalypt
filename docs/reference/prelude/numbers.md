@@ -36,12 +36,12 @@
 | `sum(l)` | Sum a list of numbers |
 | `product(l)` | Multiply a list of numbers |
 | `max(l, r)` | Return max of `l` and `r` by `>` |
-| `max-of(l)` | `max-of(l) - return max element in list of numbers `l` - error if empty` |
-| `max-of-by(f, l)` | Return the element of `l` that maximises `f`. Error if empty |
+| `max-of(l)` | Return max element in list of numbers `l` - error if empty. Strict: each step's running maximum is evaluated as it is reached, so a long list runs in constant stack |
+| `max-of-by(f, l)` | Return the element of `l` that maximises `f`. Error if empty. Strict: each step's comparison is evaluated as it is reached, so a long list runs in constant stack |
 | `max-map(f, l)` | Return maximum value of `f(x)` across elements of `l` |
 | `max-of-or(d, l)` | Return max element in list `l`, or default `d` if empty |
 | `min(l, r)` | Return min of `l` and `r` by `<` |
-| `min-of(l)` | `min-of(l) - return min element in list of numbers `l` - error if empty` |
-| `min-of-by(f, l)` | Return the element of `l` that minimises `f`. Error if empty |
+| `min-of(l)` | Return min element in list of numbers `l` - error if empty. Strict: each step's running minimum is evaluated as it is reached, so a long list runs in constant stack |
+| `min-of-by(f, l)` | Return the element of `l` that minimises `f`. Error if empty. Strict: each step's comparison is evaluated as it is reached, so a long list runs in constant stack |
 | `min-map(f, l)` | Return minimum value of `f(x)` across elements of `l` |
 | `min-of-or(d, l)` | Return min element in list `l`, or default `d` if empty |

@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/330_reduce_forces_each_step
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/330_reduce_forces_each_step.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/330_reduce_forces_each_step.eu:3:28
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: step forced
+  ┌─ tests/harness/errors/330_reduce_forces_each_step.eu:3:28
+  │
+3 │ x: reduce(keep-second, [1, panic("step forced"), 3])
+  │    ------------------------^^^^^^^^^^^^^^^^^^^^-----
+  │    │
+  │    called from here
+  │
+  = while evaluating (outermost first):
+    - x at 330_reduce_forces_each_step.eu:3:4

@@ -1,0 +1,3 @@
+` "scanl applies op when its cell is reached, even if the element is never read (eu-oaz72.165)"
+boom(a, b): panic("op applied")
+x: scanl(boom, 0, [1, 2]) take(2) count
