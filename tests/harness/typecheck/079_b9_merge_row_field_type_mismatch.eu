@@ -1,9 +1,0 @@
-# B9: row-variable inference makes field types precise.
-# After merging concrete blocks, `result.x` is inferred as `number`.
-# Annotating it as `string` should produce a type warning.
-f(a, b): a merge(b)
-base: { x: 1 }
-ext: { y: "hello" }
-result: base f(ext)
-` { type: "string" }
-bad_check: result.x

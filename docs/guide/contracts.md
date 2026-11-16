@@ -180,7 +180,7 @@ It briefly was not: a shipped library imported by filename was
 misclassified as user code, so a frame inside `lib/contract.eu` could win
 the "blame user code" ranking and become the primary label under the
 pre-compiled prelude. That was **eu-8a49h**, not specific to contracts,
-and it is fixed. `tests/harness/errors/201_sv3_contract_violation.eu`
+and it is fixed. `tests/harness/errors/201_contract_violation.eu`
 anchors the primary label on the `ensure` call site so a regression fails
 the build.
 

@@ -1,0 +1,9 @@
+# Gradual — `any`-typed argument is vacuously satisfying.
+# When the argument type is `any`, the constraint is not discharged
+# (gradual boundary — no warning).
+` { type: "<(a, a) => a -> a -> a" }
+lesser(x, y): (x < y) then(x, y)
+` "Call with an unannotated (any-typed) argument: no warning expected."
+result: lesser((1 < 2) then(3, 4), 5)
+` { type: "number" }
+check: result

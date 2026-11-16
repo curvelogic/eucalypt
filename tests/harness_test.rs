@@ -2572,73 +2572,73 @@ pub fn test_typecheck_069_projection_value_type_mismatch() {
 // ── B7: Prelude type-summary cache — behaviour preservation ──────────────────
 
 #[test]
-pub fn test_typecheck_070_b7_predicate_narrowing() {
-    run_typecheck_test("070_b7_predicate_narrowing.eu");
+pub fn test_typecheck_070_predicate_narrowing() {
+    run_typecheck_test("070_predicate_narrowing.eu");
 }
 
 #[test]
-pub fn test_typecheck_071_b7_then_brancher() {
-    run_typecheck_test("071_b7_then_brancher.eu");
+pub fn test_typecheck_071_then_brancher() {
+    run_typecheck_test("071_then_brancher.eu");
 }
 
 #[test]
-pub fn test_typecheck_072_b7_user_brancher_wrapping_free() {
-    run_typecheck_test("072_b7_user_brancher_wrapping_free.eu");
+pub fn test_typecheck_072_user_brancher_wrapping_free() {
+    run_typecheck_test("072_user_brancher_wrapping_free.eu");
 }
 
 #[test]
-pub fn test_typecheck_073_b7_head_tail_free() {
-    run_typecheck_test("073_b7_head_tail_free.eu");
+pub fn test_typecheck_073_head_tail_free() {
+    run_typecheck_test("073_head_tail_free.eu");
 }
 
 #[test]
-pub fn test_typecheck_074_b5_partial_type_parses() {
-    run_typecheck_test("074_b5_partial_type_parses.eu");
+pub fn test_typecheck_074_partial_type_parses() {
+    run_typecheck_test("074_partial_type_parses.eu");
 }
 
 #[test]
-pub fn test_typecheck_075_b5_execution_error_type() {
-    run_typecheck_test("075_b5_execution_error_type.eu");
+pub fn test_typecheck_075_execution_error_type() {
+    run_typecheck_test("075_execution_error_type.eu");
 }
 
 #[test]
-pub fn test_typecheck_076_b5_partial_warns_in_total_position() {
-    run_typecheck_test("076_b5_partial_warns_in_total_position.eu");
+pub fn test_typecheck_076_partial_warns_in_total_position() {
+    run_typecheck_test("076_partial_warns_in_total_position.eu");
 }
 
 #[test]
-pub fn test_typecheck_077_b5_partial_silent_in_any() {
-    run_typecheck_test("077_b5_partial_silent_in_any.eu");
+pub fn test_typecheck_077_partial_silent_in_any() {
+    run_typecheck_test("077_partial_silent_in_any.eu");
 }
 
 #[test]
-pub fn test_typecheck_078_b9_merge_row_inference_no_warn() {
-    run_typecheck_test("078_b9_merge_row_inference_no_warn.eu");
+pub fn test_typecheck_078_merge_row_inference_no_warn() {
+    run_typecheck_test("078_merge_row_inference_no_warn.eu");
 }
 
 #[test]
-pub fn test_typecheck_079_b9_merge_row_field_type_mismatch() {
-    run_typecheck_test("079_b9_merge_row_field_type_mismatch.eu");
+pub fn test_typecheck_079_merge_row_field_type_mismatch() {
+    run_typecheck_test("079_merge_row_field_type_mismatch.eu");
 }
 
 #[test]
-pub fn test_typecheck_080_b9_non_block_param_no_row_var() {
-    run_typecheck_test("080_b9_non_block_param_no_row_var.eu");
+pub fn test_typecheck_080_non_block_param_no_row_var() {
+    run_typecheck_test("080_non_block_param_no_row_var.eu");
 }
 
 #[test]
-pub fn test_typecheck_081_b2_constraint_satisfied() {
-    run_typecheck_test("081_b2_constraint_satisfied.eu");
+pub fn test_typecheck_081_constraint_satisfied() {
+    run_typecheck_test("081_constraint_satisfied.eu");
 }
 
 #[test]
-pub fn test_typecheck_082_b2_constraint_violated() {
-    run_typecheck_test("082_b2_constraint_violated.eu");
+pub fn test_typecheck_082_constraint_violated() {
+    run_typecheck_test("082_constraint_violated.eu");
 }
 
 #[test]
-pub fn test_typecheck_083_b2_constraint_gradual_any() {
-    run_typecheck_test("083_b2_constraint_gradual_any.eu");
+pub fn test_typecheck_083_constraint_gradual_any() {
+    run_typecheck_test("083_constraint_gradual_any.eu");
 }
 
 #[test]
@@ -3020,8 +3020,8 @@ pub fn test_error_181() {
 /// for HeapSyn); the pattern accepts either engine's wording, since only
 /// the HeapSyn engine's `return_fun` has the symbol pool available to
 /// resolve the key name into the message.
-pub fn test_191_m93j_lookup_on_function() {
-    run_error_test(&error_opts("191_m93j_lookup_on_function.eu"));
+pub fn test_191_lookup_on_function() {
+    run_error_test(&error_opts("191_lookup_on_function.eu"));
 }
 
 #[test]
@@ -3033,8 +3033,8 @@ pub fn test_191_m93j_lookup_on_function() {
 /// `ExecutionError::UnexpectedFunction`, reporting "found a function"
 /// instead (eu-1tkk.7.9). Also covers the `catenation_arith` diagnostics
 /// corpus fixture's underlying message-content bug.
-pub fn test_192_1tkk_7_9_function_not_block() {
-    run_error_test(&error_opts("192_1tkk_7_9_function_not_block.eu"));
+pub fn test_192_function_not_block() {
+    run_error_test(&error_opts("192_function_not_block.eu"));
 }
 
 #[test]
@@ -3053,8 +3053,8 @@ pub fn test_192_1tkk_7_9_function_not_block() {
 /// Engine-agnostic: this is presentation-layer curation over Smids both
 /// engines record identically, and it is verified under `cargo test`
 /// (bytecode) and `EU_HEAPSYN=1 cargo test` (HeapSyn).
-pub fn test_193_1tkk_7_12_curated_trace() {
-    run_error_test(&error_opts("193_1tkk_7_12_curated_trace.eu"));
+pub fn test_193_curated_trace() {
+    run_error_test(&error_opts("193_curated_trace.eu"));
 }
 
 /// Wall-clock budget for the eu-gua64 complexity gate below.
@@ -3544,8 +3544,8 @@ pub fn test_240_lambda_capture_sharing() {
 /// merely finding the fixture's name somewhere in the output: before the fix
 /// the user's file still appeared in the `while evaluating (outermost
 /// first):` note, so a looser pattern passes either way and gates nothing.
-pub fn test_194_8a49h_library_blame() {
-    run_error_test(&error_opts("194_8a49h_library_blame.eu"));
+pub fn test_194_library_blame() {
+    run_error_test(&error_opts("194_library_blame.eu"));
 }
 
 #[test]
@@ -3559,8 +3559,8 @@ pub fn test_194_8a49h_library_blame() {
 /// `file:line:col` (line 15, the `result` declaration) *before* the
 /// `while evaluating (outermost first):` marker, so a regression that only
 /// fixes the note cannot satisfy it.
-pub fn test_195_og3u6_trace_anchor() {
-    run_error_test(&error_opts("195_og3u6_trace_anchor.eu"));
+pub fn test_195_trace_anchor() {
+    run_error_test(&error_opts("195_trace_anchor.eu"));
 }
 
 #[test]
@@ -3569,8 +3569,8 @@ pub fn test_195_og3u6_trace_anchor() {
 /// code, the headline's violation count and rendered spec type, and both
 /// violation lines as notes — a `:type-mismatch` with a path and a
 /// closed-record `:unexpected`.
-pub fn test_201_sv3_contract_violation() {
-    run_error_test(&error_opts("201_sv3_contract_violation.eu"));
+pub fn test_201_contract_violation() {
+    run_error_test(&error_opts("201_contract_violation.eu"));
 }
 
 #[test]
@@ -3578,8 +3578,8 @@ pub fn test_201_sv3_contract_violation() {
 /// `ExecutionError` variant from the `ContractViolation` a non-conforming
 /// *value* produces. This is what makes design decision 6 testable: a schema
 /// typo must not masquerade as bad input data.
-pub fn test_202_sv3_contract_bad_spec() {
-    run_error_test(&error_opts("202_sv3_contract_bad_spec.eu"));
+pub fn test_202_contract_bad_spec() {
+    run_error_test(&error_opts("202_contract_bad_spec.eu"));
 }
 
 #[test]
@@ -3589,8 +3589,8 @@ pub fn test_202_sv3_contract_bad_spec() {
 /// `.expect("failure translating import")`, while the same file evaluated
 /// directly produced a clean codespan diagnostic. Gates that the import
 /// path now diagnoses too: exit 1, "invalid embedding" on stderr.
-pub fn test_206_mqlkv_import_bad_embedding() {
-    run_error_test(&error_opts("206_mqlkv_import_bad_embedding.eu"));
+pub fn test_206_import_bad_embedding() {
+    run_error_test(&error_opts("206_import_bad_embedding.eu"));
 }
 
 #[test]
@@ -3598,8 +3598,8 @@ pub fn test_206_mqlkv_import_bad_embedding() {
 /// `CoreError` raised while translating an import took the same panicking
 /// route. This exercises `CoreError::VersionRequirementFailed` from an
 /// imported unit's unsatisfiable `requires:`.
-pub fn test_207_mqlkv_import_bad_requires() {
-    run_error_test(&error_opts("207_mqlkv_import_bad_requires.eu"));
+pub fn test_207_import_bad_requires() {
+    run_error_test(&error_opts("207_import_bad_requires.eu"));
 }
 
 #[test]
@@ -3609,16 +3609,16 @@ pub fn test_207_mqlkv_import_bad_requires() {
 /// `.expect` sites panicked independently, so each needs its own gate:
 /// without this test two thirds of the fix could be reverted with the
 /// suite green while users still hit exit 101.
-pub fn test_208_mqlkv_scoped_import_bad_embedding() {
-    run_error_test(&error_opts("208_mqlkv_scoped_import_bad_embedding.eu"));
+pub fn test_208_scoped_import_bad_embedding() {
+    run_error_test(&error_opts("208_scoped_import_bad_embedding.eu"));
 }
 
 #[test]
 /// eu-mqlkv, **site 3 of 3** — the `Block` impl's block-metadata import
 /// loop, reached by leading metadata on a nested block rather than on the
 /// unit or on a declaration.
-pub fn test_209_mqlkv_block_import_bad_embedding() {
-    run_error_test(&error_opts("209_mqlkv_block_import_bad_embedding.eu"));
+pub fn test_209_block_import_bad_embedding() {
+    run_error_test(&error_opts("209_block_import_bad_embedding.eu"));
 }
 
 #[test]
@@ -3660,8 +3660,8 @@ pub fn test_error_228_type_warning_argument_span() {
 /// (`foldl`, five). The sidecar pins the caret run to exactly eleven, so
 /// reverting the shunting yard to stamping the `App` with `f.smid()`
 /// fails this test.
-pub fn test_error_229_1tkk_7_38_underapplied_call_span() {
-    run_error_test(&error_opts("229_1tkk_7_38_underapplied_call_span.eu"));
+pub fn test_error_229_underapplied_call_span() {
+    run_error_test(&error_opts("229_underapplied_call_span.eu"));
 }
 
 #[test]
@@ -3679,29 +3679,29 @@ pub fn test_error_230_lazy_demand_site_blame() {
 /// `EU-EVAL-TYPE` code allow-list. `n.foo` on a number raises
 /// `NoBranchForDataTag` via the `LookupLitForce` continuation (not
 /// `TypeMismatch`); the sidecar pins the coded header.
-pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
-    run_error_test(&error_opts("231_1tkk_7_44_nobranch_datatag_code.eu"));
+pub fn test_error_231_nobranch_datatag_code() {
+    run_error_test(&error_opts("231_nobranch_datatag_code.eu"));
 }
 
 #[test]
 /// eu-oaz72.2: an unclosed unicode bracket at end of file reports a parse
 /// error instead of panicking the parser.
-pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
-    run_error_test(&error_opts("232_oaz72_2_unclosed_bracket_eof.eu"));
+pub fn test_error_232_unclosed_bracket_eof() {
+    run_error_test(&error_opts("232_unclosed_bracket_eof.eu"));
 }
 
 #[test]
 /// eu-oaz72.43: a negative index to nth is an error rather than a hang on
 /// an infinite list (checked on a finite one to stay bounded).
-pub fn test_error_233_oaz72_43_nth_negative() {
-    run_error_test(&error_opts("233_oaz72_43_nth_negative.eu"));
+pub fn test_error_233_nth_negative() {
+    run_error_test(&error_opts("233_nth_negative.eu"));
 }
 
 #[test]
 /// eu-oaz72.43: a negative index to update-nth is an error, not a silent
 /// update of element 0.
-pub fn test_error_233_oaz72_43_update_nth_negative() {
-    run_error_test(&error_opts("233_oaz72_43_update_nth_negative.eu"));
+pub fn test_error_234_update_nth_negative() {
+    run_error_test(&error_opts("234_update_nth_negative.eu"));
 }
 
 #[test]
@@ -3803,21 +3803,21 @@ pub fn test_error_250_dict_merge_strict() {
 #[test]
 /// eu-oaz72.32: a non-primitive element in set.of / set.from-list raises the
 /// typed "expected a primitive value" error with help, as set.add does.
-pub fn test_error_241_oaz72_32_set_of_non_primitive() {
-    run_error_test(&error_opts("241_oaz72_32_set_of_non_primitive.eu"));
+pub fn test_error_241_set_of_non_primitive() {
+    run_error_test(&error_opts("241_set_of_non_primitive.eu"));
 }
 
 #[test]
 /// eu-oaz72.32: a datetime element in set.of raises set.add's type mismatch,
 /// not "empty boxed value" from its unforced inner value.
-pub fn test_error_241_oaz72_32_set_of_datetime() {
-    run_error_test(&error_opts("241_oaz72_32_set_of_datetime.eu"));
+pub fn test_error_236_set_of_datetime() {
+    run_error_test(&error_opts("236_set_of_datetime.eu"));
 }
 
 #[test]
 /// eu-oaz72.32: a function element in set.from-list raises set.add's error.
-pub fn test_error_241_oaz72_32_set_of_function() {
-    run_error_test(&error_opts("241_oaz72_32_set_of_function.eu"));
+pub fn test_error_237_set_of_function() {
+    run_error_test(&error_opts("237_set_of_function.eu"));
 }
 
 #[test]
