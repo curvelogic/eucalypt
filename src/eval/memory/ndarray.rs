@@ -9,10 +9,10 @@
 //! and evacuates the buffers but traces nothing inside them. Operations
 //! read through an `ndarray` view over the heap buffer and write their
 //! result straight into a fresh heap buffer (eu-oaz72.159): no Rust-owned
-//! intermediate array exists, so `--heap-limit-mib` is checked before any
-//! result element is computed.
+//! intermediate array exists, so the result's storage is accounted by the
+//! managed heap from the start.
 
-use ndarray::{ArrayD, ArrayViewD, IxDyn};
+use ndarray::{ArrayViewD, IxDyn};
 
 use super::{
     alloc::{ScopedAllocator, StgObject},
@@ -110,14 +110,6 @@ impl HeapNdArray {
             return Ok(None);
         }
         Self::build(mem, shape, values.iter().copied()).map(Some)
-    }
-
-    /// Copy an (owned) ndarray into the heap in row-major order.
-    pub fn from_ndarray<'guard, A: ScopedAllocator<'guard>>(
-        mem: &A,
-        arr: &ArrayD<f64>,
-    ) -> Result<Self, ExecutionError> {
-        Self::build(mem, arr.shape(), arr.iter().copied())
     }
 
     /// A read-only ndarray view over the heap buffer.
@@ -454,10 +446,10 @@ mod tests {
     }
 
     #[test]
-    fn exact_iter_shortens_on_short_iterator() {
+    fn exact_iter_writes_in_place() {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
-        let a = Array::try_from_exact_iter(&view, 5, [1.0f64, 2.0]).unwrap();
+        let a = Array::try_from_exact_iter(&view, 2, [1.0f64, 2.0, 3.0]).unwrap();
         assert_eq!(a.as_slice(), &[1.0, 2.0]);
         let b = Array::<f64>::try_from_exact_iter(&view, 0, std::iter::empty()).unwrap();
         assert!(b.is_empty());

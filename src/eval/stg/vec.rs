@@ -338,13 +338,16 @@ impl StgIntrinsic for VecShuffle {
         let floats = collect_num_list(machine, view, args[0].clone())?;
         let v = vec_arg(machine, view, &args[1])?;
         // Copy into the heap first, then shuffle in place: no Rust-side
-        // buffer outside the heap-limit accounting.
+        // buffer outside the managed heap.
         let mut shuffled = HeapVec::from_slice(&view, v.elements())?;
         let elements = shuffled.elements_mut();
         let len = elements.len();
         // Full Fisher-Yates shuffle
         for (step, &f) in floats.iter().enumerate() {
-            let i = len - 1 - step;
+            // More floats than elements (or an empty vec) just ends the shuffle.
+            let Some(i) = len.checked_sub(1 + step) else {
+                break;
+            };
             if i == 0 {
                 break;
             }

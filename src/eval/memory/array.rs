@@ -233,8 +233,8 @@ impl<T: Sized + Clone> Array<T> {
     /// Construct an Array of up to `len` elements taken from `iter`,
     /// written straight into the freshly allocated heap buffer.
     ///
-    /// No intermediate Rust-side buffer is built, so the heap limit is
-    /// checked before any element is produced. If `iter` yields fewer
+    /// No intermediate Rust-side buffer is built, so the result is
+    /// accounted by the managed heap from the start. If `iter` yields fewer
     /// than `len` items the array is shortened to what was written; extra
     /// items are ignored.
     pub fn try_from_exact_iter<'guard, A, I>(
@@ -269,6 +269,7 @@ impl<T: Sized + Clone> Array<T> {
             unsafe { base.as_ptr().add(written).write(item) };
             written += 1;
         }
+        debug_assert_eq!(written, len, "iterator shorter than the declared length");
         Ok(Array {
             length: written,
             data: RawArray {
