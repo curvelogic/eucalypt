@@ -1117,7 +1117,7 @@ str: {
       type: s"string → string → [string]" }
   matches-of: matches flip
 
-  ` { doc: "matches-with(re, s) - return all matches of regex `re` in string `s`, each as a list of the full match followed by its capture groups Matching is a single pass, so anchors and word boundaries see their context. A group that does not take part in a match is the empty string, indistinguishable from an empty capture."
+  ` { doc: "matches-with(re, s) - return all matches of regex `re` in string `s`, each as a list of the full match followed by its capture groups. Matching is a single pass, so anchors and word boundaries see their context. A group that does not take part in a match is the empty string, indistinguishable from an empty capture."
       type: s"string → string → [[string]]" }
   matches-with(re, s): __MATCHES_WITH(s, re)
 
