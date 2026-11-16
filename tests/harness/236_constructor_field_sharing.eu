@@ -28,8 +28,8 @@ xs: range(0, 10) filter(p?)
 
 # The same through a user-defined fold and a lambda defined inside a function
 # body (the shape of the prelude's `filter`).
-my-fold(o, i, l): if(l nil?, i, o(l head, my-fold(o, i, l tail)))
-my-filter(q?, l): my-fold({x: • xs: •}.(if(x q?, cons(x, xs), xs)), [], l)
+my-fold(o, i, l): l nil? then(i, o(l head, my-fold(o, i, l tail)))
+my-filter(q?, l): my-fold({x: • xs: •}.(x q? then(cons(x, xs), xs)), [], l)
 ys: range(0, 10) my-filter(p?)
 
 eight(l): [l sum, l sum, l sum, l sum, l sum, l sum, l sum, l sum] sum

@@ -1,22 +1,22 @@
-#!/usr/bin/env eu
-# eu-u9xj.6 (PP) — a streaming import must not disable the `par-*`
-# combinators.
-#
-# The first cut of the impure-producer boundary check (spike R2) keyed on
-# REGISTRATION: producers are registered at import time, during desugaring,
-# whether or not the stream is ever touched, so merely naming a stream import
-# turned every `par-*` in the unit — and, because the table was
-# process-lifetime state, in every LATER unit evaluated by the same process —
-# into an error. A two-element `par-map`, which cannot fork at all, failed.
-#
-# The check now lives where the hazard does: inside a forked worker, which
-# refuses to advance an impure producer (its fd offset is shared with the
-# parent) and defers to the parent's sequential re-run. So an import that is
-# merely present, or even partly consumed, is no obstacle at all.
-#
-# RESULT is computed from every check, so a regression fails `cargo test`.
+{ doc: "eu-u9xj.6 (PP) — a streaming import must not disable the `par-*`
+       combinators.
 
-{ import: ["jl=jsonl-stream@testdata/aux_import.jsonl",
+       The first cut of the impure-producer boundary check (spike R2) keyed on
+       REGISTRATION: producers are registered at import time, during
+       desugaring, whether or not the stream is ever touched, so merely
+       naming a stream import turned every `par-*` in the unit — and,
+       because the table was process-lifetime state, in every LATER unit
+       evaluated by the same process — into an error. A two-element
+       `par-map`, which cannot fork at all, failed.
+
+       The check now lives where the hazard does: inside a forked worker, which
+       refuses to advance an impure producer (its fd offset is shared with
+       the parent) and defers to the parent's sequential re-run. So an
+       import that is merely present, or even partly consumed, is no
+       obstacle at all.
+
+       RESULT is computed from every check, so a regression fails `cargo test`."
+  import: ["jl=jsonl-stream@testdata/aux_import.jsonl",
            "txt=text-stream@testdata/aux_import.txt"] }
 
 dbl(x): x * 2
@@ -50,4 +50,4 @@ checks: [t-map, t-sum, t-max, t-min, t-concat,
          t-drained-stream, t-map-after-drain,
          t-map-over-stream]
 
-RESULT: if(checks all-true?, :PASS, :FAIL)
+RESULT: checks all-true? then(:PASS, :FAIL)
