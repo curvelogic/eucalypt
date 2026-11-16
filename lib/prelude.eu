@@ -1587,7 +1587,7 @@ iterate(f, i): cons(i, iterate(f, f(i)))
     type: s"[a] → [[a]]" }
 tails(l): iterate(tail, l) take-while(non-nil?)
 
-` { doc: "`iota(n)` - return infinite list of integers from `n` upwards."
+` { doc: "`iota(n)` - return infinite list of integers from `n` upwards. `n` is left unevaluated for the first two cells, so `iota(panic) tail nil?` is `false`; from the third cell on it is evaluated as each cell is demanded, which keeps a long walk in constant stack."
     type: s"number → [number]" }
 ## The first two cells leave `n` unevaluated, so `iota(panic) nil?` and
 ## `iota(panic) tail nil?` stay false. The loop then evaluates its counter as
