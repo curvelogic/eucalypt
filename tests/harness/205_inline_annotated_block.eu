@@ -1,24 +1,25 @@
-#!/usr/bin/env eu
-# eu-frf2o: a metadata-annotated inline block literal used as a call or
-# catenation operand compiled its `Meta` node into a plain STG `Let` whose
-# sibling references escaped into the enclosing frame.
-#
-# The STG compiler builds three bindings for `{ :foo k: 1 }` in operand
-# position — the metadata, the block body, and the `Meta` node naming both —
-# but `compile_binding`'s `Expr::Meta` arm never called `ensure_recursive()`.
-# Under a non-recursive `Let` every binding is closed over the *enclosing*
-# frame, so the `Meta` node's two operands indexed the outer scope instead of
-# its siblings. At the top level outer slot 0 was the thunk being forced (a
-# blackhole); inside a function it was a live parameter, so the expression
-# quietly evaluated to the caller's first argument with no diagnostic at all.
-#
-# The block-metadata spellings never broke because compiling a metadata
-# *block* calls `ensure_recursive()` as a side effect. They are asserted here
-# too: the fix must not push a working path onto the broken one.
-#
-# Every check asserts a value, not merely the absence of an error — a
-# fixture that only demanded "no blackhole" would have passed against the
-# build that silently returned the caller's first argument.
+{ doc: "eu-frf2o: a metadata-annotated inline block literal used as a call or
+       catenation operand compiled its `Meta` node into a plain STG `Let`
+       whose sibling references escaped into the enclosing frame.
+
+       The STG compiler builds three bindings for `{{ :foo k: 1 }}` in operand
+       position — the metadata, the block body, and the `Meta` node naming
+       both — but `compile_binding`'s `Expr::Meta` arm never called
+       `ensure_recursive()`. Under a non-recursive `Let` every binding is
+       closed over the *enclosing* frame, so the `Meta` node's two operands
+       indexed the outer scope instead of its siblings. At the top level
+       outer slot 0 was the thunk being forced (a blackhole); inside a
+       function it was a live parameter, so the expression quietly evaluated
+       to the caller's first argument with no diagnostic at all.
+
+       The block-metadata spellings never broke because compiling a metadata
+       *block* calls `ensure_recursive()` as a side effect. They are
+       asserted here too: the fix must not push a working path onto the
+       broken one.
+
+       Every check asserts a value, not merely the absence of an error — a fixture
+       that only demanded 'no blackhole' would have passed against the
+       build that silently returned the caller's first argument." }
 
 # --- the broken shapes: bare-symbol metadata on an inline block literal ---
 

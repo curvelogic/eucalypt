@@ -1,20 +1,20 @@
-#!/usr/bin/env eu
-# eu-wpswc: folding a lazily-mapped list was O(n^2). The fix passes an
-# argument naming a *settled* environment slot -- a lambda/PAP, or an `Atom`
-# node -- through to the callee by value instead of wrapping it in a fresh
-# alias closure over the caller's frame, which is what let per-iteration alias
-# chains build up on lazily-threaded function parameters.
-#
-# The complexity class itself is gated on deterministic VM ticks by
-# tests/fold_over_map_growth_test.rs (a wall-clock deadline would flake on a
-# loaded runner). THIS test gates the semantics that pass-by-value must not
-# disturb: results, laziness over self-referential structures, and sharing of
-# a reused partial application.
-#
-# Every check feeds RESULT, so each one gates the build.
-#
-# Note the parenthesisation: catenation binds more loosely than any infix
-# operator, so `xs map(sq) sum = 385` is not a comparison at all.
+{ doc: "eu-wpswc: folding a lazily-mapped list was O(n^2). The fix passes an
+       argument naming a *settled* environment slot -- a lambda/PAP, or an
+       `Atom` node -- through to the callee by value instead of wrapping it
+       in a fresh alias closure over the caller's frame, which is what let
+       per-iteration alias chains build up on lazily-threaded function
+       parameters.
+
+       The complexity class itself is gated on deterministic VM ticks by
+       tests/fold_over_map_growth_test.rs (a wall-clock deadline would flake
+       on a loaded runner). THIS test gates the semantics that pass-by-value
+       must not disturb: results, laziness over self-referential structures,
+       and sharing of a reused partial application.
+
+       Every check feeds RESULT, so each one gates the build.
+
+       Note the parenthesisation: catenation binds more loosely than any infix
+       operator, so `xs map(sq) sum = 385` is not a comparison at all." }
 
 sq(x): x * x
 
@@ -90,4 +90,4 @@ t16: (grid map(sum) sum) = 10
 checks: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10,
          t11, t12, t13, t14, t15, t16]
 
-RESULT: if(checks all-true?, :PASS, :FAIL)
+RESULT: checks all-true? then(:PASS, :FAIL)

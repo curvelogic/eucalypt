@@ -1,8 +1,7 @@
-#!/usr/bin/env eu
-# eu-oaz72.32: set.of and vec.of are the primary list-to-collection
-# constructors, each a one-pass bulk intrinsic, with set.from-list and
-# vec.from-list as aliases. set.from-list used to be a prelude fold of
-# set.add, quadratic because each add copies the set.
+{ doc: "eu-oaz72.32: set.of and vec.of are the primary list-to-collection
+       constructors, each a one-pass bulk intrinsic, with set.from-list and
+       vec.from-list as aliases. set.from-list used to be a prelude fold of
+       set.add, quadratic because each add copies the set." }
 
 ` "Mixed primitives with duplicates, in no particular order."
 xs: [3, 1, 2.5, 3, :x, "b", 1, "a", :a, -4]
