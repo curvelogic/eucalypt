@@ -3374,12 +3374,12 @@ pub fn test_291_modular_arithmetic() {
 /// A lazy value stored in a dict that refers back to itself ends the
 /// trimming rather than overflowing the stack (eu-oaz72.84).
 #[test]
-pub fn test_292_dict_stored_cycle() {
-    run_test(&opts("292_dict_stored_cycle.eu"));
+pub fn test_293_dict_stored_cycle() {
+    run_test(&opts("293_dict_stored_cycle.eu"));
     // A stored value that refers back to itself must stay shared: forcing the
     // stored stream costs about what forcing it without a dict does. (Trimming
     // afresh at every level of the cycle made it 8x or more, eu-oaz72.84.)
-    let file = "292_dict_stored_cycle.eu";
+    let file = "293_dict_stored_cycle.eu";
     let stored = ticks(file, "stream-stored-run", &[]);
     let plain = ticks(file, "stream-plain-run", &[]);
     assert!(

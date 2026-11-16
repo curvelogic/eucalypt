@@ -1,6 +1,6 @@
 #!/usr/bin/env eu
 {
-  title: "292 dict: a stored value that refers back to itself"
+  title: "293 dict: a stored value that refers back to itself"
   doc: "A lazy value stored in a dict is trimmed to the variables it reads
         (eu-oaz72.84). When those variables lead back to the value itself,
         the trimming must stop rather than recurse without bound (it once

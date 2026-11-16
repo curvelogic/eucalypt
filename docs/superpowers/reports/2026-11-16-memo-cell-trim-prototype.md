@@ -155,7 +155,7 @@ store there (bounded: 1,024 nodes, 64 slots).
 ## 6. Round 2: what changed after the two send-backs
 
 - Blocker 1 (stack overflow on a self-referential stored value): one shared
-  budget; harness test `292_dict_stored_cycle` (three repros), fault-injected
+  budget; harness test `293_dict_stored_cycle` (three repros), fault-injected
   (fresh budget per `minimal_env` aborts the test process; restored, PASS,
   also under `EU_GC_VERIFY=2 EU_GC_STRESS=1`).
 - Blocker 2 (error traces): `minimal_env` keeps one frame and annotation per
@@ -173,10 +173,10 @@ own cell into the same slot). Fixed by refusing re-entry: `DetachState`
 tracks the constructors (code and environment) whose rebuild is in progress,
 and `detach` returns `None` at once for one already active. The stored
 stream then costs exactly what it does without a dict (2,175,261 ticks both
-ways, equal to master). `292_dict_stored_cycle.eu` gates it
+ways, equal to master). `293_dict_stored_cycle.eu` gates it
 (`stream-stored-run` against `stream-plain-run`, under 2x), fault-injected:
 with the re-entry check disabled the stored stream takes 18,281,402 ticks.
-Layout deviation for the owner: the new checks are in a new file (292), not
+Layout deviation for the owner: the new checks are in a new file (293), not
 `250_dict.eu` as `REVIEW.md` prefers. Appending the three new targets to
 `250_dict.eu` made the tester fail with "key 'ok' not found" (dropping any one
 of them made it pass); the cause was not found within this prototype's budget.
