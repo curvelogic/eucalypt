@@ -1049,8 +1049,7 @@ par-concat(f, xs): __PARMAP(:par-concat, f, xs) concat
 ##
 ## Text and regexes
 ##
-` { doc:"We don't support the usual string escapes so these make it
-a little more convenient to use interpolation instead.."
+` { doc:"We don't support the usual string escapes so these make it a little more convenient to use interpolation instead."
     export: :suppress }
 ch: {
   ` "A newline character, for interpolation."
