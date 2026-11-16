@@ -1,0 +1,140 @@
+{ doc: "Demand analysis and laziness soundness: strictness and eager-argument optimisations must never force a value the program does not demand (eu-cg3, eu-v8n8, eu-2sa6, eu-oaz72.1, eu-oaz72.40)." }
+
+` { target: :test-strict-recursion
+    doc: "eu-cg3: self-recursive call sites force their arguments, so higher-order folds stay linear. This checks correctness, not tick counts; completing at N=1000 shows the O(n^2) indirection chain is gone." }
+test-strict-recursion: {
+  ` "Higher-order fold: `op` is a function argument, not a global."
+  my-fold(op, acc, xs): xs nil? then(acc, my-fold(op, op(acc, (xs head)), (xs tail)))
+
+  ` "First-order fold for comparison, using `+` directly in the body."
+  my-sum(acc, xs): xs nil? then(acc, my-sum(acc + (xs head), (xs tail)))
+
+  nums: sort-nums(range(0, 1000))
+  ho-sum: my-fold((+), 0, nums)
+  ho-sum-ok: ho-sum = 499500
+
+  fo-sum: my-sum(0, nums)
+  fo-sum-ok: fo-sum = 499500
+
+  product-list: sort-nums(range(1, 11))
+  ho-product: my-fold((*), 1, product-list)
+  ho-product-ok: ho-product = 3628800
+
+  ` "A user-defined combinator as the fold operator."
+  my-max(a, b): (a > b) then(a, b)
+  ho-max: my-fold(my-max, 0, nums)
+  ho-max-ok: ho-max = 999
+
+  ` "An accumulator that builds a list, so it is not numeric."
+  prepend(xs, x): [x] ++ xs
+  reversed: my-fold(prepend, [], [1, 2, 3, 4, 5])
+  reversed-ok: reversed = [5, 4, 3, 2, 1]
+
+  RESULT: [ho-sum-ok, fo-sum-ok, ho-product-ok, ho-max-ok, reversed-ok]
+    all-true? then(:PASS, :FAIL)
+}
+
+` { target: :test-unused-divergent-arg
+    doc: "eu-cg3 soundness: an unused divergent argument must not be forced at a self-recursive call site. If `eager_args` forced `lazy-arg`, the recursion would diverge." }
+test-unused-divergent-arg: {
+  spin(x): spin(x)
+
+  count-down(n, lazy-arg): (n = 0) then(:PASS, count-down(n - 1, lazy-arg))
+
+  RESULT: count-down(50, spin(0))
+}
+
+` { target: :test-fused-laziness
+    doc: "eu-v8n8: inlining `map` or `foldl` into an unused, never-demanded position must not promote it to strict. The unused argument is a map or fold whose function or operator is a bomb; only running it would fire. It must pass with the cluster-inlining flag on and off." }
+test-fused-laziness: {
+  bomb-fn(x): panic("laziness violated: an unused fused-map application was forced")
+  bomb-op(acc, el): panic("laziness violated: an unused fused-foldl application was forced")
+
+  ` "`lazy-arg` is threaded through self-recursion but never scrutinised."
+  pass-through(n, lazy-arg): (n = 0) then(:PASS, pass-through(n - 1, lazy-arg))
+
+  ` :suppress
+  unused-map: pass-through(30, [1, 2, 3] map(bomb-fn))
+
+  ` :suppress
+  unused-fold: pass-through(30, foldl(bomb-op, 0, [1, 2, 3]))
+
+  RESULT: [unused-map = :PASS, unused-fold = :PASS] all-true? then(:PASS, :FAIL)
+}
+
+` { target: :test-branch-gated-recursion
+    doc: "eu-2sa6: a documented (meta-wrapped) self-recursive function whose branches reference the locally bound recursive calls only in some cases must not force every one of them unconditionally. This mirrors `from-data` in lib/reflect.eu: `bomb` must never be forced, and the recursion must end at the `:leaf` branch." }
+test-branch-gated-recursion: {
+  ` { doc: "`describe(td)` renders a small synthetic tagged tree, mirroring the nesting shape of `from-data` and `to-str[tag:rest]` in lib/reflect.eu: a documented top-level function wrapping a nested, cond-gated, self-recursive local."
+      type: s"any → any" }
+  describe(td):
+    { bomb(x): bomb(x)
+
+      to-str[tag : rest]:
+        { r0: rest first
+          r1: rest second
+          s0: to-str(r0)
+          s1: bomb(r1)
+        }.(cond[
+            tag = :leaf => "leaf"
+          , tag = :node => "{s0}-{s1}"
+          , "unreachable"
+          ])
+    }.(to-str(td))
+
+  RESULT: (describe([:leaf, [:node, 1, 2], 42]) = "leaf") then(:PASS, :FAIL)
+}
+
+` { target: :test-untaken-branch-demand
+    doc: "eu-oaz72.1: demand analysis marked a block binding strict when it was needed only in an untaken branch, via a lazy sibling whose right-hand side held a nested `let` (prefix `drop-while`). The pipeline form already passed because its predicate is an application argument, whose demands are scaled." }
+test-untaken-branch-demand: {
+  ` "The repro: a prefix call."
+  prefix(k, ds): { b: ds max-of  a: drop-while(!= b, ds) }.((k = 0) then([], cons(b, prefix(k - 1, a tail))))
+
+  ` "The same with the pipeline call."
+  pipeline(k, ds): { b: ds max-of  a: ds drop-while(!= b) }.((k = 0) then([], cons(b, pipeline(k - 1, a tail))))
+
+  ` "Prefix `take-while`: another inlined combinator whose predicate captures `b`."
+  taking(k, ds): { b: ds max-of  a: take-while(!= b, ds) }.((k = 0) then([], cons(b, taking(k - 1, a))))
+
+  t1: prefix(1, [3]) = [3]
+  t2: pipeline(1, [3]) = [3]
+  t3: prefix(2, [1, 5, 2, 4]) = [5, 4]
+  t4: pipeline(2, [1, 5, 2, 4]) = [5, 4]
+  t5: prefix(0, []) = []
+  t6: taking(1, [3]) = [3]
+
+  RESULT: [t1, t2, t3, t4, t5, t6] all-true? then(:PASS, :FAIL)
+}
+
+` { target: :test-block-body-demand
+    doc: "eu-oaz72.40: demand analysis forced a block binding used only by a field that is never selected. A block or list constructor does not evaluate its contents, so in `{{ b: ds max-of  a: 1 }}.a` the binding `b` must stay lazy and `max-of` of an empty list must not be forced." }
+test-block-body-demand: {
+  ` "The repro: `b` feeds only the unselected field `b`."
+  field(ds): { b: ds max-of  a: 1 }.a
+
+  ` "`b` feeds an unselected field through a nested block."
+  nested(ds): { b: ds max-of  n: { m: b }  a: 2 }.a
+
+  ` "`b` sits in a list element that is never examined."
+  listed(ds): { b: ds max-of  r: [b, 3] count }.r
+
+  ` "`b` sits in a nested list element that a strict consumer (`count`) never examines."
+  nestlist(ds): { b: ds max-of  r: [[b], 4] count }.r
+
+  ` "A block returned from a function and looked up by the caller."
+  returned(ds): { b: ds max-of  a: 5 }
+
+  ` "The selected field still forces its binding when demanded."
+  selected(ds): { b: ds max-of  a: 1 }.b
+
+  t1: field([]) = 1
+  t2: nested([]) = 2
+  t3: listed([]) = 2
+  t4: nestlist([]) = 2
+  t5: selected([1, 7, 2]) = 7
+  t6: field([5]) = 1
+  t7: returned([]).a = 5
+
+  RESULT: [t1, t2, t3, t4, t5, t6, t7] all-true? then(:PASS, :FAIL)
+}

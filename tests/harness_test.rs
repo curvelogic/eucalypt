@@ -3059,7 +3059,7 @@ pub fn test_193_1tkk_7_12_curated_trace() {
 
 /// Wall-clock budget for the eu-gua64 complexity gate below.
 ///
-/// A correct compiler runs `210_gua64_inline_arg_sharing.eu` in ~0.15s
+/// A correct compiler runs `210_inline_arg_sharing.eu` in ~0.15s
 /// (debug build, measured); one that duplicates inlined arguments needs
 /// 2^29 evaluation steps — over ten minutes in a *release* build and far
 /// longer in a debug one. Three orders of magnitude of headroom either
@@ -3077,18 +3077,18 @@ const GUA64_DEADLINE: std::time::Duration = std::time::Duration::from_secs(180);
 /// fails, rather than the suite hanging. `run_test` afterwards applies
 /// the ordinary harness verdict (`RESULT` computed from all ten checks in
 /// the file) so the correctness half is gated the usual way.
-pub fn test_210_gua64_inline_arg_sharing() {
+pub fn test_210_inline_arg_sharing() {
     let mut cmd = std::process::Command::new(eu_binary());
     cmd.args([
         "--heap-limit-mib",
         "2048",
         "-t",
         "main",
-        "tests/harness/210_gua64_inline_arg_sharing.eu",
+        "tests/harness/210_inline_arg_sharing.eu",
     ]);
     let output = run_with_deadline(cmd, GUA64_DEADLINE).unwrap_or_else(|| {
         panic!(
-            "210_gua64_inline_arg_sharing.eu did not complete within {}s — \
+            "210_inline_arg_sharing.eu did not complete within {}s — \
              the inliner is duplicating a non-atomic argument across the \
              repeated uses of its binder, making the recursive caller 2^n \
              (eu-gua64, `beta_reduce` in src/core/inline/reduce.rs)",
@@ -3097,15 +3097,15 @@ pub fn test_210_gua64_inline_arg_sharing() {
     });
     assert!(
         output.status.success(),
-        "eu exited {:?} on 210_gua64_inline_arg_sharing.eu\nstderr:\n{}",
+        "eu exited {:?} on 210_inline_arg_sharing.eu\nstderr:\n{}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
 
-    run_test(&opts("210_gua64_inline_arg_sharing.eu"));
+    run_test(&opts("210_inline_arg_sharing.eu"));
 }
 
-/// A correct compiler runs `228_bc34x_meta_body_memoisation.eu` in well
+/// A correct compiler runs `228_meta_body_memoisation.eu` in well
 /// under a second (measured ~0.09s, release build): three independently
 /// annotated bindings, each `slow(30000)`, each read 200 times via
 /// `map`+`sum`. A compiler that fails to memoise a metadata-annotated
@@ -3129,18 +3129,18 @@ const BC34X_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 /// all five checks in the file, including that metadata is still readable
 /// after the binding has been forced) so the correctness half is gated
 /// the usual way.
-pub fn test_228_bc34x_meta_body_memoisation() {
+pub fn test_228_meta_body_memoisation() {
     let mut cmd = std::process::Command::new(eu_binary());
     cmd.args([
         "--heap-limit-mib",
         "2048",
         "-t",
         "main",
-        "tests/harness/228_bc34x_meta_body_memoisation.eu",
+        "tests/harness/228_meta_body_memoisation.eu",
     ]);
     let output = run_with_deadline(cmd, BC34X_DEADLINE).unwrap_or_else(|| {
         panic!(
-            "228_bc34x_meta_body_memoisation.eu did not complete within {}s — \
+            "228_meta_body_memoisation.eu did not complete within {}s — \
              a metadata-annotated binding's body is being recomputed on every \
              read instead of memoising once (eu-bc34x, `return_meta` in \
              src/eval/machine/vm.rs and src/eval/bytecode/machine.rs)",
@@ -3149,51 +3149,42 @@ pub fn test_228_bc34x_meta_body_memoisation() {
     });
     assert!(
         output.status.success(),
-        "eu exited {:?} on 228_bc34x_meta_body_memoisation.eu\nstderr:\n{}",
+        "eu exited {:?} on 228_meta_body_memoisation.eu\nstderr:\n{}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
 
-    run_test(&opts("228_bc34x_meta_body_memoisation.eu"));
+    run_test(&opts("228_meta_body_memoisation.eu"));
 }
 
-/// eu-uhd7d: a '}' run straight after a string interpolation was lexed as
-/// the '}}' escape inside the interpolation, so `"{x}}}"` lost its brace and
-/// `"{x}}"` failed to parse. Each case in the file is in its RESULT.
+/// String interpolation lexing: close braces after an interpolation
+/// (eu-uhd7d) and whitespace inside one (eu-oaz72.3).
 #[test]
-pub fn test_230_uhd7d_close_brace_after_interpolation() {
-    run_test(&opts("230_uhd7d_close_brace_after_interpolation.eu"));
-}
-
-/// eu-oaz72.1: demand analysis marked a block binding strict when it was
-/// needed only in an untaken branch, via a lazy sibling whose right-hand
-/// side held a nested `let` (prefix `drop-while`). Each case is in RESULT.
-#[test]
-pub fn test_231_oaz72_1_demand_untaken_branch() {
-    run_test(&opts("231_oaz72_1_demand_untaken_branch.eu"));
+pub fn test_230_string_interpolation() {
+    run_test(&opts("230_string_interpolation.eu"));
 }
 
 /// eu-oaz72.5: set and vec storage lives in the GC heap with string
 /// elements traced. Churns string sets/vecs whose strings are reachable only
 /// through the container, and checks contents, order and set algebra.
 #[test]
-pub fn test_234_oaz72_5_native_storage_gc() {
-    run_test(&opts("234_oaz72_5_native_storage_gc.eu"));
+pub fn test_gc_013() {
+    run_test(&opts("gc/gc_013_native_storage.eu"));
 }
 
 /// eu-oaz72.55 — large-object churn computes correctly and a large object
 /// live across the churn survives; `tests/large_object_churn_test.rs`
 /// gates that the dead ones are freed.
 #[test]
-pub fn test_238_oaz72_55_large_object_churn() {
-    run_test(&opts("238_oaz72_55_large_object_churn.eu"));
+pub fn test_gc_014() {
+    run_test(&opts("gc/gc_014_large_object_churn.eu"));
 }
 
-/// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
-/// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
+/// `take`, `drop`, `split-at` and `rotate` with counts at or below zero
+/// terminate (eu-oaz72.35, eu-oaz72.43).
 #[test]
-pub fn test_232_oaz72_35_range_take_termination() {
-    run_test(&opts("232_oaz72_35_range_take_termination.eu"));
+pub fn test_232_negative_counts() {
+    run_test(&opts("232_negative_counts.eu"));
 }
 
 /// eu-oaz72.34 — a self-recursive loop through `if` or `then` with a strict
@@ -3202,8 +3193,8 @@ pub fn test_232_oaz72_35_range_take_termination() {
 /// `constant-stack` validator checks `max-stack` and FAILs on master, where
 /// each `then` iteration pushed a frame (max-stack ~1e5 at n = 1e5).
 #[test]
-pub fn test_233_oaz72_34_constant_stack_loops() {
-    run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
+pub fn test_233_constant_stack_loops() {
+    run_test(&opts("233_constant_stack_loops.eu"));
 }
 
 /// eu-oaz72.36 — a list built by `foldr` or `filter` is computed once and
@@ -3215,8 +3206,8 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
 /// FAILs in blob mode on master, where `.` on an unforced prelude global
 /// rebuilt the namespace block on every read (eu-oaz72.94).
 #[test]
-pub fn test_236_oaz72_36_constructor_field_sharing() {
-    run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
+pub fn test_236_constructor_field_sharing() {
+    run_test(&opts("236_constructor_field_sharing.eu"));
 }
 
 /// eu-oaz72.134 — the assignment-style check must give the same answer in
@@ -3340,8 +3331,8 @@ pub fn test_250_dict() {
 }
 
 #[test]
-pub fn test_241_oaz72_32_set_vec_of() {
-    run_test(&opts("241_oaz72_32_set_vec_of.eu"));
+pub fn test_241_set_vec_of() {
+    run_test(&opts("241_set_vec_of.eu"));
 }
 
 /// mulmod, powmod and modinv are exact across the i64 range and normalise
@@ -3405,8 +3396,8 @@ fn stat(file: &str, target: &str, flags: &[&str], name: &str) -> u64 {
 /// (as on master, where it hid nothing), forcing the element three times must
 /// cost about one fold, not three.
 #[test]
-pub fn test_237_oaz72_48_list_element_sharing() {
-    let file = "237_oaz72_48_list_element_sharing.eu";
+pub fn test_237_list_element_sharing() {
+    let file = "237_list_element_sharing.eu";
     let fold = ticks_without_demand_analysis(file, "fold");
     let shared = ticks_without_demand_analysis(file, "shared");
     assert!(
@@ -3417,28 +3408,14 @@ pub fn test_237_oaz72_48_list_element_sharing() {
     run_test(&opts(file));
 }
 
-/// eu-oaz72.3: whitespace inside a string interpolation is kept in the
-/// syntax tree as trivia and does not change the interpolation's meaning.
-#[test]
-pub fn test_234_oaz72_3_interpolation_whitespace() {
-    run_test(&opts("234_oaz72_3_interpolation_whitespace.eu"));
-}
-
-#[test]
-/// eu-oaz72.43: negative counts to drop, split-at and rotate are consistent
-/// with take and terminate on infinite lists.
-pub fn test_233_oaz72_43_negative_counts() {
-    run_test(&opts("233_oaz72_43_negative_counts.eu"));
-}
-
 /// eu-oaz72.47: the pre-compiled prelude resolves intrinsic aliases in each
 /// binding body, so `foldl` and the loops built on it branch on an inlined
 /// case rather than calling the global `if`. The per-element tick budgets
 /// FAIL against a blob compiled without it (blob mode only; source mode
 /// inlined these already).
 #[test]
-pub fn test_235_oaz72_47_prelude_loops_inline_if() {
-    run_test(&opts("235_oaz72_47_prelude_loops_inline_if.eu"));
+pub fn test_235_prelude_loops_inline_if() {
+    run_test(&opts("235_prelude_loops_inline_if.eu"));
 }
 
 /// Reformat `source` as `eu fmt --reformat` does and check the result
@@ -3467,8 +3444,8 @@ fn reformat_round_trip(label: &str, source: &str) -> String {
 /// The file passes, its reformat parses and is a fixed point, and the
 /// reformatted copy passes too. LSP formatting shares this path; see
 /// `src/driver/lsp/formatting.rs` for its test on the same file.
-pub fn test_235_oaz72_6_fmt_leading_docstring() {
-    let name = "235_oaz72_6_fmt_leading_docstring.eu";
+pub fn test_242_fmt_leading_docstring() {
+    let name = "242_fmt_leading_docstring.eu";
     run_test(&opts(name));
 
     let source = std::fs::read_to_string(format!("tests/harness/{name}")).unwrap();
@@ -3509,16 +3486,8 @@ pub fn test_235_oaz72_6_reformat_corpus_round_trip() {
 /// little live data and checks that data live across the collections
 /// survives them. Each check is in RESULT.
 #[test]
-pub fn test_234_oaz72_4_gc_volume_trigger() {
-    run_test(&opts("234_oaz72_4_gc_volume_trigger.eu"));
-}
-
-/// eu-oaz72.40: demand analysis treated block field values and list
-/// elements as strict, forcing a binding used only by an unselected
-/// field. Each case is in RESULT.
-#[test]
-pub fn test_238_oaz72_40_block_body_demand() {
-    run_test(&opts("238_oaz72_40_block_body_demand.eu"));
+pub fn test_gc_012() {
+    run_test(&opts("gc/gc_012_volume_trigger.eu"));
 }
 
 /// eu-oaz72.40: a binding referred to once inside a block field or list
@@ -3526,8 +3495,8 @@ pub fn test_238_oaz72_40_block_body_demand() {
 /// read through the structure recomputed it. With demand analysis on, three
 /// reads must cost about one fold, not three.
 #[test]
-pub fn test_239_oaz72_40_constructor_sharing() {
-    let file = "239_oaz72_40_constructor_sharing.eu";
+pub fn test_239_constructor_sharing() {
+    let file = "239_constructor_sharing.eu";
     let fold = ticks_with_demand_analysis(file, "fold");
     for target in ["list-body", "list-field"] {
         let shared = ticks_with_demand_analysis(file, target);
@@ -3544,8 +3513,8 @@ pub fn test_239_oaz72_40_constructor_sharing() {
 /// update was elided and every call of the lambda recomputed it. With
 /// demand analysis on, six calls must cost about one fold.
 #[test]
-pub fn test_240_oaz72_41_lambda_capture_sharing() {
-    let file = "240_oaz72_41_lambda_capture_sharing.eu";
+pub fn test_240_lambda_capture_sharing() {
+    let file = "240_lambda_capture_sharing.eu";
     let fold = ticks_with_demand_analysis(file, "fold");
     for target in ["let-bound", "returned", "partial-app"] {
         let shared = ticks_with_demand_analysis(file, target);
@@ -4019,16 +3988,11 @@ pub fn test_173_direct_app_dispatch() {
     run_test(&opts("173_direct_app_dispatch.eu"));
 }
 
+/// Spec and contract validation: s-string type data, `as-spec`, `match?`,
+/// `validate` and `ensure` (eu-sv1, eu-sv2, eu-r9oy, eu-u9xj.1). One target each.
 #[test]
-/// SV1 type-data semantics: to-data projection, from-data round-trip, passthru.
-pub fn test_174_sv1_typedata() {
-    run_test(&opts("174_sv1_typedata.eu"));
-}
-
-#[test]
-/// SV2 to-spec / as-spec: convert type-data to match?-compatible patterns.
-pub fn test_175_sv2_to_spec() {
-    run_test(&opts("175_sv2_to_spec.eu"));
+pub fn test_174_spec_validation() {
+    run_test(&opts("174_spec_validation.eu"));
 }
 
 #[test]
@@ -4046,11 +4010,11 @@ pub fn test_178_sv_optional_fields_to_spec() {
     run_test(&opts("178_sv_optional_fields_to_spec.eu"));
 }
 
+/// Demand analysis and laziness soundness (eu-cg3, eu-v8n8, eu-2sa6,
+/// eu-oaz72.1, eu-oaz72.40). One target each.
 #[test]
-/// CG3: higher-order recursive folds with strict arg forcing at self-recursive
-/// call sites produce correct results and complete in linear time.
-pub fn test_179_cg3_strict_recurse() {
-    run_test(&opts("179_cg3_strict_recurse.eu"));
+pub fn test_179_demand_laziness() {
+    run_test(&opts("179_demand_laziness.eu"));
 }
 
 #[test]
@@ -4058,11 +4022,6 @@ pub fn test_179_cg3_strict_recurse() {
 /// called at exact arity should use the DirectApp fast path.
 pub fn test_180_direct_app_local() {
     run_test(&opts("180_direct_app_local.eu"));
-}
-
-#[test]
-pub fn test_181_cg3_bomb() {
-    run_test(&opts("181_cg3_bomb.eu"));
 }
 
 #[test]
@@ -4099,72 +4058,13 @@ pub fn test_187_sv_prefix_list() {
     run_test(&opts("187_sv_prefix_list.eu"));
 }
 
-#[test]
-pub fn test_188_v8n8_cluster_laziness() {
-    run_test(&opts("188_v8n8_cluster_laziness.eu"));
-}
-
-/// eu-2sa6 — regression test for Wicket's PR #1016 review concern: a
-/// self-recursive local function with a cond/pattern-match where only some
-/// branches reference the recursive calls must not force branches that
-/// aren't on the demanded path. See the .eu file for full context.
-#[test]
-pub fn test_189_branch_gated_self_recursion() {
-    run_test(&opts("189_branch_gated_self_recursion.eu"));
-}
-
-#[test]
-pub fn test_189_r9oy_union_as_spec() {
-    run_test(&opts("189_r9oy_union_as_spec.eu"));
-}
-
 /// eu-odkp — regression test for XML import silently dropping entity /
 /// character references in text content (and splitting the surrounding
 /// text into separate trimmed nodes) since the quick-xml 0.25→0.41 bump.
 /// See the .eu file for full context.
 #[test]
-pub fn test_190_odkp_xml_entity_refs() {
-    run_test(&opts("190_odkp_xml_entity_refs.eu"));
-}
-
-/// SV3 (eu-u9xj.1) — the `t-record` projection carries record closedness as
-/// an additive trailing element, and `from-data` renders it, closing the
-/// open-record round-trip loss. See the .eu file for full context.
-#[test]
-pub fn test_196_sv3_projection_closedness() {
-    run_test(&opts("196_sv3_projection_closedness.eu"));
-}
-
-/// SV3 (eu-u9xj.1) — `reflect.type-str` is the canonical `t-*` renderer,
-/// hoisted out of `from-data`'s block so a runtime consumer can name the
-/// type it expected. See the .eu file for full context.
-#[test]
-pub fn test_197_sv3_type_str() {
-    run_test(&opts("197_sv3_type_str.eu"));
-}
-
-/// SV3 (eu-u9xj.1) — `validate` is the reporting dual of `as-spec`: it walks
-/// spec and value together carrying a path, and emits an entry for every
-/// mismatch instead of collapsing to a bit. See the .eu file for full context.
-#[test]
-pub fn test_198_sv3_validate() {
-    run_test(&opts("198_sv3_validate.eu"));
-}
-
-/// SV3 (eu-u9xj.1) — the executable statement of "cost paid only where
-/// written": every check would raise or diverge if `validate` forced a
-/// subtree its spec does not name. See the .eu file for full context.
-#[test]
-pub fn test_199_sv3_forcing_discipline() {
-    run_test(&opts("199_sv3_forcing_discipline.eu"));
-}
-
-/// SV3 (eu-u9xj.1) — `ensure` returns conforming data unchanged, so it drops
-/// into a pipeline; plus the report-line renderers the raised diagnostic
-/// shows as notes. See the .eu file for full context.
-#[test]
-pub fn test_200_sv3_ensure() {
-    run_test(&opts("200_sv3_ensure.eu"));
+pub fn test_190_xml_entity_refs() {
+    run_test(&opts("190_xml_entity_refs.eu"));
 }
 
 /// eu-3aa6s — regression test for `meta()` raising "expected block, found
@@ -4172,14 +4072,14 @@ pub fn test_200_sv3_ensure() {
 /// layer with the recursive result for the body, and Merge is a block
 /// operation. See the .eu file for full context.
 #[test]
-pub fn test_204_3aa6s_meta_symbol_metadata() {
-    run_test(&opts("204_3aa6s_meta_symbol_metadata.eu"));
+pub fn test_204_meta_symbol_metadata() {
+    run_test(&opts("204_meta_symbol_metadata.eu"));
 }
 
 // EF1 combined effect monad (do): uses io.shell, so runs with --allow-io.
 #[test]
-pub fn test_203_ef1_do_monad() {
-    run_test(&io_opts("203_ef1_do_monad.eu"));
+pub fn test_203_do_monad() {
+    run_test(&io_opts("203_do_monad.eu"));
 }
 
 /// eu-frf2o — regression test for a metadata-annotated inline block literal
@@ -4189,8 +4089,8 @@ pub fn test_203_ef1_do_monad() {
 /// silently wrong value (the caller's first argument) inside a function.
 /// See the .eu file for full context.
 #[test]
-pub fn test_205_frf2o_inline_annotated_block() {
-    run_test(&opts("205_frf2o_inline_annotated_block.eu"));
+pub fn test_205_inline_annotated_block() {
+    run_test(&opts("205_inline_annotated_block.eu"));
 }
 
 /// eu-1tkk.7.24 — the html exporter's success path, which had no
@@ -4226,8 +4126,8 @@ pub fn test_213_edn_large_integer() {
 /// complexity class itself is gated on VM ticks by
 /// `tests/fold_over_map_growth_test.rs`.
 #[test]
-pub fn test_221_wpswc_settled_slot_passthrough() {
-    run_test(&opts("221_wpswc_settled_slot_passthrough.eu"));
+pub fn test_221_settled_slot_passthrough() {
+    run_test(&opts("221_settled_slot_passthrough.eu"));
 }
 
 /// eu-u9xj.6 (PP) — the process-parallelism combinators are semantically
@@ -4238,8 +4138,8 @@ pub fn test_221_wpswc_settled_slot_passthrough() {
 /// through the same serialise/deserialise codec the fork path uses. The real
 /// fork path is validated out-of-process below.
 #[test]
-pub fn test_222_pp_par_equivalence() {
-    run_test(&opts("222_pp_par_equivalence.eu"));
+pub fn test_222_process_parallel_equivalence() {
+    run_test(&opts("222_process_parallel_equivalence.eu"));
 }
 
 /// eu-u9xj.6 (PP) — a streaming import must not disable `par-*`, and `par-*`
@@ -4248,8 +4148,8 @@ pub fn test_222_pp_par_equivalence() {
 /// process-lifetime state, so any unit naming a stream import lost `par-*` —
 /// as did every later unit evaluated by the same process.
 #[test]
-pub fn test_224_pp_stream_import_boundary() {
-    run_test(&opts("224_pp_stream_import_boundary.eu"));
+pub fn test_224_process_parallel_stream_import() {
+    run_test(&opts("224_process_parallel_stream_import.eu"));
 }
 
 /// eu-pazes — `max-of`/`min-of` must be linear in list length.
@@ -4275,12 +4175,12 @@ pub fn test_224_pp_stream_import_boundary() {
 /// deadline at all. Anything between those is a regression; no plausible CI
 /// slowness closes a gap that wide.
 #[test]
-pub fn test_223_pazes_max_of_linear() {
+pub fn test_223_max_of_linear() {
     let deadline = std::time::Duration::from_secs(180);
     let mut cmd = std::process::Command::new(eu_binary());
     cmd.arg("test")
         .arg("--source-prelude")
-        .arg("tests/harness/223_pazes_max_of_linear.eu")
+        .arg("tests/harness/223_max_of_linear.eu")
         .arg("--heap-limit-mib")
         .arg("8192");
 
@@ -4294,7 +4194,7 @@ pub fn test_223_pazes_max_of_linear() {
     });
     assert!(
         out.status.success(),
-        "223_pazes_max_of_linear failed after {:?}: {}{}",
+        "223_max_of_linear failed after {:?}: {}{}",
         started.elapsed(),
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)

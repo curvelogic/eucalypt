@@ -1,29 +1,29 @@
-#!/usr/bin/env eu
-# eu-bc34x: a binding carrying metadata (a plain doc string, `:suppress`,
-# or any other backtick annotation) lost thunk memoisation — its RHS was
-# recomputed from scratch on every force, rather than once and shared.
-#
-# `x0: slow(N) \` :suppress` compiles to `Meta{meta, body}`. The Meta
-# wrapper is (correctly) a non-updateable Value form — cheap to re-enter,
-# by design, since re-dispatching a trivial wrapper costs nothing. The bug
-# was in what happened next: `return_meta`'s fallback path (the common
-# case — any consumer that is not itself destructuring the metadata) used
-# to resolve `body` with a bare, passive environment-slot read instead of
-# entering it through the same black-hole-then-`Update` ceremony every
-# other reference to an updateable thunk goes through. So `body`'s own
-# persistent slot never got an `Update` continuation registered for it,
-# and it silently never memoised: every one of the K reads below
-# independently re-ran `slow(size)` in full, making the whole pipeline
-# O(size*reads) instead of O(size+reads).
-#
-# The complexity gate lives in the Rust test
-# (`test_228_bc34x_meta_body_memoisation` in `tests/harness_test.rs`),
-# which runs this file under a wall-clock deadline. `size`/`reads` are
-# chosen so correctly-shared code finishes in a fraction of a second while
-# the multiplicative bug takes minutes — see that test for the measured
-# margin (three orders of magnitude either side of the deadline).
+{ doc: "eu-bc34x: a binding carrying metadata (a plain doc string, `:suppress`, or
+       any other backtick annotation) lost thunk memoisation — its RHS was
+       recomputed from scratch on every force, rather than once and shared.
 
-slow(n): if(n <= 0, 0, 1 + slow(n - 1))
+       `x0: slow(N) with a ` :suppress` annotation compiles to `Meta{{meta, body}}`. The Meta
+       wrapper is (correctly) a non-updateable Value form — cheap to
+       re-enter, by design, since re-dispatching a trivial wrapper costs
+       nothing. The bug was in what happened next: `return_meta`'s fallback
+       path (the common case — any consumer that is not itself destructuring
+       the metadata) used to resolve `body` with a bare, passive
+       environment-slot read instead of entering it through the same
+       black-hole-then-`Update` ceremony every other reference to an
+       updateable thunk goes through. So `body`'s own persistent slot never
+       got an `Update` continuation registered for it, and it silently never
+       memoised: every one of the K reads below independently re-ran
+       `slow(size)` in full, making the whole pipeline O(size*reads) instead
+       of O(size+reads).
+
+       The complexity gate lives in the Rust test (`test_228_meta_body_memoisation`
+       in `tests/harness_test.rs`), which runs this file under a wall-clock
+       deadline. `size`/`reads` are chosen so correctly-shared code finishes
+       in a fraction of a second while the multiplicative bug takes minutes
+       — see that test for the measured margin (three orders of magnitude
+       either side of the deadline)." }
+
+slow(n): (n <= 0) then(0, 1 + slow(n - 1))
 
 size: 30000
 reads: 200

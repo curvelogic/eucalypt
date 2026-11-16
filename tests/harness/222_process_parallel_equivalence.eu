@@ -1,14 +1,14 @@
-#!/usr/bin/env eu
-# eu-u9xj.6 (PP) — process-parallelism combinators are semantically identical
-# to their sequential forms. This fixture exercises the SEQUENTIAL code path
-# in-process (the harness test process is multi-threaded, so it must not force
-# the COW-fork path — forking a multi-threaded process is unsafe). The
-# sequential path still round-trips every result through the same
-# serialise/deserialise codec the fork path uses, so this genuinely gates the
-# codec and the combinator wiring. The real COW-fork path is validated out of
-# process by test_pp_fork_path_equivalence_both_engines in harness_test.rs.
-#
-# RESULT is computed from every check, so a divergence fails `cargo test`.
+{ doc: "eu-u9xj.6 (PP) — process-parallelism combinators are semantically identical
+       to their sequential forms. This fixture exercises the SEQUENTIAL code
+       path in-process (the harness test process is multi-threaded, so it
+       must not force the COW-fork path — forking a multi-threaded process
+       is unsafe). The sequential path still round-trips every result
+       through the same serialise/deserialise codec the fork path uses, so
+       this genuinely gates the codec and the combinator wiring. The real
+       COW-fork path is validated out of process by
+       test_pp_fork_path_equivalence_both_engines in harness_test.rs.
+
+       RESULT is computed from every check, so a divergence fails `cargo test`." }
 
 sq(x): x * x
 inc(x): x + 1
@@ -77,7 +77,7 @@ t-bool:         (xs par-map(is-even)) = (xs map(is-even))
 always-null(x): null
 t-null:         (xs par-map(always-null)) = (xs map(always-null))
 
-sym-of(x): if(is-even(x), :even, :odd)
+sym-of(x): is-even(x) then(:even, :odd)
 t-sym:          (xs par-map(sym-of)) = (xs map(sym-of))
 
 # ZDT LITERAL (`t"…"`) exercises the TAG_ZDT encode/decode arm — the
@@ -134,4 +134,4 @@ checks: [t-map-empty, t-map-one, t-map-xs, t-map-order, t-map-str, t-map-block,
          t-bool, t-null, t-sym, t-zdt, t-zdt-cal-regression, t-typedata-meta,
          t-mixed-render]
 
-RESULT: if(checks all-true?, :PASS, :FAIL)
+RESULT: checks all-true? then(:PASS, :FAIL)

@@ -1,35 +1,33 @@
-#!/usr/bin/env eu
-# eu-gua64: beta reduction must not duplicate a non-atomic argument.
-#
-# The inliner substitutes a call's arguments into the callee body. When
-# the callee mentions a parameter more than once, an unguarded
-# substitution copies the argument EXPRESSION once per occurrence, and
-# separate copies become separate thunks that share nothing. If the
-# argument is the caller's own recursive call, the caller's cost goes
-# from T(n) = T(n-1) to T(n) = 2*T(n-1) — exponential.
-#
-# `beta_reduce` now binds such an argument once in a Let wrapped round
-# the reduced body, so the occurrences share a single thunk.
-#
-# Everything here is plain user code: this is not a prelude problem,
-# it is hit by anyone who writes a helper that uses a parameter twice.
-#
-# NOTE ON INPUT ORDER: the blow-up needs the duplicated arm to be
-# TAKEN. `biggest` over an ASCENDING list returns the recursive result
-# (the duplicated occurrence) at every step and is 2^n when the
-# argument is copied; over a descending list it returns the head and
-# only forces the recursion once, so it stays linear either way.
-# `ascending` is therefore the binding that gates; `descending` is the
-# control.
-#
-# The complexity gate lives in the Rust test
-# (`test_210_gua64_inline_arg_sharing` in `tests/harness_test.rs`),
-# which runs this file under a wall-clock deadline. `size` below is
-# chosen so a correct compiler finishes in a fraction of a second
-# (linear: 29 list elements) while a duplicating one needs 2^29 steps
-# — over ten minutes in a release build and far longer in a debug one.
-# The margin either side of the deadline is three orders of magnitude,
-# so a loaded build machine cannot turn the gate into a coin toss.
+{ doc: "eu-gua64: beta reduction must not duplicate a non-atomic argument.
+
+       The inliner substitutes a call's arguments into the callee body. When the
+       callee mentions a parameter more than once, an unguarded substitution
+       copies the argument EXPRESSION once per occurrence, and separate
+       copies become separate thunks that share nothing. If the argument is
+       the caller's own recursive call, the caller's cost goes from T(n) =
+       T(n-1) to T(n) = 2*T(n-1) — exponential.
+
+       `beta_reduce` now binds such an argument once in a Let wrapped round the
+       reduced body, so the occurrences share a single thunk.
+
+       Everything here is plain user code: this is not a prelude problem, it is hit
+       by anyone who writes a helper that uses a parameter twice.
+
+       NOTE ON INPUT ORDER: the blow-up needs the duplicated arm to be TAKEN.
+       `biggest` over an ASCENDING list returns the recursive result (the
+       duplicated occurrence) at every step and is 2^n when the argument is
+       copied; over a descending list it returns the head and only forces
+       the recursion once, so it stays linear either way. `ascending` is
+       therefore the binding that gates; `descending` is the control.
+
+       The complexity gate lives in the Rust test (`test_210_inline_arg_sharing` in
+       `tests/harness_test.rs`), which runs this file under a wall-clock
+       deadline. `size` below is chosen so a correct compiler finishes in a
+       fraction of a second (linear: 29 list elements) while a duplicating
+       one needs 2^29 steps — over ten minutes in a release build and far
+       longer in a debug one. The margin either side of the deadline is
+       three orders of magnitude, so a loaded build machine cannot turn the
+       gate into a coin toss." }
 
 size: 30
 
@@ -37,9 +35,9 @@ size: 30
 # The canonical shape: both parameters used twice.
 # ---------------------------------------------------------------- #
 
-pick(a, b): if(a > b, a, b)
+pick(a, b): (a > b) then(a, b)
 
-biggest(l): if(l tail nil?, l head, pick(l head, biggest(l tail)))
+biggest(l): (l tail nil?) then(l head, pick(l head, biggest(l tail)))
 
 ascending: range(1, size)
 descending: ascending reverse
@@ -98,5 +96,6 @@ t10: pick(scale * 2, scale + 10) = 13
 ` { target: :main
     doc: "eu-gua64 regression: inlined arguments must be shared, not copied" }
 main: {
-  RESULT: if([t1, t2, t3, t4, t5, t6, t7, t8, t9, t10] all-true?, :PASS, :FAIL)
+  RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10]
+    all-true? then(:PASS, :FAIL)
 }
