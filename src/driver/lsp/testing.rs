@@ -338,14 +338,21 @@ impl LspTestSession {
             Position::new(start_line, start_char),
             Position::new(end_line, end_char),
         );
+        // Use the cached pipeline's warnings, as `on_code_action` does.
+        let file_id = FileId::from_url(&self.uri);
+        let cached = self.queries.get_pipeline_result(&file_id);
+        let empty_source_map = crate::common::sourcemap::SourceMap::new();
+        let (warnings, source_map) = cached
+            .map(|c| (c.warnings.as_slice(), &c.source_map))
+            .unwrap_or((&[], &empty_source_map));
         actions::code_actions(
             &self.content,
             &root,
             &range,
             &self.uri,
             &table,
-            &[],
-            &crate::common::sourcemap::SourceMap::new(),
+            warnings,
+            source_map,
         )
     }
 

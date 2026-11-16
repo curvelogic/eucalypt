@@ -1299,8 +1299,15 @@ fn run_pipeline(
     // Inline hash: proxy (inline pass runs next; no separate call here).
     let inline_hash = eliminate_hash;
 
+    // Deprecation references must be collected from the pruned core, as the
+    // `eu check` driver does, so that the quick-fix can fire in an editor.
+    let deprecation_warnings = crate::core::verify::deprecation::check_deprecated_references(
+        &loader.core().expr,
+        &loader.core().deprecations,
+    );
     let core_expr = loader.core().expr.clone();
-    let result = type_check_full(&core_expr);
+    let mut result = type_check_full(&core_expr);
+    result.warnings.extend(deprecation_warnings);
 
     // Type-check hash: derived from the actual output (warnings + binding names)
     // so that a refactoring that preserves types produces the same hash even
@@ -1416,6 +1423,22 @@ fn run_pipeline(
 
 #[cfg(test)]
 mod tests {
+    /// The live pipeline must surface deprecation warnings, so that the
+    /// `replaced-by` quick-fix is offered in an editor (eu-oaz72.162).
+    #[test]
+    fn run_pipeline_offers_deprecation_quickfix() {
+        let mut session = testing::LspTestSession::new();
+        session.set_uri("file:///tmp/eu_lsp_deprecation_test.eu");
+        session.run_pipeline(
+            "` { replaced-by: \"new-fn\" }\nold-fn(x): x\nnew-fn(x): x\nresult: old-fn(1)\n",
+        );
+        let titles = session.code_action_titles(3, 0, 3, 20);
+        assert!(
+            titles.iter().any(|t| t == "Replace 'old-fn' with 'new-fn'"),
+            "expected deprecation quick-fix, got {titles:?}"
+        );
+    }
+
     use super::*;
 
     #[test]
