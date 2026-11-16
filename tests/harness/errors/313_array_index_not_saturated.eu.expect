@@ -1,0 +1,2 @@
+exit: 1
+stderr: "arr.get coordinate 1e\+300 is out of bounds"

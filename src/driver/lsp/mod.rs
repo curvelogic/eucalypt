@@ -1250,9 +1250,17 @@ fn run_pipeline(
     // future optimisation.
     let file_text_hash = hash_str(text);
 
+    // File id of the open document, so that warnings located in imported
+    // files can be told apart from warnings in the document itself.
+    let mut doc_file_id = None;
     for input in &inputs {
-        if let Err(e) = loader.load(input) {
-            return Err(make_pipeline_error(&loader, &e));
+        match loader.load(input) {
+            Ok(id) => {
+                if std::ptr::eq(input, &inputs[1]) {
+                    doc_file_id = Some(id);
+                }
+            }
+            Err(e) => return Err(make_pipeline_error(&loader, &e)),
         }
     }
     for input in &inputs {
@@ -1299,8 +1307,27 @@ fn run_pipeline(
     // Inline hash: proxy (inline pass runs next; no separate call here).
     let inline_hash = eliminate_hash;
 
+    // Deprecation references must be collected from the pruned core, as the
+    // `eu check` driver does, so that the quick-fix can fire in an editor.
+    // Keep only references located in the open document: diagnostics and
+    // quick-fixes are positioned against its text, so a reference inside an
+    // import (or the prelude) would land on unrelated source.
+    let deprecation_warnings: Vec<_> =
+        crate::core::verify::deprecation::check_deprecated_references(
+            &loader.core().expr,
+            &loader.core().deprecations,
+        )
+        .into_iter()
+        .filter(|w| {
+            loader
+                .source_map()
+                .source_info_for_smid(w.smid)
+                .is_some_and(|info| info.file == doc_file_id)
+        })
+        .collect();
     let core_expr = loader.core().expr.clone();
-    let result = type_check_full(&core_expr);
+    let mut result = type_check_full(&core_expr);
+    result.warnings.extend(deprecation_warnings);
 
     // Type-check hash: derived from the actual output (warnings + binding names)
     // so that a refactoring that preserves types produces the same hash even
@@ -1416,6 +1443,45 @@ fn run_pipeline(
 
 #[cfg(test)]
 mod tests {
+    /// A deprecated reference inside an imported file must not be reported
+    /// against the open document (eu-oaz72.162, review round 1).
+    #[test]
+    fn run_pipeline_ignores_deprecations_in_imports() {
+        let dir = std::env::temp_dir().join(format!("eu_lsp_dep_import_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("lib.eu"), "uses: str.fmt(255, \"%x\")\n").unwrap();
+        let main = dir.join("main.eu");
+        let mut session = testing::LspTestSession::new();
+        session.set_uri(&format!("file://{}", main.display()));
+        session.run_pipeline("{ import: \"lib.eu\" }\nresult: uses\n");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(session.has_cached(), "pipeline should succeed");
+        assert!(
+            session
+                .pipeline_warnings()
+                .iter()
+                .all(|w| !w.message.contains("str.fmt")),
+            "import-located deprecation leaked: {:?}",
+            session.pipeline_warnings()
+        );
+    }
+
+    /// The live pipeline must surface deprecation warnings, so that the
+    /// `replaced-by` quick-fix is offered in an editor (eu-oaz72.162).
+    #[test]
+    fn run_pipeline_offers_deprecation_quickfix() {
+        let mut session = testing::LspTestSession::new();
+        session.set_uri("file:///tmp/eu_lsp_deprecation_test.eu");
+        session.run_pipeline(
+            "` { replaced-by: \"new-fn\" }\nold-fn(x): x\nnew-fn(x): x\nresult: old-fn(1)\n",
+        );
+        let titles = session.code_action_titles(3, 0, 3, 20);
+        assert!(
+            titles.iter().any(|t| t == "Replace 'old-fn' with 'new-fn'"),
+            "expected deprecation quick-fix, got {titles:?}"
+        );
+    }
+
     use super::*;
 
     #[test]

@@ -227,8 +227,8 @@ store there (bounded: 1,024 nodes, 64 slots).
   (fresh budget per `minimal_env` aborts the test process; restored, PASS,
   also under `EU_GC_VERIFY=2 EU_GC_STRESS=1`).
 - Blocker 2 (error traces): `minimal_env` keeps one frame and annotation per
-  original frame. Errors-corpus tests `312_stored_value_trace` and
-  `313_stored_list_field_trace` pin the trace; the output is byte-identical
+  original frame. Errors-corpus tests `316_stored_value_trace` and
+  `317_stored_list_field_trace` pin the trace; the output is byte-identical
   to master's on both, and both FAIL with the annotations dropped.
 - Also folded in: duplicate free indices deduplicated, the cheap size check
   before the scan, the alias walk's last hop tested, `detach` doc comment,

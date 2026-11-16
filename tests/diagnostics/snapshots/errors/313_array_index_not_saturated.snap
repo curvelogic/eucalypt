@@ -1,0 +1,46 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/313_array_index_not_saturated
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/313_array_index_not_saturated.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/313_array_index_not_saturated.eu:2:40
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: array shape mismatch: arr.get coordinate 1e+300 is out of bounds: it exceeds the largest possible array index
+  ┌─ tests/harness/errors/313_array_index_not_saturated.eu:2:40
+  │
+2 │ a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get[10.0 ^ 300, 0]
+  │                                        ^^^^^^^^^^^^^^^^^^^^^^
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/313_array_index_not_saturated.eu:2:40
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: array shape mismatch: arr.get coordinate 1e+300 is out of bounds: it exceeds the largest possible array index
+  ┌─ tests/harness/errors/313_array_index_not_saturated.eu:2:40
+  │
+2 │ a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get[10.0 ^ 300, 0]
+  │                                        ^^^

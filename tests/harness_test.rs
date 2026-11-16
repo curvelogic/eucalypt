@@ -5619,13 +5619,13 @@ pub fn test_error_306_complex_result_large_float() {
 }
 
 #[test]
-pub fn test_error_312_stored_value_trace() {
-    run_error_test(&error_opts("312_stored_value_trace.eu"));
+pub fn test_error_316_stored_value_trace() {
+    run_error_test(&error_opts("316_stored_value_trace.eu"));
 }
 
 #[test]
-pub fn test_error_313_stored_list_field_trace() {
-    run_error_test(&error_opts("313_stored_list_field_trace.eu"));
+pub fn test_error_317_stored_list_field_trace() {
+    run_error_test(&error_opts("317_stored_list_field_trace.eu"));
 }
 
 #[test]
@@ -5651,4 +5651,28 @@ pub fn test_error_310() {
 /// erroring the first error surfaces (eu-oaz72.161).
 pub fn test_error_311() {
     run_error_test(&error_opts("311_seq_first_argument_before_second.eu"));
+}
+
+#[test]
+/// A huge array dimension is shown capped (eu-oaz72.160).
+pub fn test_error_312() {
+    run_error_test(&error_opts("312_array_dims_capped.eu"));
+}
+
+#[test]
+/// A huge array index is reported as given, not saturated (eu-oaz72.160).
+pub fn test_error_313() {
+    run_error_test(&error_opts("313_array_index_not_saturated.eu"));
+}
+
+#[test]
+/// A huge modular operand is shown capped (eu-oaz72.160).
+pub fn test_error_314() {
+    run_error_test(&error_opts("314_modular_operand_capped.eu"));
+}
+
+#[test]
+/// A huge bitwise operand is shown capped (eu-oaz72.160).
+pub fn test_error_315() {
+    run_error_test(&error_opts("315_bitwise_operand_capped.eu"));
 }
