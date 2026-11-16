@@ -51,7 +51,7 @@ error: infinite loop detected: binding refers to itself
   ┌─ tests/harness/errors/250_dict_value_cycle.eu:3:19
   │
 3 │ d: dict.of[[1, (d dict.get(1)) + 1]]
-  │    ----           ^^^^
+  │    ---------------^^^^--------------
   │    │
   │    called from here
   │

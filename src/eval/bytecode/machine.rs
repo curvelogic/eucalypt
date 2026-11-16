@@ -5276,7 +5276,10 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
             &InfoTagged::thunk_annotated(oc.code(), oc.annotation()),
             oc.env(),
         ));
-        let frame = view.from_value(thunk, self.state.root_env, self.state.annotation)?;
+        // Stamp the original's frame annotation, not the intrinsic's own
+        // (eu-oaz72.157): it is the call site a trace reports.
+        let frame_ann = view.scoped(oc.env()).annotation();
+        let frame = view.from_value(thunk, self.state.root_env, frame_ann)?;
         Ok(AbiClosure::Byte(BcValue::Closure(BcClosure::new(
             self.program.cell_template,
             frame,
