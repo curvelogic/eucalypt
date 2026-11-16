@@ -47,8 +47,7 @@
 
 ## Character Constants
 
-> We don't support the usual string escapes so these make it
-a little more convenient to use interpolation instead..
+> We don't support the usual string escapes so these make it a little more convenient to use interpolation instead.
 
 | Function | Description |
 |----------|-------------|
