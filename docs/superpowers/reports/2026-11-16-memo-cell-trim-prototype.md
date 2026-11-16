@@ -22,8 +22,9 @@ block literal 50,000 times.
 
 Peak blocks: measured-verified (deterministic). Wall: measured-single.
 The harness gate asserts peak < 2500 under a 64 MiB limit
-(`test_250_dict`). The same loop storing `i + 1`, `{a: i, b: i}` and
-`[i % 7, i]` was checked ad hoc and passes.
+(`test_250_dict`). The same loop storing each of `[i + 1, i]`, `{a: i, b: i}`, `i + 1`
+and `[i % 7, i]` was checked ad hoc under `--heap-limit-mib 64`: master
+exceeds the limit on all four, the branch peaks at 1,119 to 1,194 blocks.
 
 ## 2. What it does
 
