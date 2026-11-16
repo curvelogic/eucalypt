@@ -36,9 +36,9 @@ test: {
   shuffle-elems: shuffle-result.value vec.to-list sort-nums //= [1, 2, 3, 4, 5]
   shuffle-source: data vec.to-list //= [1, 2, 3, 4, 5]
   slice-independent: data vec.slice(1, 3) vec.to-list //= [2, 3]
-  ` "More random floats than elements, or an empty vec, ends the shuffle instead of overflowing"
+  ` "A shuffle of an empty vec, with floats to spare, ends instead of overflowing; surplus floats on a non-empty vec are ignored"
   shuffle-short: vec.shuffle-raw([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], data) vec.len //= 5
-  shuffle-short-empty: vec.shuffle-raw([0.5], vec.of([])) vec.len //= 0
+  shuffle-short-empty: ([] vec.of) vec.shuffle-raw([0.5]) vec.len //= 0
 
   # Set sampling (random monad action)
   ` :suppress

@@ -234,9 +234,10 @@ impl<T: Sized + Clone> Array<T> {
     /// written straight into the freshly allocated heap buffer.
     ///
     /// No intermediate Rust-side buffer is built, so the result is
-    /// accounted by the managed heap from the start. If `iter` yields fewer
-    /// than `len` items the array is shortened to what was written; extra
-    /// items are ignored.
+    /// accounted by the managed heap from the start. Callers must supply
+    /// exactly `len` items: a shorter iterator trips a debug assertion
+    /// (release builds shorten the array to what was written); extra items
+    /// are ignored.
     pub fn try_from_exact_iter<'guard, A, I>(
         mem: &A,
         len: usize,
