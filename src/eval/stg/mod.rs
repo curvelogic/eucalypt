@@ -153,6 +153,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(string::Join));
     rt.add(Box::new(string::Match));
     rt.add(Box::new(string::Matches));
+    rt.add(Box::new(string::MatchesWith));
     rt.add(Box::new(string::Split));
     rt.add(Box::new(string::NumParse));
     rt.add(Box::new(string::Fmt));
