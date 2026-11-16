@@ -1,3 +1,0 @@
-` "a dict value of exactly 64 list cells, at the detach budget boundary (64), still labels where the value was built, the dict.assoc call, whether it is rebuilt or stored as it is (eu-oaz72.157)."
-f(i): dict.empty dict.assoc(:k, [i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i])
-v: (f(3) dict.get(:k))(1)

@@ -5242,20 +5242,6 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         // (`acc dict.assoc(k, v)` in a loop), so every version would be
         // retained. Look through aliases to the value they name.
         let target = self.follow_aliases(view, original.clone(), false)?;
-        // An updatable `Atom` thunk (a let-bound list element naming a
-        // variable) is looked through as well, but its target is used only
-        // if it is an evaluated data constructor: anything else must keep
-        // going through the thunk so memoisation is shared (eu-oaz72.157).
-        let through = self.follow_aliases(view, target.clone(), true)?;
-        let through_closure = AbiClosure::Byte(through.clone());
-        if matches!(through, BcValue::Closure(_)) && self.data_tag(view, &through_closure).is_some()
-        {
-            let mut budget = DETACH_BUDGET;
-            return Ok(match self.detach(view, through.clone(), &mut budget)? {
-                Some(detached) => AbiClosure::Byte(detached),
-                None => AbiClosure::Byte(through),
-            });
-        }
         let c = match &target {
             BcValue::Native(_) => return Ok(AbiClosure::Byte(target)),
             BcValue::Closure(c) => *c,

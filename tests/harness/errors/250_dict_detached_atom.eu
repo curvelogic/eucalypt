@@ -1,4 +1,0 @@
-` "a dict value that reaches the dict through a let-bound name (an Atom thunk) is rebuilt too, and an error from it still labels the dict.assoc call (eu-oaz72.157)."
-f(i): g(i, [i, i])
-g(i, x): dict.empty dict.assoc(:k, x)
-v: (f(3) dict.get(:k))(1)
