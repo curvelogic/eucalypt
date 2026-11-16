@@ -27,8 +27,30 @@ cyc-twice(n): {
   d: dict.empty dict.assoc(:a, xs) dict.assoc(:b, xs)
 }.d dict.get(:b) take(3)
 
+` "how deep the stream is forced in the sharing gate"
+stream-n: 20000
+
+` "force the stream from `m`, `n` deep after storing it in a dict"
+stream-stored(m, n): {
+  xs: cons(m, ys)
+  ys: xs map(+ 1)
+  d: dict.empty dict.assoc(:k, xs)
+}.d dict.get(:k) take(n) last
+
+` "force the same stream from `m`, `n` deep with no dict"
+stream-plain(m, n): {
+  xs: cons(m, ys)
+  ys: xs map(+ 1)
+}.xs take(n) last
+
+` { target: :stream-stored-run }
+stream-stored-run: stream-stored(1, stream-n) = stream-n
+
+` { target: :stream-plain-run }
+stream-plain-run: stream-plain(1, stream-n) = stream-n
+
 list-ok: cyc-list(1) = [1, 2, 3]
 head-ok: cyc-head(3) = 4
 twice-ok: cyc-twice(5) = [5, 6, 7]
 
-RESULT: [list-ok, head-ok, twice-ok] all-true? then(:PASS, :FAIL)
+RESULT: [list-ok, head-ok, twice-ok, stream-stored-run, stream-plain-run] all-true? then(:PASS, :FAIL)

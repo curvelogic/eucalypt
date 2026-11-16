@@ -4867,6 +4867,26 @@ impl BcBifContext<'_, '_> {
 /// update.
 const DETACH_BUDGET: usize = 64;
 
+/// What `detach`, `share_trimmed_thunk` and `minimal_env` share for one
+/// `memo_cell` call: the constructor budget, and the constructors (code and
+/// environment) whose rebuild is in progress. A value that refers back to
+/// itself reaches its own constructor again through a stored thunk; that
+/// re-entry is refused at once, so the thunk is shared through one cell
+/// instead of being trimmed afresh at every level until the budget runs out.
+struct DetachState {
+    budget: usize,
+    active: SmallVec<[(CodeRef, RefPtr<BcEnvFrame>); 8]>,
+}
+
+impl DetachState {
+    fn new() -> Self {
+        DetachState {
+            budget: DETACH_BUDGET,
+            active: SmallVec::new(),
+        }
+    }
+}
+
 /// `minimal_env` copies the innermost frames, those starting below this flat
 /// index, and shares the rest of the chain by pointer: loop state lives in
 /// the few frames of one iteration, while the frames beyond (a unit's
@@ -5267,7 +5287,7 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         // One budget for the whole call: `detach`, `share_trimmed_thunk` and
         // `minimal_env` recurse into each other (a stored value that refers
         // back to itself), and the budget is what ends that recursion.
-        let mut budget = DETACH_BUDGET;
+        let mut budget = DetachState::new();
         let c = match &target {
             BcValue::Native(_) => return Ok(AbiClosure::Byte(target)),
             BcValue::Closure(c) => *c,
@@ -5347,7 +5367,32 @@ impl BcBifContext<'_, '_> {
         &self,
         view: MutatorHeapView<'_>,
         value: BcValue,
-        budget: &mut usize,
+        budget: &mut DetachState,
+    ) -> Result<Option<BcValue>, ExecutionError> {
+        let value = self.follow_aliases(view, value, true)?;
+        let key = match &value {
+            BcValue::Closure(c) => self
+                .cons_of(&AbiClosure::Byte(value.clone()))
+                .map(|(_, env, _)| (c.code(), env)),
+            BcValue::Native(_) => None,
+        };
+        let Some(key) = key else {
+            return self.detach_inner(view, value, budget);
+        };
+        if budget.active.contains(&key) {
+            return Ok(None);
+        }
+        budget.active.push(key);
+        let result = self.detach_inner(view, value, budget);
+        budget.active.pop();
+        result
+    }
+
+    fn detach_inner(
+        &self,
+        view: MutatorHeapView<'_>,
+        value: BcValue,
+        budget: &mut DetachState,
     ) -> Result<Option<BcValue>, ExecutionError> {
         // An updatable `Atom` thunk (`thunk ✳i`, as a let-bound list element
         // naming a variable) is looked through too: its value is the value
@@ -5363,10 +5408,10 @@ impl BcBifContext<'_, '_> {
             let AbiClosure::Byte(value) = closure;
             return Ok(Some(value));
         }
-        if *budget == 0 {
+        if budget.budget == 0 {
             return Ok(None);
         }
-        *budget -= 1;
+        budget.budget -= 1;
         let mut fields = Vec::with_capacity(offsets.len());
         for idx in 0..offsets.len() {
             let Some(AbiClosure::Byte(field)) = self.data_field(view, &closure, idx) else {
@@ -5574,7 +5619,7 @@ impl BcBifContext<'_, '_> {
         alias: &BcClosure,
         mut slot: Option<(RefPtr<BcEnvFrame>, usize)>,
         annotation: Smid,
-        budget: &mut usize,
+        budget: &mut DetachState,
     ) -> Result<Option<BcClosure>, ExecutionError> {
         let code = self.program.code.as_slice();
         let mut cur = *alias;
@@ -5646,7 +5691,7 @@ impl BcBifContext<'_, '_> {
         &self,
         view: MutatorHeapView<'_>,
         closure: &BcClosure,
-        budget: &mut usize,
+        budget: &mut DetachState,
     ) -> Result<Option<RefPtr<BcEnvFrame>>, ExecutionError> {
         let root = self.state.root_env;
         if closure.arity() > 0 || closure.env() == root {

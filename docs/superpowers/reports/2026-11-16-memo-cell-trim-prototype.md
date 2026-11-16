@@ -166,6 +166,21 @@ store there (bounded: 1,024 nodes, 64 slots).
   before the scan, the alias walk's last hop tested, `detach` doc comment,
   the arity `debug_assert`.
 
+Round-2 review finding (both reviewers, independently): bounding the cycle
+by the budget alone made a stored self-referential stream re-trim at every
+level (about 8x ticks, 11x peak blocks against master; each level wrote its
+own cell into the same slot). Fixed by refusing re-entry: `DetachState`
+tracks the constructors (code and environment) whose rebuild is in progress,
+and `detach` returns `None` at once for one already active. The stored
+stream then costs exactly what it does without a dict (2,175,261 ticks both
+ways, equal to master). `292_dict_stored_cycle.eu` gates it
+(`stream-stored-run` against `stream-plain-run`, under 2x), fault-injected:
+with the re-entry check disabled the stored stream takes 18,281,402 ticks.
+Layout deviation for the owner: the new checks are in a new file (292), not
+`250_dict.eu` as `REVIEW.md` prefers. Appending the three new targets to
+`250_dict.eu` made the tester fail with "key 'ok' not found" (dropping any one
+of them made it pass); the cause was not found within this prototype's budget.
+
 Round-2 measurements (clean release builds of master and this head, source
 prelude; deterministic counters, so confidence is measured-verified): benches
 016–022 have identical ticks, allocations and peak blocks to master (015 as
