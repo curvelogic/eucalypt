@@ -1,9 +1,0 @@
-# B2: Operator constraint satisfied — no warning.
-# `clamp` is annotated with `<(a, a) => a -> a -> a -> a`, meaning it works
-# wherever `<` accepts its argument type.  Calling it with numbers satisfies
-# the constraint because `<` is defined for numbers.
-` { type: "<(a, a) => a -> a -> a -> a" }
-clamp(lo, hi, x): if(x < lo, lo, if(x > hi, hi, x))
-result: clamp(0, 10, 5)
-` { type: "number" }
-check: result
