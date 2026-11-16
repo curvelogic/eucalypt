@@ -1,0 +1,2 @@
+` "eu-oaz72.156: a huge float in a vec index error is capped"
+r: vec.of[10, 20] vec.nth(0 - (2.0 ^ 1000))

@@ -172,11 +172,15 @@ fn run_typecheck_test(filename: &str) {
 
     let mut expected_exit: Option<i32> = None;
     let mut expected_stderr: Option<String> = None;
+    let mut absent_stderr: Vec<String> = Vec::new();
 
     for line in expect_content.lines() {
         let line = line.trim();
         if line.is_empty() {
             continue;
+        }
+        if let Some(pattern) = line.strip_prefix("stderr-absent:") {
+            absent_stderr.push(pattern.trim().trim_matches('"').to_string());
         }
         if let Some(code) = line.strip_prefix("exit:") {
             expected_exit = Some(code.trim().parse().expect("invalid exit code in .expect"));
@@ -198,6 +202,13 @@ fn run_typecheck_test(filename: &str) {
         assert!(
             stderr.contains(pattern.as_str()),
             "stderr for {filename} does not contain \"{pattern}\"\nactual stderr:\n{stderr}"
+        );
+    }
+
+    for pattern in &absent_stderr {
+        assert!(
+            !stderr.contains(pattern.as_str()),
+            "stderr for {filename} unexpectedly contains \"{pattern}\"\nactual stderr:\n{stderr}"
         );
     }
 
@@ -5254,6 +5265,30 @@ pub fn test_error_307_code_point_large_negative() {
 #[test]
 pub fn test_error_307_code_point_large_above_max() {
     run_error_test(&error_opts("307_code_point_large_above_max.eu"));
+}
+
+/// Large floats in index/code-point errors print exactly, huge ones capped (eu-oaz72.156).
+#[test]
+pub fn test_error_308_array_negative_large() {
+    run_error_test(&error_opts("308_array_negative_large.eu"));
+}
+
+/// Large floats in index/code-point errors print exactly, huge ones capped (eu-oaz72.156).
+#[test]
+pub fn test_error_308_array_negative_huge() {
+    run_error_test(&error_opts("308_array_negative_huge.eu"));
+}
+
+/// Large floats in index/code-point errors print exactly, huge ones capped (eu-oaz72.156).
+#[test]
+pub fn test_error_308_vec_index_huge() {
+    run_error_test(&error_opts("308_vec_index_huge.eu"));
+}
+
+/// Large floats in index/code-point errors print exactly, huge ones capped (eu-oaz72.156).
+#[test]
+pub fn test_error_308_code_point_huge() {
+    run_error_test(&error_opts("308_code_point_huge.eu"));
 }
 
 /// Vec and array indices are neither clamped nor truncated (eu-oaz72.88).

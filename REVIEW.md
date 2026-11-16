@@ -31,8 +31,8 @@ A PR that adds a user-reachable panic path is sent back.
 **Regression tests are proved by breaking the code they guard.** For every
 bug fix, repeat the fault injection yourself: break the code under test,
 confirm the test FAILs, restore it, confirm it PASSes. Do not take the
-author's word for it; the PR must also state that it was done. A test that
-cannot fail blocks the PR.
+author's word for it; the PR must also state that it was done (a Markdown-only
+PR is exempt, see *Harness tests*). A test that cannot fail blocks the PR.
 
 **Harness tests.** Every PR includes harness tests in `tests/harness/`. No
 tests is a send-back. Each test must gate
@@ -42,9 +42,11 @@ computed from its checks (`docs/guide/testing.md`; the pattern in
 `tests/harness/182_typedata_alias_resolution.eu`). A target with checks
 must run: name it `test-*` or give it `verify:` metadata.
 
-Two exceptions. A lockfile-only change (dependency versions, no source
-change) needs no harness test. A change no `.eu` program can reach
-(an internal layer, or a path no program can currently trigger) is gated
+Three exceptions. A lockfile-only change (dependency versions, no source
+change) needs no harness test. A PR whose changes are all Markdown files
+(`*.md`) needs no harness test and no fault-injection statement; a version
+bump touches `Cargo.toml`, so is not covered. A change no `.eu` program can
+reach (an internal layer, or a path no program can currently trigger) is gated
 instead by unit tests that are fault-injection verified, and the PR says
 why no harness test is possible.
 

@@ -275,7 +275,7 @@ old-fn(x): x + 1
 ` { deprecated: "use new-fn instead" }
 old-fn(x): x + 1
 
-# With replacement pointer (enables LSP quick-fix)
+# With replacement pointer (drop-in successor only; enables LSP quick-fix)
 ` { deprecated: "use new-fn instead"
     replaced-by: "new-fn" }
 old-fn(x): x + 1
@@ -284,6 +284,11 @@ old-fn(x): x + 1
 Referencing a deprecated declaration emits a warning on stderr.
 Under `eu check --strict`, deprecation warnings become errors.
 Deprecated declarations still work — deprecation is advisory.
+
+`replaced-by:` must name a drop-in successor: same arguments in the same order,
+because the LSP quick-fix only renames the call. If the successor reorders or
+changes arguments (`str.fmt(x, spec)` → `str.format(spec, x)`), give the advice
+in `deprecated:` and omit `replaced-by:`.
 
 A top-level declaration is matched by its bare name; a declaration nested in a
 namespace block is matched by the dotted path a caller writes (`state.exec`),
@@ -645,8 +650,19 @@ Note: `foldl` takes 3 args and the catenated list supplies the last
 one, so both forms above work. You can also partially apply it:
 
 ```
-sum: foldl(+, 0)
+sum: foldl-strict(+, 0)
 [1,2,3,4,5] sum              # 15
+```
+
+#### `foldl-strict(op, i, l)` — left fold with a strict accumulator
+
+Same arguments as `foldl`, but the accumulator is evaluated at each step, so a
+long fold runs in constant stack. `sum`, `product` and `count` use it. Prefer
+it over `foldl` when `op` is strict in the accumulator (`+`, `max`); keep
+`foldl` where the accumulator may be unneeded or lazy.
+
+```
+range(0, 1000000) foldl-strict(max, 0)   # 999999
 ```
 
 #### `foldr(op, i, l)` — right fold

@@ -1,0 +1,2 @@
+exit: 1
+stderr: "vec.nth index -1.0715086071862673e.301 out of range"
