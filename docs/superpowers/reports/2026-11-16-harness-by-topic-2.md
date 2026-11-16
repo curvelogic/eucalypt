@@ -32,12 +32,12 @@ owner decision (renumbering about 50 fixtures and snapshots; `250_*` is held).
 
 Snapshots were re-blessed for renamed fixtures only. The one content change is
 `202_contract_bad_spec`: `validate({ ... })` became the juxtaposed `validate{ ... }`, which moves
-the primary label's span. The `if` forms in `typecheck/070`-`083` are kept: those fixtures test
-how the checker recognises `if` as a brancher.
+the primary label's span. The `if` forms in `typecheck/070` and `072` are kept: those fixtures test
+how the checker recognises `if` as a brancher; `081`-`083` use `cond` and `then`. `073` also became a juxtaposed call.
 
 ## Verification
 
-`cargo test --test harness_test` (697 passed), `--test diagnostics_snapshots` and
+`cargo test --test harness_test` (691 passed), `--test diagnostics_snapshots` and
 `--test diagnostics_trace_anchor_test` pass; fmt and clippy clean.
 
 Fault injection on moved fixtures (each broken, run, restored):
