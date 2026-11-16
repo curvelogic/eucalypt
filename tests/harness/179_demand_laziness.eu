@@ -82,7 +82,7 @@ test-branch-gated-recursion: {
           ])
     }.(to-str(td))
 
-  RESULT: (describe([:leaf, [:node, 1, 2], 42]) = "leaf") then(:PASS, :FAIL)
+  RESULT: (describe[:leaf, [:node, 1, 2], 42] = "leaf") then(:PASS, :FAIL)
 }
 
 ` { target: :test-untaken-branch-demand

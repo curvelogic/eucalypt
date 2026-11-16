@@ -35,6 +35,9 @@ size: 30
 # The canonical shape: both parameters used twice.
 # ---------------------------------------------------------------- #
 
+# Keep `if` here, not `then`: the deadline gate in harness_test.rs depends on this
+# inlining shape, and the `then` form stops it failing when the sharing fix is
+# removed. (A doc string on `pick` would also change the shape, so this is a comment.)
 pick(a, b): if(a > b, a, b)
 
 biggest(l): if(l tail nil?, l head, pick(l head, biggest(l tail)))

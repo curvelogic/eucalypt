@@ -23,6 +23,7 @@
        — see that test for the measured margin (three orders of magnitude
        either side of the deadline)." }
 
+# Keep `if` here, not `then`: the deadline gate in harness_test.rs depends on this shape.
 slow(n): if(n <= 0, 0, 1 + slow(n - 1))
 
 size: 30000
