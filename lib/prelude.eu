@@ -946,17 +946,17 @@ product(l): foldl-strict(*, 1, l)
     type: s">(a, a) => a → a → a" }
 max(l, r): if(l > r, l, r)
 
-` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
-max-of(l): l nil? then(panic("max of empty list"), foldl(max, l head, l tail))
+` "`max-of(l)` - return max element in list of numbers `l` - error if empty. Strict: each step's running maximum is evaluated as it is reached, so a long list runs in constant stack."
+max-of(l): l nil? then(panic("max of empty list"), foldl-strict(max, l head, l tail))
 
-` "`max-of-by(f, l)` - return the element of `l` that maximises `f`. Error if empty."
+` "`max-of-by(f, l)` - return the element of `l` that maximises `f`. Error if empty. Strict: each step's comparison is evaluated as it is reached, so a long list runs in constant stack."
 max-of-by(f, l): {
   step(acc, x): {
     v: x f
     better: v > (acc second)
   }.(if(better, [x, v], acc))
   init: [l head, l head f]
-}.( foldl(step, init, l tail) head )
+}.( foldl-strict(step, init, l tail) head )
 
 
 ` "`max-map(f, l)` - return maximum value of `f(x)` across elements of `l`."
@@ -969,17 +969,17 @@ max-of-or(d, l): l nil? then(d, max-of(l))
     type: s"<(a, a) => a → a → a" }
 min(l, r): if(l < r, l, r)
 
-` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
-min-of(l): l nil? then(panic("min of empty list"), foldl(min, l head, l tail))
+` "`min-of(l)` - return min element in list of numbers `l` - error if empty. Strict: each step's running minimum is evaluated as it is reached, so a long list runs in constant stack."
+min-of(l): l nil? then(panic("min of empty list"), foldl-strict(min, l head, l tail))
 
-` "`min-of-by(f, l)` - return the element of `l` that minimises `f`. Error if empty."
+` "`min-of-by(f, l)` - return the element of `l` that minimises `f`. Error if empty. Strict: each step's comparison is evaluated as it is reached, so a long list runs in constant stack."
 min-of-by(f, l): {
   step(acc, x): {
     v: x f
     better: v < (acc second)
   }.(if(better, [x, v], acc))
   init: [l head, l head f]
-}.( foldl(step, init, l tail) head )
+}.( foldl-strict(step, init, l tail) head )
 
 
 ` "`min-map(f, l)` - return minimum value of `f(x)` across elements of `l`."
@@ -1567,26 +1567,29 @@ foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 ## so the fold runs in constant stack.
 foldl-strict(op, i, l): if(l nil?, i, { a: op(i, l head) }.(seq(a, foldl-strict(op, a, l tail))))
 
-` { doc: "`reduce(op, l)` - left fold with no initial value; uses first element as seed. Panics on empty list."
+` { doc: "`reduce(op, l)` - left fold with no initial value; uses first element as seed. Panics on empty list. Strict, as `foldl-strict`: each step's result is evaluated to weak head normal form, so a long list runs in constant stack, and an error in a step surfaces even where `op` would have discarded it."
     type: s"(a → a → a) → [a] → a" }
-reduce(op, l): foldl(op, l head, l tail)
+reduce(op, l): foldl-strict(op, l head, l tail)
 
 ` { doc: "`foldr(op, i, l)` - right fold operator `op` over list `l` ending with value `i`."
     type: s"(a → b → b) → b → [a] → b"
     blame: :transparent }
 foldr(op, i, l): if(l nil?, i, op(l head, foldr(op, i, l tail)))
 
-` { doc: "`scanl(op, i, l)` - left scan operator `op` over list `l` starting from value `i`."
+` { doc: "`scanl(op, i, l)` - left scan operator `op` over list `l` starting from value `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so a long scan runs in constant stack and an error in a step surfaces when that cell is reached."
     type: s"(b → a → b) → b → [a] → [b]" }
-scanl(op, i, l): if(l nil?, [i], scanl(op, op(i, l head), l tail) cons(i))
+## `seq` evaluates each element to WHNF as its cell is reached, then the input is
+## tested before the cell is built (as before), so the stack stays constant.
+scanl(op, i, l): { go(a, m): seq(a, if(m nil?, [a], cons(a, go(op(a, m head), m tail)))) }.(go(i, l))
 
 ` { doc: "`scanr(op, i, l)` - right scan operator `op` over list `l` ending with value `i`."
     type: s"(a → b → b) → b → [a] → [b]" }
 scanr(op, i, l): if(l nil?, [i], { scan: scanr(op, i, l tail) }.(cons(op(l head, scan head), scan)))
 
-` { doc: "`iterate(f, i)` - return list of `i` with subsequent repeated applications of `f` to `i`."
+` { doc: "`iterate(f, i)` - return list of `i` with subsequent repeated applications of `f` to `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so `f` is applied (and an error in it surfaces) when the cell is reached rather than when the element is used, and a long walk runs in constant stack."
     type: s"(a → a) → a → [a]" }
-iterate(f, i): cons(i, iterate(f, f(i)))
+## `seq` evaluates each element to WHNF as its cell is reached (see `scanl`).
+iterate(f, i): { go(x): seq(x, cons(x, go(f(x)))) }.(go(i))
 
 ` { doc: "`tails(l)` - return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]`."
     type: s"[a] → [[a]]" }
@@ -1608,11 +1611,11 @@ ints-from: iota
     type: s"[number]" }
 ℕ: iota(0)
 
-` { doc: "`range(b, e)` - return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b`."
+` { doc: "`range(b, e)` - return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b`. Strict: the counter is evaluated as each cell is demanded, so a long walk (`last`, `nth`, `foldl`) runs in constant stack."
     type: s"number → number → [number]" }
-## `range` keeps the plain lazy counter rather than `iota`'s per-cell evaluation:
-## the extra step costs about 10% on `range(0, n) foldl(...)` (bench 022).
-range(b, e): { up(n): cons(n, up(n + 1)) }.(up(b)) __take(e - b)
+## `seq` evaluates the counter as each cell is demanded, so the chain of
+## unevaluated `+ 1` thunks never exceeds one step.
+range(b, e): { up(n): seq(n, cons(n, up(n + 1))) }.(up(b)) __take(e - b)
 
 ` { doc: "`count(l)` - return count of items in list `l`."
     type: s"[a] → number" }
@@ -1707,9 +1710,9 @@ zip-apply(fs, vs): zip-with(_0(_1), fs, vs)
     type: s"[a] → [a]" }
 reverse(l): foldl(cons flip, [], l)
 
-` { doc: "`all-true?(l)` - true if and only if all items in list `l` are true."
+` { doc: "`all-true?(l)` - true if and only if all items in list `l` are true. Strict: each step is evaluated as it is reached, so a long list runs in constant stack."
     type: s"[bool] → bool" }
-all-true?(l): foldl(and, true, l)
+all-true?(l): foldl-strict(and, true, l)
 
 ` { doc: "`all(p?, l)` - true if and only if all items in list `l` satisfy predicate `p?`."
     type: s"(a → bool) → [a] → bool" }

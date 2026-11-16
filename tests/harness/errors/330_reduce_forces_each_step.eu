@@ -1,0 +1,3 @@
+` "reduce evaluates each step's result: the erroring middle step is no longer discarded (eu-oaz72.165)"
+keep-second(a, b): b
+x: reduce(keep-second, [1, panic("step forced"), 3])

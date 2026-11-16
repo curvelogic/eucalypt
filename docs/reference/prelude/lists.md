@@ -41,9 +41,9 @@ Repeated `!!` over the same list in a loop is quadratic.
 | Function | Description |
 |----------|-------------|
 | `repeat(i)` | Return infinite list of instances of item `i` |
-| `iterate(f, i)` | Return list of `i` with subsequent repeated applications of `f` to `i` |
+| `iterate(f, i)` | Return list of `i` with subsequent repeated applications of `f` to `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so `f` is applied (and an error in it surfaces) when the cell is reached rather than when the element is used, and a long walk runs in constant stack |
 | `ints-from` | Return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility |
-| `range(b, e)` | Return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b` |
+| `range(b, e)` | Return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b`. Strict: the counter is evaluated as each cell is demanded, so a long walk (`last`, `nth`, `foldl`) runs in constant stack |
 | `cycle(l)` | Create infinite list by cycling elements of list `l` |
 
 ## Transformations
@@ -93,14 +93,14 @@ Repeated `!!` over the same list in a loop is quadratic.
 | `foldl(op, i, l)` | Left fold operator `op` over list `l` starting from value `i` |
 | `foldl-strict(op, i, l)` | As `foldl`, but the accumulator is evaluated to weak head normal form at each step, so a long fold runs in constant stack instead of building a chain of unevaluated `op` calls (for a scalar accumulator; a list or block accumulator is forced only to its outermost constructor). Use it where `op` is strict in the accumulator, as `+` and `max` are. `op(i, x)` is evaluated even where `op` would ignore it, so an error there surfaces where `foldl` would have skipped it |
 | `foldr(op, i, l)` | Right fold operator `op` over list `l` ending with value `i` |
-| `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i` |
+| `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so a long scan runs in constant stack and an error in a step surfaces when that cell is reached |
 | `scanr(op, i, l)` | Right scan operator `op` over list `l` ending with value `i` |
 
 ## Predicates
 
 | Function | Description |
 |----------|-------------|
-| `all-true?(l)` | True if and only if all items in list `l` are true |
+| `all-true?(l)` | True if and only if all items in list `l` are true. Strict: each step is evaluated as it is reached, so a long list runs in constant stack |
 | `all(p?, l)` | True if and only if all items in list `l` satisfy predicate `p?` |
 | `any-true?(l)` | True if and only if any items in list `l` are true |
 | `any(p?, l)` | True if and only if any items in list `l` satisfy predicate `p?` |
@@ -149,7 +149,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`. An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |
-| `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
+| `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list. Strict, as `foldl-strict`: each step's result is evaluated to weak head normal form, so a long list runs in constant stack, and an error in a step surfaces even where `op` would have discarded it |
 | `tails(l)` | Return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]` |
 | `iota(n)` | Return infinite list of integers from `n` upwards. `n` is left unevaluated for the first two cells, so `iota(panic) tail nil?` is `false`; from the third cell on it is evaluated as each cell is demanded, which keeps a long walk in constant stack |
 | `ℕ` | The natural numbers: `[0, 1, 2, ...]` |
