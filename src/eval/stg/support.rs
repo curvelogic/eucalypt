@@ -854,6 +854,29 @@ pub fn machine_return_str_iter(
     machine.return_closure_list(view, items)
 }
 
+/// Return a list of string-lists from an intrinsic.
+///
+/// Used for `MATCHES_WITH`, which returns one `[whole, g1, ...]` list per match.
+pub fn machine_return_str_list_of_lists(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    lists: Vec<Vec<String>>,
+) -> Result<(), ExecutionError> {
+    let mut outer = Vec::with_capacity(lists.len());
+    for inner in lists {
+        let mut items = Vec::with_capacity(inner.len());
+        for item in inner {
+            let Ref::V(native) = view.str_ref(item)? else {
+                unreachable!("str_ref yields a value ref")
+            };
+            let boxed = machine.native_value(view, native)?;
+            items.push(machine.data_value(view, DataConstructor::BoxedString.tag(), &[boxed])?);
+        }
+        outer.push(list_value(machine, view, items)?);
+    }
+    machine.return_closure_list(view, outer)
+}
+
 /// Return a string list from intrinsic
 pub fn machine_return_str_list(
     machine: &mut dyn IntrinsicMachine,
