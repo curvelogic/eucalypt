@@ -417,6 +417,15 @@ impl LspTestSession {
         self.last_pipeline_error.as_ref()
     }
 
+    /// Warnings from the cached pipeline result (empty if none cached).
+    pub fn pipeline_warnings(&self) -> Vec<crate::core::typecheck::error::TypeWarning> {
+        let file_id = FileId::from_url(&self.uri);
+        self.queries
+            .get_pipeline_result(&file_id)
+            .map(|c| c.warnings.clone())
+            .unwrap_or_default()
+    }
+
     /// Check if a cached pipeline result is available.
     pub fn has_cached(&self) -> bool {
         let file_id = FileId::from_url(&self.uri);
