@@ -4145,7 +4145,7 @@ pub fn test_221_settled_slot_passthrough() {
 /// through the same serialise/deserialise codec the fork path uses. The real
 /// fork path is validated out-of-process below.
 #[test]
-pub fn test_222_process_parallel_equivalence() {
+pub fn test_222_pp_process_parallel_equivalence() {
     run_test(&opts("222_process_parallel_equivalence.eu"));
 }
 
@@ -4155,7 +4155,7 @@ pub fn test_222_process_parallel_equivalence() {
 /// process-lifetime state, so any unit naming a stream import lost `par-*` —
 /// as did every later unit evaluated by the same process.
 #[test]
-pub fn test_224_process_parallel_stream_import() {
+pub fn test_224_pp_process_parallel_stream_import() {
     run_test(&opts("224_process_parallel_stream_import.eu"));
 }
 

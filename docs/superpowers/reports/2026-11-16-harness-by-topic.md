@@ -59,9 +59,14 @@ restored:
 
 ## Style
 
+`210` and `228` keep `if` in `pick`/`biggest`/`slow`: the `then` form removed the inlining shape
+that their deadline gates need (a fault-injected run of the sharing fix passed in about 1 s).
+The Rust tests `test_222_pp_*` and `test_224_pp_*` keep `pp` in their names because a CI job
+selects them with `cargo test ... pp`.
+
 Every moved file: header comment became unit `doc` metadata, `RESULT: if(..., :PASS, :FAIL)`
 became `... then(:PASS, :FAIL)`, simple two-way `if` became `then`, and single-list-argument calls
-use the juxtaposed form. Per-declaration `#` comments were left in place: converting them to
+use the juxtaposed form. In the folded files per-declaration `#` comments became backtick docs. Elsewhere they were left in place: converting them to
 backtick docs attaches metadata to the binding, which changes what the metadata tests
 (`204`, `205`), the metadata-memoisation test (`228`) and the stream-import test (`224`) evaluate.
 `233` and `gc_012`/`gc_013` keep `if`: they test the `if` form, or nest it.

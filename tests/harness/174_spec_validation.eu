@@ -5,7 +5,7 @@
     doc: "eu-sv1: s-string type data validates at compile time, projects with `to-data` and round-trips through `from-data`." }
 test-typedata-projection: {
   # ── Compile-time validation ────────────────────────────────────────────────
-  # Valid type strings compile and render as canonical strings.
+  ` "Valid type strings compile and render as canonical strings."
   valid-prim:        s"number"
   valid-fn:          s"number → string"
   valid-record:      s"{ name: string }"
@@ -15,7 +15,7 @@ test-typedata-projection: {
   valid-union:       s"number | string"
   valid-forall:      s"forall a. [a] → a"
 
-  # Canonical form: whitespace is normalised, arrow glyph is Unicode →.
+  ` "Canonical form: whitespace is normalised, arrow glyph is Unicode →."
   canonical-fn:      s"number -> string"
 
   # ── to-data projection ──────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ test-typedata-projection: {
     doc: "eu-sv2: `as-spec` turns an s-string type into a runtime predicate for `match?`, including unions nested in lists (eu-r9oy)." }
 test-as-spec: {
 
-  # AC1: Primitive specs
+  ` "AC1: Primitive specs"
   num-spec: s"number" as-spec
   t-prim-num: 42 match?(num-spec)              //=> true
   t-prim-num-miss: "hello" match?(num-spec)    //=> false
@@ -84,60 +84,60 @@ test-as-spec: {
   t-prim-any-str: "x" match?(any-spec)         //=> true
   t-prim-any-null: null match?(any-spec)       //=> true
 
-  # AC2: Record specs
+  ` "AC2: Record specs"
   rec-spec: s"{ name: string, age: number }" as-spec
   t-rec: {name: "Alice", age: 30} match?(rec-spec)           //=> true
   t-rec-miss-type: {name: "Alice", age: "thirty"} match?(rec-spec) //=> false
   t-rec-extra-keys: {name: "Bob", age: 25, extra: "ok"} match?(rec-spec) //=> true
   t-rec-miss-key: {name: "Alice"} match?(rec-spec)           //=> false
 
-  # AC3: List specs
+  ` "AC3: List specs"
   list-spec: s"[number]" as-spec
   t-list: [1, 2, 3] match?(list-spec)          //=> true
   t-list-miss: [1, "two", 3] match?(list-spec) //=> false
   t-list-empty: [] match?(list-spec)           //=> true
 
-  # AC4: Union specs
+  ` "AC4: Union specs"
   union-spec: s"string | number" as-spec
   t-union-str: "hello" match?(union-spec)      //=> true
   t-union-num: 42 match?(union-spec)           //=> true
   t-union-miss: true match?(union-spec)        //=> false
   t-union-miss-sym: :sym match?(union-spec)    //=> false
 
-  # AC4b: Union nested inside a list (eu-r9oy regression)
+  ` "AC4b: Union nested inside a list (eu-r9oy regression)"
   nested-union-list-spec: s"[number | string]" as-spec
   t-nested-union: [1, "two", 3] match?(nested-union-list-spec)          //=> true
   t-nested-union-miss: [1, "two", :sym] match?(nested-union-list-spec) //=> false
 
-  # AC5: Partial (nullable) specs
+  ` "AC5: Partial (nullable) specs"
   partial-spec: s"string?" as-spec
   t-partial-val: "hello" match?(partial-spec)  //=> true
   t-partial-null: null match?(partial-spec)    //=> true
   t-partial-miss: 42 match?(partial-spec)      //=> false
 
-  # AC6: Nested specs
+  ` "AC6: Nested specs"
   nested-spec: s"{ users: [{ name: string }] }" as-spec
   t-nested: {users: [{name: "Alice"}, {name: "Bob"}]} match?(nested-spec) //=> true
   t-nested-miss: {users: [{name: 42}]} match?(nested-spec)               //=> false
 
-  # Function specs (can only check it is a function)
+  ` "Function specs (can only check it is a function)"
   fun-spec: s"number -> string" as-spec
   t-fun: number? match?(fun-spec)              //=> true
   t-fun-miss: 42 match?(fun-spec)              //=> false
 
-  # Tuple specs
+  ` "Tuple specs"
   tuple-spec: s"(number, string)" as-spec
   t-tuple: [42, "hello"] match?(tuple-spec)    //=> true
   t-tuple-miss: [42, 99] match?(tuple-spec)    //=> false
   t-tuple-len-miss: [42] match?(tuple-spec)    //=> false
 
-  # as-spec synonym (pipeline position)
+  ` "as-spec synonym (pipeline position)"
   t-pipeline: {name: "Alice", age: 30} match?(s"{ name: string, age: number }" as-spec) //=> true
 
-  # as-spec call syntax
+  ` "as-spec call syntax"
   t-as-spec-call: {name: "Alice"} match?(as-spec(s"{ name: string }"))  //=> true
 
-  # Edge cases
+  ` "Edge cases"
   t-empty-rec: {a: 1} match?(s"{}" as-spec)    //=> true
 
   RESULT: :PASS
@@ -148,24 +148,24 @@ test-as-spec: {
 test-union-as-spec: {
   schema: s"number | string" as-spec
 
-  # Accepts a number
+  ` "Accepts a number"
   t1: 42 match?(schema)
 
-  # Accepts a string
+  ` "Accepts a string"
   t2: "hello" match?(schema)
 
-  # Rejects a symbol
+  ` "Rejects a symbol"
   t3: not(:sym match?(schema))
 
-  # Rejects a bool
+  ` "Rejects a bool"
   t4: not(true match?(schema))
 
-  # Nested: union inside a list
+  ` "Nested: union inside a list"
   list-schema: s"[number | string]" as-spec
   t5: [1, "two", 3] match?(list-schema)
   t6: not([1, "two", :sym] match?(list-schema))
 
-  # Nested: union inside a record field
+  ` "Nested: union inside a record field"
   rec-schema: s"{ v: number | string }" as-spec
   t7: { v: 42 } match?(rec-schema)
   t8: { v: "hi" } match?(rec-schema)
@@ -195,8 +195,8 @@ test-projection-closedness: {
   t3: (open count) = 3
   t4: (open !! 2) = true
 
-  # A named row variable collapses into the same boolean, so no type variable
-  # ever leaks into runtime data.
+  ` "A named row variable collapses into the same boolean, so no type variable
+    ever leaks into runtime data."
   t5: (rowvar !! 2) = true
 
   # ── nested records carry their own flag ─────────────────────────────────
@@ -248,12 +248,12 @@ test-type-str: {
   t12: (s"Dict(number)" to-data type-str) = "Dict(number)"
   t13: (s"{a: {b: number}, ..}" to-data type-str) = "{{a: {{b: number}}, ..}}"
 
-  # type-str is total over the tag vocabulary: an unrecognised tag renders
-  # as `any` rather than raising.
+  ` "type-str is total over the tag vocabulary: an unrecognised tag renders as
+    `any` rather than raising."
   t14: ([:t-nonesuch, :x] type-str) = "any"
 
-  # from-data is exactly type-str plus the type-data wrap, so it is unchanged
-  # in behaviour.
+  ` "from-data is exactly type-str plus the type-data wrap, so it is unchanged in
+    behaviour."
   t15: (s"{a: number, ..}" to-data from-data) = s"{a: number, ..}"
   t16: (s"[number]" to-data from-data) = s"[number]"
 
@@ -285,12 +285,12 @@ test-validate: {
   t14: ([1, "a", "b"] validate(s"[number, string…]")) nil?
   t15: (map validate(s"number → number")) nil?
 
-  # `any`, `top` and type variables are unconstrained at runtime.
+  ` "`any`, `top` and type variables are unconstrained at runtime."
   t16: (:anything validate(s"any")) nil?
   t17: (:anything validate(s"top")) nil?
   t18: (:anything validate(s"a")) nil?
 
-  # `never` is inhabited by nothing.
+  ` "`never` is inhabited by nothing."
   t19: ((42 validate(s"never")) count) = 1
 
   ##
@@ -331,8 +331,8 @@ test-validate: {
   t32: (un first).expected = :closed
   t33: (un first).found = [:b]
 
-  # The same data against an open spec has no :unexpected entry. This is the
-  # whole observable effect of carrying closedness through the projection.
+  ` "The same data against an open spec has no :unexpected entry. This is the
+    whole observable effect of carrying closedness through the projection."
   t34: ({ a: 1, b: 2 } validate(s"{a: number, ..}")) nil?
   t35: ({ a: 1, b: 2 } validate(s"{a: number, ..r}")) nil?
 
@@ -397,11 +397,11 @@ test-validate: {
   odd-spec: [:t-record, { 'my key': [:t-field, :required, [:t-prim, :string]] }, false]
 
   ` :suppress
-  quoted: block([[:'my key', 1]]) validate(odd-spec)
+  quoted: block[[:'my key', 1]] validate(odd-spec)
 
   t51: (quoted first).path = "'my key'"
 
-  # The root path is the empty string.
+  ` "The root path is the empty string."
   t52: ((42 validate(s"string")) first).path = ""
 
   ##
@@ -464,8 +464,8 @@ test-validate: {
   ## Non-type-data specs: an already-projected t-* list is accepted directly
   ##
 
-  t78: ({ a: 1 } validate([:t-record, { a: [:t-field, :required, [:t-prim, :number]] }, false])) nil?
-  t79: (({ a: 1, b: 2 } validate([:t-record, { a: [:t-field, :required, [:t-prim, :number]] }])) count) = 1
+  t78: ({ a: 1 } validate[:t-record, { a: [:t-field, :required, [:t-prim, :number]] }, false]) nil?
+  t79: (({ a: 1, b: 2 } validate[:t-record, { a: [:t-field, :required, [:t-prim, :number]] }]) count) = 1
 
   RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15,
            t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28,
@@ -482,10 +482,10 @@ test-forcing-discipline: {
   ` :suppress
   bomb-blk: block([[:a, 1], [:b, panic("SV3: an unmentioned subtree was forced")]])
 
-  # A record spec with no fields enumerates the spine and forces no value.
+  ` "A record spec with no fields enumerates the spine and forces no value."
   t1: (bomb-blk validate(s"{ .. }")) nil?
 
-  # An open spec naming only `a` forces exactly `a`.
+  ` "An open spec naming only `a` forces exactly `a`."
   t2: (bomb-blk validate(s"{a: number, ..}")) nil?
 
   # A CLOSED spec still only enumerates keys - closedness is a key-set
@@ -498,19 +498,19 @@ test-forcing-discipline: {
   t4: (closed-r first).kind = :unexpected
   t5: (closed-r first).found = [:b]
 
-  # `any` and `top` accept without forcing at all.
+  ` "`any` and `top` accept without forcing at all."
   t6: (bomb-blk validate(s"{a: any, b: any}")) nil?
   t7: (bomb-blk validate(s"{a: top, b: top}")) nil?
 
-  # A type variable is unconstrained at runtime and forces nothing.
+  ` "A type variable is unconstrained at runtime and forces nothing."
   t8: (bomb-blk validate(s"{a: number, b: r}")) nil?
 
-  # An unrecognised tag inside a well-formed spec accepts without forcing -
-  # parity with as-spec's any? fallthrough.
-  t9: (bomb-blk validate([:t-record,
+  ` "An unrecognised tag inside a well-formed spec accepts without forcing -
+    parity with as-spec's any? fallthrough."
+  t9: (bomb-blk validate[:t-record,
                           { a: [:t-field, :required, [:t-prim, :number]]
                             b: [:t-field, :required, [:t-mu, :X, [:t-prim, :number]]] },
-                          false])) nil?
+                          false]) nil?
 
   # An infinite list under an unnamed key: its WHNF is cheap, its spine is not.
   # A spec that does not name it must not walk the spine.
@@ -526,8 +526,8 @@ test-forcing-discipline: {
 
   t12: (nested-bomb validate(s"{outer: {x: number, ..}, ..}")) nil?
 
-  # ensure inherits the same discipline and returns the (still partly unforced)
-  # value.
+  ` "ensure inherits the same discipline and returns the (still partly unforced)
+    value."
   t13: (bomb-blk ensure-name) = "a"
 
   ensure-name(b): ((b validate(s"{a: number, ..}")) nil?) then("a", "forced")
@@ -547,10 +547,10 @@ test-ensure: {
   t1: (good ensure(schema)) = good
   t2: (good ensure(schema)).port = 8080
 
-  # An absent optional field is conformant.
+  ` "An absent optional field is conformant."
   t3: ({ name: "web", port: 1 } ensure(schema)).name = "web"
 
-  # A present, correct optional field is conformant.
+  ` "A present, correct optional field is conformant."
   t4: ({ name: "web", port: 1, tags: ["a"] } ensure(schema)).tags = ["a"]
 
   # ensure inherits validate's forcing discipline: an unnamed subtree of an
@@ -561,8 +561,8 @@ test-ensure: {
 
   t5: (bomb-blk ensure(s"{name: string, ..}")).name = "web"
 
-  # ensure composes: it is the identity on conforming data, so a pipeline
-  # reads the same with or without it.
+  ` "ensure composes: it is the identity on conforming data, so a pipeline reads
+    the same with or without it."
   t6: ([{ a: 1 }, { a: 2 }] map(ensure(s"{a: number}")) map(a-of)) = [1, 2]
 
   a-of(b): b.a
@@ -571,22 +571,22 @@ test-ensure: {
   ## The rendered report lines - what the diagnostic shows as notes
   ##
 
-  t7: (render-violation({ path: "a.b", kind: :type-mismatch,
-                          expected: "number", found: "string" }))
+  t7: (render-violation{ path: "a.b", kind: :type-mismatch,
+                          expected: "number", found: "string" })
         = "a.b: expected number, found string"
 
-  t8: (render-violation({ path: "servers[3]", kind: :missing,
-                          expected: "host", found: :absent }))
+  t8: (render-violation{ path: "servers[3]", kind: :missing,
+                          expected: "host", found: :absent })
         = "servers[3]: missing required field 'host'"
 
-  # The root path renders as (root): an empty string would leave a line
-  # starting with a bare colon.
-  t9: (render-violation({ path: "", kind: :unexpected,
-                          expected: :closed, found: [:x, :y] }))
+  ` "The root path renders as (root): an empty string would leave a line starting
+    with a bare colon."
+  t9: (render-violation{ path: "", kind: :unexpected,
+                          expected: :closed, found: [:x, :y] })
         = "(root): unexpected keys: x, y"
 
-  t10: (render-violation({ path: "xs", kind: :length,
-                           expected: 2, found: 1 }))
+  t10: (render-violation{ path: "xs", kind: :length,
+                           expected: 2, found: 1 })
          = "xs: expected 2 elements, found 1"
 
   RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10]

@@ -65,7 +65,7 @@ test-fused-laziness: {
 ` { target: :test-branch-gated-recursion
     doc: "eu-2sa6: a documented (meta-wrapped) self-recursive function whose branches reference the locally bound recursive calls only in some cases must not force every one of them unconditionally. This mirrors `from-data` in lib/reflect.eu: `bomb` must never be forced, and the recursion must end at the `:leaf` branch." }
 test-branch-gated-recursion: {
-  ` { doc: "`describe(td)` renders a small synthetic tagged tree, mirroring the nesting shape of `from-data` and `to-str[tag:rest]` in lib/reflect.eu: a documented top-level function wrapping a nested, cond-gated, self-recursive local."
+  ` { doc: "`describe(td)` renders a small synthetic tagged tree, mirroring the nesting shape of `from-data` and `to-str[tag:rest]` in lib/reflect.eu: a documented function wrapping a nested, cond-gated, self-recursive local."
       type: s"any → any" }
   describe(td):
     { bomb(x): bomb(x)
@@ -128,13 +128,13 @@ test-block-body-demand: {
   ` "The selected field still forces its binding when demanded."
   selected(ds): { b: ds max-of  a: 1 }.b
 
-  t1: field([]) = 1
-  t2: nested([]) = 2
-  t3: listed([]) = 2
-  t4: nestlist([]) = 2
-  t5: selected([1, 7, 2]) = 7
-  t6: field([5]) = 1
-  t7: returned([]).a = 5
+  t1: field[] = 1
+  t2: nested[] = 2
+  t3: listed[] = 2
+  t4: nestlist[] = 2
+  t5: selected[1, 7, 2] = 7
+  t6: field[5] = 1
+  t7: returned[].a = 5
 
   RESULT: [t1, t2, t3, t4, t5, t6, t7] all-true? then(:PASS, :FAIL)
 }

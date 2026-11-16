@@ -35,9 +35,9 @@ size: 30
 # The canonical shape: both parameters used twice.
 # ---------------------------------------------------------------- #
 
-pick(a, b): (a > b) then(a, b)
+pick(a, b): if(a > b, a, b)
 
-biggest(l): (l tail nil?) then(l head, pick(l head, biggest(l tail)))
+biggest(l): if(l tail nil?, l head, pick(l head, biggest(l tail)))
 
 ascending: range(1, size)
 descending: ascending reverse
@@ -80,8 +80,8 @@ t6: ignore(panic("argument of an unused parameter was forced"), 7) = 7
 # Two uses inside a block (a Let in core).
 summarise(v): { lowest: v head, highest: v last }
 
-t7: summarise([3, 1, 4]).lowest = 3
-t8: summarise([3, 1, 4]).highest = 4
+t7: summarise[3, 1, 4].lowest = 3
+t8: summarise[3, 1, 4].highest = 4
 
 # Two uses inside a lambda body, where the argument itself closes over
 # an enclosing binding.

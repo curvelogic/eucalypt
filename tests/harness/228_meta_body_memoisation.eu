@@ -23,7 +23,7 @@
        — see that test for the measured margin (three orders of magnitude
        either side of the deadline)." }
 
-slow(n): (n <= 0) then(0, 1 + slow(n - 1))
+slow(n): if(n <= 0, 0, 1 + slow(n - 1))
 
 size: 30000
 reads: 200

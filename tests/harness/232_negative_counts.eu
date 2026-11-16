@@ -21,8 +21,8 @@ test-range-take: {
     take-positive-infinite: (ints-from(0) take(3)) = [0, 1, 2]
     take-beyond-finite: ([1, 2] take(5)) = [1, 2]
 
-    # Reversed bounds in a computed range are skipped, not looped over
-    # (the shape of the AoC 2025 day 10 part 2 inner search).
+    ` "Reversed bounds in a computed range are skipped, not looped over (the
+      shape of the AoC 2025 day 10 part 2 inner search)."
     skipped: ([[1, 5], [7, 3], [4, 4]] map(span)) = [5, 0, 1]
   }
 

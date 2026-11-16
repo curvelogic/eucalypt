@@ -5,19 +5,19 @@
 test-close-brace: {
   x: "abc"
 
-  # The escape on its own, before and after an interpolation
+  ` "The escape on its own, before and after an interpolation"
   escape-alone: "}}" = "}"
   escape-before: "}}{x}" = "}abc"
   plain-after: "{x}z" = "abcz"
 
-  # The cases that were mis-lexed
+  ` "The cases that were mis-lexed"
   escape-after: "{x}}}" = "abc}"
   lone-after: "{x}}" = "abc}"
   escape-between: "{x}}}{x}" = "abc}abc"
   wrapped: "{{{x}}}" = "{{abc}}"
   after-format: "{x:%5s}}}" = "  abc}"
 
-  # Open braces are unaffected
+  ` "Open braces are unaffected"
   open-after: "{x}{{" = "abc{{"
   escaped-pair: (("{{x}}" str.len) = 3) ∧ ("{{x}}" != x)
 
