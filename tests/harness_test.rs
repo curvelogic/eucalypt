@@ -172,11 +172,15 @@ fn run_typecheck_test(filename: &str) {
 
     let mut expected_exit: Option<i32> = None;
     let mut expected_stderr: Option<String> = None;
+    let mut absent_stderr: Vec<String> = Vec::new();
 
     for line in expect_content.lines() {
         let line = line.trim();
         if line.is_empty() {
             continue;
+        }
+        if let Some(pattern) = line.strip_prefix("stderr-absent:") {
+            absent_stderr.push(pattern.trim().trim_matches('"').to_string());
         }
         if let Some(code) = line.strip_prefix("exit:") {
             expected_exit = Some(code.trim().parse().expect("invalid exit code in .expect"));
@@ -198,6 +202,13 @@ fn run_typecheck_test(filename: &str) {
         assert!(
             stderr.contains(pattern.as_str()),
             "stderr for {filename} does not contain \"{pattern}\"\nactual stderr:\n{stderr}"
+        );
+    }
+
+    for pattern in &absent_stderr {
+        assert!(
+            !stderr.contains(pattern.as_str()),
+            "stderr for {filename} unexpectedly contains \"{pattern}\"\nactual stderr:\n{stderr}"
         );
     }
 

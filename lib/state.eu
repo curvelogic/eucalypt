@@ -76,7 +76,6 @@ state: monad{bind: state-bind, return: state-ret} {
   eval(action, initial): action(initial).value
 
   ` { doc: "state.exec(action, initial) - DEPRECATED: use state.run(action, initial).state. Run a state action and return only the final state."
-      deprecated: "use state.run(a, i).state"
-      replaced-by: "run" }
+      deprecated: "use state.run(a, i).state" }
   exec(action, initial): action(initial).state
 }
