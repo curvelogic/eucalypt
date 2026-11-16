@@ -1,0 +1,2 @@
+exit: 1
+stderr: "found string \"x\"(.|\n)*-{12} called from here(.|\n)*\n.{1,12}   called from here\n(.|\n)*' called from here"

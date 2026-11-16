@@ -1,0 +1,33 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/311_stored_list_field_trace
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/311_stored_list_field_trace.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/311_stored_list_field_trace.eu:2:22
+help-lines: 0
+note-lines: 2
+secondary-labels: 2
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "a"
+  ┌─ tests/harness/errors/311_stored_list_field_trace.eu:2:22
+  │
+2 │ f(i): { v: [i + 1, i + "a"]  d: dict.empty dict.assoc(:k, v) }.d
+  │ ---------------------^------------------------------------------
+  │ │                                                              │
+  │ │                                                              called from here
+  │ called from here
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = while evaluating (outermost first):
+    - out at 311_stored_list_field_trace.eu:4:29

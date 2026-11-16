@@ -3371,6 +3371,13 @@ pub fn test_291_modular_arithmetic() {
     run_test(&opts("291_modular_arithmetic.eu"));
 }
 
+/// A lazy value stored in a dict that refers back to itself ends the
+/// trimming rather than overflowing the stack (eu-oaz72.84).
+#[test]
+pub fn test_292_dict_stored_cycle() {
+    run_test(&opts("292_dict_stored_cycle.eu"));
+}
+
 /// The BFS and Dijkstra templates of the Advent of Code cookbook
 /// (eu-oaz72.16), with the Dijkstra queue a dict keyed by `[priority, seq]`
 /// (eu-oaz72.22).
@@ -5599,6 +5606,16 @@ pub fn test_error_305_exact_error_number() {
 #[test]
 pub fn test_error_306_complex_result_large_float() {
     run_error_test(&error_opts("306_complex_result_large_float.eu"));
+}
+
+#[test]
+pub fn test_error_310_stored_value_trace() {
+    run_error_test(&error_opts("310_stored_value_trace.eu"));
+}
+
+#[test]
+pub fn test_error_311_stored_list_field_trace() {
+    run_error_test(&error_opts("311_stored_list_field_trace.eu"));
 }
 
 #[test]

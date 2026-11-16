@@ -37,8 +37,10 @@ an existing cell or a black hole) and its free variables allow it:
 1. `free_slots` scans `T`'s bytecode for the flat environment indices it
    reads, tracking binder depth (`let`/`letrec` count, lambda arity, case
    branch constructor arity, fallback 1, `DeMeta` handler 2 / `or_else` 1).
-2. `minimal_env` builds one frame for the innermost 16 slots of `T`'s chain
-   (flat indices unchanged, so no code is renumbered), holding only the free
+2. `minimal_env` rebuilds the innermost 16 slots of `T`'s chain, one frame
+   per original frame with the same size and annotation (so error traces
+   are unchanged), at the same flat indices (so no code is renumbered),
+   holding only the free
    values; every other slot is a black hole, so a missed read is a loud
    `<<loop>>` error, not a wrong value. Its parent is the original chain from
    the first outer frame on, shared, so a unit's top-level bindings are read
@@ -104,9 +106,14 @@ store there (bounded: 1,024 nodes, 64 slots).
 - Lines: `src/eval/bytecode/machine.rs` about +320/−6 (three methods, about
   60% comments), `src/eval/machine/env.rs` +6 (`next_frame` accessor),
   tests +62.
-- New invariants: (a) `free_slots` must size every binder's frame as the
-  machine does (an under-count is safe, an over-count drops a free index);
-  the hole values make a miss loud. (b) A copied slot is a value, never an
+- New invariants: (a) `free_slots` must size every binder's frame exactly as
+  the machine does. Neither direction is safe: every index read below a
+  binder shifts with its frame size, so an under-count reports local slots
+  as free and misses the true free index, and an over-count drops one. The
+  missed index reads a black hole, which raises a spurious `<<loop>>` error
+  at an unrelated location (loud, but wrong). A `debug_assert` in
+  `return_data` now pins the case-branch link (constructor arity equals the
+  node's argument count). (b) A copied slot is a value, never an
   unevaluated thunk. (c) Overwriting `E[k]` with the shared cell is invisible:
   the cell enters the same code over the same values. (d) Frames beyond slot
   16 are shared, not copied, so retention there is as before.
@@ -115,7 +122,11 @@ store there (bounded: 1,024 nodes, 64 slots).
   relies on). The one new write, `E[k] := cell`, is `EnvironmentFrame::update`,
   the call the `Update` continuation makes, so any write-barrier behaviour is
   that path's. Validated under `EU_GC_VERIFY=2 EU_GC_STRESS=1` on the whole
-  harness (exit 0, no FAIL).
+  harness (exit 0, no FAIL). One budget (`DETACH_BUDGET`, 64 constructors)
+  is shared by `detach`, `share_trimmed_thunk` and `minimal_env`, which
+  recurse into each other; a stored value that refers back to itself
+  therefore ends the recursion (round-1 review blocker: with a fresh budget
+  per `minimal_env` it overflowed the stack, exit 139).
 - Tests: `cargo test` full, clippy `--workspace --all-targets -D warnings`
   and fmt clean. Fault injection (both reverted): disabling `minimal_env`
   makes `test_250_dict` FAIL on the new gate; skipping the write-back makes
@@ -129,9 +140,47 @@ store there (bounded: 1,024 nodes, 64 slots).
   closures.
 - A free variable that is a function or an evaluated constructor keeps
   its own environment (constructors only when `detach` fails).
-- Owner choices: (1) whether a store may rewrite the caller's slot with the
-  shared cell (the only way to keep sharing); (2) the constants
-  (`MINIMAL_ENV_OUTER` 16, `MINIMAL_ENV_SLOTS` 64, `FREE_VAR_SCAN_NODES`
-  1,024), picked to fit the repro and a unit-level frame of about 70 slots;
-  (3) whether this replaces the `update-strict` workaround or sits beside it.
-- Bead eu-oaz72.84 is missing from this store, so no bead was written.
+- Known limits (round-1/2 review): a second store of the same unevaluated
+  value still leaks (the alias walk meets an already-trimmed cell and bails,
+  so the second store cells the original chain; `slot-shared` and
+  `store-twice-shared` pin correctness, not retention). The code is scanned
+  twice per store when `share_trimmed_thunk` bails. The caller's slot keeps
+  the shared cell for good, so later reads in that scope go through the cell
+  and slot-inspecting fast paths (`LookupLit`, `cons_of` on raw slots) see a
+  cell not a constructor; not exercised by benches 015–024. `detach` is no
+  longer side-effect-free (it may have rewritten field slots before a later
+  field fails; invisible to readers). The copy keeps one frame per original,
+  so a deep inner region costs a frame header each (bounded by 64 slots).
+
+## 6. Round 2: what changed after the two send-backs
+
+- Blocker 1 (stack overflow on a self-referential stored value): one shared
+  budget; harness test `292_dict_stored_cycle` (three repros), fault-injected
+  (fresh budget per `minimal_env` aborts the test process; restored, PASS,
+  also under `EU_GC_VERIFY=2 EU_GC_STRESS=1`).
+- Blocker 2 (error traces): `minimal_env` keeps one frame and annotation per
+  original frame. Errors-corpus tests `310_stored_value_trace` and
+  `311_stored_list_field_trace` pin the trace; the output is byte-identical
+  to master's on both, and both FAIL with the annotations dropped.
+- Also folded in: duplicate free indices deduplicated, the cheap size check
+  before the scan, the alias walk's last hop tested, `detach` doc comment,
+  the arity `debug_assert`.
+
+## 7. Choices for the owner
+
+(a) **May a store rewrite the caller's slot with the shared cell?** It is the
+only way to keep one evaluation of a thunk that is both stored and read
+directly; without it those cases evaluate twice (4.07M ticks against 2.04M).
+Recommendation: yes, for this prototype, given the cost listed in §5 (the
+slot keeps a cell) is small and unmeasured, not shown harmful.
+
+(b) **The constants 16 / 64 / 1,024** (`MINIMAL_ENV_OUTER`,
+`MINIMAL_ENV_SLOTS`, `FREE_VAR_SCAN_NODES`). They were fitted to the repro
+and one unit-level frame of about 70 slots. Recommendation: keep them for
+now and revisit with an AoC-shaped workload; they are bounds on cost, not
+correctness.
+
+(c) **Replace `update-strict` or sit beside it?** Recommendation: sit beside
+it until a second store of the same value stops leaking and the slot cost is
+measured on a real workload; then retire `update-strict` in a separate,
+owner-reviewed change.
