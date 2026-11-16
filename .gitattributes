@@ -1,1 +1,5 @@
 tests/conform/*.golden text eol=lf
+
+# The prelude and harness sources must check out with LF endings: string values must not depend on core.autocrlf.
+lib/*.eu text eol=lf
+tests/harness/*.eu text eol=lf

@@ -28,4 +28,15 @@ code-point-tests: {
   υ: ("héllo" str.letters map(ch.code-point)) //= str.code-points("héllo")
 }
 
-RESULT: [tests values all-true?, code-point-tests values all-true?] all-true? then(:PASS, :FAIL)
+` "ch.n and ch.t are exactly one character whatever the checkout's line endings (eu-oaz72.152): they are built from code points, not written as raw control characters in lib/prelude.eu."
+whitespace-tests: {
+  α: ch.n str.letters count //= 1
+  β: ch.code-point(ch.n) //= 10
+  γ: ch.t str.letters count //= 1
+  δ: ch.code-point(ch.t) //= 9
+  ε: "a{ch.n}b" str.letters count //= 3
+  ζ: ["x", "y"] str.join-on(ch.n) str.letters count //= 3
+  η: str.join(["x", "y"], str.of(1)) //= "x1y"
+}
+
+RESULT: [tests values all-true?, code-point-tests values all-true?, whitespace-tests values all-true?] all-true? then(:PASS, :FAIL)

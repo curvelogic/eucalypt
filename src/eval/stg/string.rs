@@ -158,9 +158,17 @@ impl StgIntrinsic for Join {
                 unbox_str(
                     local(2),
                     // [unbox-sep] [sl] [l] [s]
-                    let_(
-                        vec![value(call::bif::join(lref(1), lref(0)))],
-                        data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
+                    //
+                    // The separator's payload may itself be an unevaluated
+                    // thunk (e.g. the result of `str.of(..)` or
+                    // `ch.of-code-point(..)`), so force it to a native string.
+                    force(
+                        local(0),
+                        // [sep] [unbox-sep] [sl] [l] [s]
+                        let_(
+                            vec![value(call::bif::join(lref(2), lref(0)))],
+                            data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
+                        ),
                     ),
                 ),
             ),
