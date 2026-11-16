@@ -665,6 +665,18 @@ it over `foldl` when `op` is strict in the accumulator (`+`, `max`); keep
 range(0, 1000000) foldl-strict(max, 0)   # 999999
 ```
 
+#### `seq(a, b)` — force `a`, return `b`
+
+Evaluates `a` to weak head normal form (only the outermost constructor of a
+list or block), then returns `b`. An error in `a` surfaces; `b` is not
+evaluated first. Use it to force a loop's accumulator before the tail call so
+the stack stays constant. In a pipeline the subject is `b`: `x seq(a)` is
+`seq(a, x)`. `foldl-strict` and `iota` are written with it.
+
+```
+count-up(a, n): (n = 0) then(a, seq(a, count-up(a + 1, n - 1)))
+```
+
 #### `foldr(op, i, l)` — right fold
 
 ```

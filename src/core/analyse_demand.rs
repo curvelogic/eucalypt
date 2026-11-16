@@ -170,6 +170,14 @@ pub fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
         ],
     );
 
+    // SEQ: first arg strict+once; the second is returned (entered in tail
+    // position at most once) so, like an IF branch, it is lazy+once. It is
+    // NOT strict: it must not be evaluated before the first argument.
+    sigs.insert(
+        "SEQ".to_string(),
+        vec![Demand::strict_once(), Demand::lazy_once()],
+    );
+
     // AND/OR: first strict+once, second lazy+once (short-circuit)
     sigs.insert(
         "AND".to_string(),

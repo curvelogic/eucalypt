@@ -1,0 +1,52 @@
+#!/usr/bin/env eu
+{
+  title: "292 seq intrinsic"
+  doc: "eu-oaz72.161, owner decision 36: `seq(a, b)` forces `a` to weak head normal
+        form and returns `b`. It replaces the `if(x pred?, r, r)` forcing idiom in
+        `foldl-strict` and `iota`: same results, same laziness, constant stack."
+}
+
+` "A loop whose accumulator is forced by `seq`: constant stack."
+count-up(a, n): (n = 0) then(a, seq(a, count-up(a + 1, n - 1)))
+
+steps: 100000
+
+` { target: :test-values }
+test-values: {
+  returns-b: seq(1, 2) = 2
+  a-only-whnf: seq([panic("element forced")], 7) = 7
+  b-not-forced-unused: ([seq(1, panic("b forced"))] count) = 1
+  partial: ([1, 2, 3] map(seq(0))) = [1, 2, 3]
+  pipeline: (:ok seq(5)) = :ok
+  forced-order: { a: 1 + 1  r: seq(a, a * 10) }.r = 20
+  fold: foldl-strict(+, 0, range(0, 1000)) = 499500
+  fold-list-acc: foldl-strict(++, [], [[1], [2], [3]]) = [1, 2, 3]
+  fold-empty: foldl-strict(+, 5, []) = 5
+  iota-lazy-first: (iota(panic("start forced")) nil?) = false
+  iota-lazy-second: (iota(panic("start forced")) tail nil?) = false
+  iota-take: (iota(3) take(4)) = [3, 4, 5, 6]
+  loop: count-up(0, steps) = steps
+  RESULT: [returns-b, a-only-whnf, b-not-forced-unused, partial, pipeline, forced-order,
+           fold, fold-list-acc, fold-empty, iota-lazy-first, iota-lazy-second, iota-take, loop]
+          all-true? then(:PASS, :FAIL)
+}
+
+` { target: :stack
+    verify: [:stack-checks] }
+stack: {
+  seq-loop: count-up(0, steps)
+  strict-fold: range(0, steps) foldl-strict(+, 0)
+  iota-walk: iota(0) take(steps) count
+}
+
+stack-checks(context): {
+  r: context.result
+  ok: [r.seq-loop = steps, r.strict-fold = steps * (steps - 1) / 2, r.iota-walk = steps]
+}.(((ok all-true?) && (context.stats.max-stack < 1000)) then(:PASS, :FAIL))
+
+` { target: :lazy-baseline
+    verify: [:grows] }
+lazy-baseline: { r: foldl(+, 0, range(0, steps)) }
+
+` "Sanity check that the stack measurement can tell the difference: a lazy `foldl` grows the stack."
+grows(context): (context.stats.max-stack > 10000) then(:PASS, :FAIL)

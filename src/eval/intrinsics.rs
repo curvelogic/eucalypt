@@ -1212,6 +1212,14 @@ lazy_static! {
             ty: function(vec![num(), str_()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 228
+            // SEQ(a, b): force `a` to weak head normal form, return `b`.
+            // Strict in arg 0 only; `b` is entered in tail position, so
+            // it is demanded lazily-once (see analyse_demand).
+            name: "SEQ",
+            ty: function(vec![any(), any(), any()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 
