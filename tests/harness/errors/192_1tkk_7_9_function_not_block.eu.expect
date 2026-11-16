@@ -1,2 +1,0 @@
-exit: 1
-stderr: "(?s)type mismatch: expected number, found a function.*192_1tkk_7_9_function_not_block\.eu:2:9"

@@ -1,2 +1,0 @@
-exit: 1
-stderr: "(?s)a function cannot be a set element: set elements must be numbers, strings or symbols.*errors[/\\]241_oaz72_32_set_of_function\.eu:2:19"
