@@ -11452,7 +11452,7 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 
 - [Lists](lists.md) -- list construction, transformation, folding, sorting (92 entries)
 - [Blocks](blocks.md) -- block construction, access, merging, transformation (66 entries)
-- [Strings](strings.md) -- string manipulation, regex, formatting (42 entries)
+- [Strings](strings.md) -- string manipulation, regex, formatting (43 entries)
 - [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (36 entries)
 - [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (13 entries)
 - [Combinators](combinators.md) -- function composition, application, utilities (14 entries)
@@ -11467,7 +11467,7 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
 - [IO](io.md) -- environment, time, argument access, and monad utility (37 entries)
 
-*415 documented entries in total.*
+*416 documented entries in total.*
 
 ## Standard Libraries
 
@@ -11804,6 +11804,7 @@ hosts: data deep-query("*.config.host")
 | `str.extract-or(re, d, s)` | Use regex `re` (with single capture) to extract substring of `s` - or default `d` |
 | `str.matches` | Return list of all matches in string `s` of regex `re` |
 | `str.matches-of` | Return list of all matches in string `s` of regex `re` |
+| `str.matches-with(re, s)` | Return all matches of regex `re` in string `s`, each as a list of the full match followed by its capture groups. Matching is a single pass, so anchors and word boundaries see their context. A group that does not take part in a match is the empty string, indistinguishable from an empty capture |
 | `str.matches?(re, s)` | Return true if `re` matches full string `s` |
 | `str.suffix(b, a)` | Return string `b` suffixed onto `a` |
 | `str.prefix(b, a)` | Return string `b` prefixed onto `a` |
@@ -15792,6 +15793,7 @@ All functions verified against `lib/prelude.eu`:
 | `str.extract-or` | `extract-or(re, d, s)` | Extract first capture group or default `d` |
 | `str.matches` | `matches(s, re)` | All matches of `re` in `s` |
 | `str.matches-of` | `matches-of(re, s)` | All matches (pipeline-friendly) |
+| `str.matches-with` | `matches-with(re, s)` | All matches, each as `[whole, g1, ...]` |
 | `str.matches?` | `matches?(re, s)` | True if `re` matches full string `s` |
 | `str.letters` | `letters(s)` | List of individual characters |
 | `str.len` | `len(s)` | String length in characters |

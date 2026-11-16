@@ -567,3 +567,23 @@ stream-stored-run: {
 stream-plain-run: {
   ok: stream-plain(1, stream-n) = stream-n
 }
+
+` { target: :computed-args
+    doc: "Computed (non-literal) arguments to the hand-written dict wrappers must be forced before use."
+    verify: [:passes] }
+computed-args: {
+  ` :suppress
+  n(x): x + 0
+  ` :suppress
+  s(x): str.of(x)
+  ` :suppress
+  d: dict.of[[s("a"), n(1)]]
+  ok: [
+    (d dict.get(s("a"))) = 1,
+    (d dict.get-or(s("z"), n(0))) = 0,
+    (d dict.assoc(s("b"), n(2)) dict.size) = 2,
+    (d dict.dissoc(s("a")) dict.size) = 0,
+    d dict.contains?(s("a")),
+    (d dict.range(s("a"), s("b")) dict.size) = 1
+  ] all-true?
+}

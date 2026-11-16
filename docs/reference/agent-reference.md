@@ -1656,6 +1656,7 @@ All functions verified against `lib/prelude.eu`:
 | `str.extract-or` | `extract-or(re, d, s)` | Extract first capture group or default `d` |
 | `str.matches` | `matches(s, re)` | All matches of `re` in `s` |
 | `str.matches-of` | `matches-of(re, s)` | All matches (pipeline-friendly) |
+| `str.matches-with` | `matches-with(re, s)` | All matches, each as `[whole, g1, ...]` |
 | `str.matches?` | `matches?(re, s)` | True if `re` matches full string `s` |
 | `str.letters` | `letters(s)` | List of individual characters |
 | `str.len` | `len(s)` | String length in characters |
