@@ -9862,10 +9862,10 @@ letters; escape them if they hold regex characters.
 
 ### Loops
 
-`iterate(f, x)` is the lazy list `x`, `f(x)`, `f(f(x))`, … and
-`iterate(f, x) nth(n)` is `f` applied `n` times, which is fine while `n`
-is modest. For a long loop, write a tail-recursive function that calls
-the step directly:
+`iterate(f, x)` is the list `x`, `f(x)`, `f(f(x))`, … (each element is
+evaluated as its cell is reached) and `iterate(f, x) nth(n)` is `f` applied
+`n` times, in constant stack however large `n` is. A tail-recursive function
+that calls the step directly does the same job without building the list:
 
 ```eu
 ` "one step of the simulation"
@@ -9878,16 +9878,15 @@ final: run(100000, 1) //=> 940193
 ```
 
 This runs in constant stack: eucalypt can see that `step` uses its
-argument, so each state is computed as the loop goes. Two forms lose that,
-and instead build a chain of unevaluated steps that is only
-worked through at the end, using stack and memory in proportion:
+argument, so each state is computed as the loop goes. A generic loop that
+takes the step as a parameter loses that, such as
+`times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))`: eucalypt cannot
+tell whether an unknown `f` uses its argument, so it builds a chain of
+unevaluated steps that is only worked through at the end, using stack and
+memory in proportion. (`iterate(step, s) nth(n)` is not affected: it
+evaluates each state as its cell is reached.)
 
-- `iterate(step, s) nth(n)` with a large `n`;
-- a generic loop that takes the step as a parameter, such as
-  `times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))`: eucalypt cannot
-  tell whether an unknown `f` uses its argument.
-
-So for a long loop, name the step function in the loop itself. A loop that
+So for a long loop of your own, name the step function in the loop itself. A loop that
 runs until something holds tests the state in the same place, as in
 `run-until(s): (s done?) then(s, run-until(step(s)))`, and looking at the
 state in the test also keeps it evaluated.
@@ -11524,9 +11523,9 @@ Repeated `!!` over the same list in a loop is quadratic.
 | Function | Description |
 |----------|-------------|
 | `repeat(i)` | Return infinite list of instances of item `i` |
-| `iterate(f, i)` | Return list of `i` with subsequent repeated applications of `f` to `i` |
+| `iterate(f, i)` | Return list of `i` with subsequent repeated applications of `f` to `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so `f` is applied (and an error in it surfaces) when the cell is reached rather than when the element is used, and a long walk runs in constant stack |
 | `ints-from` | Return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility |
-| `range(b, e)` | Return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b` |
+| `range(b, e)` | Return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b`. Strict: the counter is evaluated as each cell is demanded, so a long walk (`last`, `nth`, `foldl`) runs in constant stack |
 | `cycle(l)` | Create infinite list by cycling elements of list `l` |
 
 ## Transformations
@@ -11576,14 +11575,14 @@ Repeated `!!` over the same list in a loop is quadratic.
 | `foldl(op, i, l)` | Left fold operator `op` over list `l` starting from value `i` |
 | `foldl-strict(op, i, l)` | As `foldl`, but the accumulator is evaluated to weak head normal form at each step, so a long fold runs in constant stack instead of building a chain of unevaluated `op` calls (for a scalar accumulator; a list or block accumulator is forced only to its outermost constructor). Use it where `op` is strict in the accumulator, as `+` and `max` are. `op(i, x)` is evaluated even where `op` would ignore it, so an error there surfaces where `foldl` would have skipped it |
 | `foldr(op, i, l)` | Right fold operator `op` over list `l` ending with value `i` |
-| `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i` |
+| `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so a long scan runs in constant stack and an error in a step surfaces when that cell is reached. The result list is produced cell by cell, so `scanl` works on an infinite list |
 | `scanr(op, i, l)` | Right scan operator `op` over list `l` ending with value `i` |
 
 ## Predicates
 
 | Function | Description |
 |----------|-------------|
-| `all-true?(l)` | True if and only if all items in list `l` are true |
+| `all-true?(l)` | True if and only if all items in list `l` are true. Strict: each step is evaluated as it is reached, so a long list runs in constant stack |
 | `all(p?, l)` | True if and only if all items in list `l` satisfy predicate `p?` |
 | `any-true?(l)` | True if and only if any items in list `l` are true |
 | `any(p?, l)` | True if and only if any items in list `l` satisfy predicate `p?` |
@@ -11632,7 +11631,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`. An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |
-| `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
+| `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list. Strict, as `foldl-strict`: each step's result is evaluated to weak head normal form, so a long list runs in constant stack, and an error in a step surfaces even where `op` would have discarded it |
 | `tails(l)` | Return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]` |
 | `iota(n)` | Return infinite list of integers from `n` upwards. `n` is left unevaluated for the first two cells, so `iota(panic) tail nil?` is `false`; from the third cell on it is evaluated as each cell is demanded, which keeps a long walk in constant stack |
 | `ℕ` | The natural numbers: `[0, 1, 2, ...]` |
@@ -11834,8 +11833,7 @@ hosts: data deep-query("*.config.host")
 
 ## Character Constants
 
-> We don't support the usual string escapes so these make it
-a little more convenient to use interpolation instead..
+> We don't support the usual string escapes so these make it a little more convenient to use interpolation instead.
 
 | Function | Description |
 |----------|-------------|
@@ -11928,13 +11926,13 @@ character.
 | `sum(l)` | Sum a list of numbers |
 | `product(l)` | Multiply a list of numbers |
 | `max(l, r)` | Return max of `l` and `r` by `>` |
-| `max-of(l)` | `max-of(l) - return max element in list of numbers `l` - error if empty` |
-| `max-of-by(f, l)` | Return the element of `l` that maximises `f`. Error if empty |
+| `max-of(l)` | Return max element in list of numbers `l` - error if empty. Strict: each step's running maximum is evaluated as it is reached, so a long list runs in constant stack |
+| `max-of-by(f, l)` | Return the element of `l` that maximises `f`. Error if empty. Strict: each step's comparison is evaluated as it is reached, so a long list runs in constant stack |
 | `max-map(f, l)` | Return maximum value of `f(x)` across elements of `l` |
 | `max-of-or(d, l)` | Return max element in list `l`, or default `d` if empty |
 | `min(l, r)` | Return min of `l` and `r` by `<` |
-| `min-of(l)` | `min-of(l) - return min element in list of numbers `l` - error if empty` |
-| `min-of-by(f, l)` | Return the element of `l` that minimises `f`. Error if empty |
+| `min-of(l)` | Return min element in list of numbers `l` - error if empty. Strict: each step's running minimum is evaluated as it is reached, so a long list runs in constant stack |
+| `min-of-by(f, l)` | Return the element of `l` that minimises `f`. Error if empty. Strict: each step's comparison is evaluated as it is reached, so a long list runs in constant stack |
 | `min-map(f, l)` | Return minimum value of `f(x)` across elements of `l` |
 | `min-of-or(d, l)` | Return min element in list `l`, or default `d` if empty |
 
@@ -15387,7 +15385,7 @@ range(1, 6)                          # [1, 2, 3, 4, 5]
 range(6, 1)                          # [] (empty when e <= b)
 
 # Infinite iteration
-iterate(* 2, 1) take(6)             # [1, 2, 4, 8, 16, 32]
+iterate(* 2, 1) take(6)             # [1, 2, 4, 8, 16, 32] (elements evaluated as each cell is reached)
 ```
 
 ---
