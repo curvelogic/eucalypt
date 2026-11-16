@@ -1,2 +1,2 @@
 exit: 1
-stderr: "arr.get coordinate 1000000000000000019884624838656 is out of bounds"
+stderr: "arr.get coordinate 1e\+300 is out of bounds"

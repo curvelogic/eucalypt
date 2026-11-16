@@ -1,2 +1,2 @@
-` "A huge array index is reported as given, not saturated to usize::MAX (eu-oaz72.160)"
-a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([(10.0 ^ 30), 0])
+` "A huge array index is reported as given and capped, not saturated to usize::MAX (eu-oaz72.160)"
+a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get[10.0 ^ 300, 0]

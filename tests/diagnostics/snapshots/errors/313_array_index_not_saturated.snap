@@ -18,11 +18,11 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: array shape mismatch: arr.get coordinate 1000000000000000019884624838656 is out of bounds: it exceeds the largest possible array index
+error: array shape mismatch: arr.get coordinate 1e+300 is out of bounds: it exceeds the largest possible array index
   ┌─ tests/harness/errors/313_array_index_not_saturated.eu:2:40
   │
-2 │ a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([(10.0 ^ 30), 0])
-  │                                        ^^^^^^^^^^^^^^^^^^^^^^^^^
+2 │ a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get[10.0 ^ 300, 0]
+  │                                        ^^^^^^^^^^^^^^^^^^^^^^
 
 === --source-prelude ===
 exit: 1
@@ -39,8 +39,8 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: array shape mismatch: arr.get coordinate 1000000000000000019884624838656 is out of bounds: it exceeds the largest possible array index
+error: array shape mismatch: arr.get coordinate 1e+300 is out of bounds: it exceeds the largest possible array index
   ┌─ tests/harness/errors/313_array_index_not_saturated.eu:2:40
   │
-2 │ a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([(10.0 ^ 30), 0])
+2 │ a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get[10.0 ^ 300, 0]
   │                                        ^^^

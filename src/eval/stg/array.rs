@@ -853,7 +853,7 @@ fn validate_shape(smid: Smid, function: &str, dims: &[f64]) -> Result<Vec<usize>
     let mut shape = Vec::with_capacity(dims.len());
     let mut count: usize = 1;
     for &d in dims {
-        if d.is_finite() && d > limit as f64 {
+        if d.is_finite() && d.fract() == 0.0 && d > limit as f64 {
             return Err(too_large());
         }
         let n = array_index(function, "dimension", Some(d), smid)?;
@@ -975,6 +975,14 @@ mod tests {
                 "{d} accepted"
             );
         }
+    }
+
+    #[test]
+    fn fractional_dimension_above_the_limit_is_non_integer_not_too_large() {
+        assert!(matches!(
+            shape_of(&[MAX_ARRAY_ELEMENTS as f64 + 0.5]),
+            Err(ExecutionError::ArrayNonIntegerIndex(_, _, _))
+        ));
     }
 
     #[test]
