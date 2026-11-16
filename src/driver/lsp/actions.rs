@@ -1266,6 +1266,49 @@ mod tests {
     }
 
     #[test]
+    fn deprecation_quickfix_not_offered_for_str_fmt() {
+        // str.fmt(x, spec) -> str.format(spec, x) reorders arguments, so
+        // `replaced-by` must not be set (a rename would swap their meaning).
+        let source = "result: str.fmt(255, \"%x\")\n";
+        let path = std::env::temp_dir().join(format!("eu_fmt_qf_{}.eu", std::process::id()));
+        std::fs::write(&path, source).unwrap();
+        // The merged pipeline includes the prelude, so its deprecations apply.
+        let res = crate::driver::check::type_check_path_merged(&path, |stage, err| {
+            panic!("pipeline failed at {stage}: {err}")
+        });
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            res.warnings
+                .iter()
+                .any(|w| w.message.contains("'str.fmt' is deprecated")),
+            "deprecation warning must remain: {:?}",
+            res.warnings
+        );
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+        let uri = lsp_types::Url::parse("file:///test.eu").unwrap();
+        let table = make_table(source);
+        let actions = code_actions(
+            source,
+            &root,
+            &full_range(),
+            &uri,
+            &table,
+            &res.warnings,
+            &res.source_map,
+        );
+        let fixes: Vec<_> = actions
+            .iter()
+            .filter(|a| a.title.starts_with("Replace 'str.fmt'") || a.title.contains("str.format"))
+            .map(|a| a.title.clone())
+            .collect();
+        assert!(
+            fixes.is_empty(),
+            "no rewriting quick-fix for str.fmt: {fixes:?}"
+        );
+    }
+
+    #[test]
     fn deprecation_quickfix_not_offered_outside_range() {
         // Warning is on line 2 but we request actions on line 0 only.
         let source = "f(x): x + 1\ng(x): x + 1\nresult: f(42)\n";

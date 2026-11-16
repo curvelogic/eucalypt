@@ -1140,8 +1140,7 @@ str: {
 
   ` { doc: "`fmt(x, spec)` - DEPRECATED: use `str.format(spec, x)`, which takes the spec first so it works in pipelines."
       type: s"any → string → string"
-      deprecated: "use str.format(spec, x)"
-      replaced-by: "format" }
+      deprecated: "use str.format(spec, x)" }
   fmt: __FMT
 
   ` { doc: "`to-upper(s)` - convert string `s` to upper case."
