@@ -10,5 +10,5 @@ expected_class = "lookup"
 # function') was out of this structural gate's scope but has now been fixed
 # separately: a `.key` lookup on a function value raises the new
 # `ExecutionError::LookupOnFunction` instead of a fabricated `NotCallable`.
-# See tests/harness/errors/191_m93j_lookup_on_function.eu for the
+# See tests/harness/errors/191_lookup_on_function.eu for the
 # message-wording regression test.
