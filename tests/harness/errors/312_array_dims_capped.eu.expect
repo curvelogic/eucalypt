@@ -1,0 +1,2 @@
+exit: 1
+stderr: "array shape \[1e\+300, 3\] has too many elements"

@@ -11,7 +11,7 @@ use crate::{
     common::sourcemap::Smid,
     eval::{
         emit::Emitter,
-        error::ExecutionError,
+        error::{display_f64, ExecutionError},
         machine::intrinsic::{
             CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
         },
@@ -779,6 +779,16 @@ fn array_index(
         ))
     } else if n < 0.0 {
         Err(ExecutionError::ArrayNegativeIndex(smid, n))
+    } else if n >= usize::MAX as f64 {
+        // Converting would saturate and report the wrong number: name
+        // the value given (capped for display), not `usize::MAX`.
+        Err(ExecutionError::ArrayShapeMismatch(
+            smid,
+            format!(
+                "{func} {what} {} is out of bounds: it exceeds the largest possible array index",
+                display_f64(n)
+            ),
+        ))
     } else {
         Ok(n as usize)
     }
@@ -826,7 +836,7 @@ fn num_list_to_shape(
 /// product of its non-zero dimensions to fit in an `isize`.
 fn validate_shape(smid: Smid, function: &str, dims: &[f64]) -> Result<Vec<usize>, ExecutionError> {
     let too_large = || {
-        let rendered: Vec<String> = dims.iter().map(|d| d.to_string()).collect();
+        let rendered: Vec<String> = dims.iter().map(|d| display_f64(*d)).collect();
         ExecutionError::ArrayTooLarge(
             smid,
             function.to_string(),
@@ -843,10 +853,10 @@ fn validate_shape(smid: Smid, function: &str, dims: &[f64]) -> Result<Vec<usize>
     let mut shape = Vec::with_capacity(dims.len());
     let mut count: usize = 1;
     for &d in dims {
-        let n = array_index(function, "dimension", Some(d), smid)?;
         if d > limit as f64 {
             return Err(too_large());
         }
+        let n = array_index(function, "dimension", Some(d), smid)?;
         if n != 0 {
             count = count
                 .checked_mul(n)
