@@ -1117,7 +1117,7 @@ str: {
       type: s"string → string → [string]" }
   matches-of: matches flip
 
-  ` { doc: "matches-with(re, s) - return all matches of regex `re` in string `s`, each as a list of the full match followed by its capture groups."
+  ` { doc: "matches-with(re, s) - return all matches of regex `re` in string `s`, each as a list of the full match followed by its capture groups (a group that does not take part in a match is the empty string)."
       type: s"string → string → [[string]]" }
   matches-with(re, s): s matches-of(re) map(match-with(re))
 

@@ -5612,9 +5612,3 @@ pub fn test_error_310() {
 pub fn test_error_311() {
     run_error_test(&error_opts("311_seq_first_argument_before_second.eu"));
 }
-
-/// `str.matches-with` returns all matches with capture groups (eu-oaz72.26).
-#[test]
-pub fn test_293_str_matches_with() {
-    run_test(&opts("293_str_matches_with.eu"));
-}

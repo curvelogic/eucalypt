@@ -53,11 +53,21 @@ checks4: {
   trues: [ip-components = ["192", "168", "0", "1"]]
 }
 
+checks5: {
+  kv: "a=1, bb=22, c=3" str.matches-with("(\w+)=(\d+)")
+  trues: [
+    kv = [["a=1", "a", "1"], ["bb=22", "bb", "22"], ["c=3", "c", "3"]],
+    (kv map(second)) = ["a", "bb", "c"],
+    ("xyz" str.matches-with("\d+")) = [],
+    ("a1b2" str.matches-with("\d")) = [["1"], ["2"]]
+  ]
+}
+
 case-tests: {
   α: "hello" str.to-upper //= "HELLO"
   β: "GOODBYE" str.to-lower //= "goodbye"
 }
 
-RESULT: checks.trues ++ checks2.trues ++ checks3.trues ++ checks4.trues ++ (case-tests values)
+RESULT: checks.trues ++ checks2.trues ++ checks3.trues ++ checks4.trues ++ checks5.trues ++ (case-tests values)
         all-true?
         then(:PASS, :FAIL)
