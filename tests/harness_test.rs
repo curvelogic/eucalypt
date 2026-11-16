@@ -3312,6 +3312,16 @@ pub fn test_250_dict() {
         "assoc-chain peaked at {peak} heap blocks: earlier dict versions are being \
          retained by stored values (eu-oaz72.21)"
     );
+    // A stored value that refers back to itself must stay shared: forcing the
+    // stored stream costs about what forcing it without a dict does. (Trimming
+    // afresh at every level of the cycle made it 8x or more, eu-oaz72.84.)
+    let stored = ticks(file, "stream-stored-run", &[]);
+    let plain = ticks(file, "stream-plain-run", &[]);
+    assert!(
+        stored < plain * 2,
+        "a stored self-referential stream took {stored} ticks against {plain} without a \
+         dict: its sharing is lost (eu-oaz72.84)"
+    );
     // The same for evaluated list values: `memo_cell` rebuilds them over fresh
     // frames, so they do not pin the frame holding the previous version
     // (eu-oaz72.70). Unfixed, the run outgrows the heap limit.
@@ -3369,24 +3379,6 @@ pub fn test_241_oaz72_32_set_vec_of() {
 #[test]
 pub fn test_291_modular_arithmetic() {
     run_test(&opts("291_modular_arithmetic.eu"));
-}
-
-/// A lazy value stored in a dict that refers back to itself ends the
-/// trimming rather than overflowing the stack (eu-oaz72.84).
-#[test]
-pub fn test_293_dict_stored_cycle() {
-    run_test(&opts("293_dict_stored_cycle.eu"));
-    // A stored value that refers back to itself must stay shared: forcing the
-    // stored stream costs about what forcing it without a dict does. (Trimming
-    // afresh at every level of the cycle made it 8x or more, eu-oaz72.84.)
-    let file = "293_dict_stored_cycle.eu";
-    let stored = ticks(file, "stream-stored-run", &[]);
-    let plain = ticks(file, "stream-plain-run", &[]);
-    assert!(
-        stored < plain * 2,
-        "a stored self-referential stream took {stored} ticks against {plain} without a \
-         dict: its sharing is lost (eu-oaz72.84)"
-    );
 }
 
 /// `seq(a, b)` forces `a` to WHNF and returns `b`; `foldl-strict` and `iota`
@@ -5627,13 +5619,13 @@ pub fn test_error_306_complex_result_large_float() {
 }
 
 #[test]
-pub fn test_error_310_stored_value_trace() {
-    run_error_test(&error_opts("310_stored_value_trace.eu"));
+pub fn test_error_312_stored_value_trace() {
+    run_error_test(&error_opts("312_stored_value_trace.eu"));
 }
 
 #[test]
-pub fn test_error_311_stored_list_field_trace() {
-    run_error_test(&error_opts("311_stored_list_field_trace.eu"));
+pub fn test_error_313_stored_list_field_trace() {
+    run_error_test(&error_opts("313_stored_list_field_trace.eu"));
 }
 
 #[test]
