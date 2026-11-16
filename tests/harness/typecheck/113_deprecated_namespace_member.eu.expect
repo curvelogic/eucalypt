@@ -1,2 +1,3 @@
 exit: 1
 stderr: "'state.exec' is deprecated"
+stderr-absent: "use 'run' instead"
