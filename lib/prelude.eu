@@ -1054,10 +1054,9 @@ a little more convenient to use interpolation instead.."
     export: :suppress }
 ch: {
   ` "A newline character, for interpolation."
-  n: "
-"
+  n: of-code-point(10)
   ` "A tab character, for interpolation."
-  t: "	"
+  t: of-code-point(9)
 
   ` "A double-quote character, for interpolation."
   dq: __DQ
