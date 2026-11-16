@@ -1220,6 +1220,13 @@ lazy_static! {
             ty: function(vec![any(), any(), any()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 229
+            // MATCHES_WITH(s, re): all matches of `re` in `s` in one pass,
+            // each as [whole, g1, ...].
+            name: "MATCHES_WITH",
+            ty: function(vec![str_(), str_(), list()]).unwrap(),
+            strict: vec![0, 1],
+    },
     ];
 }
 

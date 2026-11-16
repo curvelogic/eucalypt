@@ -17,7 +17,7 @@
 | `str.extract-or(re, d, s)` | Use regex `re` (with single capture) to extract substring of `s` - or default `d` |
 | `str.matches` | Return list of all matches in string `s` of regex `re` |
 | `str.matches-of` | Return list of all matches in string `s` of regex `re` |
-| `str.matches-with(re, s)` | Return all matches of regex `re` in string `s`, each as a list of the full match followed by its capture groups (a group that does not take part in a match is the empty string) |
+| `str.matches-with(re, s)` | Return all matches of regex `re` in string `s`, each as a list of the full match followed by its capture groups Matching is a single pass, so anchors and word boundaries see their context. A group that does not take part in a match is the empty string, indistinguishable from an empty capture |
 | `str.matches?(re, s)` | Return true if `re` matches full string `s` |
 | `str.suffix(b, a)` | Return string `b` suffixed onto `a` |
 | `str.prefix(b, a)` | Return string `b` prefixed onto `a` |
