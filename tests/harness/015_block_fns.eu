@@ -152,6 +152,22 @@ pass: [ checks.trues values all-true?
       , map-elements-checks.trues all-true?
       , select-checks.trues all-true?
       , dissoc-checks.trues all-true?
+      , computed-key-checks.trues all-true?
       ] all-true?
+
+` "Computed (non-literal) symbol keys must be forced by the hand-written block wrappers."
+computed-key-checks: {
+  k: sym(str.of("a"))
+  b: { a: 1 }
+  trues: [
+    (b lookup(k)) = 1,
+    (b lookup-or(k, 0)) = 1,
+    lookup-in(b, k) = 1,
+    (b ~ k) = 1,
+    b has(k),
+    block([[k, 2]]) = { a: 2 },
+    (block([[k, 2]]) elements) = [[:a, 2]]
+  ]
+}
 
 RESULT: if(pass, :PASS, :FAIL)
