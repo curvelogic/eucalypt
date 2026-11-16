@@ -3285,6 +3285,10 @@ pub fn test_250_dict() {
         "to-list-shared",
         "update-shared",
         "merge-shared",
+        // A thunk over an evaluated variable, stored and also read through its
+        // own slot, or stored twice: still one evaluation (eu-oaz72.84).
+        "slot-shared",
+        "store-twice-shared",
     ] {
         let shared = ticks_with_demand_analysis(file, target);
         assert!(
@@ -3321,6 +3325,22 @@ pub fn test_250_dict() {
         peak < 2500,
         "assoc-chain-lists peaked at {peak} heap blocks: earlier dict versions are \
          being retained by stored list values (eu-oaz72.70)"
+    );
+    // The same for unevaluated values built over an evaluated variable (a list
+    // with a computed element, a block literal): `memo_cell` shares one cell
+    // holding the thunk over just the variables it reads with the slot that
+    // named it, so the stored value no longer pins the caller's frame
+    // (eu-oaz72.84). Unfixed, the run outgrows the heap limit.
+    let peak = stat(
+        file,
+        "assoc-chain-lazy",
+        &["--heap-limit-mib", "64"],
+        "Peak Blocks",
+    );
+    assert!(
+        peak < 2500,
+        "assoc-chain-lazy peaked at {peak} heap blocks: earlier dict versions are \
+         being retained by stored unevaluated values (eu-oaz72.84)"
     );
     // The same for `dict.update`: the new value's application is built over
     // a fresh frame `[f, old]`, not the caller's frame, which holds the

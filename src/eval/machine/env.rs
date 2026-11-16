@@ -402,6 +402,12 @@ where
         }
     }
 
+    /// The next frame down the cactus stack, if any.
+    #[inline]
+    pub(crate) fn next_frame(&self) -> Option<RefPtr<Self>> {
+        self.next
+    }
+
     /// Translate a logical index to the physical index in the backing array.
     ///
     /// When a remap is active (`remap_len > 0`), logical index `i` maps to
