@@ -157,16 +157,16 @@ pass: [ checks.trues values all-true?
 
 ` "Computed (non-literal) symbol keys must be forced by the hand-written block wrappers."
 computed-key-checks: {
-  k: sym(str.of("a"))
+  k(x): sym(str.of(x))
   b: { a: 1 }
   trues: [
-    (b lookup(k)) = 1,
-    (b lookup-or(k, 0)) = 1,
-    lookup-in(b, k) = 1,
-    (b ~ k) = 1,
-    b has(k),
-    block([[k, 2]]) = { a: 2 },
-    (block([[k, 2]]) elements) = [[:a, 2]]
+    (b lookup(k("a"))) = 1,
+    (b lookup-or(k("a"), 0)) = 1,
+    lookup-in(b, k("a")) = 1,
+    (b ~ (k("a"))) = 1,
+    b has(k("a")),
+    block[[k("a"), 2]] = { a: 2 },
+    (block[[k("a"), 2]] elements) = [[:a, 2]]
   ]
 }
 

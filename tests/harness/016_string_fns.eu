@@ -84,7 +84,7 @@ computed-args: {
   b: ["a", "b"] str.join-on(computed-str(",")) //= "a,b"
   c: [computed-str("a"), computed-str("b")] str.join-on(ch.n) str.letters count //= 3
   d: ch.of-code-point(computed-num(65)) //= "A"
-  e: str.from-code-points([computed-num(65), computed-num(66)]) //= "AB"
+  e: str.from-code-points[computed-num(65), computed-num(66)] //= "AB"
   f: str.format(computed-str("%03d"), computed-num(5)) //= "005"
   g: str.format(computed-str("%s"), computed-str("x")) //= "x"
   h: computed-str("x") str.to-upper //= "X"

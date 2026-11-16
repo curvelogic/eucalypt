@@ -224,15 +224,15 @@ edge-checks: {
   ]
 }
 
-` "Computed (non-literal) arguments to the hand-written array wrappers must be forced before use."
+` "Regression coverage: computed (non-literal) arguments to the array wrappers (not shown to gate a removed force)."
 computed-checks: {
   n(x): x + 0
-  z: arr.zeros([n(2), n(2)])
+  z: arr.zeros[n(2), n(2)]
   trues: [
     (arr.fill([n(2), n(2)], n(3)) arr.to-list) = [3, 3, 3, 3],
     (z arr.set([n(0), n(1)], n(5)) arr.to-list) = [0, 5, 0, 0],
-    (z arr.get([n(0), n(1)])) = 0,
-    arr.neighbours([n(1), n(1)], [[n(0), n(1)]], arr.zeros([n(3), n(3)])) = [0]
+    (z arr.get[n(0), n(1)]) = 0,
+    arr.neighbours([n(1), n(1)], [[n(0), n(1)]], arr.zeros[n(3), n(3)]) = [0]
   ]
 }
 

@@ -274,7 +274,7 @@ list-checks: {
 ` "Computed (non-literal) arguments to the hand-written set wrappers must be forced before use."
 computed-arg-checks: {
   n(x): x + 0
-  s: set.of([n(1), n(2)])
+  s: set.of[n(1), n(2)]
   trues: [
     s set.contains?(n(1)),
     (s set.add(n(3)) set.size) = 3,

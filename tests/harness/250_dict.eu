@@ -473,7 +473,7 @@ computed-args: {
   ` :suppress
   s(x): str.of(x)
   ` :suppress
-  d: dict.of([[s("a"), n(1)]])
+  d: dict.of[[s("a"), n(1)]]
   ok: [
     (d dict.get(s("a"))) = 1,
     (d dict.get-or(s("z"), n(0))) = 0,
