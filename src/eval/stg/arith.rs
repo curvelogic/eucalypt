@@ -516,7 +516,7 @@ fn comparison_wrapper(index: usize) -> LambdaForm {
 ///
 /// Like `comparison_wrapper`, delegates to `binary_wrapper`. The `execute`
 /// methods are responsible for returning the correct result type:
-/// `machine_return_boxed_num` for scalar results, `machine_return_ndarray`
+/// `machine_return_boxed_num` for scalar results, `machine_return_heap_ndarray`
 /// for array results.
 fn arithmetic_wrapper(index: usize) -> LambdaForm {
     binary_wrapper(index)

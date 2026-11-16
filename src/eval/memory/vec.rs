@@ -53,6 +53,13 @@ impl HeapVec {
         })
     }
 
+    /// The elements, mutably. Only for a vec still being built by the
+    /// intrinsic that allocated it, before it is returned to the program
+    /// (vecs are otherwise immutable).
+    pub fn elements_mut(&mut self) -> &mut [Primitive] {
+        self.elements.as_mut_slice()
+    }
+
     /// Return the number of elements.
     pub fn len(&self) -> usize {
         self.elements.len()

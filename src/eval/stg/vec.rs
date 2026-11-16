@@ -4,6 +4,7 @@
 //! construction, indexed access, slicing, sampling, and conversion.
 
 use crate::common::sourcemap::Smid;
+use crate::eval::memory::vec::HeapVec;
 use crate::eval::{
     emit::Emitter,
     error::ExecutionError,
@@ -20,8 +21,9 @@ use crate::eval::{
 use super::{
     force::{SeqList, SeqNumList},
     support::{
-        closure_to_element, collect_num_list, data_list_arg, machine_return_num,
-        machine_return_vec, resolve_native_unboxing, set_primitive_to_native, vec_arg,
+        closure_to_element, collect_num_list, data_list_arg, machine_return_heap_vec,
+        machine_return_num, machine_return_vec, resolve_native_unboxing, set_primitive_to_native,
+        vec_arg,
     },
     syntax::{
         dsl::{app_bif, force, lambda, lref},
@@ -236,8 +238,7 @@ impl StgIntrinsic for VecSlice {
         let from = vec_index("vec.slice", "from", &native_from, smid)?;
         let to = vec_index("vec.slice", "to", &native_to, smid)?;
         let v = vec_arg(machine, view, &args[2])?;
-        let elements = v.slice(from, to).to_vec();
-        machine_return_vec(machine, view, &elements)
+        machine_return_vec(machine, view, v.slice(from, to))
     }
 }
 
@@ -336,7 +337,10 @@ impl StgIntrinsic for VecShuffle {
     ) -> Result<(), ExecutionError> {
         let floats = collect_num_list(machine, view, args[0].clone())?;
         let v = vec_arg(machine, view, &args[1])?;
-        let mut elements: Vec<Primitive> = v.elements().to_vec();
+        // Copy into the heap first, then shuffle in place: no Rust-side
+        // buffer outside the heap-limit accounting.
+        let mut shuffled = HeapVec::from_slice(&view, v.elements())?;
+        let elements = shuffled.elements_mut();
         let len = elements.len();
         // Full Fisher-Yates shuffle
         for (step, &f) in floats.iter().enumerate() {
@@ -347,7 +351,7 @@ impl StgIntrinsic for VecShuffle {
             let j = ((f * (i + 1) as f64) as usize) % (i + 1);
             elements.swap(i, j);
         }
-        machine_return_vec(machine, view, &elements)
+        machine_return_heap_vec(machine, view, shuffled)
     }
 }
 
@@ -371,12 +375,13 @@ impl StgIntrinsic for VecToList {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let elements: Vec<Primitive> = vec_arg(machine, view, &args[0])?.elements().to_vec();
+        let vec = vec_arg(machine, view, &args[0])?;
+        let elements = vec.elements();
 
         // Box each element and assemble the list via the neutral ABI.
         let mut items = Vec::with_capacity(elements.len());
         for prim in elements {
-            let native = set_primitive_to_native(&prim);
+            let native = set_primitive_to_native(prim);
             let box_tag = match &native {
                 Native::Num(_) => DataConstructor::BoxedNumber.tag(),
                 Native::Str(_) => DataConstructor::BoxedString.tag(),
