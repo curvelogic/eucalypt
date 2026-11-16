@@ -5,6 +5,74 @@ decision. It implements the narrower fix of §6 in
 `2026-11-15-flat-closures-design.md` (PR #1237): no flat closures, no wire
 format or compiler change.
 
+## 0. Is `update-strict` still needed? Yes: counting (owner question on choice (c))
+
+Question: is there a realistic case where `dict.update-strict` is still
+required once `memo_cell` trims stored thunks? There is, and it is the
+commonest dict idiom, counting. Release build of this branch, source prelude,
+deterministic counters (`eu -S`); confidence measured-single (one run each,
+counters are deterministic). Not re-run on master: the trim never fires on this
+shape (see the mechanism), so master is expected to match, but that is
+projected, not measured.
+
+```
+step(acc, i): acc dict.update(i % 10, + 1, 0)       # or dict.update-strict
+out: range(0, 1000000) foldl-strict(step, dict.empty) dict.get(3)
+```
+
+| 10 keys, `foldl-strict` | peak blocks | outcome |
+|---|---|---|
+| `dict.update`, 200,000 items | 14,565 (30.4M ticks) | passes |
+| `dict.update-strict`, 200,000 items | 1,027 (33.2M ticks) | passes |
+| `dict.update`, 1,000,000 items | exceeds `--heap-limit-mib 2048` | fails |
+| `dict.update-strict`, 1,000,000 items | 1,027 | passes |
+
+A single key in a `seq`-forced loop
+(`loop(i, n, acc): seq(acc, (i = n) then(acc, loop(i + 1, n, acc dict.update(:k, + 1, 0))))`)
+shows the same: at 1,000,000 steps 65,811 peak blocks against 1,027, and under
+`--heap-limit-mib 512` the lazy form fails and the strict form passes. The
+committed bench `024_dict_counting` (strict) peaks at 2,836 blocks; with
+`update` for `update-strict` it peaks at 29,161 (51.5M ticks both ways).
+Retention grows linearly with the updates, so it is heap, not stack depth: a
+1,000,000-deep thunk chain was forced without overflow.
+
+**Mechanism.** The stored value is the thunk `f(old)`, where `old` is the
+previous stored value of the same key. That is itself an unevaluated thunk, so
+a free variable of the new thunk is not yet a value and `memo_cell` declines to
+trim it (§5: a free variable that is an unevaluated thunk defeats the trim).
+The result is a chain of N pending thunks per key. No later store can shorten
+it without forcing `old`, which would change laziness. `update-strict` forces
+`f(old)` at store time, so there is no chain. This is the same limit that
+flat closures could not remove either.
+
+**Uses of `update-strict` and whether `memo_cell` covers them** (all by
+`grep`; none is covered):
+- `lib/prelude.eu`: `dict.merge-with-strict` folds `update-strict` over `b`'s
+  entries; the same chain forms on a key present in both dicts. Needed.
+- `tests/harness/bench/024_dict_counting.eu`: counting; measured above. Needed.
+- `tests/harness/250_dict.eu` (`strict-step`, `updates`) and
+  `typecheck/116`, `typecheck/118`: counting and typing checks; the counting
+  use is needed.
+- `tests/harness/errors/250_dict_update_strict.eu`: pins that the error in
+  `f(old)` surfaces when the dict is built. That is a semantic difference
+  (eager evaluation), not a memory one, so no store-time trim can replace it.
+- Docs: `docs/guide/dicts.md`, `docs/guide/advent-of-code.md` (three places,
+  including the loop advice), `docs/appendices/cheat-sheet.md`,
+  `docs/reference/agent-reference.md`, `docs/reference/prelude/dicts.md` and
+  the generated `docs/llms-full.txt`. All teach counting loops and stay
+  correct.
+
+**Recommendation: keep `update-strict` (and `merge-with-strict`); do not
+remove it.** Nothing about it is esoteric: it is the word-count and
+frequency-table idiom, and removing it loses a 10x to unbounded retention
+difference there. Cost of removing now: the prelude, bench 024, five test
+files and six doc pages change, and every counting loop leaks unless users
+write their own forcing. Cost of deprecate-then-remove: the same, a release
+later, plus a deprecation path, for no gain. What `memo_cell` does fix is the
+neighbouring case: values built over the loop's own evaluated variables
+(`[i + 1, i]`, block literals), where the user has no function to reach for.
+It complements `update-strict`; it does not replace it.
+
 ## 1. The problem, reproduced
 
 A loop that threads a dict and stores a value built over the loop's own
@@ -203,6 +271,6 @@ now and revisit with an AoC-shaped workload; they are bounds on cost, not
 correctness.
 
 (c) **Replace `update-strict` or sit beside it?** Recommendation: sit beside
-it until a second store of the same value stops leaking and the slot cost is
-measured on a real workload; then retire `update-strict` in a separate,
-owner-reviewed change.
+it, and keep it. §0 gives the counting loop that still needs it: the stored
+`f(old)` has an unevaluated free variable, which no store-time trim can fix
+(65,811 against 1,027 peak blocks at 1,000,000 updates).
