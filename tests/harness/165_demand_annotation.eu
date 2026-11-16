@@ -17,7 +17,8 @@
         and partial applications take the signature of the function they
         denote, and in blob mode a program's calls of prelude functions
         take their signatures; none of it may force a value a call does not
-        need. eu-oaz72.85: `iota` leaves its start unevaluated for its first two cells and then runs in constant stack. eu-oaz72.78: `foldl-strict` evaluates its accumulator at each
+        need. eu-oaz72.85: `iota` leaves its start unevaluated for
+        its first two cells and then runs in constant stack. eu-oaz72.78: `foldl-strict` evaluates its accumulator at each
         step, so `sum`, `product` and `count` run in constant stack, while
         `foldl` keeps its lazy accumulator."
 }

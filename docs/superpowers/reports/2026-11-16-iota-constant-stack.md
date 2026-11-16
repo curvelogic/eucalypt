@@ -18,6 +18,11 @@ chain of 100000 unevaluated `n + 1` thunks (Max Stack 200,003, source mode).
 its counter as each cell is demanded. `iota(panic) tail tail nil?` now
 raises the panic. After: Max Stack 9 (source) and 11 (blob) for the same walk.
 
+Cost on the walk itself: the per-cell `number?` check adds ticks to the very
+walk this fixes (`iota(0) nth(100000)`: about 12% more in blob mode and 18% more
+in source mode, per the round 1 review, `measured-single`); the stack is the
+trade for it.
+
 `range` was left on its previous lazy counter. Routing it through the new
 `iota` cost about 10% wall on bench 022 (median of 7 interleaved: 4145 ms to
 4586 ms, `measured-single`). `range(0, 100000) nth(99999)` therefore still
