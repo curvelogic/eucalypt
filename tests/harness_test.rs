@@ -5605,3 +5605,10 @@ pub fn test_error_309() {
 pub fn test_error_310() {
     run_error_test(&error_opts("310_seq_forces_first_argument.eu"));
 }
+
+#[test]
+/// `seq` evaluates its first argument before its second, so with both
+/// erroring the first error surfaces (eu-oaz72.161).
+pub fn test_error_311() {
+    run_error_test(&error_opts("311_seq_first_argument_before_second.eu"));
+}

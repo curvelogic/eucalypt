@@ -136,7 +136,7 @@ fn ambiguous_names(expr: &RcExpr) -> HashSet<String> {
 ///
 /// For each intrinsic, strict arguments get `(Strict, AtMostOnce)` per
 /// the blanket rule. Non-strict arguments get `(Lazy, Multi)`.
-/// Special refinements are applied for IF, AND, OR, LOOKUPOR, IO_BIND.
+/// Special refinements are applied for IF, SEQ, AND, OR, LOOKUPOR, IO_BIND.
 ///
 /// This function is also called by the STG compiler to populate its
 /// per-intrinsic demand table, replacing the `strict_args` consultation.
