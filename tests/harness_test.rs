@@ -5585,3 +5585,10 @@ pub fn test_error_306_complex_result_large_float() {
 pub fn test_error_250_dict_detached_label() {
     run_error_test(&error_opts("250_dict_detached_label.eu"));
 }
+
+#[test]
+/// `iota` evaluates its counter from the third cell on, so an erroring start
+/// surfaces there (its first two cells stay lazy, gated by harness 165).
+pub fn test_error_309() {
+    run_error_test(&error_opts("309_iota_third_cell_start_forced.eu"));
+}

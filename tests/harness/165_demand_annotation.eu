@@ -17,7 +17,8 @@
         and partial applications take the signature of the function they
         denote, and in blob mode a program's calls of prelude functions
         take their signatures; none of it may force a value a call does not
-        need. eu-oaz72.78: `foldl-strict` evaluates its accumulator at each
+        need. eu-oaz72.85: `iota` leaves its start unevaluated for
+        its first two cells and then runs in constant stack. eu-oaz72.78: `foldl-strict` evaluates its accumulator at each
         step, so `sum`, `product` and `count` run in constant stack, while
         `foldl` keeps its lazy accumulator."
 }
@@ -115,6 +116,20 @@ strict-folds: {
 fold-values(context): {
   r: context.result
   checks: [r.summed = 4999950000, r.multiplied = 1, r.counted = 100000, r.maxed = 99999]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` { target: :iota-walks
+    verify: [:iota-values, :constant-stack] }
+iota-walks: {
+  far: iota(0) nth(steps)
+  offset: iota(7) nth(steps)
+  prefix: iota(5) take(4)
+}
+
+` "every iota walk computes its value"
+iota-values(context): {
+  r: context.result
+  checks: [r.far = 100000, r.offset = 100007, r.prefix = [5, 6, 7, 8]]
 }.(checks all-true? then(:PASS, :FAIL))
 
 ` { target: :test-foldl-strict

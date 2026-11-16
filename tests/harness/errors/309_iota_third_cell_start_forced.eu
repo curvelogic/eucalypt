@@ -1,0 +1,2 @@
+` "iota leaves its start unevaluated for its first two cells (harness 165 gates that), so the third cell is where an erroring start surfaces."
+result: iota(panic("iota start forced")) tail tail nil?
