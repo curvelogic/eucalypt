@@ -60,7 +60,7 @@ Because the `RESULT` key takes precedence, a target that defines
 `RESULT` is judged solely on that value; its other bindings reach the
 verdict only through whatever computes `RESULT`. Computing `RESULT`
 from the checks keeps every check in the verdict — see
-`tests/harness/189_r9oy_union_as_spec.eu` and
+`tests/harness/174_spec_validation.eu` (its `test-union-as-spec` target) and
 `tests/harness/182_typedata_alias_resolution.eu`, which gather their
 checks into a list and finish with `all-true? then(:PASS, :FAIL)`.
 

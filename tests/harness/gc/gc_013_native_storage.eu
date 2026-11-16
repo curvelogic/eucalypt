@@ -120,8 +120,8 @@ gc-checks: {
     (gc-a0 arr.to-list) = [1, 2, 3, 4, 5, 6],
     (gc-evolved.set set.size) = 207,
     gc-evolved.set set.contains?("k-1003"),
-    (gc-evolved.array arr.get([0, 0])) = 6,
-    (gc-evolved.array arr.get([1, 1])) = 1
+    (gc-evolved.array arr.get[0, 0]) = 6,
+    (gc-evolved.array arr.get[1, 1]) = 1
   ]
 }
 

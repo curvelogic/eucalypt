@@ -24,7 +24,7 @@ ctx0: { state: { count: 0 }, seed: seed0 }
 # Shell command strings are platform-specific, and the trailing line ending
 # differs too, so trim the captured stdout before comparing.
 ` :suppress
-echo-cmd: if(eu.os = "windows", "Write-Output hi", "echo hi")
+echo-cmd: (eu.os = "windows") then("Write-Output hi", "echo hi")
 
 # One pipeline exercising io (shell), state (put / modify / %! lens operator),
 # random (two draws), and pure steps — all as native do.* actions.
