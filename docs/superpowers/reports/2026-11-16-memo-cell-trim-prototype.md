@@ -166,6 +166,16 @@ store there (bounded: 1,024 nodes, 64 slots).
   before the scan, the alias walk's last hop tested, `detach` doc comment,
   the arity `debug_assert`.
 
+Round-2 measurements (clean release builds of master and this head, source
+prelude; deterministic counters, so confidence is measured-verified): benches
+016–022 have identical ticks, allocations and peak blocks to master (015 as
+well, measured on the pre-fix merge and this head); `assoc-chain-lazy` peaks
+at 1,083 blocks against a master that exceeds `--heap-limit-mib 64`. Round 2
+does not touch the hot path (the new code runs only inside `memo_cell`), so
+no wall-clock rerun was made. Pitfall met on the way: a stale local binary
+(left by a fault-injection build) showed spurious tick differences; the
+figures above are from builds in a clean worktree.
+
 ## 7. Choices for the owner
 
 (a) **May a store rewrite the caller's slot with the shared cell?** It is the
