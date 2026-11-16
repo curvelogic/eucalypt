@@ -97,6 +97,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(boolean::Or));
     rt.add(Box::new(boolean::Not));
     rt.add(Box::new(boolean::If));
+    rt.add(Box::new(force::Seq));
     rt.add(Box::new(boolean::Cond));
     rt.add(Box::new(boolean::Clause));
     rt.add(Box::new(panic::Panic));

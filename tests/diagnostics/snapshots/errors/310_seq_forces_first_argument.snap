@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/310_seq_forces_first_argument
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/310_seq_forces_first_argument.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/310_seq_forces_first_argument.eu:2:13
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: seq first argument forced
+  ┌─ tests/harness/errors/310_seq_forces_first_argument.eu:2:13
+  │
+2 │ result: seq(panic("seq first argument forced"), 1)
+  │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - result at 310_seq_forces_first_argument.eu:2:9
