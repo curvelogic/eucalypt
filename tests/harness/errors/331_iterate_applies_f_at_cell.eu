@@ -1,0 +1,3 @@
+` "iterate applies f when its cell is reached, even if the element is never read (eu-oaz72.165)"
+boom(x): panic("f applied")
+x: iterate(boom, 0) take(2) count
