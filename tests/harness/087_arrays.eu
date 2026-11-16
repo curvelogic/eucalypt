@@ -234,15 +234,15 @@ heap-build-checks: {
     (t arr.transpose arr.to-list) = (m arr.to-list),
     (m arr.slice(1, 2) arr.to-list) = [3, 6],
     (t arr.slice(1, 1) arr.to-list) = [4, 5, 6],
-    ((t arr.set([2, 1], 99)) arr.get([2, 1])) = 99,
-    (t arr.get([2, 1])) = 6,
-    ((m arr.set([0, 0], 0)) arr.get([0, 0])) = 0,
-    (m arr.get([0, 0])) = 1,
-    (m arr.reshape([3, 2]) arr.shape) = [3, 2],
-    (m arr.reshape([3, 2]) arr.to-list) = [1, 2, 3, 4, 5, 6],
+    ((t arr.set([2, 1], 99)) arr.get[2, 1]) = 99,
+    (t arr.get[2, 1]) = 6,
+    ((m arr.set([0, 0], 0)) arr.get[0, 0]) = 0,
+    (m arr.get[0, 0]) = 1,
+    (m arr.reshape[3, 2] arr.shape) = [3, 2],
+    (m arr.reshape[3, 2] arr.to-list) = [1, 2, 3, 4, 5, 6],
     (arr.add(m, m) arr.to-list) = [2, 4, 6, 8, 10, 12],
-    ((m + 1) arr.get([1, 2])) = 7,
-    ((10 - m) arr.get([1, 2])) = 4,
+    ((m + 1) arr.get[1, 2]) = 7,
+    ((10 - m) arr.get[1, 2]) = 4,
     (arr.fill([2, 2], 3) arr.to-list) = [3, 3, 3, 3]
   ]
 }
