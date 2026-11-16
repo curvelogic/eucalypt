@@ -1,0 +1,2 @@
+` "seq evaluates its first argument before its second: with both erroring, the first error is the one reported."
+result: seq(panic("first argument"), panic("second argument"))

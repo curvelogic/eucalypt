@@ -3342,6 +3342,13 @@ pub fn test_291_modular_arithmetic() {
     run_test(&opts("291_modular_arithmetic.eu"));
 }
 
+/// `seq(a, b)` forces `a` to WHNF and returns `b`; `foldl-strict` and `iota`
+/// use it and keep their results, laziness and constant stack (eu-oaz72.161).
+#[test]
+pub fn test_292_seq_intrinsic() {
+    run_test(&opts("292_seq_intrinsic.eu"));
+}
+
 /// The BFS and Dijkstra templates of the Advent of Code cookbook
 /// (eu-oaz72.16), with the Dijkstra queue a dict keyed by `[priority, seq]`
 /// (eu-oaz72.22).
@@ -5491,4 +5498,41 @@ pub fn test_error_250_dict_detached_label() {
 /// surfaces there (its first two cells stay lazy, gated by harness 165).
 pub fn test_error_309() {
     run_error_test(&error_opts("309_iota_third_cell_start_forced.eu"));
+}
+
+#[test]
+/// `seq` forces its first argument, so an error there surfaces (eu-oaz72.161).
+pub fn test_error_310() {
+    run_error_test(&error_opts("310_seq_forces_first_argument.eu"));
+}
+
+#[test]
+/// `seq` evaluates its first argument before its second, so with both
+/// erroring the first error surfaces (eu-oaz72.161).
+pub fn test_error_311() {
+    run_error_test(&error_opts("311_seq_first_argument_before_second.eu"));
+}
+
+#[test]
+/// A huge array dimension is shown capped (eu-oaz72.160).
+pub fn test_error_312() {
+    run_error_test(&error_opts("312_array_dims_capped.eu"));
+}
+
+#[test]
+/// A huge array index is reported as given, not saturated (eu-oaz72.160).
+pub fn test_error_313() {
+    run_error_test(&error_opts("313_array_index_not_saturated.eu"));
+}
+
+#[test]
+/// A huge modular operand is shown capped (eu-oaz72.160).
+pub fn test_error_314() {
+    run_error_test(&error_opts("314_modular_operand_capped.eu"));
+}
+
+#[test]
+/// A huge bitwise operand is shown capped (eu-oaz72.160).
+pub fn test_error_315() {
+    run_error_test(&error_opts("315_bitwise_operand_capped.eu"));
 }

@@ -54,7 +54,7 @@ evaluation and purely functional semantics.
 - [Blocks](https://curvelogic.github.io/eucalypt/reference/prelude/blocks.html): 66 block functions including construction, merging, lookup, transformation, alteration, and deep find/query
 - [Strings](https://curvelogic.github.io/eucalypt/reference/prelude/strings.html): 36 string functions including splitting, joining, regex, case conversion, base64, and SHA-256
 - [Numbers and Arithmetic](https://curvelogic.github.io/eucalypt/reference/prelude/numbers.html): 30 numeric functions including inc/dec, predicates, parsing, rounding, and min/max
-- [Booleans and Comparison](https://curvelogic.github.io/eucalypt/reference/prelude/booleans.html): 12 entries including true/false/null, if/then/when, panic/assert, and boolean logic operators
+- [Booleans and Comparison](https://curvelogic.github.io/eucalypt/reference/prelude/booleans.html): 13 entries including true/false/null, if/then/when, panic/assert, and boolean logic operators
 - [Combinators](https://curvelogic.github.io/eucalypt/reference/prelude/combinators.html): 14 combinators including identity, const, compose, flip, apply, curry, uncurry, and cond
 - [Calendar](https://curvelogic.github.io/eucalypt/reference/prelude/calendar.html): 8 date-time functions for creating, parsing, formatting, and decomposing ZDT values
 - [Sets](https://curvelogic.github.io/eucalypt/reference/prelude/sets.html): 14 set operations including from-list, to-list, add, remove, contains, union, intersect, and diff

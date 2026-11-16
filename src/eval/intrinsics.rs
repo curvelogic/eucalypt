@@ -1212,6 +1212,21 @@ lazy_static! {
             ty: function(vec![num(), str_()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 228
+            // SEQ(a, b): force `a` to weak head normal form, return `b`.
+            // Strict in arg 0 only; `b` is entered in tail position, so
+            // it is demanded lazily-once (see analyse_demand).
+            name: "SEQ",
+            ty: function(vec![any(), any(), any()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 229
+            // MATCHES_WITH(s, re): all matches of `re` in `s` in one pass,
+            // each as [whole, g1, ...].
+            name: "MATCHES_WITH",
+            ty: function(vec![str_(), str_(), list()]).unwrap(),
+            strict: vec![0, 1],
+    },
     ];
 }
 

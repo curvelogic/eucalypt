@@ -10607,6 +10607,7 @@ results:
 | `%u` | Unsigned decimal integer | `{42:%u}` → `42` |
 | `%o` | Octal | `{255:%o}` → `377` |
 | `%x`, `%X` | Hexadecimal (lower/upper) | `{255:%x}` → `ff` |
+| `%b` | Binary (negatives as 64-bit two's complement) | `{5:%08b}` → `00000101` |
 | `%f`, `%F` | Decimal notation | `{3.14:%.1f}` → `3.1` |
 | `%e`, `%E` | Scientific notation | `{1000:%e}` → `1e3` |
 | `%g`, `%G` | Auto (decimal or scientific) | `{0.001:%g}` → `0.001` |
@@ -11449,11 +11450,11 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 
 ## Categories
 
-- [Lists](lists.md) -- list construction, transformation, folding, sorting (91 entries)
+- [Lists](lists.md) -- list construction, transformation, folding, sorting (92 entries)
 - [Blocks](blocks.md) -- block construction, access, merging, transformation (66 entries)
-- [Strings](strings.md) -- string manipulation, regex, formatting (41 entries)
+- [Strings](strings.md) -- string manipulation, regex, formatting (43 entries)
 - [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (36 entries)
-- [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (12 entries)
+- [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (13 entries)
 - [Combinators](combinators.md) -- function composition, application, utilities (14 entries)
 - [Calendar](calendar.md) -- date and time functions (8 entries)
 - [Sets](sets.md) -- set operations (15 entries)
@@ -11466,7 +11467,7 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
 - [IO](io.md) -- environment, time, argument access, and monad utility (37 entries)
 
-*412 documented entries in total.*
+*416 documented entries in total.*
 
 ## Standard Libraries
 
@@ -11573,6 +11574,7 @@ Repeated `!!` over the same list in a loop is quadratic.
 | Function | Description |
 |----------|-------------|
 | `foldl(op, i, l)` | Left fold operator `op` over list `l` starting from value `i` |
+| `foldl-strict(op, i, l)` | As `foldl`, but the accumulator is evaluated to weak head normal form at each step, so a long fold runs in constant stack instead of building a chain of unevaluated `op` calls (for a scalar accumulator; a list or block accumulator is forced only to its outermost constructor). Use it where `op` is strict in the accumulator, as `+` and `max` are. `op(i, x)` is evaluated even where `op` would ignore it, so an error there surfaces where `foldl` would have skipped it |
 | `foldr(op, i, l)` | Right fold operator `op` over list `l` ending with value `i` |
 | `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i` |
 | `scanr(op, i, l)` | Right scan operator `op` over list `l` ending with value `i` |
@@ -11632,7 +11634,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |
 | `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
 | `tails(l)` | Return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]` |
-| `iota(n)` | Return infinite list of integers from `n` upwards |
+| `iota(n)` | Return infinite list of integers from `n` upwards. `n` is left unevaluated for the first two cells, so `iota(panic) tail nil?` is `false`; from the third cell on it is evaluated as each cell is demanded, which keeps a long walk in constant stack |
 | `ℕ` | The natural numbers: `[0, 1, 2, ...]` |
 | `butlast(l)` | Return all elements of list `l` except the last |
 | `unzip(pairs)` | List of pairs to pair of lists. Inverse of zip |
@@ -11802,12 +11804,13 @@ hosts: data deep-query("*.config.host")
 | `str.extract-or(re, d, s)` | Use regex `re` (with single capture) to extract substring of `s` - or default `d` |
 | `str.matches` | Return list of all matches in string `s` of regex `re` |
 | `str.matches-of` | Return list of all matches in string `s` of regex `re` |
+| `str.matches-with(re, s)` | Return all matches of regex `re` in string `s`, each as a list of the full match followed by its capture groups. Matching is a single pass, so anchors and word boundaries see their context. A group that does not take part in a match is the empty string, indistinguishable from an empty capture |
 | `str.matches?(re, s)` | Return true if `re` matches full string `s` |
 | `str.suffix(b, a)` | Return string `b` suffixed onto `a` |
 | `str.prefix(b, a)` | Return string `b` prefixed onto `a` |
 | `str.letters` | Return individual letters of `s` as list of strings |
 | `str.len` | Return length of string in characters |
-| `str.format` | Format `x` using printf-style format `spec` (`%d`, `%x`, `%X`, `%o`, `%b`, `%f`, `%e`, `%s`, with width and flags). Pipeline-friendly: `255 str.format("%x")` |
+| `str.format(spec, x)` | Format `x` using printf-style format `spec` (`%d`, `%x`, `%X`, `%o`, `%b`, `%f`, `%e`, `%s`, with width and flags). Pipeline-friendly: `255 str.format` with a spec argument |
 | `str.fmt` | DEPRECATED: use `str.format(spec, x)`, which takes the spec first so it works in pipelines |
 | `str.to-upper` | Convert string `s` to upper case |
 | `str.to-lower` | Convert string `s` to lower case |
@@ -11947,6 +11950,7 @@ character.
 | `true` | Constant logical true |
 | `false` | Constant logical false |
 | `if` | If `c` is `true`, return `t` else `f` |
+| `seq` | Evaluate `a` to weak head normal form, then return `b`. `a` is forced only to its outermost constructor (a list or block is not forced element by element); an error in `a` surfaces, and `b` is not evaluated first. Use it to force an accumulator or counter so a recursion runs in constant stack instead of building a chain of thunks |
 | `then(t, f, c)` | For pipeline if: `x? then(t, f)` |
 | `when(p?, f, x)` | When `x` satisfies `p?` apply `f` else pass through unchanged |
 
@@ -14408,7 +14412,7 @@ old-fn(x): x + 1
 ` { deprecated: "use new-fn instead" }
 old-fn(x): x + 1
 
-# With replacement pointer (enables LSP quick-fix)
+# With replacement pointer (drop-in successor only; enables LSP quick-fix)
 ` { deprecated: "use new-fn instead"
     replaced-by: "new-fn" }
 old-fn(x): x + 1
@@ -14417,6 +14421,11 @@ old-fn(x): x + 1
 Referencing a deprecated declaration emits a warning on stderr.
 Under `eu check --strict`, deprecation warnings become errors.
 Deprecated declarations still work — deprecation is advisory.
+
+`replaced-by:` must name a drop-in successor: same arguments in the same order,
+because the LSP quick-fix only renames the call. If the successor reorders or
+changes arguments (`str.fmt(x, spec)` → `str.format(spec, x)`), give the advice
+in `deprecated:` and omit `replaced-by:`.
 
 A top-level declaration is matched by its bare name; a declaration nested in a
 namespace block is matched by the dotted path a caller writes (`state.exec`),
@@ -14778,8 +14787,31 @@ Note: `foldl` takes 3 args and the catenated list supplies the last
 one, so both forms above work. You can also partially apply it:
 
 ```
-sum: foldl(+, 0)
+sum: foldl-strict(+, 0)
 [1,2,3,4,5] sum              # 15
+```
+
+#### `foldl-strict(op, i, l)` — left fold with a strict accumulator
+
+Same arguments as `foldl`, but the accumulator is evaluated at each step, so a
+long fold runs in constant stack. `sum`, `product` and `count` use it. Prefer
+it over `foldl` when `op` is strict in the accumulator (`+`, `max`); keep
+`foldl` where the accumulator may be unneeded or lazy.
+
+```
+range(0, 1000000) foldl-strict(max, 0)   # 999999
+```
+
+#### `seq(a, b)` — force `a`, return `b`
+
+Evaluates `a` to weak head normal form (only the outermost constructor of a
+list or block), then returns `b`. An error in `a` surfaces; `b` is not
+evaluated first. Use it to force a loop's accumulator before the tail call so
+the stack stays constant. In a pipeline the subject is `b`: `x seq(a)` is
+`seq(a, x)`. `foldl-strict` and `iota` are written with it.
+
+```
+count-up(a, n): (n = 0) then(a, seq(a, count-up(a + 1, n - 1)))
 ```
 
 #### `foldr(op, i, l)` — right fold
@@ -15761,6 +15793,7 @@ All functions verified against `lib/prelude.eu`:
 | `str.extract-or` | `extract-or(re, d, s)` | Extract first capture group or default `d` |
 | `str.matches` | `matches(s, re)` | All matches of `re` in `s` |
 | `str.matches-of` | `matches-of(re, s)` | All matches (pipeline-friendly) |
+| `str.matches-with` | `matches-with(re, s)` | All matches, each as `[whole, g1, ...]` |
 | `str.matches?` | `matches?(re, s)` | True if `re` matches full string `s` |
 | `str.letters` | `letters(s)` | List of individual characters |
 | `str.len` | `len(s)` | String length in characters |
@@ -17924,7 +17957,7 @@ old-fn(x): x
 ` { deprecated: "use new-fn instead" }
 old-fn(x): x
 
-# With message and replacement hint
+# With message and replacement hint (drop-in only: same signature and argument order)
 ` { deprecated: "use new-fn instead"
     replaced-by: "new-fn" }
 old-fn(x): x
@@ -18071,6 +18104,8 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `map(f)` | Transform each element |
 | `filter(p?)` | Keep elements matching predicate |
 | `foldl(f, init)` | Left fold |
+| `foldl-strict(f, init)` | Left fold, accumulator evaluated at each step (constant stack for scalars) |
+| `seq(a, b)` | Evaluate `a` to WHNF, return `b` (force an accumulator; `x seq(a)` pipeline form) |
 | `foldr(f, init)` | Right fold |
 | `sort-by(f)` | Sort by key function |
 | `take(n)` | First n elements (`[]` if n <= 0) |
@@ -18118,6 +18153,7 @@ float such as `2.0` is accepted.
 | Function | Description |
 |----------|-------------|
 | `str.len(s)` | String length |
+| `str.format(spec, x)` | Printf-style format, spec first: `255 str.format("%x")`, `5 str.format("%08b")` (`%b` binary) |
 | `str.to-upper(s)` | Upper case |
 | `str.to-lower(s)` | Lower case |
 | `str.starts-with?(re, s)` | Starts with regex match? |

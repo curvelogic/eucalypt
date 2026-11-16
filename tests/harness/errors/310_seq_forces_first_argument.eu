@@ -1,0 +1,2 @@
+` "seq forces its first argument: an error there surfaces even though the second is fine."
+result: seq(panic("seq first argument forced"), 1)

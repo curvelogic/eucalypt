@@ -665,6 +665,18 @@ it over `foldl` when `op` is strict in the accumulator (`+`, `max`); keep
 range(0, 1000000) foldl-strict(max, 0)   # 999999
 ```
 
+#### `seq(a, b)` — force `a`, return `b`
+
+Evaluates `a` to weak head normal form (only the outermost constructor of a
+list or block), then returns `b`. An error in `a` surfaces; `b` is not
+evaluated first. Use it to force a loop's accumulator before the tail call so
+the stack stays constant. In a pipeline the subject is `b`: `x seq(a)` is
+`seq(a, x)`. `foldl-strict` and `iota` are written with it.
+
+```
+count-up(a, n): (n = 0) then(a, seq(a, count-up(a + 1, n - 1)))
+```
+
 #### `foldr(op, i, l)` — right fold
 
 ```
@@ -1644,6 +1656,7 @@ All functions verified against `lib/prelude.eu`:
 | `str.extract-or` | `extract-or(re, d, s)` | Extract first capture group or default `d` |
 | `str.matches` | `matches(s, re)` | All matches of `re` in `s` |
 | `str.matches-of` | `matches-of(re, s)` | All matches (pipeline-friendly) |
+| `str.matches-with` | `matches-with(re, s)` | All matches, each as `[whole, g1, ...]` |
 | `str.matches?` | `matches?(re, s)` | True if `re` matches full string `s` |
 | `str.letters` | `letters(s)` | List of individual characters |
 | `str.len` | `len(s)` | String length in characters |
