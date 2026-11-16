@@ -1,0 +1,25 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/315_bitwise_operand_capped
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/315_bitwise_operand_capped.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/315_bitwise_operand_capped.eu:2:17
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: bitwise operations require integer arguments (1e+300 is out of the i64 range for bitwise operations)
+  ┌─ tests/harness/errors/315_bitwise_operand_capped.eu:2:17
+  │
+2 │ x: (10.0 ^ 300) & 1
+  │                 ^
