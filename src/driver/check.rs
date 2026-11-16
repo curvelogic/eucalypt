@@ -415,7 +415,7 @@ fn type_check_path_with_seed(
 
 /// Check a file using the original merged pipeline (fallback when the
 /// prelude cache is unavailable).
-fn type_check_path_merged(
+pub(crate) fn type_check_path_merged(
     path: &Path,
     pipeline_error: impl Fn(&str, &dyn std::fmt::Display) -> PathCheckResult,
 ) -> PathCheckResult {

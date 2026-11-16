@@ -210,7 +210,7 @@ old-fn(x): x
 ` { deprecated: "use new-fn instead" }
 old-fn(x): x
 
-# With message and replacement hint
+# With message and replacement hint (drop-in only: same signature and argument order)
 ` { deprecated: "use new-fn instead"
     replaced-by: "new-fn" }
 old-fn(x): x

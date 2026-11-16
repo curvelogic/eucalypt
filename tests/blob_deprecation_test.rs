@@ -63,7 +63,9 @@ fn embedded_blob_carries_the_preludes_deprecation_table() {
             blob.deprecations.keys().collect::<Vec<_>>()
         )
     });
-    assert_eq!(spec.replacement.as_deref(), Some("run"));
+    // `run` is not a drop-in for `exec`, so no `replaced-by` is recorded.
+    assert_eq!(spec.replacement, None);
+    assert_eq!(spec.message.as_deref(), Some("use random.run(a, s).rest"));
 }
 
 /// End-to-end: referencing the prelude's deprecated `random.exec` on the

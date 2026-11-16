@@ -1,2 +1,3 @@
 exit: 1
 stderr: "'str.fmt' is deprecated"
+stderr-absent: "use 'format' instead"
