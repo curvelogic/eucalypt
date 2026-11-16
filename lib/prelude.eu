@@ -1576,11 +1576,11 @@ reduce(op, l): foldl-strict(op, l head, l tail)
     blame: :transparent }
 foldr(op, i, l): if(l nil?, i, op(l head, foldr(op, i, l tail)))
 
-` { doc: "`scanl(op, i, l)` - left scan operator `op` over list `l` starting from value `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so a long scan runs in constant stack and an error in a step surfaces when that cell is reached. The result list is produced cell by cell, so `scanl` works on an infinite list."
+` { doc: "`scanl(op, i, l)` - left scan operator `op` over list `l` starting from value `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so a long scan runs in constant stack and an error in a step surfaces when that cell is reached."
     type: s"(b → a → b) → b → [a] → [b]" }
-## `seq` evaluates each element to WHNF as its cell is reached; the spine is
-## produced cell by cell, so the stack stays constant.
-scanl(op, i, l): { go(a, m): seq(a, cons(a, if(m nil?, [], go(op(a, m head), m tail)))) }.(go(i, l))
+## `seq` evaluates each element to WHNF as its cell is reached, then the input is
+## tested before the cell is built (as before), so the stack stays constant.
+scanl(op, i, l): { go(a, m): seq(a, if(m nil?, [a], cons(a, go(op(a, m head), m tail)))) }.(go(i, l))
 
 ` { doc: "`scanr(op, i, l)` - right scan operator `op` over list `l` ending with value `i`."
     type: s"(a → b → b) → b → [a] → [b]" }

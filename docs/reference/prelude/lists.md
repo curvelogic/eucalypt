@@ -93,7 +93,7 @@ Repeated `!!` over the same list in a loop is quadratic.
 | `foldl(op, i, l)` | Left fold operator `op` over list `l` starting from value `i` |
 | `foldl-strict(op, i, l)` | As `foldl`, but the accumulator is evaluated to weak head normal form at each step, so a long fold runs in constant stack instead of building a chain of unevaluated `op` calls (for a scalar accumulator; a list or block accumulator is forced only to its outermost constructor). Use it where `op` is strict in the accumulator, as `+` and `max` are. `op(i, x)` is evaluated even where `op` would ignore it, so an error there surfaces where `foldl` would have skipped it |
 | `foldr(op, i, l)` | Right fold operator `op` over list `l` ending with value `i` |
-| `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so a long scan runs in constant stack and an error in a step surfaces when that cell is reached. The result list is produced cell by cell, so `scanl` works on an infinite list |
+| `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so a long scan runs in constant stack and an error in a step surfaces when that cell is reached |
 | `scanr(op, i, l)` | Right scan operator `op` over list `l` ending with value `i` |
 
 ## Predicates

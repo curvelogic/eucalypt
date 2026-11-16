@@ -528,9 +528,11 @@ letters; escape them if they hold regex characters.
 ### Loops
 
 `iterate(f, x)` is the list `x`, `f(x)`, `f(f(x))`, … (each element is
-evaluated as its cell is reached) and `iterate(f, x) nth(n)` is `f` applied
-`n` times, in constant stack however large `n` is. A tail-recursive function
-that calls the step directly does the same job without building the list:
+evaluated to weak head normal form as its cell is reached) and
+`iterate(f, x) nth(n)` is `f` applied `n` times. For a number state that runs
+in constant stack, but a block or list state is evaluated only to its outermost
+constructor, so its fields can still build chains. A tail-recursive function
+that calls the step directly avoids building the list:
 
 ```eu
 ` "one step of the simulation"
@@ -548,8 +550,9 @@ takes the step as a parameter loses that, such as
 `times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))`: eucalypt cannot
 tell whether an unknown `f` uses its argument, so it builds a chain of
 unevaluated steps that is only worked through at the end, using stack and
-memory in proportion. (`iterate(step, s) nth(n)` is not affected: it
-evaluates each state as its cell is reached.)
+memory in proportion. (`iterate(step, s) nth(n)` evaluates each state to weak
+head normal form as its cell is reached, which is enough for a number state
+but not for the fields of a block state.)
 
 So for a long loop of your own, name the step function in the loop itself. A loop that
 runs until something holds tests the state in the same place, as in
