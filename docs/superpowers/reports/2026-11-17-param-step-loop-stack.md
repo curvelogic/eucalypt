@@ -54,7 +54,7 @@ max stack stayed 500,007). `foldl-strict` is the list-shaped equivalent.
 
 ## Verification
 
-`tests/harness/301_param_step_constant_stack.eu` gates `max-stack < 1000` on
-three loops at n = 1e5. Fault injection: with the `reduce.rs` change
+`tests/harness/233_constant_stack_loops.eu` (three new loops) gates `max-stack < 1000` on
+at n = 1e5. Fault injection: with the `reduce.rs` change
 reverted the test FAILs; restored, it PASSes. Full `cargo test --release`
 passes with and without the blob; clippy and fmt clean.

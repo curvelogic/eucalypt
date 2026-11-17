@@ -3192,18 +3192,12 @@ pub fn test_232_negative_counts() {
 /// catenation produces is reduced to a saturated `if`. The `loops` target's
 /// `constant-stack` validator checks `max-stack` and FAILs on master, where
 /// each `then` iteration pushed a frame (max-stack ~1e5 at n = 1e5).
+/// eu-oaz72.147 adds parameter-step and parameter-test loops: the inliner no
+/// longer copies a self-recursive combinator into itself (max-stack ~5e4 on
+/// master).
 #[test]
 pub fn test_233_constant_stack_loops() {
     run_test(&opts("233_constant_stack_loops.eu"));
-}
-
-/// eu-oaz72.147 — a self-recursive combinator that applies one of its own
-/// parameters must not be inlined into itself: the copy left an unreduced
-/// `then` around the recursive call, so loops with a parameter step or test
-/// grew the stack linearly (max-stack ~5e4 at n = 1e5 on master).
-#[test]
-pub fn test_301_param_step_constant_stack() {
-    run_test(&opts("301_param_step_constant_stack.eu"));
 }
 
 /// eu-oaz72.36 — a list built by `foldr` or `filter` is computed once and

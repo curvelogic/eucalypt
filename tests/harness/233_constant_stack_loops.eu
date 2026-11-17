@@ -14,6 +14,14 @@ via-if(i, a): if(a < 0 ∨ i = 0, a, via-if(i - 1, a + 1))
 true-branch(i, a): if(a >= 0 ∧ i > 0, true-branch(i - 1, a + 1), a)
 nested(i, a): (a < 0 ∨ i = 0) then(a, if(i % 2 = 0, nested(i - 1, a + 1), nested(i - 1, a + 2)))
 
+# eu-oaz72.147: the step or test is a parameter, so the recursive call must
+# not be hidden from demand analysis by a self-inlined copy.
+step-loop(f, n): (n = 0) then(0, step-loop(f, f(n)))
+test-loop(p?, n): p?(n) then(0, test-loop(p?, n - 1))
+
+# A lazy state forced explicitly with `seq`.
+seq-loop(f, n, x): (n = 0) then(x, seq(x, seq-loop(f, n - 1, f(x))))
+
 n: 100000
 
 ` { target: :loops
@@ -23,6 +31,9 @@ loops: {
   if-loop: via-if(n, 0)
   true-loop: true-branch(n, 0)
   nested-loop: nested(n, 0)
+  param-step-loop: step-loop(_ - 1, n)
+  param-test-loop: test-loop(_ = 0, n)
+  seq-state-loop: seq-loop(_ + 3, n, 0)
 }
 
 ` "every loop computes its value"
@@ -31,7 +42,10 @@ loop-values(context): {
   checks: [r.then-loop = 100000,
            r.if-loop = 100000,
            r.true-loop = 100000,
-           r.nested-loop = 150000]
+           r.nested-loop = 150000,
+           r.param-step-loop = 0,
+           r.param-test-loop = 0,
+           r.seq-state-loop = 300000]
 }.(checks all-true? then(:PASS, :FAIL))
 
 ` "no loop grows the stack with its iteration count"
