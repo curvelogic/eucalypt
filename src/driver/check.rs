@@ -181,6 +181,7 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
 
     // ── Phase 2: bidirectional type check + content verifier via pipeline ─────
     let t_phase2 = Instant::now();
+    let mut pipeline_failed = false;
     let (type_warning_count, content_error_count) = match run_type_checker(opt) {
         Ok(result) => {
             let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
@@ -214,9 +215,10 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
             (result.warnings.len(), result.core_errors.len())
         }
         Err(e) => {
-            // Pipeline failure is not a type error — log at debug level and
-            // continue with the annotation syntax results only.
-            eprintln!("eu check: pipeline warning: {e}");
+            // A file that could not be checked must never pass silently,
+            // strict or not (e.g. an unreadable `prelude:` override).
+            eprintln!("eu check: error: could not check: {e}");
+            pipeline_failed = true;
             (0, 0)
         }
     };
@@ -231,11 +233,15 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
         );
     }
 
-    let total_issues = syntax_errors + type_warning_count + content_error_count + parse_errors;
+    let total_issues = syntax_errors
+        + type_warning_count
+        + content_error_count
+        + parse_errors
+        + usize::from(pipeline_failed);
 
     if total_issues == 0 {
         Ok(0)
-    } else if opt.check_strict() || content_error_count > 0 || parse_errors > 0 {
+    } else if opt.check_strict() || content_error_count > 0 || parse_errors > 0 || pipeline_failed {
         // Content verifier errors (e.g. always-divergent bindings) and
         // genuine rowan parse errors (eu-3621) are always hard errors,
         // regardless of --strict. A parse error is a more fundamental
@@ -477,6 +483,10 @@ pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eu
     let mut loader = SourceLoader::new(opt.lib_path().to_vec());
     let inputs = opt.inputs();
 
+    // Detect a `prelude:` override in the explicit inputs before loading,
+    // as `prepare()` does.
+    loader.detect_and_load_prelude_override(opt.explicit_inputs())?;
+
     // Load all inputs (prelude + user files).
     for input in &inputs {
         loader.load(input)?;
@@ -490,6 +500,16 @@ pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eu
         let diag = e.to_diagnostic(loader.source_map());
         loader.diagnose_to_stderr(&diag);
     }
+
+    // Honour a `prelude:` unit-metadata override found while loading, exactly
+    // as evaluation does (`driver/prepare.rs`): substitute it for the default
+    // prelude, or prepend it under `--no-prelude`.  Without this, `check`
+    // merged the standard prelude and the override's bindings were unknown.
+    let inputs = crate::driver::prepare::substitute_prelude_override(
+        &inputs,
+        loader.prelude_override(),
+        true,
+    );
 
     // Translate each input to core.
     for input in &inputs {
