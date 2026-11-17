@@ -363,7 +363,19 @@ pub fn prepare(
 
     if opt.dump_demands() {
         let c = loader.core();
-        let (annotated, sigs, named_sigs) = crate::core::analyse_demand::analyse_demands(&c.expr);
+        // In blob mode the program's calls of prelude globals take the
+        // signatures derived for them when the blob was built, as the
+        // executor's analysis does (eu-oaz72.92), so the dump shows what
+        // is compiled (eu-oaz72.105).
+        let prelude =
+            loader
+                .prelude_blob()
+                .map(|b| crate::core::analyse_demand::PreludeSignatures {
+                    name_to_slot: &b.name_to_slot,
+                    sigs: &b.demand_signatures,
+                });
+        let (annotated, sigs, named_sigs) =
+            crate::core::analyse_demand::analyse_demands_with_prelude(&c.expr, prelude);
         dump_core(annotated.clone(), opt)?;
         // Print demand annotations for all let-bound names.
         let mut out = io::stdout().lock();
@@ -384,6 +396,8 @@ pub fn prepare(
             "\n-- named signature table ({} entries) --",
             named_sigs.len()
         )?;
+        let mut named_sigs: Vec<_> = named_sigs.into_iter().collect();
+        named_sigs.sort_by(|a, b| a.0.cmp(&b.0));
         for (name, sig) in &named_sigs {
             let demands: Vec<String> = sig
                 .iter()
