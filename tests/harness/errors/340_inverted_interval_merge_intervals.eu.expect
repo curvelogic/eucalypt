@@ -1,0 +1,2 @@
+exit: 1
+stderr: "merge-intervals interval \[5, 1\] is inverted"

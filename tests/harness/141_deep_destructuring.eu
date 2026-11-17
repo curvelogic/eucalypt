@@ -34,6 +34,30 @@ test: {
   triple-nested({a: {b: [p, q]}}): [p, q]
   triple-nested-ok: triple-nested({a: {b: [5, 6]}}) //= [5, 6]
 
+  ` "Juxtaposed list pattern with a nested list: f[a, [b, c]]"
+  jux-nested[a, [b, c]]: [a, b, c]
+  jux-nested-ok: jux-nested[1, [2, 3]] //= [1, 2, 3]
+
+  ` "Juxtaposed list pattern with `_` placeholders and a nested list"
+  jux-underscore[_, [bit, _]]: bit
+  jux-underscore-ok: jux-underscore[0, [5, 6]] //= 5
+
+  ` "Juxtaposed list pattern nested three deep"
+  jux-deep[a, [b, [c, d]]]: [a, b, c, d]
+  jux-deep-ok: jux-deep[1, [2, [3, 4]]] //= [1, 2, 3, 4]
+
+  ` "Juxtaposed cons pattern with a nested list head: f[[a, b] : rest]"
+  jux-cons-head[[a, b] : rest]: [a, b, rest count]
+  jux-cons-head-ok: jux-cons-head[[10, 20], 30, 40] //= [10, 20, 2]
+
+  ` "Juxtaposed list pattern with a nested cons pattern: f[a, [b : t]]"
+  jux-nested-cons[a, [b : t]]: [a, b, t count]
+  jux-nested-cons-ok: jux-nested-cons[1, [2, 3, 4]] //= [1, 2, 2]
+
+  ` "Juxtaposed list pattern with a nested block pattern"
+  jux-block[{x y}, z]: [x, y, z]
+  jux-block-ok: jux-block[{x: 1, y: 2}, 3] //= [1, 2, 3]
+
   RESULT: [ two-level-ok
           , three-level-ok
           , nested-head-ok
@@ -42,5 +66,11 @@ test: {
           , block-block-ok
           , list-block-ok
           , triple-nested-ok
+          , jux-nested-ok
+          , jux-underscore-ok
+          , jux-deep-ok
+          , jux-cons-head-ok
+          , jux-nested-cons-ok
+          , jux-block-ok
           ] all-true? then(:PASS, :FAIL)
 }

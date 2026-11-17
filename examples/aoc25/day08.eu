@@ -8,7 +8,11 @@ Part 2: Build a minimum spanning tree (Kruskal). The last edge to
 connect all components is the 'bridge'. Return the product of the
 x co-ordinates of its two endpoints.
 
-Approach: x-sorted windowing reduces O(n^2) candidate pairs to O(n*w).
+Approach: Part 1 uses x-sorted windowing to reduce O(n^2) candidate pairs
+to O(n*w). Part 2 is exact: it keeps only pairs within a distance `d`
+(found by walking the x-sorted points while the x gap is at most `d`),
+runs Kruskal on those, and doubles `d` until the points are connected (the
+pairs kept are a prefix of the full distance order, so the result is exact).
 Encode (distance, i, j) triples as single f64 values so `sort-nums`
 (an intrinsic with no evaluator callbacks) handles distance ordering.
 Union-find and Kruskal are provided by the `graph` prelude module.
@@ -16,20 +20,21 @@ Union-find and Kruskal are provided by the `graph` prelude module.
 Notable eucalypt techniques:
 - `graph.union-find` and `graph.kruskal-edges` prelude intrinsics
 - single-number encoding for sort-by-distance without callbacks
-- `tails` and `zip-with` for candidate-pair generation
+- `tails`, `take-while` and `zip-with` for candidate-pair generation
+- a self-checking distance bound that widens until the answer is provably exact
 - cons destructuring `[h : t]` in `pairs-at` to split head from tail
 - `;` for point-free function definition: `group-consecutive ; map(count)`
 - `iota` and `ℕ` for index generation alongside `zip-with`
 - dynamic generalised lookup: `prepare` returns a block used as namespace for solver pipelines
 
-Running time: ~17s (part 1), ~5 min (part 2)
+Running time: ~4.9s sequential / ~2.4s parallel (part 1), ~5.8s sequential / ~2.9s parallel (part 2), on 4 cores
 "
 
 ` "Parse a comma-separated line into a list of numbers."
 parse-point(line): line str.split-on(",") map(num)
 
 ` "Squared Euclidean distance between two 3D points."
-dist2(a, b): zip-with(-, a, b) map(^ 2) sum
+dist2([x1, y1, z1], [x2, y2, z2]): (x1 - x2) ^ 2 + (y1 - y2) ^ 2 + (z1 - z2) ^ 2
 
 ` "Encode a (distance, i, j) triple as a single f64.
 Formula: (dist2/10)*10^6 + i*10^3 + j.
@@ -89,26 +94,47 @@ solve-n(k, w, data): prepare(w, data).(
 
 solve(data): solve-n(1000, 150, data)
 
-` "Index of the last edge that connects all components (the MST bridge)."
-last-edge-idx(edges, n):
-  edges
-    graph.kruskal-edges(n)
-    (reverse ; nth(1))
+` "Is `q` no further than `d` from `p` along the x axis?"
+near?(d, p, q): first(q) - first(p) <= d
 
-` "Part 2: process all edges via Kruskal. Find the last edge that reduces
-the component count to 1 (the MST bridge). Return the product of the
-x co-ordinates of the bridge's two endpoints."
-solve2-n(w, data): prepare(w, data).(
-  (edges !! last-edge-idx(edges, n))
-    map((vertices !! _) ; first)
-    apply(*))
+` "Encoded pairs for the head of ps (index i) against every later point
+within distance `d`. Only points within `d` on the x axis can qualify. Keys
+below `limit` are a prefix of the full sorted key order (a key is at least
+`dist2 * 100000`, so every pair with `dist2 <= d ^ 2` is kept, and a few
+slightly further pairs may be too)."
+reach-at(d, i, [h : t]): {
+  limit: (d ^ 2 + 1) * 100000
+}.(point-pairs(h, t take-while(near?(d, h)), i, i + 1) filter(< limit))
 
-solve2(data): solve2-n(999, data)
+reach-batch(d, [i, suffix]): reach-at(d, i, suffix)
+
+` "Every pair of points at most `d` apart, encoded. Requires x-sorted points."
+reach-pairs(d, pts): zip(ℕ, tails(pts)) par-concat(reach-batch(d))
+
+` "The edge that completes the minimum spanning tree: Kruskal over the
+pairs whose keys are below the limit for `d`. Those are a prefix of the full
+sorted pair order, so the merge history is the true one for that prefix. If
+the points are connected within it, the last merge is the true bridge; if
+not, widen `d` and go again."
+bridge(d, vertices): {
+  n: vertices count
+  edges: vertices reach-pairs(d) sort-nums map(decode-edge)
+  merges: edges graph.kruskal-edges(n)
+  spanning?: (merges count) = 2 * (n - 1)
+}.(spanning? then(edges !! (merges reverse nth(1)), bridge(2 * d, vertices)))
+
+` "Part 2: product of the x co-ordinates of the bridge edge's endpoints."
+solve2-from(d, data): {
+  pts: data filter(!= "") map(parse-point)
+  vertices: pts sort-by-num(first)
+}.(vertices bridge(d) map((vertices !! _) ; first) apply(*))
+
+solve2(data): solve2-from(20000, data)
 
 ` { target: :test
     import: "ex1=inputs/day08-ex1.txt" }
 test: {
   part-1: solve-n(10, 20, ex1) //= 40
-  part-2: solve2-n(20, ex1) //= 25272
+  part-2: solve2-from(100, ex1) //= 25272
   RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
 }

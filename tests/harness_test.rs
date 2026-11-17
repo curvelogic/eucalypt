@@ -3,6 +3,9 @@ use eucalypt::driver::{options::EucalyptOptions, tester};
 use eucalypt::syntax::input::Input;
 use std::{path::Path, path::PathBuf, str::FromStr};
 
+mod common;
+use common::run_with_deadline;
+
 /// Common options for all tests
 pub fn opts(filename: &str) -> EucalyptOptions {
     let lib_path = vec![PathBuf::from("tests/harness")];
@@ -59,61 +62,6 @@ fn run_test(opt: &EucalyptOptions) {
 /// Path to the eu binary built by cargo for this test run.
 fn eu_binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_eu"))
-}
-
-/// Run `cmd`, killing it and returning `None` if it doesn't complete
-/// within `deadline`.
-///
-/// Typecheck fixtures are check-only test material: some are not
-/// designed to terminate under plain evaluation at all (e.g.
-/// `092_self_assign_arg_pos_ok.eu`, `ones: cons(1, ones)` — a
-/// deliberate infinite lazy fixpoint used only to verify the checker
-/// doesn't flag argument-position self-reference), so a bounded wait is
-/// required rather than `Command::output()`'s indefinite block.
-fn run_with_deadline(
-    mut cmd: std::process::Command,
-    deadline: std::time::Duration,
-) -> Option<std::process::Output> {
-    use std::io::Read;
-    use wait_timeout::ChildExt;
-
-    let mut child = cmd
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn eu");
-
-    // Drain both pipes while waiting: a child that writes more than a
-    // pipe buffer's worth would otherwise block on write and never exit,
-    // turning a chatty run into a spurious timeout.
-    fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> std::thread::JoinHandle<Vec<u8>> {
-        std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            if let Some(mut p) = pipe {
-                let _ = p.read_to_end(&mut buf);
-            }
-            buf
-        })
-    }
-    let stdout = drain(child.stdout.take());
-    let stderr = drain(child.stderr.take());
-
-    let status = match child.wait_timeout(deadline).expect("wait_timeout failed") {
-        Some(status) => Some(status),
-        None => {
-            let _ = child.kill();
-            let _ = child.wait();
-            None
-        }
-    };
-    // The child has exited (or been killed), so both pipes reach EOF.
-    let stdout = stdout.join().expect("stdout reader panicked");
-    let stderr = stderr.join().expect("stderr reader panicked");
-    status.map(|status| std::process::Output {
-        status,
-        stdout,
-        stderr,
-    })
 }
 
 /// Run an error test — validates against `.expect` sidecar if present,
@@ -4791,6 +4739,13 @@ pub fn test_typecheck_134_identity_monad_derived_no_warning() {
     run_typecheck_test("134_identity_monad_derived_no_warning.eu");
 }
 
+/// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
+/// must accept a mixed-type list.
+#[test]
+pub fn test_typecheck_135_aoc_helpers_strict_clean() {
+    run_typecheck_test("135_aoc_helpers_strict_clean.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).
@@ -5353,6 +5308,48 @@ pub fn test_error_275_non_integer_take() {
     run_error_test(&error_opts("275_non_integer_take.eu"));
 }
 
+/// A non-integer argument to `gcd` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_337_non_integer_gcd() {
+    run_error_test(&error_opts("337_non_integer_gcd.eu"));
+}
+
+/// A non-integer argument to `lcm` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_338_non_integer_lcm() {
+    run_error_test(&error_opts("338_non_integer_lcm.eu"));
+}
+
+/// A non-integer bound to `merge-intervals` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_339_non_integer_merge_intervals() {
+    run_error_test(&error_opts("339_non_integer_merge_intervals.eu"));
+}
+
+/// An inverted `merge-intervals` interval is an error (eu-oaz72.26, decision 53).
+#[test]
+pub fn test_error_340_inverted_interval_merge_intervals() {
+    run_error_test(&error_opts("340_inverted_interval_merge_intervals.eu"));
+}
+
+/// A non-number `merge-intervals` bound is an error (eu-oaz72.26, decision 53).
+#[test]
+pub fn test_error_341_non_number_merge_intervals() {
+    run_error_test(&error_opts("341_non_number_merge_intervals.eu"));
+}
+
+/// A list bound to `merge-intervals` is an error naming it (eu-oaz72.26, decision 53).
+#[test]
+pub fn test_error_342_list_bound_merge_intervals() {
+    run_error_test(&error_opts("342_list_bound_merge_intervals.eu"));
+}
+
+/// A non-integer argument to `combinations` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_336_non_integer_combinations() {
+    run_error_test(&error_opts("336_non_integer_combinations.eu"));
+}
+
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
 pub fn test_error_275_non_integer_drop() {
@@ -5660,11 +5657,36 @@ pub fn test_error_315() {
     run_error_test(&error_opts("315_bitwise_operand_capped.eu"));
 }
 
+/// gcd and lcm on integers (eu-oaz72.26, owner decision 43).
+#[test]
+pub fn test_333_gcd_lcm() {
+    run_test(&opts("333_gcd_lcm.eu"));
+}
+
+/// enumerate, find, index-of, frequencies, combinations and permutations,
+/// including laziness (eu-oaz72.26, owner decision 43).
+#[test]
+pub fn test_334_list_helpers() {
+    run_test(&opts("334_list_helpers.eu"));
+}
+
+/// str.reverse and merge-intervals (eu-oaz72.26, owner decision 43).
+#[test]
+pub fn test_335_reverse_and_intervals() {
+    run_test(&opts("335_reverse_and_intervals.eu"));
+}
+
 /// Prelude sites converted to constant-stack strict forms (eu-oaz72.165,
 /// owner decisions 40 and 41).
 #[test]
 pub fn test_300_strict_prelude_sites() {
     run_test(&opts("300_strict_prelude_sites.eu"));
+}
+
+/// Inlining must not capture names across a nested block (eu-oaz72.182).
+#[test]
+pub fn test_301_inline_name_capture() {
+    run_test(&opts("301_inline_name_capture.eu"));
 }
 
 #[test]

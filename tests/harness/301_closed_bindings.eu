@@ -7,9 +7,14 @@
         a misclassified binding would read a missing slot and error or return
         a wrong value. Limit: the compiler emits case branches, fallbacks and
         DeMeta inside user bindings only via inlined intrinsics that let-bind
-        their operands first, and BlockKvList only in global wrappers, so no
-        target can place an outer read exactly on a frame boundary there; the
-        frame-size rules are gated by the unit tests in closed.rs."
+        their operands first, so no target can place an outer read exactly on
+        a frame boundary there. BlockKvList is not reachable from a program
+        (elements reach user code as [k, v] lists); it appears only in
+        library bindings such as the inlined `=`. The full harness gates the
+        fallback and branch frame sizes (an over-count breaks harness files
+        084, 107-115 and 224); DeMeta frames are deliberately counted as zero
+        (an under-count, so it cannot misclassify); the BlockKvList size is
+        gated by the unit tests in closed.rs."
 }
 
 ` "A closed lambda in a let, applied twice."
