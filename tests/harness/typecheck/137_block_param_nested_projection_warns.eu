@@ -1,0 +1,4 @@
+` "A block parameter projected inside a nested block must still warn when given a non-block (eu-oaz72.172)."
+via-let(b): { v: b.x }.v
+
+bad-let: via-let(3)
