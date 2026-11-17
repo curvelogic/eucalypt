@@ -200,3 +200,25 @@ thunk; the pin path was not traced. Next step: run the tracer on `fold.eu`
 **Wire format.** The real change needs a per-binding "closed" bit in the form
 header (`kind` high bit is the least invasive carrier) read by encoder,
 predecoder, both dispatch paths and the blob: a blob wire-format change.
+
+## Update 5: implementation of closed bindings (eu-oaz72.175, measured-single)
+
+Implemented as `FORM_CLOSED` (0x80 of a Let/LetRec binding's form-header `kind`
+byte, blob wire format v11), analysed by `src/eval/bytecode/closed.rs`, read by
+the encoder, predecoder and both dispatch paths. The throwaway patch is removed.
+Special case of flat closures (a closure capturing nothing needs no parent).
+
+**Error traces needed more than `globals`.** Closing over the globals frame
+dropped the annotation chain `env_trace` reads, changing 17 diagnostics
+snapshots. A closed binding therefore closes over a parentless chain of
+slotless frames that mirrors the annotation spine (lexical nesting depth,
+allocated once per `Let`); with it all snapshots are byte-identical.
+
+Release, 200k cells, peak blocks (ticks identical): `count` 10,985 -> 1,026,
+strict-fold wrapper 10,346 -> 1,026 (source prelude); with the prelude blob
+embedded the same programs reach about 6,000, so a second pin remains in blob
+mode (not diagnosed here). Cost of the spine, benches 015..022 (interleaved
+pairs, wall median-of-5, measured-single): ticks identical in all; peak blocks
+016 2,171 -> 2,461, 022 21,315 -> 24,627, 017/018 lower; wall 016 2.20 s ->
+2.66 s (+21%), 022 4.40 -> 4.75 s, others within spread. `gc_004` compaction
+now needs 11 MiB (was 10).
