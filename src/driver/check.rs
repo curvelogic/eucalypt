@@ -473,6 +473,121 @@ pub struct PipelineCheckResult {
     pub source_map: crate::common::sourcemap::SourceMap,
 }
 
+/// Verdict of [`eval_path_type_check`].
+pub enum EvalPathCheck {
+    /// Evaluation proceeds. Carries the checker's argument-level findings,
+    /// resolved to source coordinates while the checker's own `SourceMap`
+    /// was alive (eu-1tkk.7.40), for the evaluator to promote into the
+    /// labels of a runtime error blamed on the same call. Empty when the
+    /// checker did not run or found nothing.
+    Proceed(crate::driver::warning_link::TypeWarningLinks),
+    /// `--strict` is set and the checker warned: evaluation must not run,
+    /// and the invocation exits 1.
+    StrictFailure,
+}
+
+/// The type check every evaluating invocation runs before evaluation, with
+/// its warnings rendered to `sink`.
+///
+/// This is the one place that decides *which* checker the eval path uses,
+/// shared by `src/bin/eu.rs` and the in-process test runner
+/// ([`crate::driver::tester`]) so that the two cannot diverge (eu-8ke8a: the
+/// harness used to run in-process without any type check, so a regression
+/// confined to this dispatch was invisible to every ordinary harness test).
+///
+/// On the blob path, the blob's baked desugared, per-unit prelude-side cores
+/// (`desugared_unit_cores`) let [`run_type_checker_from_blob_core`] reproduce
+/// the merged check without loading or translating prelude source (the
+/// dominant cost [`run_type_checker`] would otherwise pay); the cores are
+/// decoded lazily here, so the decode cost is only paid when the check
+/// actually runs (never under `--suppress-type-warnings`). A blob without
+/// baked cores (stale format, or generated before this field existed) falls
+/// back explicitly to [`run_type_checker`] — always correct, just paying the
+/// prelude-source compile for this invocation. Non-blob configs (source
+/// prelude, alternative prelude) always use [`run_type_checker`]. See
+/// eu-rb5n.
+///
+/// A pipeline failure inside the checker is reported to `sink` as a
+/// one-line note and evaluation proceeds; the evaluator reports the real
+/// error, if there is one, itself.
+pub fn eval_path_type_check(
+    opt: &EucalyptOptions,
+    loader: &SourceLoader,
+    sink: &mut dyn codespan_reporting::term::termcolor::WriteColor,
+) -> EvalPathCheck {
+    use crate::driver::warning_link::TypeWarningLinks;
+
+    if opt.suppress_type_warnings() {
+        return EvalPathCheck::Proceed(TypeWarningLinks::default());
+    }
+
+    // eu-rqwh: carry the blob's own monad registries alongside the decoded
+    // prelude_units, so `run_type_checker_from_blob_core` can seed them into
+    // its fresh `SourceLoader` — that loader injects the prelude-side units
+    // directly (skipping `translate()`, the step that would otherwise
+    // populate these registries), so without this the user's own
+    // `:for`/`:io` monadic-binding metadata is never recognised on this
+    // (blob) path.
+    //
+    // eu-1tkk.2: the blob's deprecation table rides along for the same
+    // reason — `deprecated` metadata is desugar-phase only, so skipping
+    // translate() also skips the step that would have collected it, and a
+    // `deprecated` declaration in `lib/prelude.eu` would be inert on this
+    // (shipped default) path while working under `eu check`.
+    let blob_check_seed = loader
+        .prelude_blob()
+        // A `prelude:` unit-metadata override replaces the prelude the blob
+        // baked, so the blob's cores would check the user's file against the
+        // wrong prelude (eu-oaz72.177): take the source path, which honours
+        // the override as `eu check` does.
+        .filter(|_| loader.prelude_override().is_none())
+        .and_then(|b| {
+            b.decode_desugared_unit_cores().map(|units| {
+                (
+                    units,
+                    b.monad_specs.clone(),
+                    b.monad_type_hints.clone(),
+                    b.deprecations.clone(),
+                )
+            })
+        });
+
+    let check_result = match &blob_check_seed {
+        Some((prelude_units, monad_specs, monad_type_hints, deprecations)) => {
+            run_type_checker_from_blob_core(
+                opt,
+                prelude_units,
+                monad_specs,
+                monad_type_hints,
+                deprecations,
+            )
+        }
+        None => run_type_checker(opt),
+    };
+
+    match check_result {
+        Ok(result) => {
+            let config = codespan_reporting::term::Config::default();
+            for w in &result.warnings {
+                let diag = w.to_diagnostic(&result.source_map);
+                let _ = codespan_reporting::term::emit(sink, &config, &result.files, &diag);
+            }
+            if opt.check_strict() && !result.warnings.is_empty() {
+                return EvalPathCheck::StrictFailure;
+            }
+            EvalPathCheck::Proceed(TypeWarningLinks::build(
+                &result.warnings,
+                &result.source_map,
+                &result.files,
+            ))
+        }
+        Err(e) => {
+            let _ = writeln!(sink, "eu: type-check pipeline warning: {e}");
+            EvalPathCheck::Proceed(TypeWarningLinks::default())
+        }
+    }
+}
+
 /// Run the bidirectional type checker by loading files through the pipeline.
 ///
 /// Returns warnings, the SimpleFiles (for rendering), and the SourceMap (for

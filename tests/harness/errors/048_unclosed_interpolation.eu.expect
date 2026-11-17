@@ -1,2 +1,3 @@
 exit: 1
 stderr: "unterminated string interpolation"
+location: 4:18

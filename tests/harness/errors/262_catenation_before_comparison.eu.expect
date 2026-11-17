@@ -5,3 +5,4 @@ stderr: "(?s)note: 'cells vec\.nth\(i\) = "S"' was read as 'cells \(vec\.nth\(i\
 stderr-absent: "catenation \(juxtaposition\)"
 stderr-absent: "'and' and 'or'"
 stderr-absent: "boolean expression"
+location: 5:21

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "window size 0 must be positive"
+location: 4:27

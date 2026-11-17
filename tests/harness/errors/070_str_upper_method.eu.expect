@@ -1,2 +1,3 @@
 exit: 1
 stderr: "str\.to-upper"
+location: 2:12

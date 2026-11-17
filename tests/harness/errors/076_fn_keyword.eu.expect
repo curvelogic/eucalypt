@@ -1,2 +1,3 @@
 exit: 1
 stderr: "no.*fn.*keyword"
+location: 3:9

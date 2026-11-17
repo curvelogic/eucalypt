@@ -1,2 +1,3 @@
 exit: 1
 stderr: "binding 'p' refers to itself"
+location: 8:4

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "strings do not have fields"
+location: 2:4

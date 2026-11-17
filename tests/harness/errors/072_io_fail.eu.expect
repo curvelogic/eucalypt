@@ -1,2 +1,3 @@
 exit: 1
 stderr: "deliberate test failure"
+no-location: the error is reported without a source label

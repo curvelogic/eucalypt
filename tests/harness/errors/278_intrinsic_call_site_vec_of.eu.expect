@@ -1,2 +1,3 @@
 exit: 1
 stderr: "(?s)a vec cannot be a vec element: vec elements must be numbers, strings or symbols.*errors[/\\]278_intrinsic_call_site_vec_of\.eu:5:28"
+location: 5:28

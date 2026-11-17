@@ -1,2 +1,3 @@
 exit: 1
 stderr: "expression content inside monad bracket"
+location: 6:9

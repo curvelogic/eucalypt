@@ -1,2 +1,3 @@
 exit: 1
 stderr: "\(1e\+300 is out of the i64 range for bitwise operations\)"
+location: 2:17

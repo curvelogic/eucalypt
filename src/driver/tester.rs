@@ -66,12 +66,13 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
 }
 
 /// Entry point for error tests — creates a plan from the `.expect`
-/// sidecar (if present) and runs through the standard pipeline.
+/// sidecar and runs the `eu` binary against it.
 ///
 /// Error tests bypass the normal metadata analysis since the test
-/// file itself may have deliberate parse errors. If no `.expect`
-/// sidecar exists, the test is treated as unvalidated and passes
-/// without running.
+/// file itself may have deliberate parse errors. A fixture without an
+/// `.expect` sidecar fails, as does a sidecar that neither pins the
+/// primary label's location (`location:`) nor says why it does not
+/// (`no-location:`).
 pub fn error_test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let eu_binary = std::env::current_exe().expect("cannot determine eu binary path");
     error_test_with_binary(&eu_binary, opt)
@@ -113,7 +114,14 @@ fn single_error_test(
     let expectation = match ErrorExpectation::load(&path) {
         Ok(Some(exp)) => exp,
         Ok(None) => {
-            return Ok(0);
+            // An error fixture without a sidecar used to pass here without
+            // running at all, so its test could never fail (eu-oxtcq M4).
+            stdout_ok(writeln!(
+                std::io::stdout(),
+                "{}...FAIL: no .expect sidecar, so nothing is asserted",
+                path.display()
+            ))?;
+            return Ok(1);
         }
         Err(e) => {
             return Err(EucalyptError::FileCouldNotBeRead(
@@ -136,6 +144,9 @@ fn single_error_test(
     if let Some(target) = opt.target() {
         cmd.arg("-t").arg(target);
     }
+    if let Some(format) = opt.export_type() {
+        cmd.arg("-x").arg(format);
+    }
 
     let output = cmd.output().map_err(|e| {
         EucalyptError::FileCouldNotBeRead(
@@ -147,7 +158,14 @@ fn single_error_test(
     let actual_exit = output.status.code().unwrap_or(1);
     let actual_stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    match expectation.validate(actual_exit, &actual_stderr) {
+    let fixture = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let verdict = expectation
+        .validate(actual_exit, &actual_stderr)
+        .and_then(|()| expectation.validate_location(&fixture, &actual_stderr));
+    match verdict {
         Ok(()) => {
             stdout_ok(writeln!(std::io::stdout(), "{}...PASS", path.display()))?;
             Ok(0)
@@ -763,6 +781,32 @@ impl Tester for InProcessTester {
                     return Err(e);
                 }
 
+                // Type-check exactly as `eu` does before evaluating (the
+                // same shared dispatch, blob-core or source checker), with
+                // the warnings going to this target's captured stderr and
+                // the argument-level findings to the executor. Without this
+                // the in-process harness never ran the eval-path checker at
+                // all (eu-8ke8a).
+                let mut errbuf = Vec::new();
+                let type_findings = match crate::driver::check::eval_path_type_check(
+                    &test_opts,
+                    &loader,
+                    &mut codespan_reporting::term::termcolor::NoColor::new(&mut errbuf),
+                ) {
+                    crate::driver::check::EvalPathCheck::Proceed(findings) => findings,
+                    crate::driver::check::EvalPathCheck::StrictFailure => {
+                        results.push(TestResult {
+                            target: t,
+                            format: f.to_string(),
+                            exit_code: None,
+                            stdout: String::new(),
+                            stderr: String::from_utf8_lossy(&errbuf).into_owned(),
+                            statistics,
+                        });
+                        continue;
+                    }
+                };
+
                 // Resolve type aliases inside TypeData primitives using
                 // the pre-pruning aliases collected during prepare().
                 {
@@ -778,7 +822,6 @@ impl Tester for InProcessTester {
                 }
 
                 let mut outbuf = Vec::new();
-                let mut errbuf = Vec::new();
 
                 let exit_code = {
                     let out = Box::new(&mut outbuf);
@@ -788,6 +831,7 @@ impl Tester for InProcessTester {
                     let mut executor = eval::Executor::from(loader);
                     #[cfg(not(target_arch = "wasm32"))]
                     executor.set_prelude_blob(blob);
+                    executor.set_type_findings(type_findings);
                     executor.capture_output(out, err);
                     executor.execute(&test_opts, &mut statistics, f.clone())
                 };

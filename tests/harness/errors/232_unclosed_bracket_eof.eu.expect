@@ -1,2 +1,3 @@
 exit: 1
 stderr: "232_unclosed_bracket_eof.eu:3:6"
+location: 3:6

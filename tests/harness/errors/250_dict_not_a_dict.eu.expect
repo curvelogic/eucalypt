@@ -1,2 +1,3 @@
 exit: 1
 stderr: "type mismatch: expected dict"
+location: 2:16

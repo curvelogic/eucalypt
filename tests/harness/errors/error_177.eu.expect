@@ -1,2 +1,3 @@
 exit: 1
 stderr: "assertion failed.*expected \"goodbye\".*got \"hello\""
+location: 17:17

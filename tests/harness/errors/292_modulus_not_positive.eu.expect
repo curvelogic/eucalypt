@@ -1,2 +1,3 @@
 exit: 1
 stderr: "mulmod requires a positive modulus, but the modulus is 0"
+location: 2:4

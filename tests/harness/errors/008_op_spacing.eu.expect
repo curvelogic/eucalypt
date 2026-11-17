@@ -1,0 +1,5 @@
+# Not an error today: `1 +1` parses as addition and renders `z: 2`. This
+# sidecar pins that, so a change in how the spacing is treated is seen
+# (eu-oxtcq M4: a fixture without a sidecar was passed without running).
+exit: 0
+no-location: not an error today (exit 0), so there is no diagnostic to locate

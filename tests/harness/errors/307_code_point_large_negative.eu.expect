@@ -2,3 +2,4 @@
 r: str.from-code-points[0 - (2.0 ^ 63)]
 exit: 1
 stderr: "-9223372036854775808 is negative"
+location: 2:4

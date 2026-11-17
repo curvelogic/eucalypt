@@ -1,2 +1,3 @@
 exit: 1
 stderr: "084_destructure_missing_field\.eu:2:"
+location: 2:1

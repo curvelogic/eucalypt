@@ -1,2 +1,3 @@
 exit: 1
 stderr: "cannot compare incompatible types with '<='"
+location: 2:14

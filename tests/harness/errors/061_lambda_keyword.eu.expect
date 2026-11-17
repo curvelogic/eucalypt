@@ -1,2 +1,3 @@
 exit: 1
 stderr: "anaphora.*anonymous"
+location: 3:9

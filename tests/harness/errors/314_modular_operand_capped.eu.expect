@@ -1,2 +1,3 @@
 exit: 1
 stderr: "but the exponent is 1e\+300"
+location: 2:4

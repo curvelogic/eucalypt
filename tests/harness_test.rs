@@ -64,8 +64,9 @@ fn eu_binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_eu"))
 }
 
-/// Run an error test — validates against `.expect` sidecar if present,
-/// otherwise passes as unvalidated.
+/// Run an error test against its `.expect` sidecar, which must exist and
+/// must pin the primary label's location or say why not (eu-oxtcq M4,
+/// eu-ziq8o).
 fn run_error_test(opt: &EucalyptOptions) {
     let exit_code = tester::error_test_with_binary(eu_binary(), opt).unwrap();
     assert_eq!(exit_code, 0);
@@ -5694,6 +5695,13 @@ pub fn test_335_reverse_and_intervals() {
     run_test(&opts("335_reverse_and_intervals.eu"));
 }
 
+/// The in-process runner shares `eu`'s eval-path type check, so a warning
+/// it emits reaches the target's stderr (eu-8ke8a).
+#[test]
+pub fn test_336_eval_path_type_warning() {
+    run_test(&opts("336_eval_path_type_warning.eu"));
+}
+
 /// Prelude sites converted to constant-stack strict forms (eu-oaz72.165,
 /// owner decisions 40 and 41).
 #[test]
@@ -5725,6 +5733,70 @@ pub fn test_error_347_missing_prelude_path() {
 #[test]
 pub fn test_error_332_scanl_applies_op_at_cell() {
     run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
+}
+
+/// Fixtures that had no test, or no sidecar, and so asserted nothing
+/// (eu-oxtcq M4). The four `x0NN` files are not errors today; their
+/// sidecars pin that so a change in behaviour is seen.
+#[test]
+pub fn test_error_x007_bad_block_element() {
+    run_error_test(&error_opts("x007_bad_block_element.eu"));
+}
+
+#[test]
+pub fn test_error_x018_missing_comma() {
+    run_error_test(&error_opts("x018_missing_comma.eu"));
+}
+
+#[test]
+pub fn test_error_x021_dot_in_key() {
+    run_error_test(&error_opts("x021_dot_in_key.eu"));
+}
+
+#[test]
+pub fn test_error_x022_redef() {
+    run_error_test(&error_opts("x022_redef.eu"));
+}
+
+/// An unknown export format named with `-x` (eu-oxtcq M4: this fixture had
+/// a sidecar but no test).
+#[test]
+pub fn test_error_091_unknown_format() {
+    let opt = error_opts("091_unknown_format.eu").with_export_type("nonexistent".to_string());
+    run_error_test(&opt);
+}
+
+/// A target named with `-t` that the file does not declare (eu-oxtcq M4:
+/// this fixture had a sidecar but no test).
+#[test]
+pub fn test_error_092_target_not_found() {
+    let opt = error_opts("092_target_not_found.eu").with_target(Some("nonexistent".to_string()));
+    run_error_test(&opt);
+}
+
+/// Every error fixture must have a test here: an `.eu` file in
+/// `tests/harness/errors/` that no test names is never run, and its
+/// sidecar gates nothing (eu-oxtcq M4 found six such fixtures).
+#[test]
+pub fn every_error_fixture_has_a_test() {
+    let this_file = include_str!("harness_test.rs");
+    let mut missing = vec![];
+    for entry in std::fs::read_dir("tests/harness/errors").expect("errors dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("eu") {
+            continue;
+        }
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if !this_file.contains(&format!("\"{name}\"")) && !this_file.contains(&format!("/{name}\""))
+        {
+            missing.push(name);
+        }
+    }
+    missing.sort();
+    assert!(
+        missing.is_empty(),
+        "error fixtures with no test in tests/harness_test.rs: {missing:?}"
+    );
 }
 
 /// `eu check` must honour `prelude:` unit metadata exactly as evaluation

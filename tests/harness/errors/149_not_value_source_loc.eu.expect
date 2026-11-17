@@ -1,2 +1,3 @@
 exit: 1
 stderr: "149_not_value_source_loc"
+location: 4:9

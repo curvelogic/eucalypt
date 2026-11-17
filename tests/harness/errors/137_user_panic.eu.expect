@@ -1,2 +1,3 @@
 exit: 1
 stderr: "panic: deliberate failure"
+location: 1:9

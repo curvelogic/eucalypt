@@ -1,2 +1,3 @@
 exit: 1
 stderr: "097_div_by_zero_source_loc"
+location: 2:11

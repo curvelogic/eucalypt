@@ -1,2 +1,3 @@
 exit: 1
 stderr: "numeric overflow"
+location: 2:24

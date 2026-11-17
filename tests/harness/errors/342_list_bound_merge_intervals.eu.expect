@@ -1,2 +1,3 @@
 exit: 1
 stderr: "merge-intervals bound must be a number"
+location: 2:4

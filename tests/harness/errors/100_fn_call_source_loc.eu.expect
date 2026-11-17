@@ -1,2 +1,3 @@
 exit: 1
 stderr: "100_fn_call_source_loc\.eu:2:"
+location: 2:9

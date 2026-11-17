@@ -1,0 +1,4 @@
+# Not an error today: __BLOCK drops the three-element entry silently and
+# the file renders `{}`. Pinned so a change is seen (eu-oxtcq M4).
+exit: 0
+no-location: not an error today (exit 0), so there is no diagnostic to locate

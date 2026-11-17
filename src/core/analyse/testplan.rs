@@ -45,9 +45,78 @@ pub struct ErrorExpectation {
     /// repeat) — used to gate that a hint is not shown without evidence
     /// (eu-oaz72.28)
     stderr_absent: Vec<String>,
+    /// The primary label's location (`location:`), as `LINE:COL` in the
+    /// fixture itself or `FILE:LINE:COL` — checked against the first `┌─`
+    /// line of the first `error` diagnostic, so a location that appears
+    /// only in a trace note or a warning cannot satisfy it (eu-ziq8o)
+    location: Option<String>,
+    /// Why this fixture pins no location (`no-location:`). An error sidecar
+    /// must give either this or `location:`; see
+    /// [`ErrorExpectation::validate_location`]
+    no_location: Option<String>,
 }
 
 impl ErrorExpectation {
+    /// Primary-label location pinned by the sidecar, if any
+    pub fn location(&self) -> Option<&str> {
+        self.location.as_deref()
+    }
+
+    /// Reason given for pinning no location, if any
+    pub fn no_location(&self) -> Option<&str> {
+        self.no_location.as_deref()
+    }
+
+    /// Check the primary label's location against `location:`.
+    ///
+    /// An error sidecar must pin where its error is reported, or say why
+    /// it does not: a sidecar asserting only message text lets a
+    /// wrong-location regression ship with a green test (eu-ziq8o —
+    /// `083_array_arith_mismatch` named the wrong declaration in every
+    /// release that shipped it). So a sidecar with neither `location:`
+    /// nor `no-location:` fails here.
+    ///
+    /// The primary label is the first `┌─` line after the first line
+    /// that opens an `error` diagnostic. Anchoring there, rather than
+    /// searching stderr for the location anywhere, keeps a type warning
+    /// printed before the error, or the `stack trace:` / `while
+    /// evaluating` notes after it, from satisfying the check. `fixture`
+    /// is the file name (`LINE:COL` locations are in it); ANSI colour
+    /// codes are ignored.
+    pub fn validate_location(&self, fixture: &str, actual_stderr: &str) -> Result<(), String> {
+        if self.no_location.is_some() {
+            return Ok(());
+        }
+        let Some(location) = &self.location else {
+            return Err(
+                "sidecar pins no source location: add `location: LINE:COL` (the primary \
+                 label's position) or `no-location: <reason>` (eu-ziq8o)"
+                    .to_string(),
+            );
+        };
+        let wanted = if location.matches(':').count() >= 2 {
+            location.clone()
+        } else {
+            format!("{fixture}:{location}")
+        };
+        let actual = primary_label_location(actual_stderr).ok_or_else(|| {
+            format!(
+                "expected the primary label at {wanted}, but stderr has no `┌─` label \
+                 under an `error` diagnostic\nactual stderr:\n{actual_stderr}"
+            )
+        })?;
+        let matches = actual == wanted
+            || actual.ends_with(&format!("/{wanted}"))
+            || actual.ends_with(&format!("\\{wanted}"));
+        if matches {
+            Ok(())
+        } else {
+            Err(format!(
+                "primary label is at {actual}, expected {wanted}\nactual stderr:\n{actual_stderr}"
+            ))
+        }
+    }
+
     /// Expected exit code
     pub fn exit(&self) -> Option<i32> {
         self.exit
@@ -103,6 +172,8 @@ impl ErrorExpectation {
         let mut exit = None;
         let mut stderr_pattern = None;
         let mut stderr_absent = vec![];
+        let mut location = None;
+        let mut no_location = None;
 
         for line in content.lines() {
             let line = line.trim();
@@ -124,6 +195,23 @@ impl ErrorExpectation {
                     .and_then(|v| v.strip_suffix('"'))
                     .unwrap_or(value);
                 stderr_pattern = Some(value.to_string());
+            } else if let Some(value) = line.strip_prefix("location:") {
+                let value = unquote(value.trim());
+                let mut parts = value.rsplitn(3, ':');
+                let col = parts.next().unwrap_or("");
+                let line_no = parts.next().unwrap_or("");
+                if col.parse::<u32>().is_err() || line_no.parse::<u32>().is_err() {
+                    return Err(format!(
+                        "invalid location '{value}': expected LINE:COL or FILE:LINE:COL"
+                    ));
+                }
+                location = Some(value.to_string());
+            } else if let Some(value) = line.strip_prefix("no-location:") {
+                let value = unquote(value.trim());
+                if value.is_empty() {
+                    return Err("no-location: needs a reason".to_string());
+                }
+                no_location = Some(value.to_string());
             } else if let Some(value) = line.strip_prefix("stderr-absent:") {
                 let value = value.trim();
                 let value = value
@@ -138,10 +226,16 @@ impl ErrorExpectation {
             return Err("sidecar must specify at least one of 'exit' or 'stderr'".to_string());
         }
 
+        if location.is_some() && no_location.is_some() {
+            return Err("sidecar gives both 'location' and 'no-location'".to_string());
+        }
+
         Ok(ErrorExpectation {
             exit,
             stderr_pattern,
             stderr_absent,
+            location,
+            no_location,
         })
     }
 
@@ -161,6 +255,26 @@ impl ErrorExpectation {
 
         Self::parse(&content).map(Some)
     }
+}
+
+/// Strip surrounding double quotes from a sidecar value, if present.
+fn unquote(value: &str) -> &str {
+    value
+        .strip_prefix('"')
+        .and_then(|v| v.strip_suffix('"'))
+        .unwrap_or(value)
+}
+
+/// The location text of the primary label in rendered diagnostics: the
+/// first `┌─` line after the first line opening an `error` diagnostic,
+/// with ANSI colour codes removed.
+fn primary_label_location(stderr: &str) -> Option<String> {
+    let ansi = Regex::new("\x1b\\[[0-9;]*m").expect("valid ANSI regex");
+    let plain = ansi.replace_all(stderr, "");
+    plain
+        .lines()
+        .skip_while(|l| !l.trim_start().starts_with("error"))
+        .find_map(|l| l.split_once("┌─").map(|(_, loc)| loc.trim().to_string()))
 }
 
 /// Plan for the tests to run against an eu file
@@ -476,12 +590,70 @@ pub mod tests {
         assert_eq!(exp.stderr_pattern(), Some("division"));
     }
 
+    /// Rendered stderr with a warning before the error and the same
+    /// location repeated in a trace note after it.
+    const LABELLED_STDERR: &str = "warning: type mismatch calling 'f'\n  \
+        ┌─ tests/harness/errors/100_x.eu:2:3\n\n\
+        \x1b[1merror\x1b[0m: boom\n  \x1b[34m┌─\x1b[0m tests/harness/errors/100_x.eu:4:9\n  \
+        = while evaluating:\n    - f at 100_x.eu:7:1\n";
+
+    #[test]
+    fn test_location_matches_primary_label() {
+        let exp = ErrorExpectation::parse("exit: 1\nlocation: 4:9\n").unwrap();
+        assert_eq!(exp.location(), Some("4:9"));
+        assert!(exp.validate_location("100_x.eu", LABELLED_STDERR).is_ok());
+        let exp = ErrorExpectation::parse("exit: 1\nlocation: \"100_x.eu:4:9\"\n").unwrap();
+        assert!(exp.validate_location("other.eu", LABELLED_STDERR).is_ok());
+    }
+
+    #[test]
+    fn test_location_not_satisfied_by_warning_or_note() {
+        // 2:3 is the warning's label, 7:1 only a trace note.
+        for loc in ["2:3", "7:1", "4:1", "14:9"] {
+            let exp = ErrorExpectation::parse(&format!("exit: 1\nlocation: {loc}\n")).unwrap();
+            assert!(
+                exp.validate_location("100_x.eu", LABELLED_STDERR).is_err(),
+                "{loc} must not match"
+            );
+        }
+    }
+
+    #[test]
+    fn test_location_required_unless_opted_out() {
+        let exp = ErrorExpectation::parse("exit: 1\n").unwrap();
+        let err = exp
+            .validate_location("100_x.eu", LABELLED_STDERR)
+            .unwrap_err();
+        assert!(err.contains("pins no source location"), "{err}");
+        let exp = ErrorExpectation::parse("exit: 1\nno-location: CLI error\n").unwrap();
+        assert_eq!(exp.no_location(), Some("CLI error"));
+        assert!(exp.validate_location("100_x.eu", "eu: bad flag").is_ok());
+    }
+
+    #[test]
+    fn test_location_sidecar_errors() {
+        assert!(ErrorExpectation::parse("exit: 1\nlocation: 4\n").is_err());
+        assert!(ErrorExpectation::parse("exit: 1\nlocation: a:b\n").is_err());
+        assert!(ErrorExpectation::parse("exit: 1\nno-location:\n").is_err());
+        assert!(ErrorExpectation::parse("exit: 1\nlocation: 1:2\nno-location: x\n").is_err());
+    }
+
+    #[test]
+    fn test_location_without_error_label_fails() {
+        let exp = ErrorExpectation::parse("exit: 1\nlocation: 2:3\n").unwrap();
+        // A label under a warning only is not a primary error label.
+        let stderr = "warning: w\n  ┌─ 100_x.eu:2:3\n";
+        assert!(exp.validate_location("100_x.eu", stderr).is_err());
+    }
+
     #[test]
     fn test_validate_pass() {
         let exp = ErrorExpectation {
             exit: Some(1),
             stderr_pattern: Some("division by zero".to_string()),
             stderr_absent: vec![],
+            location: None,
+            no_location: None,
         };
         assert!(exp.validate(1, "error: division by zero at line 5").is_ok());
     }
@@ -492,6 +664,8 @@ pub mod tests {
             exit: Some(1),
             stderr_pattern: None,
             stderr_absent: vec![],
+            location: None,
+            no_location: None,
         };
         let result = exp.validate(0, "");
         assert!(result.is_err());
@@ -504,6 +678,8 @@ pub mod tests {
             exit: None,
             stderr_pattern: Some("expected pattern".to_string()),
             stderr_absent: vec![],
+            location: None,
+            no_location: None,
         };
         let result = exp.validate(1, "something else entirely");
         assert!(result.is_err());
@@ -516,6 +692,8 @@ pub mod tests {
             exit: None,
             stderr_pattern: Some(r"line \d+".to_string()),
             stderr_absent: vec![],
+            location: None,
+            no_location: None,
         };
         assert!(exp.validate(1, "error at line 42").is_ok());
         assert!(exp.validate(1, "error at line XY").is_err());

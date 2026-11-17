@@ -178,107 +178,20 @@ fn run() -> i32 {
     }
 
     // Run the bidirectional type checker and emit warnings — the same check
-    // `eu check` runs. On the blob path, the blob's baked desugared,
-    // per-unit prelude-side cores (`desugared_unit_cores`) let
-    // `run_type_checker_from_blob_core` reproduce this merged check without
-    // loading or translating prelude source (the dominant cost
-    // `run_type_checker` would otherwise pay); the cores are decoded lazily
-    // here, so the decode cost is only paid when the check actually runs
-    // (never under `--suppress-type-warnings`). A blob without baked cores
-    // (stale format, or generated before this field existed) falls back
-    // explicitly to `run_type_checker` — always correct, just paying the
-    // prelude-source compile for this invocation. Non-blob configs (source
-    // prelude, alternative prelude) always use `run_type_checker`.
-    // See eu-rb5n.
-    // eu-1tkk.7.40: the checker's argument-level findings, resolved to source
-    // coordinates while its own `SourceMap` is still alive, so the evaluator
-    // (which has a different one) can put the offending argument's span into
-    // the labels of a runtime error blamed on the same call. Stays empty under
-    // `--suppress-type-warnings`, where the checker does not run at all.
-    let mut type_findings = eucalypt::driver::warning_link::TypeWarningLinks::default();
-
-    if !opt.suppress_type_warnings() {
-        // eu-rqwh: carry the blob's own monad registries alongside the
-        // decoded prelude_units, so `run_type_checker_from_blob_core` can
-        // seed them into its fresh `SourceLoader` — that loader injects the
-        // prelude-side units directly (skipping `translate()`, the step
-        // that would otherwise populate these registries), so without this
-        // the user's own `:for`/`:io` monadic-binding metadata is never
-        // recognised on this (blob) path.
-        //
-        // eu-1tkk.2: the blob's deprecation table rides along for the same
-        // reason — `deprecated` metadata is desugar-phase only, so skipping
-        // translate() also skips the step that would have collected it, and
-        // a `deprecated` declaration in `lib/prelude.eu` would be inert on
-        // this (shipped default) path while working under `eu check`.
-        #[cfg(not(target_arch = "wasm32"))]
-        let blob_check_seed = loader
-            .prelude_blob()
-            // A `prelude:` unit-metadata override replaces the prelude the
-            // blob baked, so the blob's cores would check the user's file
-            // against the wrong prelude (eu-oaz72.177): take the source
-            // path, which honours the override as `eu check` does.
-            .filter(|_| loader.prelude_override().is_none())
-            .and_then(|b| {
-                b.decode_desugared_unit_cores().map(|units| {
-                    (
-                        units,
-                        b.monad_specs.clone(),
-                        b.monad_type_hints.clone(),
-                        b.deprecations.clone(),
-                    )
-                })
-            });
-        #[cfg(target_arch = "wasm32")]
-        let blob_check_seed: Option<(
-            Vec<(String, eucalypt::core::expr::RcExpr)>,
-            std::collections::HashMap<String, eucalypt::core::desugar::desugarer::MonadSpec>,
-            std::collections::HashMap<String, String>,
-            std::collections::HashMap<String, eucalypt::core::metadata::DeprecationSpec>,
-        )> = None;
-
-        let check_result = match &blob_check_seed {
-            Some((prelude_units, monad_specs, monad_type_hints, deprecations)) => {
-                eucalypt::driver::check::run_type_checker_from_blob_core(
-                    &opt,
-                    prelude_units,
-                    monad_specs,
-                    monad_type_hints,
-                    deprecations,
-                )
-            }
-            None => eucalypt::driver::check::run_type_checker(&opt),
-        };
-
-        match check_result {
-            Ok(result) => {
-                let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
-                    codespan_reporting::term::termcolor::ColorChoice::Auto,
-                );
-                let config = codespan_reporting::term::Config::default();
-                for w in &result.warnings {
-                    let diag = w.to_diagnostic(&result.source_map);
-                    let _ = codespan_reporting::term::emit(
-                        &mut writer.lock(),
-                        &config,
-                        &result.files,
-                        &diag,
-                    );
-                }
-                if opt.check_strict() && !result.warnings.is_empty() {
-                    return exit_code(&opt, 1, &statistics);
-                }
-                type_findings = eucalypt::driver::warning_link::TypeWarningLinks::build(
-                    &result.warnings,
-                    &result.source_map,
-                    &result.files,
-                );
-            }
-            Err(e) => {
-                eprintln!("eu: type-check pipeline warning: {e}");
-            }
+    // `eu check` runs. Which checker the eval path uses (blob-core or
+    // source) is decided in `check::eval_path_type_check`, shared with the
+    // in-process test runner so the harness exercises the same dispatch
+    // (eu-8ke8a; see eu-rb5n for the blob-core path).
+    let type_findings = {
+        let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
+            codespan_reporting::term::termcolor::ColorChoice::Auto,
+        );
+        let verdict = check::eval_path_type_check(&opt, &loader, &mut writer.lock());
+        match verdict {
+            check::EvalPathCheck::Proceed(findings) => findings,
+            check::EvalPathCheck::StrictFailure => return exit_code(&opt, 1, &statistics),
         }
-    }
+    };
 
     // Resolve type aliases inside TypeData primitives using the pre-pruning
     // aliases (which include definitions removed by DCE).

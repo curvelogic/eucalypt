@@ -1,2 +1,3 @@
 exit: 1
 stderr: "panic: This exits immediately"
+location: 1:14

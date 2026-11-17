@@ -1,2 +1,3 @@
 exit: 1
 stderr: "found string \"x\"(.|\n)*called from here(.|\n)*called from here(.|\n)*called from here"
+location: 3:8

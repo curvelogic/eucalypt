@@ -1,2 +1,3 @@
 exit: 1
 stderr: "parse-as"
+location: 2:12

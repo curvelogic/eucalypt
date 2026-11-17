@@ -1,2 +1,3 @@
 exit: 1
 stderr: "validate: not a type spec"
+location: 7:18

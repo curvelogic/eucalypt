@@ -1,2 +1,3 @@
 exit: 1
 stderr: "unterminated string literal"
+location: 1:4

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "(?s)type mismatch: expected number, found a function.*229_underapplied_call_span\.eu:10:7.*a function value cannot be used directly here"
+location: 10:7

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "assignment-style syntax: 'result = ...'"
+location: 2:11

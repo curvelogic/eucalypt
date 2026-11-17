@@ -1,3 +1,4 @@
 exit: 1
 # the argument is the identity function; that is stated as fact (eu-oaz72.132)
 stderr: "(?s)found a function.*note: in 'nth\(_\)', '_' is the whole argument, so the argument is the identity function: an expression anaphor's scope ends at the parentheses round it"
+location: 4:7

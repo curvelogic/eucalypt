@@ -1,2 +1,3 @@
 exit: 1
 stderr: "cannot look up (a key|key '\w+') on a function value"
+location: 2:9

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "could not read 'nope/prelude.eu': prelude: path not found"
+no-location: the error is reported without a source label

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "requires a list"
+no-location: primary label differs by prelude mode (blob: 047_str_plus_plus.eu:2:21, source: none)

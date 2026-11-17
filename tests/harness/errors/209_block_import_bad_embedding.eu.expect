@@ -1,2 +1,3 @@
 exit: 1
 stderr: "invalid embedding"
+location: testdata/206_bad_annotation.eu:4:11

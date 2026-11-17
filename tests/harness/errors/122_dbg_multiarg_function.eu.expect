@@ -1,2 +1,3 @@
 exit: 0
 stderr: "▶ 6"
+no-location: not an error (exit 0) - asserts dbg trace output, which carries no source label

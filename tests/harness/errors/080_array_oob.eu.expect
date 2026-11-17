@@ -1,2 +1,3 @@
 exit: 1
 stderr: "array index out of bounds: coordinates .* are outside the array bounds"
+location: 2:40

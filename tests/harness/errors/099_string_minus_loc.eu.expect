@@ -1,2 +1,3 @@
 exit: 1
 stderr: "099_string_minus_loc"
+location: 2:13

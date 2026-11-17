@@ -10,3 +10,4 @@
 # copy 171_yaml_large_uint.eu.expect instead.
 exit: 1
 stderr: "(?s)error\[EU-RENDER-SHAPE\].*cannot render this document as html: the value to render is a block, but markup output needs a hiccup element.*html output renders hiccup markup"
+no-location: the error is reported without a source label

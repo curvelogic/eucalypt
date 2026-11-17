@@ -1,2 +1,3 @@
 exit: 1
 stderr: "found a boolean"
+location: 2:14

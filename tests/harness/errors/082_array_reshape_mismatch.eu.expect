@@ -1,2 +1,3 @@
 exit: 1
 stderr: "cannot reshape 4 elements into shape"
+location: 2:40

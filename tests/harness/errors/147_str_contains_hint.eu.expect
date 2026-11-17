@@ -1,2 +1,3 @@
 exit: 1
 stderr: "str\.contains\?"
+location: 3:14

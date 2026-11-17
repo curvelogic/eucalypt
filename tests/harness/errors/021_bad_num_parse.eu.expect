@@ -1,2 +1,3 @@
 exit: 1
 stderr: "bad number format"
+location: 1:6

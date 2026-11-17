@@ -1,2 +1,3 @@
 exit: 1
 stderr: "panic: first argument"
+location: 2:13

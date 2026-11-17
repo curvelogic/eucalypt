@@ -1,2 +1,3 @@
 exit: 1
 stderr: "(?s)a random number stream cannot be a set element: set elements must be numbers, strings or symbols.*errors[/\\]290_set_of_random_stream_element\.eu:2:21"
+location: 2:21

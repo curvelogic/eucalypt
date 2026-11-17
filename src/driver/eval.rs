@@ -353,6 +353,14 @@ impl<'a> Executor<'a> {
     }
 
     /// Provide override streams to capture the output to stdout and stderr
+    /// Supply the type checker's argument-level findings, for promotion
+    /// into the labels of a runtime error blamed on the same call
+    /// (eu-1tkk.7.40). Used by the in-process test runner, which runs the
+    /// checker itself (eu-8ke8a).
+    pub fn set_type_findings(&mut self, type_findings: TypeWarningLinks) {
+        self.type_findings = type_findings;
+    }
+
     pub fn capture_output(&mut self, out: Box<dyn Write + 'a>, err: Box<dyn Write + 'a>) {
         self.out = Some(out);
         self.err = Some(err);

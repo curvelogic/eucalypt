@@ -1,2 +1,3 @@
 exit: 1
 stderr: "binding 'f' refers to itself"
+location: 3:4

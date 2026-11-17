@@ -1,2 +1,3 @@
 exit: 1
 stderr: "window step 0 must be positive"
+location: 3:27

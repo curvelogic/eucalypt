@@ -1,2 +1,3 @@
 exit: 1
 stderr: "par-concat: cannot serialise a function across the parallel boundary"
+location: 5:11
