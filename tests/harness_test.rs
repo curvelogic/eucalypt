@@ -5861,3 +5861,8 @@ pub fn test_missing_prelude_path_is_an_error() {
         );
     }
 }
+
+#[test]
+pub fn test_336_list_split_on() {
+    run_test(&opts("336_list_split_on.eu"));
+}
