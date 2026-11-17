@@ -2306,7 +2306,7 @@ impl Checker {
     /// inference (§B9).
     ///
     /// Scans the lambda body to identify which parameters are "used as a block"
-    /// (appear in a projection or merge/over argument position).  Block-shaped
+    /// (appear in a projection or `merge` argument position).  Block-shaped
     /// parameters receive a fresh open record type `{..rN}` instead of `any`.
     ///
     /// If no parameter is block-shaped, falls back to `any` immediately,
@@ -2751,7 +2751,7 @@ fn flatten_app_spine(func: &RcExpr) -> (&RcExpr, Vec<&RcExpr>) {
 // ── B9: use-driven block-parameter detection ──────────────────────────────────
 
 /// Scan a lambda scope to determine which parameters are "used as a block"
-/// — i.e. appear in a projection (`Lookup`) or as arguments to `merge`/`over`
+/// — i.e. appear in a projection (`Lookup`) or as arguments to `merge`
 /// in the body.
 ///
 /// Returns a `Vec<bool>` of length `scope.pattern.len()`.  `true` at index `i`
@@ -2781,11 +2781,11 @@ fn collect_block_uses(expr: &RcExpr, depth: usize, flags: &mut Vec<bool>) {
             }
         }
 
-        // Application: if the function spine resolves to `merge` or `over`,
+        // Application: if the function spine resolves to `merge`,
         // every argument in the full spine is used as a block.
         Expr::App(_, func, args) => {
             let (head, prefix_args) = flatten_app_spine(func);
-            if is_merge_or_over_expr(head) {
+            if is_merge_expr(head) {
                 for arg in &prefix_args {
                     mark_block_param(arg, depth, flags);
                 }
@@ -2860,14 +2860,16 @@ fn mark_block_param(expr: &RcExpr, depth: usize, flags: &mut [bool]) {
 /// intrinsic node (post-inline).  The prelude's `over` is the *lens*
 /// combinator (`over(lens, fn, data)`), whose arguments are not blocks, so it
 /// is deliberately not matched by name.
-fn is_merge_or_over_expr(expr: &RcExpr) -> bool {
+///
+/// Bound variables are matched by name only: telling the prelude's `merge`
+/// from a user binding of the same name needs the scope stack, which this
+/// free function does not have.
+fn is_merge_expr(expr: &RcExpr) -> bool {
     let peeled = peel_meta(expr);
     match &*peeled.inner {
         Expr::Var(_, Var::Free(name)) => name == "merge",
         Expr::Var(_, Var::Bound(bv)) => bv.name.as_deref() == Some("merge"),
-        Expr::Intrinsic(_, name) => {
-            matches!(name.as_str(), "MERGE" | "OVER")
-        }
+        Expr::Intrinsic(_, name) => name == "MERGE",
         _ => false,
     }
 }

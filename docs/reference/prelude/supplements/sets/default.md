@@ -8,7 +8,8 @@ s: set.of([1, 2, 3, 2, 1])
 ```eu
 a: set.from-list([1, 2, 3])
 b: set.from-list([2, 3, 4])
-u: set.union(a, b) set.to-list       # [1, 2, 3, 4]
-i: set.intersect(a, b) set.to-list   # [2, 3]
-d: set.diff(a, b) set.to-list        # [1]
+u: a set.union(b) set.to-list      //=> [1, 2, 3, 4]
+i: a set.intersect(b) set.to-list  //=> [2, 3]
+d: a set.diff(b) set.to-list       //=> [1]
+d2: set.diff(b, a) set.to-list     //=> [1]
 ```
