@@ -15,7 +15,7 @@ and holds them as vectors of character codes, so it can read any column
 by index.
 
 Notable eucalypt techniques:
-- `transpose` for matrix pivoting (pipeline form `rows map(line-nums) transpose`)
+- `transpose` for matrix pivoting (pipeline form `num-lines map(line-nums) transpose`)
 - `zip-with` to pair operators with number lists
 - `zip-with` over problem start and end columns
 - `product` and `sum` as the two operators

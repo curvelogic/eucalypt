@@ -38,7 +38,7 @@ splitter-columns(row):
 entering(beams, col): [col, beams dict.get-or(col, 0)]
 
 ` "Retire the beams that hit a splitter."
-retire(beams, [col, n]): beams dict.dissoc(col)
+retire(beams, hit): beams dict.dissoc(hit first)
 
 ` "Emit a retired beam's timelines to both neighbouring columns."
 emit(beams, [col, n]):
