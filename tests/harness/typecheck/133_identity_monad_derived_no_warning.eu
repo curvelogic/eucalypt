@@ -1,7 +1,7 @@
 ` "Derived monad combinators on an identity-like monad, and on random, check clean (eu-oaz72.170)."
 id-bind(m, f): f(m)
 
-id-monad: monad({bind: id-bind, return: id})
+id-monad: monad{bind: id-bind, return: id}
 
 mapped: id-monad.map(inc, 41)
 joined: id-monad.join(42)
