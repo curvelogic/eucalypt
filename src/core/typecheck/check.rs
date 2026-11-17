@@ -320,6 +320,9 @@ pub struct Checker {
     ///
     /// Populated eagerly during Let synthesis alongside `binding_bodies`.
     projection_shapes: HashMap<BoundKey, Option<usize>>,
+    /// Memoised tuple-drop classification per binding: `Some(n)` when the
+    /// binding is `drop(n)` for a literal count `n`, or an alias of one.
+    drop_shapes: HashMap<BoundKey, Option<usize>>,
 
     /// When `true`, the outermost scope frame is preserved rather than
     /// popped when `synthesise(Let)` would otherwise call `pop_scope`.
@@ -378,6 +381,7 @@ impl Checker {
             binding_bodies: HashMap::new(),
             branch_shapes: HashMap::new(),
             projection_shapes: HashMap::new(),
+            drop_shapes: HashMap::new(),
             keep_root_scope: false,
             seed_branch_shapes: HashMap::new(),
             operator_overloads: HashMap::new(),
@@ -1040,6 +1044,7 @@ impl Checker {
                     // "not a brancher/projector" and terminates.
                     self.branch_shapes.insert(key.clone(), None);
                     self.projection_shapes.insert(key.clone(), None);
+                    self.drop_shapes.insert(key.clone(), None);
                     // Store the body for later structural analysis.
                     let body = peel_meta(&b.expr).clone();
                     self.binding_bodies.insert(key.clone(), body.clone());
@@ -1047,7 +1052,9 @@ impl Checker {
                     let shape = self.classify_binding_shape(&body, self.scope_stack.len());
                     self.branch_shapes.insert(key.clone(), shape);
                     let proj = self.classify_projection_body(&body, self.scope_stack.len());
-                    self.projection_shapes.insert(key, proj);
+                    self.projection_shapes.insert(key.clone(), proj);
+                    let drop = self.classify_drop_body(&body, self.scope_stack.len());
+                    self.drop_shapes.insert(key, drop);
                 }
 
                 // Pass 2: synthesise each binding value — triggers consistency
@@ -1418,6 +1425,22 @@ impl Checker {
                 // Not a Tuple or empty — fall through to generic path which uses
                 // the NonEmpty([a]) annotation.
             }
+        }
+
+        // ── DROP-on-Tuple precise typing (§A6.8) ───────────────────────────
+        //
+        // `drop(n)` with a literal count, applied to a `Tuple`, keeps the
+        // positional shape of the suffix rather than widening to the list of
+        // the union of every element (which would include the dropped ones):
+        //   drop(n, Tuple([T₀,…,Tₖ])) → Tuple([Tₙ,…,Tₖ])   (n > k → List(any))
+        // Covers both a direct call (`xs drop(2)`) and a binding classified
+        // as a dropper (`content: drop(2)`, then `xs content`).
+        if let Some((count, target)) = self.recognise_tuple_drop(head, &spine_args) {
+            let arg_type = self.synthesise(target);
+            if let Some(result) = apply_drop_to_tuple(count, &arg_type) {
+                return result;
+            }
+            // Not a Tuple or prefix-list — fall through to the generic path.
         }
 
         // ── ProjectionShape precise tuple typing (§B6.3) ─────────────────────
@@ -2644,6 +2667,54 @@ impl Checker {
     /// Classify a single-param lambda body as a projection of its parameter.
     ///
     /// Matches `HEAD_fn(TAIL_fn^n(param))` and returns the index `n`.
+    /// Recognise a tuple drop in head position and return its literal count
+    /// and the expression it is applied to.
+    ///
+    /// - `drop(n, xs)` (spine of two, `n` a non-negative integer literal);
+    /// - `f(xs)` where `f` is a binding classified as `drop(n)` (§A6.8).
+    fn recognise_tuple_drop<'e>(
+        &self,
+        head: &RcExpr,
+        spine_args: &[&'e RcExpr],
+    ) -> Option<(usize, &'e RcExpr)> {
+        match spine_args {
+            [count, target] if is_drop_fn(head) => Some((literal_count(count)?, target)),
+            [target] => {
+                let Expr::Var(_, Var::Bound(bv)) = &*peel_meta(head).inner else {
+                    return None;
+                };
+                let name = bv.name.as_deref()?;
+                let anchored = self.scope_stack.len().checked_sub(1 + bv.scope as usize)?;
+                let count = (*self.drop_shapes.get(&(anchored, name.to_string()))?)?;
+                Some((count, target))
+            }
+            _ => None,
+        }
+    }
+
+    /// Classify a binding body as a tuple dropper and return its count.
+    ///
+    /// - `drop(n)` partially applied to a non-negative integer literal → `n`;
+    /// - an alias of a binding already classified as a dropper → its count.
+    fn classify_drop_body(&self, body: &RcExpr, stack_len: usize) -> Option<usize> {
+        let peeled = peel_meta(body);
+        match &*peeled.inner {
+            Expr::App(_, func, args) => {
+                let (head, prefix) = flatten_app_spine(func);
+                match (prefix.as_slice(), args.as_slice()) {
+                    ([], [count]) if is_drop_fn(head) => literal_count(count),
+                    _ => None,
+                }
+            }
+            Expr::Var(_, Var::Bound(bv)) => {
+                let name = bv.name.as_deref()?;
+                let anchored = stack_len.checked_sub(1 + bv.scope as usize)?;
+                *self.drop_shapes.get(&(anchored, name.to_string()))?
+            }
+            _ => None,
+        }
+    }
+
     fn classify_proj_lam_body(&self, param_name: &str, body: &RcExpr) -> Option<usize> {
         let peeled = peel_meta(body);
         // Body must be App(head_fn, [inner]).
@@ -3053,6 +3124,50 @@ fn apply_head_tail_to_tuple(proj: HeadTailProjection, arg_type: &Type) -> Option
                 tail.as_ref().clone(),
             )),
         },
+        _ => None,
+    }
+}
+
+/// Return `true` when `expr` is the prelude `drop` (a bound or, in
+/// prelude-cached mode, free variable named `"drop"`).
+fn is_drop_fn(expr: &RcExpr) -> bool {
+    match &*peel_meta(expr).inner {
+        Expr::Var(_, Var::Bound(bv)) => bv.name.as_deref() == Some("drop"),
+        Expr::Var(_, Var::Free(name)) => name == "drop",
+        _ => false,
+    }
+}
+
+/// The value of a non-negative integer literal, or `None` for anything else.
+fn literal_count(expr: &RcExpr) -> Option<usize> {
+    match &*peel_meta(expr).inner {
+        Expr::Literal(_, Primitive::Num(n)) => n.as_u64().and_then(|n| usize::try_from(n).ok()),
+        _ => None,
+    }
+}
+
+/// Apply `drop(count)` to a known `Tuple` or `PrefixList` type (§A6.8).
+///
+/// - `drop(n, Tuple([T₀, …, Tₖ])) → Tuple([Tₙ, …, Tₖ])`, or `List(Any)` when
+///   nothing is left (as for `tail` of a singleton);
+/// - `drop(n, PrefixList{p, t}) → PrefixList{p[n..], t}` when `n` lies within
+///   the prefix (past it, how much of the tail remains is unknown).
+///
+/// Returns `None` for any other shape (the caller falls through to the
+/// generic annotation path).
+fn apply_drop_to_tuple(count: usize, arg_type: &Type) -> Option<Type> {
+    if let Type::Mu(x, body) = arg_type {
+        let unfolded = unfold_mu(x, body, arg_type);
+        return apply_drop_to_tuple(count, &unfolded);
+    }
+    match arg_type {
+        Type::Tuple(elems) if count == 0 => Some(Type::Tuple(elems.clone())),
+        Type::Tuple(elems) if count >= elems.len() => Some(Type::list(Type::Any)),
+        Type::Tuple(elems) => Some(Type::Tuple(elems[count..].to_vec())),
+        Type::PrefixList { prefix, tail } if count <= prefix.len() => Some(Type::prefix_list(
+            prefix[count..].to_vec(),
+            tail.as_ref().clone(),
+        )),
         _ => None,
     }
 }

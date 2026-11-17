@@ -4752,6 +4752,20 @@ pub fn test_typecheck_137_block_param_nested_projection_warns() {
     run_typecheck_test("137_block_param_nested_projection_warns.eu");
 }
 
+/// `drop` with a literal count keeps a heterogeneous list's tuple shape, so
+/// mapping, filtering and indexing the suffix checks clean (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_140_tuple_drop_keeps_shape_no_warning() {
+    run_typecheck_test("140_tuple_drop_keeps_shape_no_warning.eu");
+}
+
+/// A genuine non-list left in a dropped tuple suffix still warns
+/// (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_141_tuple_drop_suffix_mismatch_warns() {
+    run_typecheck_test("141_tuple_drop_suffix_mismatch_warns.eu");
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]

@@ -241,6 +241,22 @@ second(pair) # type: number  (index 1)
 Any user-defined function whose body is `xs tail head` (or `xs tail tail head`,
 etc.) acquires the same precise projection typing automatically.
 
+`drop` with a literal count keeps the shape of what is left, so a
+heterogeneous list such as an imported XML element can be mapped or
+filtered after its tag and attributes are dropped. A binding that is
+just `drop(n)` for a literal `n` (or an alias of one) is treated the same
+way:
+
+```eu,notest
+el: [:item, {}, [:a, {}], [:b, {}]]
+content: drop(2)
+el drop(2)   # type: ((:a, {..}), (:b, {..}))
+el content   # type: ((:a, {..}), (:b, {..}))
+el drop(9)   # type: [any]  (nothing left)
+```
+
+A count that is not a literal falls back to `drop`'s own type, `[a]`.
+
 ### Prefix-lists
 
 A **prefix-list** sits between a fixed tuple and a homogeneous list: a
