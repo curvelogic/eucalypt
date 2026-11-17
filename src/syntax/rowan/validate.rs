@@ -421,9 +421,15 @@ impl Validatable for BracketExpr {
             }
         }
 
-        // Validate inner soup
+        // Validate inner soup.  An unclosed bracket with nothing inside it is
+        // already reported as `UnclosedBracketExpr`; do not add a misleading
+        // "empty expression" on top.
         if let Some(soup) = self.soup() {
-            soup.validate(errors);
+            let unclosed_and_empty = self.close_bracket().is_none()
+                && soup.syntax().children().all(|c| c.kind().is_trivial());
+            if !unclosed_and_empty {
+                soup.validate(errors);
+            }
         }
     }
 }

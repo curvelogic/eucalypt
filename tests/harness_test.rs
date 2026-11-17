@@ -3724,6 +3724,13 @@ pub fn test_error_232_unclosed_bracket_eof() {
 }
 
 #[test]
+/// eu-oaz72.42: an unclosed bracket mid-file is reported at the opening
+/// bracket.
+pub fn test_error_333_unclosed_bracket_open() {
+    run_error_test(&error_opts("333_unclosed_bracket_open.eu"));
+}
+
+#[test]
 /// eu-oaz72.43: a negative index to nth is an error rather than a hang on
 /// an infinite list (checked on a finite one to stay bounded).
 pub fn test_error_233_nth_negative() {
@@ -4748,11 +4755,18 @@ pub fn test_typecheck_132_union_callback_param_rejects() {
     run_typecheck_test("132_union_callback_param_rejects.eu");
 }
 
+/// A `prelude:` unit-metadata override is honoured by the type checker on
+/// both `eu check` and the evaluate path (eu-oaz72.177).
+#[test]
+pub fn test_typecheck_133_prelude_override_type_mismatch() {
+    run_typecheck_test("133_prelude_override_type_mismatch.eu");
+}
+
 /// Derived monad combinators on identity-like monads and `random` check
 /// clean: an abstract `m a` is gradual against a concrete type (eu-oaz72.170).
 #[test]
-pub fn test_typecheck_133_identity_monad_derived_no_warning() {
-    run_typecheck_test("133_identity_monad_derived_no_warning.eu");
+pub fn test_typecheck_134_identity_monad_derived_no_warning() {
+    run_typecheck_test("134_identity_monad_derived_no_warning.eu");
 }
 
 /// The dict prelude signatures must not warn on valid dict code: the
@@ -5644,4 +5658,51 @@ pub fn test_error_331_iterate_applies_f_at_cell() {
 #[test]
 pub fn test_error_332_scanl_applies_op_at_cell() {
     run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
+}
+
+/// `eu check` must honour `prelude:` unit metadata exactly as evaluation
+/// does (eu-oaz72.173): the alternative prelude's bindings are known, so
+/// `--strict` exits 0 with no spurious "assignment-style" error.
+#[test]
+pub fn test_check_honours_prelude_metadata() {
+    let output = std::process::Command::new(eu_binary())
+        .args([
+            "check",
+            "--strict",
+            "tests/harness/163_prelude_selection.eu",
+        ])
+        .output()
+        .expect("failed to run eu check");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "eu check --strict must accept a prelude: override; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.is_empty(),
+        "eu check must run cleanly (a skipped check prints a pipeline warning):\n{stderr}"
+    );
+}
+
+/// An unreadable `prelude:` override must fail `eu check` (strict or not) rather
+/// than silently skip the check (eu-oaz72.173 review).
+#[test]
+pub fn test_check_fails_on_missing_prelude_override() {
+    let dir = std::env::temp_dir().join(format!("eu-check-prelude-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("bad.eu");
+    std::fs::write(&file, "{ prelude: \"nonexistent-prelude.eu\" }\n\nx: 1\n").unwrap();
+    let output = std::process::Command::new(eu_binary())
+        .args(["check"])
+        .arg(&file)
+        .output()
+        .expect("failed to run eu check");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -341,6 +341,21 @@ mod tests {
     }
 
     #[test]
+    fn unclosed_bracket_is_reported_at_the_opening_bracket() {
+        let source = "x: 1\ny: ⟦ 2 + 3\n";
+        let parse = parse_unit(source);
+        let diags = diagnostics_from_parse_errors(source, parse.errors());
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert!(
+            diags[0].message.contains("unclosed bracket expression"),
+            "{}",
+            diags[0].message
+        );
+        assert_eq!(diags[0].range.start.line, 1);
+        assert_eq!(diags[0].range.start.character, 3);
+    }
+
+    #[test]
     fn no_errors_for_valid_source() {
         let source = "x: 1\ny: 2\n";
         let parse = parse_unit(source);
