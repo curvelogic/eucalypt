@@ -826,7 +826,7 @@ pub mod tests {
         let x = free("x");
         let hit = free("hit?");
         let r = free("r");
-        let p0 = free("__p0");
+        let p0 = free("__p'0");
         let y = free("y");
 
         let hit_def = || {
@@ -878,7 +878,7 @@ pub mod tests {
     /// closed).
     fn open_hit_def(x: &str) -> RcExpr {
         let y = free("y");
-        let p0 = free("__p0");
+        let p0 = free("__p'0");
         let destr_let = RcExpr::from(Expr::Let(
             Smid::default(),
             close_let_scope(
@@ -1005,7 +1005,7 @@ pub mod tests {
     #[test]
     pub fn test_beta_reduce_destructuring_lambda_with_bound_arg() {
         let f = free("f");
-        let p0 = free("__p0");
+        let p0 = free("__p'0");
         let a = free("a");
         let b = free("b");
         let x = free("x");

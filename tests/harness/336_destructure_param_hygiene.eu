@@ -1,0 +1,30 @@
+#!/usr/bin/env eu
+{
+  title: "336 destructuring parameter hygiene"
+  doc: "Destructuring parameters must not capture user identifiers named like their synthetic binders (eu-oaz72.191)."
+}
+
+# A destructuring parameter was desugared to a synthetic lambda binder
+# named `__pN` (and nested patterns to further `__pN` let bindings).
+# Names were still resolved textually at that point, so a user
+# identifier spelled `__p0` or `__p1` inside the body resolved to the
+# synthetic binder instead of the user's own binding.
+
+list-head(__p0, l): { g([h : t]): h + __p0 }.g(l)
+block-field(__p0, b): { g({x}): x + __p0 }.g(b)
+list-pair(__p0, l): { g([a, b]): a + b + __p0 }.g(l)
+second-arg(__p1, l): { g(k, [h : t]): k + h + __p1 }.g(1, l)
+nested(__p0, __p1, l): { g([[a, b], c]): a + b + c + __p0 + __p1 }.g(l)
+block-of-list(__p1, b): { g({xs: [h : t]}): h + __p1 }.g(b)
+
+` { target: :test-destructure-param-hygiene
+    doc: "eu-oaz72.191: a destructuring lambda's synthetic binder once shadowed a user parameter named `__p0`/`__p1`." }
+test-destructure-param-hygiene: {
+  t1: list-head(100, [1, 2]) = 101
+  t2: block-field(100, {x: 1}) = 101
+  t3: list-pair(100, [1, 2]) = 103
+  t4: second-arg(100, [10, 20]) = 111
+  t5: nested(100, 1000, [[1, 2], 3]) = 1106
+  t6: block-of-list(100, {xs: [5, 6]}) = 105
+  RESULT: [t1, t2, t3, t4, t5, t6] all-true? then(:PASS, :FAIL)
+}
