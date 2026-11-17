@@ -1171,38 +1171,27 @@ impl ProtoSyntax for ProtoAppGroup {
         let mut intrinsic_name: Option<&str> = None;
         let mut callee_name: Option<&str> = None;
         let mut prelude_slot: Option<usize> = None;
-        let mut local_binder = LetBinder::synthetic_let(context);
 
-        // Find a reference for the function.
-        let f_index: Box<dyn ProtoReference> = match &*self.f.inner {
-            Expr::Var(s, v) => match v {
-                Var::Bound(bv) => {
-                    // Preserve the binding name for user demand signature lookup.
-                    callee_name = bv.name.as_deref();
-                    Box::new(ProtoVar::new(bv.clone()))
-                }
-                Var::Free(name) => {
-                    callee_name = Some(name.as_str());
-                    prelude_slot = compiler.prelude_slot(name);
-                    let r = compiler.resolve_free_var(*s, name)?;
-                    Box::new(ProtoRef::new(r))
-                }
-            },
+        // Identify the callee (for its demand signature) before anything is
+        // compiled: the arguments evaluated in place below must be known
+        // before the call's let binder, whose context sits inside them.
+        match &*self.f.inner {
+            Expr::Var(_, Var::Bound(bv)) => {
+                // Preserve the binding name for user demand signature lookup.
+                callee_name = bv.name.as_deref();
+            }
+            Expr::Var(_, Var::Free(name)) => {
+                callee_name = Some(name.as_str());
+                prelude_slot = compiler.prelude_slot(name);
+            }
             Expr::Intrinsic(_, bif) => {
                 intrinsic_index = intrinsics::index(bif);
                 let n =
                     intrinsic_index.ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
                 intrinsic_name = Some(intrinsics::intrinsic(n).name());
-                Box::new(ProtoRef::new(gref(n)))
             }
-            _ => Box::new(ProtoRef::new(compiler.compile_binding(
-                &mut local_binder,
-                self.f.clone(),
-                self.smid,
-                Demand::default(),
-                self.self_recurse_name.as_deref(),
-            )?)),
-        };
+            _ => {}
+        }
 
         // Look up per-argument demands by what the callee is: an intrinsic
         // takes its catalogue signature; a bound variable (a user binding,
@@ -1230,6 +1219,109 @@ impl ProtoSyntax for ProtoAppGroup {
                     .map(|v| v.as_slice()),
             })
             .filter(|sigs| self.args.len() >= sigs.len());
+        let arg_demand = |i: usize| -> Demand {
+            arg_demands
+                .and_then(|sigs| sigs.get(i))
+                .copied()
+                .unwrap_or_default()
+        };
+
+        // Call-by-value for strict primop arguments (eu-oaz72.67). A strict
+        // argument is otherwise bound as a thunk in the call's let and forced
+        // there with `seq`; an argument that qualifies is instead evaluated
+        // in place by a `case` wrapped around that let, with no thunk,
+        // `Update` or `seq`:
+        //
+        //   ANN(call, CASE(arg0, _ -> CASE(arg1, _ -> LET([...], SEQ.. call))))
+        //
+        // Each scrutinee runs in the enclosing environment, where the thunk
+        // would have closed, under the call's annotation, which is live where
+        // the thunk was forced; the `Branch` continuation restores that
+        // annotation and stamps the bound frame with it, as `SeqBind` does.
+        // An argument qualifies when:
+        //
+        // - the call's signature makes it strict, non-recursive and
+        //   updatable, so the old path compiled it as a thunk forced by `seq`
+        //   (a `skip_update` argument is a non-updatable `Value` that is never
+        //   forced early, and stays that way);
+        // - it is a saturated fusible primop (`FUSIBLE_PRIMOP_NAMES`): these
+        //   return a bare number or boolean, never a `Meta` value, so a case
+        //   (which strips metadata) passes the same value the thunk's
+        //   `Update` would have memoised;
+        // - every strict argument before it qualifies too. The qualifying
+        //   arguments are evaluated before the let and the rest are forced
+        //   inside it, so only a prefix keeps master's evaluation order.
+        let mut in_place: Vec<usize> = vec![];
+        if !compiler.suppress_updates {
+            for (i, arg) in self.args.iter().enumerate() {
+                if matches!(&*arg.inner, Expr::Var(..) | Expr::Intrinsic(..)) {
+                    continue;
+                }
+                let d = arg_demand(i);
+                if d.strictness != Strictness::Strict || d.recursive {
+                    continue;
+                }
+                if !d.skip_update() && is_strict_primop_app(arg) {
+                    in_place.push(i);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Compile each in-place argument in the context of the case frames
+        // already bound before it: one single-slot frame per argument, which a
+        // synthetic context of that many slots models.
+        let case_context = |frames: usize| Context {
+            scope: None,
+            var_refs: vec![],
+            size: frames,
+            next: Some(context),
+        };
+        let mut scrutinees: Vec<Rc<StgSyn>> = Vec::with_capacity(in_place.len());
+        for (j, &i) in in_place.iter().enumerate() {
+            let Expr::App(s, f, args) = &*self.args[i].inner else {
+                unreachable!("in-place argument is a primop application");
+            };
+            let mut proto = ProtoAppGroup::new(
+                f.clone(),
+                args.clone(),
+                arg_demand(i),
+                *s,
+                self.self_recurse_name.as_deref(),
+            );
+            let scrutinee = if j == 0 {
+                proto.take_syntax(compiler, context)?
+            } else {
+                proto.take_syntax(compiler, &case_context(j))?
+            };
+            scrutinees.push(scrutinee);
+        }
+        let all_cases = case_context(in_place.len());
+        let let_context = if in_place.is_empty() {
+            context
+        } else {
+            &all_cases
+        };
+        let mut local_binder = LetBinder::synthetic_let(let_context);
+
+        // Find a reference for the function.
+        let f_index: Box<dyn ProtoReference> = match &*self.f.inner {
+            Expr::Var(s, v) => match v {
+                Var::Bound(bv) => Box::new(ProtoVar::new(bv.clone())),
+                Var::Free(name) => Box::new(ProtoRef::new(compiler.resolve_free_var(*s, name)?)),
+            },
+            Expr::Intrinsic(..) => Box::new(ProtoRef::new(gref(
+                intrinsic_index.expect("intrinsic index resolved above"),
+            ))),
+            _ => Box::new(ProtoRef::new(compiler.compile_binding(
+                &mut local_binder,
+                self.f.clone(),
+                self.smid,
+                Demand::default(),
+                self.self_recurse_name.as_deref(),
+            )?)),
+        };
 
         // Detect self-recursive call: callee name matches the
         // enclosing recursive binding.  The VM will resolve Ref::L
@@ -1253,14 +1345,19 @@ impl ProtoSyntax for ProtoAppGroup {
                         .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
                     arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
                 }
+                _ if in_place.contains(&i) => {
+                    // Bound by the case frames around the let: the innermost
+                    // (last evaluated) frame is nearest.
+                    let position = in_place.iter().position(|&a| a == i).unwrap_or_default();
+                    arg_indexes.push(Box::new(ProtoCaseSlot {
+                        offset: in_place.len() - 1 - position,
+                    }));
+                }
                 _ => {
                     // Use the per-argument demand from the intrinsic signature table.
                     // Falls back to Demand::default() for unknown intrinsics or
                     // out-of-range argument indices.
-                    let arg_demand = arg_demands
-                        .and_then(|sigs| sigs.get(i))
-                        .copied()
-                        .unwrap_or_default();
+                    let arg_demand = arg_demand(i);
                     let index = compiler.compile_binding(
                         &mut local_binder,
                         arg.clone(),
@@ -1375,6 +1472,12 @@ impl ProtoSyntax for ProtoAppGroup {
         // already reads unconditionally, so no dispatch step is added. The blob
         // and source prelude are both compiled with `generate_annotations: false`,
         // so no prelude call site is affected at all.
+        // Evaluate the in-place arguments first, in argument order (the first
+        // is outermost), under the call's annotation.
+        let mut stg = stg;
+        for scrutinee in scrutinees.into_iter().rev() {
+            stg = dsl::force(scrutinee, stg);
+        }
         let stg = if compiler.generate_annotations() && self.smid.is_valid() {
             dsl::ann(self.smid, stg)
         } else {
@@ -1382,6 +1485,36 @@ impl ProtoSyntax for ProtoAppGroup {
         };
 
         Ok(stg)
+    }
+}
+
+/// Whether `expr` is a saturated application of a fusible strict binary
+/// primop (`FUSIBLE_PRIMOP_NAMES`), which returns a bare number or boolean
+/// and never a `Meta` value: such an argument can be evaluated in place by a
+/// `case` without changing the value the callee receives (eu-oaz72.67).
+fn is_strict_primop_app(expr: &RcExpr) -> bool {
+    match &*expr.inner {
+        Expr::App(_, f, args) if args.len() == 2 => match &*f.inner {
+            Expr::Intrinsic(_, name) => {
+                intrinsics::index(name).is_some_and(intrinsics::is_fusible_primop_index)
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// A reference to an argument evaluated in place: a slot in one of the
+/// single-slot case frames wrapped around a call's let (eu-oaz72.67).
+/// `offset` counts frames outwards from the innermost; the reference is
+/// resolved in the let body's context, so it steps over the let's frame.
+struct ProtoCaseSlot {
+    offset: usize,
+}
+
+impl ProtoReference for ProtoCaseSlot {
+    fn take_reference(&mut self, context: &Context) -> Result<Ref, CompileError> {
+        Ok(dsl::lref(context.size() + self.offset))
     }
 }
 
