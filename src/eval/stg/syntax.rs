@@ -242,14 +242,21 @@ pub fn is_fusible_primop_body(body: &StgSyn) -> bool {
 impl StgSyn {
     /// Used to determine when to create thunks and when not
     pub fn is_whnf(&self) -> bool {
-        matches!(
-            self,
+        match self {
             StgSyn::Cons { .. }
-                | StgSyn::Meta { .. }
-                | StgSyn::Atom {
-                    evaluand: Reference::V(_)
-                }
-        )
+            | StgSyn::Meta { .. }
+            | StgSyn::Atom {
+                evaluand: Reference::V(_),
+            } => true,
+            // `Ann` only stamps a source location on the machine before
+            // entering its body, so an annotated WHNF is still a WHNF.
+            // Seeing through it keeps a value-provenance annotation
+            // (eu-1tkk.7.45) on a `Value` form: as a `Thunk` the update
+            // would overwrite the annotated code with the bare value after
+            // the first force, losing the provenance on every later read.
+            StgSyn::Ann { body, .. } => body.is_whnf(),
+            _ => false,
+        }
     }
 }
 
