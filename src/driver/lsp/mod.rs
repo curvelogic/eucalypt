@@ -1238,7 +1238,7 @@ fn run_pipeline(
         Input::new(Locator::Literal(text.to_string()), None, "eu")
     };
 
-    let inputs = vec![prelude, doc_input];
+    let mut inputs = vec![prelude, doc_input];
     let mut loader = SourceLoader::new(vec![]);
 
     // Per-stage content hashes.
@@ -1253,6 +1253,11 @@ fn run_pipeline(
     // File id of the open document, so that warnings located in imported
     // files can be told apart from warnings in the document itself.
     let mut doc_file_id = None;
+    // Detect a `prelude:` override in the open document before loading, as
+    // `prepare()` does for evaluation (eu-oaz72.177).
+    if let Err(e) = loader.detect_and_load_prelude_override(&inputs[1..]) {
+        return Err(make_pipeline_error(&loader, &e));
+    }
     for input in &inputs {
         match loader.load(input) {
             Ok(id) => {
@@ -1263,6 +1268,15 @@ fn run_pipeline(
             Err(e) => return Err(make_pipeline_error(&loader, &e)),
         }
     }
+    // Honour a `prelude:` unit-metadata override found while loading, as
+    // evaluation and `eu check` do (eu-oaz72.177): substitute it for the
+    // default prelude before translate and merge.  `doc_file_id` is a loader
+    // file id, unaffected by the substitution.
+    inputs = crate::driver::prepare::substitute_prelude_override(
+        &inputs,
+        loader.prelude_override(),
+        true,
+    );
     for input in &inputs {
         if let Err(e) = loader.translate(input) {
             return Err(make_pipeline_error(&loader, &e));
@@ -1479,6 +1493,26 @@ mod tests {
         assert!(
             titles.iter().any(|t| t == "Replace 'old-fn' with 'new-fn'"),
             "expected deprecation quick-fix, got {titles:?}"
+        );
+    }
+
+    /// The live pipeline must honour a `prelude:` override in the open
+    /// document, so the editor's diagnostics match `eu check` (eu-oaz72.177).
+    #[test]
+    fn run_pipeline_honours_prelude_override() {
+        let mut session = testing::LspTestSession::new();
+        session.set_uri("file:///tmp/eu_lsp_prelude_override_test.eu");
+        session.run_pipeline(
+            "{ prelude: \"tests/fixtures/alt-prelude-typed.eu\" }\nbad: alt-show(\"x\")\n",
+        );
+        assert!(session.has_cached(), "pipeline should succeed");
+        assert!(
+            session
+                .pipeline_warnings()
+                .iter()
+                .any(|w| w.message.contains("alt-show")),
+            "expected a type warning from the overriding prelude, got {:?}",
+            session.pipeline_warnings()
         );
     }
 
