@@ -3,6 +3,6 @@
 mk2(xs): { n: xs count }
 
 ` "The call result is bound to `g` and projected by the sibling `e`."
-p(lines): { g: mk2(lines)  e: g.n }.(e)
+p(lines): { g: mk2(lines)  e: g.n }.e
 
-v: p(["a", "b"])
+v: p["a", "b"]

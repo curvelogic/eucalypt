@@ -1,4 +1,4 @@
 ` "The shape of fixture 138, but the parameter really is a block: projected through a sibling binding, it still warns when given a number (eu-oaz72.184)."
-q(b): { g: b.n  e: g }.(e)
+q(b): { g: b.n  e: g }.e
 
 bad: q(5)
