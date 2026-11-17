@@ -4748,6 +4748,13 @@ pub fn test_typecheck_132_union_callback_param_rejects() {
     run_typecheck_test("132_union_callback_param_rejects.eu");
 }
 
+/// A `prelude:` unit-metadata override is honoured by the type checker on
+/// both `eu check` and the evaluate path (eu-oaz72.177).
+#[test]
+pub fn test_typecheck_133_prelude_override_type_mismatch() {
+    run_typecheck_test("133_prelude_override_type_mismatch.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).

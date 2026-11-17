@@ -616,6 +616,8 @@ impl SourceLoader {
             // Parse the file's source and look for a `prelude:` key.
             let source = match input.locator() {
                 Locator::Fs(path) => self.read_fs_input(path).ok().map(FsInput::into_text),
+                // An editor buffer carries its own (possibly unsaved) text.
+                Locator::Buffer { text, .. } => Some(text.clone()),
                 _ => None,
             };
             let Some(source) = source else {
