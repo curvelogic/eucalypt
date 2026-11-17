@@ -737,59 +737,68 @@ impl SourceLoader {
         locator: &Locator,
         library_fallback: bool,
     ) -> Result<usize, EucalyptError> {
-        if let Some(file_id) = self.locators.get(locator) {
-            return Ok(*file_id);
-        }
-
-        match self.locators.get(locator) {
-            Some(id) => Ok(*id),
-            None => {
-                // Read the text, and alongside it decide whether this file is a
-                // shipped library rather than the user's own code. Every arm
-                // answers both questions, so there is one place to look for
-                // either and no way to add a locator that answers only one.
-                let (source, is_library) = match locator {
-                    Locator::Fs(path) => {
-                        // A filename import may resolve to the user's file *or*
-                        // fall back to a library baked into the binary — and
-                        // only `read_fs_input` knows which happened (eu-8a49h).
-                        let input = self.read_fs_input(path, library_fallback)?;
-                        let is_library = input.is_baked_in_resource();
-                        (input.into_text(), is_library)
-                    }
-                    Locator::Resource(name) => (
-                        self.resources
-                            .get(name)
-                            .ok_or_else(|| EucalyptError::UnknownResource(name.clone()))?
-                            .clone(),
-                        true,
-                    ),
-                    Locator::Cli(text) => (text.to_string(), false),
-                    Locator::Literal(text) => (text.to_string(), false),
-                    Locator::Buffer { text, .. } => (text.to_string(), false),
-                    Locator::StdIn => (self.read_stdin()?, false),
-                    Locator::Pseudo(_) => ("(no source)".to_string(), false),
-                    other => {
-                        return Err(EucalyptError::FileCouldNotBeRead(
-                            format!("unsupported locator: {other}"),
-                            None,
-                        ))
-                    }
-                };
-
-                // store text and map locator to fileid
-                let id = self.files.add(locator.to_string(), source);
-                self.locators.insert(locator.clone(), id);
-                // A shipped library is not the user's code: mark it so a
-                // diagnostic prefers a user-code location as its primary error
-                // site rather than excerpting library internals the reader did
-                // not write and cannot change.
-                if is_library {
-                    self.source_map.mark_resource_file(id);
+        if let Some(&file_id) = self.locators.get(locator) {
+            // The cache is keyed by locator alone, so `lens.eu` read earlier
+            // as eucalypt — and served from the shipped library because no
+            // such file exists — is cached under the same key a later
+            // `text@lens.eu` asks for. A filesystem file marked as a
+            // resource can only have come from that fallback, which a
+            // non-eucalypt read may not use (eu-7tlbg).
+            if let Locator::Fs(path) = locator {
+                if !library_fallback && !self.source_map.is_user_file(file_id) {
+                    return Err(EucalyptError::FileCouldNotBeRead(
+                        path.to_string_lossy().to_string(),
+                        None,
+                    ));
                 }
-                Ok(id)
             }
+            return Ok(file_id);
         }
+
+        // Read the text, and alongside it decide whether this file is a
+        // shipped library rather than the user's own code. Every arm
+        // answers both questions, so there is one place to look for
+        // either and no way to add a locator that answers only one.
+        let (source, is_library) = match locator {
+            Locator::Fs(path) => {
+                // A filename import may resolve to the user's file *or*
+                // fall back to a library baked into the binary — and
+                // only `read_fs_input` knows which happened (eu-8a49h).
+                let input = self.read_fs_input(path, library_fallback)?;
+                let is_library = input.is_baked_in_resource();
+                (input.into_text(), is_library)
+            }
+            Locator::Resource(name) => (
+                self.resources
+                    .get(name)
+                    .ok_or_else(|| EucalyptError::UnknownResource(name.clone()))?
+                    .clone(),
+                true,
+            ),
+            Locator::Cli(text) => (text.to_string(), false),
+            Locator::Literal(text) => (text.to_string(), false),
+            Locator::Buffer { text, .. } => (text.to_string(), false),
+            Locator::StdIn => (self.read_stdin()?, false),
+            Locator::Pseudo(_) => ("(no source)".to_string(), false),
+            other => {
+                return Err(EucalyptError::FileCouldNotBeRead(
+                    format!("unsupported locator: {other}"),
+                    None,
+                ))
+            }
+        };
+
+        // store text and map locator to fileid
+        let id = self.files.add(locator.to_string(), source);
+        self.locators.insert(locator.clone(), id);
+        // A shipped library is not the user's code: mark it so a
+        // diagnostic prefers a user-code location as its primary error
+        // site rather than excerpting library internals the reader did
+        // not write and cannot change.
+        if is_library {
+            self.source_map.mark_resource_file(id);
+        }
+        Ok(id)
     }
 
     /// Desugar the interrelated tree of ASTs identified by `input`
@@ -1328,9 +1337,11 @@ impl SourceLoader {
         // library. Any other path that merely shares its stem (`lib/test.eu`,
         // `test.yaml`) names the user's own file, and a missing one must be
         // an error, not a silent substitution of the library (eu-7tlbg).
-        if let Some(name) = Resources::library_for_import_path(path).filter(|_| library_fallback) {
-            if let Some(resource_text) = self.resources.get(name) {
-                return Ok(FsInput::BakedInResource(resource_text.clone()));
+        if library_fallback {
+            if let Some(name) = Resources::library_for_import_path(path) {
+                if let Some(resource_text) = self.resources.get(name) {
+                    return Ok(FsInput::BakedInResource(resource_text.clone()));
+                }
             }
         }
 
@@ -1667,6 +1678,17 @@ pub mod tests {
                 path.display()
             );
         }
+        // Top-level paths that share a library's stem but are not its
+        // canonical name; none of them exists in the repository.
+        for path in ["lens.txt", "state.yaml", "package.eu", "build-meta.eu"] {
+            assert!(
+                matches!(
+                    loader.read_fs_input(Path::new(path), true),
+                    Err(EucalyptError::FileCouldNotBeRead(..))
+                ),
+                "a missing '{path}' must not resolve to a baked-in resource"
+            );
+        }
         for path in ["test.eu", "lens.eu", "prelude.eu", "prelude", "lens"] {
             assert!(
                 matches!(
@@ -1685,5 +1707,28 @@ pub mod tests {
                 "'{path}' read as data must not resolve to a baked-in resource"
             );
         }
+    }
+
+    /// eu-7tlbg: the file cache is keyed by locator alone, so a library
+    /// served for `lens.eu` read as eucalypt must not be handed to a later
+    /// non-eucalypt read (`text@lens.eu`) of the same missing file.
+    #[test]
+    fn test_load_source_cache_does_not_serve_a_library_to_a_data_read() {
+        let mut loader = SourceLoader::new(vec![]);
+        let locator = Locator::Fs(PathBuf::from("lens.eu"));
+        loader
+            .load_source(&locator, true)
+            .expect("lens.eu read as eucalypt reaches the shipped library");
+        assert!(
+            matches!(
+                loader.load_source(&locator, false),
+                Err(EucalyptError::FileCouldNotBeRead(..))
+            ),
+            "a data read must not reuse the cached library text"
+        );
+        assert!(
+            loader.load_source(&locator, true).is_ok(),
+            "a second eucalypt read still reuses the cache"
+        );
     }
 }

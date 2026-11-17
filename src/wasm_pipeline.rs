@@ -774,6 +774,15 @@ x: 1"#,
         }
     }
 
+    /// eu-7tlbg parity with the CLI: a data import never reaches a library,
+    /// even under its canonical name. The browser has no files, so this is
+    /// a `cannot import` error (the CLI's is `could not read`).
+    #[test]
+    fn test_data_import_of_a_library_name_fails_clearly() {
+        let err = evaluate_unit("{ import: \"cfg=text@lens.eu\" }\nx: cfg", "json").unwrap_err();
+        assert!(err.message.contains("cannot import"), "{}", err.message);
+    }
+
     #[test]
     fn test_import_of_a_data_resource_fails_clearly() {
         let err = evaluate_unit(
