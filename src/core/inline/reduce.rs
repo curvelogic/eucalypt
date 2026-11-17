@@ -5,8 +5,33 @@ use crate::core::error::CoreError;
 use crate::core::expr::*;
 use crate::core::transform::succ;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
-/// Depth-aware substitution for beta reduction.
+/// A substitution target for [`substs_depth`], with the facts about its
+/// replacement that every occurrence needs, computed once.
+struct Subst<'a> {
+    name: &'a str,
+    replacement: &'a RcExpr,
+    /// The replacement has bound variables that refer outside itself, so it
+    /// must be shifted when moved under binders.
+    open: bool,
+    /// The names of the replacement's own `Var::Free` references.
+    free: Rc<HashSet<String>>,
+}
+
+/// How `substs_depth` treats a nested let that binds a name the replacement
+/// refers to.
+#[derive(Clone, Copy, PartialEq)]
+enum Capture {
+    /// Leave the occurrence unsubstituted: sound only when the target is
+    /// still bound by an enclosing open let (`distribute`).
+    Avoid,
+    /// Substitute regardless: the target is a lambda parameter, which must
+    /// not be left dangling (`beta_reduce`).
+    Ignore,
+}
+
+/// Depth-aware, capture-avoiding substitution for the inline pass.
 ///
 /// Unlike `RcExpr::substs`, this function correctly handles the case
 /// where a replacement expression contains scope-relative bound
@@ -17,18 +42,49 @@ use std::collections::{HashMap, HashSet};
 /// context.
 ///
 /// This is necessary when beta-reducing a destructuring lambda such as
-/// `([a, b]) -> body` where the body contains a `DestructureListLet`.
-/// The Embed values in that Let are inside one additional scope
-/// boundary relative to the call site, so any BV substituted in there
-/// must have its scope incremented.
+/// `([a, b]) -> body` where the body contains a `DestructureListLet`,
+/// and when `distribute` copies a non-closed inlinable lambda under the
+/// scopes of a sibling binding or the let body.
+///
+/// It also avoids **name capture**.  During `distribute` the let being
+/// processed is open: its binders are `Var::Free` names, and an inlinable
+/// replacement may itself refer to a non-inlinable sibling by such a name.
+/// If the copy lands under a nested let that binds the same name,
+/// re-closing the nested let (the recursive `distribute`) would bind the
+/// copied reference to the *nested* binder.  A replacement whose free
+/// names collide with a crossed let's binders is therefore not substituted
+/// below that let: the occurrence stays a reference to the outer binding,
+/// which is kept, so only an optimisation is lost.
+///
+/// When nothing is substituted the original `RcExpr` is returned
+/// (`ptr_eq`-shared), so callers such as `pre_expand_inlines` can detect a
+/// fixed point cheaply.
 fn substs_depth(
     expr: &RcExpr,
     mappings: &[(String, RcExpr)],
+    capture: Capture,
+) -> Result<RcExpr, CoreError> {
+    let substs: Vec<Subst> = mappings
+        .iter()
+        .map(|(name, replacement)| Subst {
+            name,
+            replacement,
+            open: escapes_bound_vars(replacement, 0),
+            free: Rc::new(free_vars(replacement)),
+        })
+        .collect();
+    substs_depth_in(expr, &substs, 0, capture)
+}
+
+fn substs_depth_in(
+    expr: &RcExpr,
+    substs: &[Subst],
     depth: u32,
+    capture: Capture,
 ) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
-        Expr::Var(_, Var::Free(name)) => match mappings.iter().find(|(n, _)| n == name) {
-            Some((_, replacement)) => {
+        Expr::Var(_, Var::Free(name)) => match substs.iter().find(|m| m.name == name) {
+            Some(m) => {
                 // Replacement is from the call site (depth == 0).
                 // If we are now inside `depth` additional scope
                 // boundaries, we must increment all outer BVs in the
@@ -37,8 +93,8 @@ fn substs_depth(
                 // A replacement with no escaping bound variable (a
                 // closed combinator) needs no adjustment, and is shared
                 // rather than copied.
-                let mut adjusted = replacement.clone();
-                if depth > 0 && escapes_bound_vars(replacement, 0) {
+                let mut adjusted = m.replacement.clone();
+                if depth > 0 && m.open {
                     for _ in 0..depth {
                         adjusted = succ::succ(&adjusted)?;
                     }
@@ -51,16 +107,38 @@ fn substs_depth(
         // Descend into Let: the binding values are inside the new scope
         // boundary, so depth increases by 1.
         Expr::Let(s, scope, t) => {
+            // Drop any substitution whose replacement refers to a name
+            // this let binds: it would be captured (see above).
+            let safe: Vec<Subst>;
+            let substs = if capture == Capture::Avoid
+                && substs
+                    .iter()
+                    .any(|m| scope.pattern.iter().any(|b| m.free.contains(&b.name)))
+            {
+                safe = substs
+                    .iter()
+                    .filter(|m| !scope.pattern.iter().any(|b| m.free.contains(&b.name)))
+                    .map(|m| Subst {
+                        name: m.name,
+                        replacement: m.replacement,
+                        open: m.open,
+                        free: Rc::clone(&m.free),
+                    })
+                    .collect();
+                &safe[..]
+            } else {
+                substs
+            };
             let new_bindings: Result<Vec<CoreBinding<RcExpr>>, CoreError> = scope
                 .pattern
                 .iter()
                 .map(|b| {
-                    substs_depth(&b.expr, mappings, depth + 1)
+                    substs_depth_in(&b.expr, substs, depth + 1, capture)
                         .map(|v| CoreBinding::with_demand(b.name.clone(), v, b.demand))
                 })
                 .collect();
             let new_bindings = new_bindings?;
-            let new_body = substs_depth(&scope.body, mappings, depth + 1)?;
+            let new_body = substs_depth_in(&scope.body, substs, depth + 1, capture)?;
             // Preserve sharing when nothing was substituted, so callers
             // can detect a fixed point with `ptr_eq`.
             if new_body.ptr_eq(&scope.body)
@@ -82,7 +160,7 @@ fn substs_depth(
         }
         // Descend into Lam body: also a new scope boundary.
         Expr::Lam(s, inl, scope) => {
-            let new_body = substs_depth(&scope.body, mappings, depth + 1)?;
+            let new_body = substs_depth_in(&scope.body, substs, depth + 1, capture)?;
             if new_body.ptr_eq(&scope.body) {
                 return Ok(expr.clone());
             }
@@ -97,9 +175,7 @@ fn substs_depth(
         }
         _ => {
             // Non-binding nodes: walk children at the same depth.
-            let children_result: Result<RcExpr, CoreError> =
-                expr.try_walk_safe(&mut |e| substs_depth(e, mappings, depth));
-            children_result
+            expr.try_walk_safe(&mut |e| substs_depth_in(e, substs, depth, capture))
         }
     }
 }
@@ -107,6 +183,11 @@ fn substs_depth(
 /// True iff `expr` contains a bound variable that refers to a scope
 /// outside `expr` itself (one that `succ` would shift), `depth` being the
 /// number of scopes already entered within `expr`.
+///
+/// A read-only predicate with the same boundary rule as
+/// `succ::BoundVarNudger` (`scope >= depth`, Let and Lam as boundaries);
+/// not a duplicate of it, since the nudger rewrites rather than reports,
+/// but the two must agree.
 fn escapes_bound_vars(expr: &RcExpr, depth: u32) -> bool {
     match &*expr.inner {
         Expr::Var(_, Var::Bound(bv)) => bv.scope >= depth,
@@ -171,7 +252,7 @@ fn peel_meta(expr: &RcExpr) -> RcExpr {
 /// under-resolved even after localisation: `distribute`'s single-pass
 /// substitution replaces a combinator's own self-reference with its
 /// **pre-substitution** value (substitution never re-enters the value it
-/// just inserted — see `RcExpr::substs`), so the embedded recursive
+/// just inserted — see `substs_depth`), so the embedded recursive
 /// continuation still calls through wrapper-function siblings (e.g.
 /// `foldl`'s `if(nil?(...))`/`head(...)`/`tail(...)`) instead of their
 /// resolved (here, raw-intrinsic) bodies. Demand analysis can then only
@@ -184,8 +265,9 @@ fn peel_meta(expr: &RcExpr) -> RcExpr {
 /// Each entry is repeatedly substituted against its **siblings**
 /// (excluding itself, so a binding's own self-reference is never touched —
 /// recursion must still resolve to itself, not unroll) until a round makes
-/// no further change. `RcExpr::substs`'s `try_walk` short-circuits via
-/// `ptr_eq` when nothing changed, so convergence is checked cheaply.
+/// no further change. `substs_depth` returns the very same `RcExpr` when
+/// nothing was substituted (its Let and Lam arms preserve `ptr_eq` sharing), so
+/// convergence is checked cheaply.
 /// Bounded to `inlines.len()` rounds: monotonic (each round can only
 /// resolve more references, never fewer), so this is enough for any DAG of
 /// dependencies among the scope's own inlinable members.
@@ -199,7 +281,7 @@ fn pre_expand_inlines(
             .map(|(name, v)| {
                 let siblings: Vec<(String, RcExpr)> =
                     inlines.iter().filter(|(n, _)| n != name).cloned().collect();
-                let expanded = substs_depth(v, &siblings, 0)?;
+                let expanded = substs_depth(v, &siblings, Capture::Avoid)?;
                 if !expanded.ptr_eq(v) {
                     changed = true;
                 }
@@ -252,7 +334,7 @@ fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                         // recursive call from demand analysis (eu-oaz72.147).
                         let others: Vec<(String, RcExpr)> =
                             inlines.iter().filter(|(n, _)| n != name).cloned().collect();
-                        let substituted = substs_depth(v, &others, 0)?;
+                        let substituted = substs_depth(v, &others, Capture::Avoid)?;
                         match distribute(&substituted) {
                             Ok(e) => Ok((name.clone(), e)),
                             Err(e) => Err(e),
@@ -260,7 +342,7 @@ fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                     })
                     .collect::<Result<Vec<(String, RcExpr)>, CoreError>>()?;
 
-                let new_body = distribute(&substs_depth(&body, &inlines, 0)?)?;
+                let new_body = distribute(&substs_depth(&body, &inlines, Capture::Avoid)?)?;
 
                 Ok(RcExpr::from(Expr::Let(
                     *s,
@@ -381,8 +463,8 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
         Expr::App(call_smid, f, xs) => {
             match &*f.inner {
-                // as substs doesn't succ, we can only handle
-                // inlinable lambdas here
+                // only inlinable lambdas are reduced here; a call
+                // through any other head is left alone
                 Expr::Lam(_, true, scope) => {
                     let binders = scope.pattern.clone();
                     let body = open_lam_scope(scope);
@@ -436,8 +518,11 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                             }
                         }
 
-                        let reduced =
-                            retag_call_site(&body, substs_depth(&body, &mappings, 0)?, *call_smid);
+                        let reduced = retag_call_site(
+                            &body,
+                            substs_depth(&body, &mappings, Capture::Ignore)?,
+                            *call_smid,
+                        );
 
                         if shared.is_empty() {
                             Ok(reduced)
@@ -837,6 +922,47 @@ pub mod tests {
         let inlined = inline_pass(&original).unwrap();
         binding::verify(&inlined).unwrap();
         assert_eq!(alpha_norm(inlined), alpha_norm(expected));
+    }
+
+    /// eu-oaz72.182: an inlinable that refers to a non-inlinable sibling
+    /// `k` must not be copied under a nested let that rebinds `k`, or
+    /// re-closing the nested let would bind the copy's `k` to the inner one.
+    #[test]
+    pub fn test_distribute_does_not_capture_sibling_name() {
+        let (hit, k, r, q) = (free("hit?"), free("k"), free("r"), free("q"));
+        let hit_def = || {
+            inline(
+                vec![q.clone()],
+                app(bif("EQ"), vec![var(q.clone()), var(k.clone())]),
+            )
+        };
+        let build = |h: RcExpr| {
+            let_(
+                vec![
+                    (k.clone(), num(3)),
+                    (hit.clone(), hit_def()),
+                    (
+                        r.clone(),
+                        let_(
+                            // The nested let holds an inlinable of its own, so
+                            // `distribute` re-opens and re-closes it: that is
+                            // what would capture a copied `k`.
+                            vec![
+                                (k.clone(), num(5)),
+                                (free("h"), inline(vec![free("z")], var(free("z")))),
+                            ],
+                            app(bif("MAP"), vec![h, var(k.clone())]),
+                        ),
+                    ),
+                ],
+                var(r.clone()),
+            )
+        };
+        let original = build(var(hit.clone()));
+        let inlined = inline_pass(&original).unwrap();
+        binding::verify(&inlined).unwrap();
+        // The copy is withheld under the nested `k`: still a reference.
+        assert_eq!(alpha_norm(inlined), alpha_norm(original));
     }
 
     /// eu-oaz72.179: pre-expansion copies one open inlinable sibling into

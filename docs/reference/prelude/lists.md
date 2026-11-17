@@ -156,6 +156,13 @@ by-age: people sort-by-num(.age)         # sorted by age
 | `butlast(l)` | Return all elements of list `l` except the last |
 | `unzip(pairs)` | List of pairs to pair of lists. Inverse of zip |
 | `interleave(a, b)` | Alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended |
+| `enumerate(xs)` | Pair each element of `xs` with its 0-based index: `[[0, x0], [1, x1], ...]` |
+| `find(p?, xs)` | The first element of `xs` satisfying `p?`, or `null` if none does (so a `null` result is ambiguous if `null` is itself a matching element) |
+| `index-of(x, xs)` | The 0-based index of the first element of `xs` equal to `x`, or `null` if `x` is absent |
+| `frequencies(xs)` | A dict mapping each distinct element of `xs` to the number of times it occurs. Elements must be valid dict keys (numbers, strings, symbols or lists of those). Runs in constant stack |
+| `combinations(n, xs)` | All `n`-element combinations of `xs` as lists, in input order (lexicographic by position), produced lazily. `combinations(0, xs)` is `[[]]`; there are none if `n` exceeds the length of `xs` or is negative. A non-integer `n` is an error |
+| `permutations(xs)` | All permutations of `xs` as lists, in input order (lexicographic by position), produced lazily. `permutations([])` is `[[]]`. Elements are distinguished by position, so duplicates give repeated permutations |
+| `merge-intervals(is)` | Merge closed integer intervals `[lo, hi]`: sort by `lo`, then merge those that overlap or are adjacent. Sorted intervals `[lo1, hi1]` and `[lo2, hi2]` merge when `lo2 <= hi1 + 1`, so `[1, 3]` and `[3, 5]` give `[1, 5]`, `[1, 3]` and `[4, 6]` give `[1, 6]`, and `[1, 3]` and `[5, 6]` stay separate. Nested intervals are absorbed. Empty input gives `[]`. A non-number or non-integer bound, or an inverted interval (`lo > hi`), is an error naming `merge-intervals` |
 | `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n`; a size that is not positive gives `[]`, otherwise a step that is not positive is an error; a non-integer size or step is an error |
 | `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk; a size that is not positive gives `[]`; a non-integer size is an error |
 | `group-consecutive-by(f, xs)` | Group consecutive elements where `f` returns equal values into sublists |

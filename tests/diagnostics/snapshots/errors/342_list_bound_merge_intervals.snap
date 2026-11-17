@@ -1,0 +1,36 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/342_list_bound_merge_intervals
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/342_list_bound_merge_intervals.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/342_list_bound_merge_intervals.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'merge-intervals'
+  ┌─ tests/harness/errors/342_list_bound_merge_intervals.eu:2:19
+  │
+2 │ x: merge-intervals[[[1], 3]]
+  │                   ^^^^^^^^^^ expected [[number]], found [((number,), number)]
+
+error: merge-intervals bound must be a number
+  ┌─ tests/harness/errors/342_list_bound_merge_intervals.eu:2:4
+  │
+2 │ x: merge-intervals[[[1], 3]]
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  │                   │
+  │                   expected [[number]], found [((number,), number)]
+  │
+  = while evaluating (outermost first):
+    - x at 342_list_bound_merge_intervals.eu:2:4

@@ -13,6 +13,10 @@
       "required": true,
       "types": [
         {
+          "type": "application",
+          "named": true
+        },
+        {
           "type": "argument_list",
           "named": true
         },
@@ -21,7 +25,15 @@
           "named": true
         },
         {
+          "type": "block_application",
+          "named": true
+        },
+        {
           "type": "bracket_expr",
+          "named": true
+        },
+        {
+          "type": "list_application",
           "named": true
         },
         {
@@ -78,11 +90,23 @@
       "required": true,
       "types": [
         {
+          "type": "application",
+          "named": true
+        },
+        {
+          "type": "block_application",
+          "named": true
+        },
+        {
           "type": "block_argument",
           "named": true
         },
         {
           "type": "bracket_expr",
+          "named": true
+        },
+        {
+          "type": "list_application",
           "named": true
         },
         {
@@ -475,7 +499,19 @@
       "required": true,
       "types": [
         {
+          "type": "application",
+          "named": true
+        },
+        {
+          "type": "block_application",
+          "named": true
+        },
+        {
           "type": "bracket_expr",
+          "named": true
+        },
+        {
+          "type": "list_application",
           "named": true
         },
         {
@@ -517,7 +553,19 @@
       "required": true,
       "types": [
         {
+          "type": "block_pattern",
+          "named": true
+        },
+        {
+          "type": "cons_pattern",
+          "named": true
+        },
+        {
           "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "list_pattern",
           "named": true
         }
       ]

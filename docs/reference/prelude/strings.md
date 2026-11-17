@@ -22,6 +22,7 @@
 | `str.suffix(b, a)` | Return string `b` suffixed onto `a` |
 | `str.prefix(b, a)` | Return string `b` prefixed onto `a` |
 | `str.letters` | Return individual letters of `s` as list of strings |
+| `str.reverse(s)` | Reverse string `s` by character, as `letters` splits it |
 | `str.len` | Return length of string in characters |
 | `str.format(spec, x)` | Format `x` using printf-style format `spec` (`%d`, `%x`, `%X`, `%o`, `%b`, `%f`, `%e`, `%s`, with width and flags). Pipeline-friendly: `255 str.format` with a spec argument |
 | `str.fmt` | DEPRECATED: use `str.format(spec, x)`, which takes the spec first so it works in pipelines |
