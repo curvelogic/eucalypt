@@ -88,6 +88,12 @@ pub const FORM_LAMBDA: u8 = 0x00;
 pub const FORM_THUNK: u8 = 0x01;
 /// A non-updatable value (arity 0).
 pub const FORM_VALUE: u8 = 0x02;
+/// High bit of a `Let`/`LetRec` binding's `kind` byte: the binding is
+/// *closed* (no local reference escapes its own frames, see
+/// `bytecode/closed.rs`), so the machine closes it over the globals frame
+/// rather than the enclosing frame (eu-oaz72.175). Never set on global form
+/// headers. Readers must mask it off before matching on `FORM_*`.
+pub const FORM_CLOSED: u8 = 0x80;
 
 #[cfg(test)]
 mod tests {

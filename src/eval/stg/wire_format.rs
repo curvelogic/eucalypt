@@ -82,7 +82,17 @@ use sha2::{Digest, Sha256};
 ///   hand-written prelude table; eu-oaz72.77). The freshness recipe also
 ///   absorbs the demand analysis sources ([`DEMAND_ANALYSIS_PATHS`]), so a
 ///   blob whose signatures came from an older analysis is stale.
-pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 10;
+///
+/// - v11: the high bit of a `Let`/`LetRec` binding's form-header `kind` byte
+///   is a *closed* flag (`FORM_CLOSED`; eu-oaz72.175): the binding is closed
+///   over the globals frame instead of the enclosing frame. The byte stream
+///   keeps its shape, but a v10 reader would mask the flag into an unknown
+///   kind (treated as a value form) and mis-run every flagged binding, and
+///   a v11 reader of a v10 image would simply never close anything — so the
+///   bump is what makes either mismatch a *detected* staleness. The
+///   bytecode encoder and the closedness analysis are now freshness inputs
+///   ([`DEMAND_ANALYSIS_PATHS`]), since they decide the flag.
+pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 11;
 
 /// Path, relative to the workspace root, of the prelude source baked into the
 /// blob.
@@ -126,6 +136,8 @@ pub const DEMAND_ANALYSIS_PATHS: &[&str] = &[
     "src/core/demand.rs",
     "src/core/dependency.rs",
     "src/eval/stg/compiler.rs",
+    "src/eval/bytecode/encode.rs",
+    "src/eval/bytecode/closed.rs",
 ];
 
 /// Path, relative to the workspace root, of this very file — which `build.rs`

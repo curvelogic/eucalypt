@@ -1,0 +1,5 @@
+# eu-oaz72.175: a wrapper function whose frame holds the list head while a
+# closed `+` lambda is threaded through a strict fold must not pin the list.
+fs(op, i, l): if(l nil?, i, { a: op(i, l head) }.(seq(a, fs(op, a, l tail))))
+c3(l): fs(+, 0, l)
+x: range(0, 200000) c3

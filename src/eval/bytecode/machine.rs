@@ -172,7 +172,10 @@ pub fn read_arg_offsets(code: &[u8], pc: &mut usize) -> ArgOffsets {
 /// A decoded lambda-form header (Let/LetRec binding, or a global form).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormHeader {
+    /// Form kind (`FORM_*`), with the `FORM_CLOSED` bit stripped into `closed`.
     pub kind: u8,
+    /// The binding is closed: close it over the globals frame (eu-oaz72.175).
+    pub closed: bool,
     pub arity: u8,
     pub smid: Smid,
     pub body: CodeRef,
@@ -180,12 +183,15 @@ pub struct FormHeader {
 
 /// Read a lambda-form header (`kind`, `arity`, `smid`, `body` offset).
 pub fn read_form_header(code: &[u8], pc: &mut usize) -> FormHeader {
-    let kind = read_u8(code, pc);
+    let kind_byte = read_u8(code, pc);
+    let kind = kind_byte & !super::FORM_CLOSED;
+    let closed = kind_byte & super::FORM_CLOSED != 0;
     let arity = read_u8(code, pc);
     let smid = Smid::from(read_u32(code, pc));
     let body = read_u32(code, pc);
     FormHeader {
         kind,
+        closed,
         arity,
         smid,
         body,
@@ -2378,7 +2384,11 @@ pub fn handle_op(
             let mut array = Array::with_capacity(&view, count);
             for _ in 0..count {
                 let h = read_form_header(code, &mut pc);
-                array.push(&view, BcValue::Closure(BcClosure::close(&bc_info(&h), env)));
+                let close_env = if h.closed { state.globals } else { env };
+                array.push(
+                    &view,
+                    BcValue::Closure(BcClosure::close(&bc_info(&h), close_env)),
+                );
             }
             let body_off = read_u32(code, &mut pc);
             let new_env = view
@@ -2411,9 +2421,13 @@ pub fn handle_op(
                 .alloc(BcEnvFrame::new(array.clone(), state.annotation, Some(env)))?
                 .as_ptr();
             for (i, h) in headers.iter().enumerate() {
+                let close_env = if h.closed { state.globals } else { frame };
                 // SAFETY: array was pre-sized to `count` and i < count.
                 unsafe {
-                    array.set_unchecked(i, BcValue::Closure(BcClosure::close(&bc_info(h), frame)));
+                    array.set_unchecked(
+                        i,
+                        BcValue::Closure(BcClosure::close(&bc_info(h), close_env)),
+                    );
                 }
             }
             state.current = BcValue::Closure(BcClosure::new(body_off, frame));
@@ -2908,7 +2922,11 @@ pub fn handle_op_predecoded(
             state.allocs += len as u64;
             let mut array = Array::with_capacity(&view, len);
             for h in &decoded.headers[start..start + len] {
-                array.push(&view, BcValue::Closure(BcClosure::close(&bc_info(h), env)));
+                let close_env = if h.closed { state.globals } else { env };
+                array.push(
+                    &view,
+                    BcValue::Closure(BcClosure::close(&bc_info(h), close_env)),
+                );
             }
             let new_env = view
                 .alloc(BcEnvFrame::new(array, state.annotation, Some(env)))?
@@ -2929,9 +2947,13 @@ pub fn handle_op_predecoded(
                 .alloc(BcEnvFrame::new(array.clone(), state.annotation, Some(env)))?
                 .as_ptr();
             for (i, h) in decoded.headers[start..start + len].iter().enumerate() {
+                let close_env = if h.closed { state.globals } else { frame };
                 // SAFETY: array was pre-sized to `len` and i < len.
                 unsafe {
-                    array.set_unchecked(i, BcValue::Closure(BcClosure::close(&bc_info(h), frame)));
+                    array.set_unchecked(
+                        i,
+                        BcValue::Closure(BcClosure::close(&bc_info(h), close_env)),
+                    );
                 }
             }
             state.current = BcValue::Closure(BcClosure::new(instr.a, frame));

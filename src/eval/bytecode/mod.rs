@@ -13,6 +13,8 @@ pub use opcode::*;
 mod program;
 pub use program::*;
 
+mod closed;
+
 mod encode;
 pub use encode::*;
 
