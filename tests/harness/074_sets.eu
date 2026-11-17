@@ -80,6 +80,14 @@ algebra-checks: {
       b: [2, 3] set.from-list
     }.(a set.diff(b) set.to-list) = [1],
     {
+      a: [1, 2, 3] set.from-list
+      b: [3] set.from-list
+    }.(set.diff(b, a) set.to-list) = [1, 2],
+    {
+      a: [1, 2, 3] set.from-list
+      b: [3] set.from-list
+    }.(set.diff(a, b) set.to-list) = [],
+    {
       a: [1, 2] set.from-list
     }.(a set.diff(∅) set.to-list) = [1, 2],
     {

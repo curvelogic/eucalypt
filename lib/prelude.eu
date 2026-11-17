@@ -2233,7 +2233,7 @@ set: {
       type: s"any → any → any" }
   intersect: '__SET.INTERSECT'
 
-  ` { doc: "`set.diff(a, b)` - return elements in set `a` that are not in set `b`."
+  ` { doc: "`set.diff(b, a)` - return elements in set `a` that are not in set `b`. Pipeline form: `a set.diff(b)` is `a` minus `b`."
       type: s"any → any → any" }
   diff: '__SET.DIFF'
 
