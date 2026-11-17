@@ -426,6 +426,14 @@ impl LspTestSession {
             .unwrap_or_default()
     }
 
+    /// Message of the cached result's `prelude:` override error, if any.
+    pub fn prelude_error(&self) -> Option<String> {
+        let file_id = FileId::from_url(&self.uri);
+        self.queries
+            .get_pipeline_result(&file_id)
+            .and_then(|c| c.prelude_error.as_ref().map(|e| e.message.clone()))
+    }
+
     /// Check if a cached pipeline result is available.
     pub fn has_cached(&self) -> bool {
         let file_id = FileId::from_url(&self.uri);
