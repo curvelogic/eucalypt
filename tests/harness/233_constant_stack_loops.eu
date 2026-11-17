@@ -1,0 +1,70 @@
+{
+  title: "233 self-recursive loops through if and then run in constant stack"
+  doc: "eu-oaz72.34: the curried `then(t, f)(c)` that catenation produces is
+        reduced to a saturated `if`, so a self-recursive loop with a strict
+        accumulator no longer pushes a frame per iteration.
+        eu-oaz72.147: loops whose step or test is a parameter also run in
+        constant stack."
+}
+
+# Strict accumulator: `a` is forced by the condition on every step, so the
+# only thing that could grow the stack is the recursive branch itself.
+via-then(i, a): (a < 0 ∨ i = 0) then(a, via-then(i - 1, a + 1))
+via-if(i, a): if(a < 0 ∨ i = 0, a, via-if(i - 1, a + 1))
+
+# Recursion in the true branch, and an if nested in a then branch.
+true-branch(i, a): if(a >= 0 ∧ i > 0, true-branch(i - 1, a + 1), a)
+nested(i, a): (a < 0 ∨ i = 0) then(a, if(i % 2 = 0, nested(i - 1, a + 1), nested(i - 1, a + 2)))
+
+` "eu-oaz72.147: the step is a parameter, so the recursive call must not be hidden from demand analysis by a self-inlined copy"
+step-loop(f, n): (n = 0) then(0, step-loop(f, f(n)))
+
+` "eu-oaz72.147: the test is a parameter"
+test-loop(p?, n): p?(n) then(0, test-loop(p?, n - 1))
+
+` "eu-oaz72.147: a lazy state forced explicitly with `seq`"
+seq-loop(f, n, x): (n = 0) then(x, seq(x, seq-loop(f, n - 1, f(x))))
+
+n: 100000
+
+` { target: :loops
+    verify: [:loop-values, :constant-stack] }
+loops: {
+  then-loop: via-then(n, 0)
+  if-loop: via-if(n, 0)
+  true-loop: true-branch(n, 0)
+  nested-loop: nested(n, 0)
+  param-step-loop: step-loop(_ - 1, n)
+  param-test-loop: test-loop((= 0), n)
+  seq-state-loop: seq-loop((+ 3), n, 0)
+}
+
+` "every loop computes its value"
+loop-values(context): {
+  r: context.result
+  checks: [r.then-loop = 100000,
+           r.if-loop = 100000,
+           r.true-loop = 100000,
+           r.nested-loop = 150000,
+           r.param-step-loop = 0,
+           r.param-test-loop = 0,
+           r.seq-state-loop = 300000]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` "no loop grows the stack with its iteration count"
+constant-stack(context): (context.stats.max-stack < 1000) then(:PASS, :FAIL)
+
+` { target: :test-semantics }
+semantics: {
+  # The unchosen branch is never evaluated.
+  unchosen-true: if(true, 1, panic("else branch evaluated")) = 1
+  unchosen-false: ((1 = 2) then(panic("then branch evaluated"), 2)) = 2
+  # `if` and `then` used as values, partially applied and curried.
+  pick-if: if(false)
+  as-value: pick-if(1, 2) = 2
+  partial: ([true, false] map(then(:t, :f))) = [:t, :f]
+  passed: { f: if }.(f(false, 1, 2)) = 2
+  # Branches that are not applications.
+  literal-branches: ((n > 0) then([1, 2], {})) = [1, 2]
+  RESULT: [unchosen-true, unchosen-false, as-value, partial, passed, literal-branches] all-true? then(:PASS, :FAIL)
+}

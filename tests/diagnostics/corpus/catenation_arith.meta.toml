@@ -10,5 +10,5 @@ expected_class = "function"
 # of this structural gate's scope but has now been fixed separately: `num_arg`
 # (src/eval/stg/support.rs) checks arity before defaulting an untagged value
 # to `Block.tag()`, raising the new `ExecutionError::UnexpectedFunction`
-# instead. See tests/harness/errors/192_1tkk_7_9_function_not_block.eu for the
+# instead. See tests/harness/errors/192_function_not_block.eu for the
 # message-wording regression test.

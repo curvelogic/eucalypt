@@ -516,7 +516,7 @@ fn comparison_wrapper(index: usize) -> LambdaForm {
 ///
 /// Like `comparison_wrapper`, delegates to `binary_wrapper`. The `execute`
 /// methods are responsible for returning the correct result type:
-/// `machine_return_boxed_num` for scalar results, `machine_return_ndarray`
+/// `machine_return_boxed_num` for scalar results, `machine_return_heap_ndarray`
 /// for array results.
 fn arithmetic_wrapper(index: usize) -> LambdaForm {
     binary_wrapper(index)
@@ -1058,7 +1058,7 @@ fn modular_operand(
         machine.annotation(),
         format!(
             "{function} requires each argument to be {problem}, but the {role} is {}",
-            crate::eval::error::exact_number(&n)
+            crate::eval::error::display_number(&n)
         ),
     ))
 }
@@ -1238,12 +1238,12 @@ fn require_i64(n: &Number, smid: crate::common::sourcemap::Smid) -> Result<i64, 
             if f.fract() == 0.0 {
                 format!(
                     "{} is out of the i64 range for bitwise operations",
-                    crate::eval::error::exact_f64(f)
+                    crate::eval::error::display_f64(f)
                 )
             } else {
                 format!(
                     "got {}, which is not a whole number",
-                    crate::eval::error::exact_f64(f)
+                    crate::eval::error::display_f64(f)
                 )
             }
         } else {

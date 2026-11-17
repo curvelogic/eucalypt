@@ -1,0 +1,2 @@
+exit: 1
+stderr: "333_unclosed_bracket_open.eu:4:4"

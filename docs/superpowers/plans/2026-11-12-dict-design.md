@@ -501,7 +501,10 @@ Recorded as built; none changes an agreed choice.
   memoise). A loop that threads a dict and stores such values retains
   earlier versions until those values are replaced or evaluated in place.
   Detaching them needs flat closures (a thunk capturing only its free
-  variables), a compiler change beyond the dict.
+  variables), a compiler change beyond the dict. A prototype that needs
+  neither (eu-oaz72.84, `docs/superpowers/reports/2026-11-16-memo-cell-trim-prototype.md`)
+  trims a stored thunk's environment at store time when its free variables
+  are already values; until the owner decides on it, the limit stands.
 - **Key forcing** happens in the wrappers: `seqKey` deep-forces a key and
   `seqDictPairs` prepares `dict.of`'s list, rebuilding each well-formed pair
   as `BlockPair(forced key, value)`. List keys may nest at most 32 deep

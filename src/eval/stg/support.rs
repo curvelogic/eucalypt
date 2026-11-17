@@ -698,14 +698,12 @@ pub fn ndarray_arg<'guard>(
     }
 }
 
-/// Return an ndarray from intrinsic, copying the transient result into
-/// the heap.
-pub fn machine_return_ndarray(
+/// Return an ndarray built directly in the heap by an intrinsic.
+pub fn machine_return_heap_ndarray(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    arr: ndarray::ArrayD<f64>,
+    arr: HeapNdArray,
 ) -> Result<(), ExecutionError> {
-    let arr = HeapNdArray::from_ndarray(&view, &arr)?;
     let ptr = view.alloc(arr)?.as_ptr();
     machine.return_native(view, Native::NdArray(ptr))
 }
@@ -734,6 +732,15 @@ pub fn machine_return_vec(
     elements: &[crate::eval::memory::set::Primitive],
 ) -> Result<(), ExecutionError> {
     let vec = HeapVec::from_slice(&view, elements)?;
+    machine_return_heap_vec(machine, view, vec)
+}
+
+/// Return a vec already built in the heap.
+pub fn machine_return_heap_vec(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+    vec: HeapVec,
+) -> Result<(), ExecutionError> {
     let ptr = view.alloc(vec)?.as_ptr();
     machine.return_native(view, Native::Vec(ptr))
 }
@@ -845,6 +852,29 @@ pub fn machine_return_str_iter(
         items.push(machine.data_value(view, DataConstructor::BoxedString.tag(), &[boxed])?);
     }
     machine.return_closure_list(view, items)
+}
+
+/// Return a list of string-lists from an intrinsic.
+///
+/// Used for `MATCHES_WITH`, which returns one `[whole, g1, ...]` list per match.
+pub fn machine_return_str_list_of_lists(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    lists: Vec<Vec<String>>,
+) -> Result<(), ExecutionError> {
+    let mut outer = Vec::with_capacity(lists.len());
+    for inner in lists {
+        let mut items = Vec::with_capacity(inner.len());
+        for item in inner {
+            let Ref::V(native) = view.str_ref(item)? else {
+                unreachable!("str_ref yields a value ref")
+            };
+            let boxed = machine.native_value(view, native)?;
+            items.push(machine.data_value(view, DataConstructor::BoxedString.tag(), &[boxed])?);
+        }
+        outer.push(list_value(machine, view, items)?);
+    }
+    machine.return_closure_list(view, outer)
 }
 
 /// Return a string list from intrinsic

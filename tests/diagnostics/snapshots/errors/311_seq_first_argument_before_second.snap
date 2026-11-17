@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/311_seq_first_argument_before_second
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/311_seq_first_argument_before_second.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/311_seq_first_argument_before_second.eu:2:13
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: first argument
+  ┌─ tests/harness/errors/311_seq_first_argument_before_second.eu:2:13
+  │
+2 │ result: seq(panic("first argument"), panic("second argument"))
+  │             ^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - result at 311_seq_first_argument_before_second.eu:2:9

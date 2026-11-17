@@ -1,0 +1,9 @@
+# Union rule is argument-side only, also inside callback types: a function
+# taking `:asc | :desc` is not a `symbol → number` callback (eu-oaz72.169).
+` { type: s"(:asc | :desc) → number" }
+dir(d): 1
+
+` { type: s"(symbol → number) → number" }
+apply-cb(f): f(:x)
+
+use: apply-cb(dir)

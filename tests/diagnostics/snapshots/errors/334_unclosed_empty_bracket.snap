@@ -1,0 +1,25 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/334_unclosed_empty_bracket
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/334_unclosed_empty_bracket.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/334_unclosed_empty_bracket.eu:3:6
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unclosed bracket expression (missing closing bracket)
+  ┌─ tests/harness/errors/334_unclosed_empty_bracket.eu:3:6
+  │
+3 │ x: 1 ⟦
+  │      ^

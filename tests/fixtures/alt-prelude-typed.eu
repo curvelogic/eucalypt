@@ -1,0 +1,6 @@
+# Alternative prelude carrying a type annotation, for checking that the
+# type checker honours `prelude:` unit metadata (eu-oaz72.177).
+{ import: "[prelude]" }
+
+` { type: "number -> string" }
+alt-show(n): str.of(n)

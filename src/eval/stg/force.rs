@@ -2,7 +2,7 @@
 
 use crate::{
     common::sourcemap::Smid,
-    eval::machine::intrinsic::{CallGlobal1, StgIntrinsic},
+    eval::machine::intrinsic::{CallGlobal1, CallGlobal2, StgIntrinsic},
 };
 
 #[cfg(test)]
@@ -20,6 +20,26 @@ use super::{
     },
     tags::DataConstructor,
 };
+
+/// `SEQ(a, b)` — force `a` to weak head normal form, then return `b`.
+///
+/// `b` is entered as a tail call after `a` has been evaluated, so a
+/// recursion through `b` runs in constant stack.
+pub struct Seq;
+
+impl StgIntrinsic for Seq {
+    fn name(&self) -> &str {
+        "SEQ"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        // args: a = local(0), b = local(1); after the force the forced
+        // value is local(0), so a = local(1), b = local(2).
+        lambda(2, force(local(0), local(2)))
+    }
+}
+
+impl CallGlobal2 for Seq {}
 
 /// seqStrList to evaluate and unbox lists of strings
 pub struct SeqStrList;
