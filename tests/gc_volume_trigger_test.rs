@@ -21,43 +21,11 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
+mod common;
+use common::run_with_deadline;
+
 fn eu_binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_eu"))
-}
-
-/// Run `cmd`, killing it and returning `None` if it does not finish within
-/// `deadline`.
-fn run_with_deadline(mut cmd: Command, deadline: Duration) -> Option<std::process::Output> {
-    use std::io::Read;
-    use wait_timeout::ChildExt;
-
-    let mut child = cmd
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn eu");
-    match child.wait_timeout(deadline).expect("wait_timeout failed") {
-        Some(status) => {
-            let mut stdout = Vec::new();
-            let mut stderr = Vec::new();
-            if let Some(mut s) = child.stdout.take() {
-                s.read_to_end(&mut stdout).ok();
-            }
-            if let Some(mut s) = child.stderr.take() {
-                s.read_to_end(&mut stderr).ok();
-            }
-            Some(std::process::Output {
-                status,
-                stdout,
-                stderr,
-            })
-        }
-        None => {
-            child.kill().ok();
-            child.wait().ok();
-            None
-        }
-    }
 }
 
 /// Read a numeric statistic, wherever it is nested, from the JSON
