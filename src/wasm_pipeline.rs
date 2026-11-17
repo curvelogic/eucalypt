@@ -176,20 +176,33 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
             }
         };
     let source_input = Input::new(Locator::Literal("<input>".to_string()), None, "eu");
-    let source_imports = source_imports.map_err(|e| PipelineError {
-        message: e.to_string(),
-        location: None,
-        notes: None,
-    })?;
-
-    // 3a. Load the embedded libraries the source imports, and theirs in turn.
-    let libraries = load_libraries(
-        &source_input,
-        source_imports,
-        &resources,
-        &mut files,
-        &mut source_map,
-    )?;
+    // 3a. Load the embedded libraries the source imports, and theirs in
+    // turn. A failure keeps the parse errors as notes: while the source is
+    // being typed, a parse error is often the real cause.
+    let with_parse_notes = |mut e: PipelineError| {
+        if !parse_notes.is_empty() {
+            e.notes
+                .get_or_insert_with(Vec::new)
+                .extend(parse_notes.iter().cloned());
+        }
+        e
+    };
+    let libraries = source_imports
+        .map_err(|e| PipelineError {
+            message: e.to_string(),
+            location: None,
+            notes: None,
+        })
+        .and_then(|imports| {
+            load_libraries(
+                &source_input,
+                imports,
+                &resources,
+                &mut files,
+                &mut source_map,
+            )
+        })
+        .map_err(with_parse_notes)?;
 
     // 4. Desugar prelude
     let prelude_input = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
@@ -211,11 +224,15 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
             source_input.clone(),
             Content::new(source_file_id, source_ast.as_ref()),
         );
-        for library in &libraries {
+        for library in &libraries.loaded {
             contents.insert(
                 library.input.clone(),
                 Content::new(library.file_id, &library.ast),
             );
+        }
+        for (input, index) in &libraries.aliases {
+            let library = &libraries.loaded[*index];
+            contents.insert(input.clone(), Content::new(library.file_id, &library.ast));
         }
         let mut d = Desugarer::new(&contents, &mut source_map);
         d.translate_unit(&source_input)
@@ -365,50 +382,58 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-/// The libraries embedded in eucalypt that a unit evaluated here may
-/// import, by file name (`{ import: "lens.eu" }`) or resource name. The
-/// browser has no file system, so these are the only imports there are.
-const LIBRARIES: &[&str] = &[
-    "lens", "state", "do", "reflect", "contract", "markup", "package", "test",
-];
-
 /// An embedded library a unit imports, parsed.
 struct Library {
-    /// The input that first imported it: the desugarer finds its content
-    /// under this key, or by its locator for other names.
+    /// The library's resource name (`lens`).
+    name: &'static str,
+    /// The import that loaded it: the desugarer finds its content under
+    /// this key, or by its locator when it is imported again under
+    /// another name.
     input: Input,
     file_id: usize,
     ast: rowan::ast::Unit,
 }
 
-/// The library an import names, if it names one: `lens.eu` (as the CLI
-/// falls back to a baked-in resource by file stem) or the resource itself.
-fn library_name(import: &Input) -> Option<&'static str> {
-    let name = match import.locator() {
-        Locator::Fs(path) if import.format() == "eu" => path.file_stem()?.to_str()?,
-        Locator::Resource(name) => name.as_str(),
-        _ => return None,
-    };
-    LIBRARIES.iter().copied().find(|l| *l == name)
+/// The library name an import gives, if it is a eucalypt import that
+/// could name one: `lens.eu` (the CLI falls back to a baked-in library by
+/// file stem) or `resource:lens`.
+fn import_library_name(import: &Input) -> Option<&str> {
+    if import.format() != "eu" {
+        return None;
+    }
+    match import.locator() {
+        Locator::Fs(path) => path.file_stem()?.to_str(),
+        Locator::Resource(name) => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+/// The libraries loaded for a unit, and every other import that reaches
+/// one of them (for example `lens.eu` and `resource:lens`), so that each
+/// is parsed and desugared once.
+#[derive(Default)]
+struct Libraries {
+    loaded: Vec<Library>,
+    aliases: Vec<(Input, usize)>,
 }
 
 /// Load the embedded libraries `root` imports, and those they import in
-/// turn, failing on any import that is not one of [`LIBRARIES`] and on an
-/// import cycle.
+/// turn. Any other import fails, as does an import cycle: the browser has
+/// no file system, so the embedded libraries are the only imports.
 fn load_libraries(
     root: &Input,
     imports: Vec<Input>,
     resources: &Resources,
     files: &mut SimpleFiles<String, String>,
     source_map: &mut SourceMap,
-) -> Result<Vec<Library>, PipelineError> {
+) -> Result<Libraries, PipelineError> {
     let import_error = |e: ImportError| PipelineError {
         message: e.to_string(),
         location: None,
         notes: None,
     };
     let mut graph = ImportGraph::default();
-    let mut libraries: Vec<Library> = Vec::new();
+    let mut libraries = Libraries::default();
     let mut pending = vec![(root.clone(), imports)];
 
     while let Some((importer, imports)) = pending.pop() {
@@ -417,42 +442,43 @@ fn load_libraries(
             .map_err(import_error)?;
         graph.check_for_cycles().map_err(import_error)?;
         for import in imports {
-            if libraries
-                .iter()
-                .any(|l| l.input.locator() == import.locator())
+            let known = |i: &Input| i.locator() == import.locator();
+            if libraries.loaded.iter().any(|l| known(&l.input))
+                || libraries.aliases.iter().any(|(i, _)| known(i))
             {
                 continue;
             }
-            let name = library_name(&import).ok_or_else(|| PipelineError {
-                message: format!("cannot import {}", import.locator()),
-                location: None,
-                notes: Some(vec![format!(
-                    "Only the libraries embedded in eucalypt can be imported here: {}.",
-                    LIBRARIES
-                        .iter()
-                        .map(|l| format!("{l}.eu"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )]),
-            })?;
-            let text = resources
-                .get(name)
-                .expect("every name in LIBRARIES is an embedded resource")
-                .clone();
+            let (name, text) = import_library_name(&import)
+                .and_then(|name| resources.eu_library(name))
+                .ok_or_else(|| PipelineError {
+                    message: format!("cannot import {}", import.locator()),
+                    location: None,
+                    notes: Some(vec![format!(
+                        "Only the libraries embedded in eucalypt can be imported here: {}.",
+                        Resources::eu_library_names()
+                            .map(|l| format!("{l}.eu"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )]),
+                })?;
+            if let Some(index) = libraries.loaded.iter().position(|l| l.name == name) {
+                libraries.aliases.push((import, index));
+                continue;
+            }
             let file_id = files.add(format!("{name}.eu"), text.clone());
             source_map.mark_resource_file(file_id);
-            let parse = rowan::parse_unit(&text);
-            if !parse.errors().is_empty() {
+            let (ast, errors) = rowan::parse_unit(text).into_parts();
+            if !errors.is_empty() {
                 return Err(PipelineError {
                     message: format!("Internal error: {name}.eu parse failed"),
                     location: None,
-                    notes: None,
+                    notes: Some(format_parse_error_notes(&errors, file_id, files)),
                 });
             }
-            let ast = parse.tree();
             let nested = scrape_unit_imports(&ast).map_err(import_error)?;
             pending.push((import.clone(), nested));
-            libraries.push(Library {
+            libraries.loaded.push(Library {
+                name,
                 input: import,
                 file_id,
                 ast,
@@ -731,5 +757,29 @@ x: 1"#,
         .unwrap_err();
         assert!(err.message.contains("cannot import"), "{}", err.message);
         assert!(err.notes.unwrap()[0].contains("lens.eu"));
+    }
+
+    #[test]
+    fn test_import_of_a_data_resource_fails_clearly() {
+        let err = evaluate_unit(
+            r#"{ import: "package.eu" }
+x: 1"#,
+            "json",
+        )
+        .unwrap_err();
+        assert!(err.message.contains("cannot import"), "{}", err.message);
+        assert!(!err.notes.unwrap()[0].contains("package"));
+    }
+
+    #[test]
+    fn test_import_error_keeps_parse_notes() {
+        let err = evaluate_unit(
+            r#"{ import: "helpers.eu" }
+x: (1"#,
+            "json",
+        )
+        .unwrap_err();
+        assert!(err.message.contains("cannot import"), "{}", err.message);
+        assert!(err.notes.unwrap().len() > 1);
     }
 }
