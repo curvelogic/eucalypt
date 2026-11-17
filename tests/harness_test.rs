@@ -3279,6 +3279,10 @@ pub fn test_250_dict() {
         "to-list-shared",
         "update-shared",
         "merge-shared",
+        // A thunk over an evaluated variable, stored and also read through its
+        // own slot, or stored twice: still one evaluation (eu-oaz72.84).
+        "slot-shared",
+        "store-twice-shared",
     ] {
         let shared = ticks_with_demand_analysis(file, target);
         assert!(
@@ -3302,6 +3306,16 @@ pub fn test_250_dict() {
         "assoc-chain peaked at {peak} heap blocks: earlier dict versions are being \
          retained by stored values (eu-oaz72.21)"
     );
+    // A stored value that refers back to itself must stay shared: forcing the
+    // stored stream costs about what forcing it without a dict does. (Trimming
+    // afresh at every level of the cycle made it 8x or more, eu-oaz72.84.)
+    let stored = ticks(file, "stream-stored-run", &[]);
+    let plain = ticks(file, "stream-plain-run", &[]);
+    assert!(
+        stored < plain * 2,
+        "a stored self-referential stream took {stored} ticks against {plain} without a \
+         dict: its sharing is lost (eu-oaz72.84)"
+    );
     // The same for evaluated list values: `memo_cell` rebuilds them over fresh
     // frames, so they do not pin the frame holding the previous version
     // (eu-oaz72.70). Unfixed, the run outgrows the heap limit.
@@ -3315,6 +3329,22 @@ pub fn test_250_dict() {
         peak < 2500,
         "assoc-chain-lists peaked at {peak} heap blocks: earlier dict versions are \
          being retained by stored list values (eu-oaz72.70)"
+    );
+    // The same for unevaluated values built over an evaluated variable (a list
+    // with a computed element, a block literal): `memo_cell` shares one cell
+    // holding the thunk over just the variables it reads with the slot that
+    // named it, so the stored value no longer pins the caller's frame
+    // (eu-oaz72.84). Unfixed, the run outgrows the heap limit.
+    let peak = stat(
+        file,
+        "assoc-chain-lazy",
+        &["--heap-limit-mib", "64"],
+        "Peak Blocks",
+    );
+    assert!(
+        peak < 2500,
+        "assoc-chain-lazy peaked at {peak} heap blocks: earlier dict versions are \
+         being retained by stored unevaluated values (eu-oaz72.84)"
     );
     // The same for `dict.update`: the new value's application is built over
     // a fresh frame `[f, old]`, not the caller's frame, which holds the
@@ -5526,6 +5556,16 @@ pub fn test_error_305_exact_error_number() {
 #[test]
 pub fn test_error_306_complex_result_large_float() {
     run_error_test(&error_opts("306_complex_result_large_float.eu"));
+}
+
+#[test]
+pub fn test_error_316_stored_value_trace() {
+    run_error_test(&error_opts("316_stored_value_trace.eu"));
+}
+
+#[test]
+pub fn test_error_317_stored_list_field_trace() {
+    run_error_test(&error_opts("317_stored_list_field_trace.eu"));
 }
 
 #[test]
