@@ -224,6 +224,29 @@ edge-checks: {
   ]
 }
 
+` "Results are built straight into the heap (eu-oaz72.159): every derived array keeps row-major order, and the source is never altered"
+heap-build-checks: {
+  m: arr.from-flat([2, 3], [1, 2, 3, 4, 5, 6])
+  t: m arr.transpose
+  trues: [
+    (t arr.shape) = [3, 2],
+    (t arr.to-list) = [1, 4, 2, 5, 3, 6],
+    (t arr.transpose arr.to-list) = (m arr.to-list),
+    (m arr.slice(1, 2) arr.to-list) = [3, 6],
+    (t arr.slice(1, 1) arr.to-list) = [4, 5, 6],
+    ((t arr.set([2, 1], 99)) arr.get[2, 1]) = 99,
+    (t arr.get[2, 1]) = 6,
+    ((m arr.set([0, 0], 0)) arr.get[0, 0]) = 0,
+    (m arr.get[0, 0]) = 1,
+    (m arr.reshape[3, 2] arr.shape) = [3, 2],
+    (m arr.reshape[3, 2] arr.to-list) = [1, 2, 3, 4, 5, 6],
+    (arr.add(m, m) arr.to-list) = [2, 4, 6, 8, 10, 12],
+    ((m + 1) arr.get[1, 2]) = 7,
+    ((10 - m) arr.get[1, 2]) = 4,
+    (arr.fill([2, 2], 3) arr.to-list) = [3, 3, 3, 3]
+  ]
+}
+
 ` "Regression coverage: computed (non-literal) arguments to the array wrappers (not shown to gate a removed force)."
 computed-checks: {
   n(x): x + 0
@@ -252,7 +275,8 @@ pass: [
   fold-checks.trues all-true?,
   neighbours-checks.trues all-true?,
   integral-index-checks.trues all-true?,
-  edge-checks.trues all-true?
+  edge-checks.trues all-true?,
+  heap-build-checks.trues all-true?
 ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)

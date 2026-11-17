@@ -6453,7 +6453,7 @@ mod tests {
     /// the containers reachable only through a bif frame.
     fn native_containers_fixture(heap: &Heap) -> NativeContainers {
         use crate::eval::memory::dict::Dict;
-        use crate::eval::memory::ndarray::{self, HeapNdArray};
+        use crate::eval::memory::ndarray::HeapNdArray;
         use crate::eval::memory::set::{HeapSet, Primitive};
         use crate::eval::memory::string::HeapString;
         use crate::eval::memory::symbol::SymbolPool;
@@ -6486,7 +6486,8 @@ mod tests {
         let flat: Vec<f64> = (0..600).map(|i| i as f64).collect();
         let arr = view
             .alloc(
-                HeapNdArray::from_ndarray(&view, &ndarray::from_flat(&[20, 30], flat).unwrap())
+                HeapNdArray::from_flat(&view, &[20, 30], &flat)
+                    .unwrap()
                     .unwrap(),
             )
             .unwrap()

@@ -18,7 +18,7 @@ use crate::{
         memory::{
             bump::MAX_ALLOC_SIZE,
             mutator::MutatorHeapView,
-            ndarray,
+            ndarray::HeapNdArray,
             syntax::{Native, Ref},
         },
     },
@@ -27,7 +27,7 @@ use crate::{
 use super::{
     force::SeqNumList,
     support::{
-        machine_return_bool, machine_return_ndarray, machine_return_num,
+        machine_return_bool, machine_return_heap_ndarray, machine_return_num,
         machine_return_num_list_of_lists, ndarray_arg, num_arg,
     },
     syntax::{
@@ -70,7 +70,7 @@ impl StgIntrinsic for ArrayZeros {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let shape = num_list_to_shape(machine, view, &args[0], "arr.zeros")?;
-        machine_return_ndarray(machine, view, ndarray::zeros(&shape))
+        machine_return_heap_ndarray(machine, view, HeapNdArray::filled(&view, &shape, 0.0)?)
     }
 }
 
@@ -116,7 +116,7 @@ impl StgIntrinsic for ArrayFill {
     ) -> Result<(), ExecutionError> {
         let shape = num_list_to_shape(machine, view, &args[0], "arr.fill")?;
         let value = num_arg(machine, view, &args[1])?.as_f64().unwrap_or(0.0);
-        machine_return_ndarray(machine, view, ndarray::filled(&shape, value))
+        machine_return_heap_ndarray(machine, view, HeapNdArray::filled(&view, &shape, value)?)
     }
 }
 
@@ -158,8 +158,8 @@ impl StgIntrinsic for ArrayFromFlat {
         let values = num_list_to_f64_vec(machine, view, &args[1])?;
         let smid = machine.annotation();
         let data_len = values.len();
-        match ndarray::from_flat(&shape, values) {
-            Some(arr) => machine_return_ndarray(machine, view, arr),
+        match HeapNdArray::from_flat(&view, &shape, &values)? {
+            Some(arr) => machine_return_heap_ndarray(machine, view, arr),
             None => {
                 let expected: usize = shape.iter().product();
                 Err(ExecutionError::ArrayShapeMismatch(
@@ -286,8 +286,8 @@ impl StgIntrinsic for ArraySet {
         let smid = machine.annotation();
         let value = num_arg(machine, view, &args[1])?.as_f64().unwrap_or(0.0);
         let arr = ndarray_arg(machine, view, &args[2])?;
-        match arr.with_set(&coords, value) {
-            Some(new_arr) => machine_return_ndarray(machine, view, new_arr),
+        match arr.with_set(&view, &coords, value)? {
+            Some(new_arr) => machine_return_heap_ndarray(machine, view, new_arr),
             None => Err(ExecutionError::ArrayNdIndexOutOfBounds(smid, coords)),
         }
     }
@@ -432,7 +432,7 @@ impl StgIntrinsic for ArrayTranspose {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let arr = ndarray_arg(machine, view, &args[0])?;
-        machine_return_ndarray(machine, view, arr.transpose())
+        machine_return_heap_ndarray(machine, view, arr.transpose(&view)?)
     }
 }
 
@@ -477,8 +477,8 @@ impl StgIntrinsic for ArrayReshape {
         let smid = machine.annotation();
         let arr = ndarray_arg(machine, view, &args[1])?;
         let old_total: usize = arr.shape().iter().product();
-        match arr.reshape(&new_shape) {
-            Some(reshaped) => machine_return_ndarray(machine, view, reshaped),
+        match arr.reshape(&view, &new_shape)? {
+            Some(reshaped) => machine_return_heap_ndarray(machine, view, reshaped),
             None => {
                 let new_total: usize = new_shape.iter().product();
                 Err(ExecutionError::ArrayShapeMismatch(
@@ -525,8 +525,8 @@ impl StgIntrinsic for ArraySlice {
             num_arg(machine, view, &args[2])?.as_f64(),
             smid,
         )?;
-        match arr.slice_along(axis, index) {
-            Some(sliced) => machine_return_ndarray(machine, view, sliced),
+        match arr.slice_along(&view, axis, index)? {
+            Some(sliced) => machine_return_heap_ndarray(machine, view, sliced),
             None => Err(ExecutionError::ArrayShapeMismatch(
                 smid,
                 format!(
@@ -914,8 +914,8 @@ pub(crate) fn array_binop<F: Fn(f64, f64) -> f64>(
             let b = view.scoped(b_ptr);
             let a_shape = a.shape().to_vec();
             let b_shape = b.shape().to_vec();
-            match a.zip_with(&b, f) {
-                Some(result) => machine_return_ndarray(machine, view, result),
+            match a.zip_with(&view, &b, f)? {
+                Some(result) => machine_return_heap_ndarray(machine, view, result),
                 None => Err(ExecutionError::ArrayShapeMismatch(
                     smid,
                     format!("arrays have incompatible shapes {a_shape:?} and {b_shape:?} for element-wise operation"),
@@ -925,12 +925,12 @@ pub(crate) fn array_binop<F: Fn(f64, f64) -> f64>(
         (Native::NdArray(a_ptr), Native::Num(n)) => {
             let a = view.scoped(a_ptr);
             let scalar = n.as_f64().unwrap_or(0.0);
-            machine_return_ndarray(machine, view, a.scalar_op(scalar, f))
+            machine_return_heap_ndarray(machine, view, a.scalar_op(&view, scalar, f)?)
         }
         (Native::Num(n), Native::NdArray(b_ptr)) => {
             let b = view.scoped(b_ptr);
             let scalar = n.as_f64().unwrap_or(0.0);
-            machine_return_ndarray(machine, view, b.scalar_op(scalar, |x, s| f(s, x)))
+            machine_return_heap_ndarray(machine, view, b.scalar_op(&view, scalar, |x, s| f(s, x))?)
         }
         _ => Err(ExecutionError::ArrayShapeMismatch(
             smid,
