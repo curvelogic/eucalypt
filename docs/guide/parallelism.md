@@ -50,8 +50,8 @@ Because the gate is gone, the caller is the one who should judge whether a
 workload is worth forking. The fixed per-call cost of the fork mechanism
 itself — process fork plus the shared arena, isolated from the
 serialise/deserialise codec both paths already pay — measures **~2–3ms** on
-macOS ARM64 (Apple Silicon, measured-single, moderate background load).
-That is the amount a tiny,
+macOS ARM64 (Apple Silicon, a single measurement session under moderate
+background load, not independently repeated). That is the amount a tiny,
 cheap `par-map` adds over the plain sequential form: worth it for anything
 with real per-element cost, easily lost in noise for a handful of trivial
 elements. `EU_PP_THRESHOLD` (below) remains available to force the
