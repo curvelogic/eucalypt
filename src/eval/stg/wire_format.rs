@@ -166,6 +166,8 @@ pub const BUILD_RERUN_PATHS: &[&str] = &[
     "src/core/demand.rs",
     "src/core/dependency.rs",
     "src/eval/stg/compiler.rs",
+    "src/eval/bytecode/encode.rs",
+    "src/eval/bytecode/closed.rs",
     // Embedded via `include_bytes!` in `src/driver/resources.rs`; cargo does
     // not track non-Rust files referenced that way.
     "lib/test.eu",

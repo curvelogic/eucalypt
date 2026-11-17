@@ -215,13 +215,17 @@ fn heap_limit_exhaustion_is_an_error() {
 /// in the unswept and recycled lists, which evacuation once never
 /// considered: at 10 MiB the footprint stayed over the tolerated 15 MiB
 /// (16 MiB reported) and the run failed with a heap-limit error. With
-/// those blocks evacuated it passes down to 9 MiB (measured).
+/// those blocks evacuated it passed down to 9 MiB (measured). The limit is
+/// now 11 MiB: closed bindings (eu-oaz72.175) carry a slotless annotation
+/// spine so error traces are unchanged, which costs about 8% more peak
+/// blocks in this deep-recursion shape (1,372 to 1,482); 10 MiB no longer
+/// fits, 11 MiB does.
 #[test]
 fn fragmented_heap_is_compacted_under_heap_limit() {
     let mut cmd = Command::new(eu_binary());
     cmd.arg("test")
         .arg("--heap-limit-mib")
-        .arg("10")
+        .arg("11")
         .arg("tests/harness/gc/gc_004_fragmentation.eu")
         .env("EU_PP_THRESHOLD", "999999999")
         // Stress mode evacuates every block on every collection, which is
@@ -229,10 +233,10 @@ fn fragmented_heap_is_compacted_under_heap_limit() {
         // `stress_evacuation_compacts_fragmented_heap_under_limit`.
         .env_remove("EU_GC_STRESS");
     let out = run_with_deadline(cmd, Duration::from_secs(600))
-        .expect("eu did not finish within 600s under a 10 MiB heap limit");
+        .expect("eu did not finish within 600s under an 11 MiB heap limit");
     assert!(
         out.status.success(),
-        "gc_004_fragmentation.eu failed under a 10 MiB heap limit: fragmented \
+        "gc_004_fragmentation.eu failed under an 11 MiB heap limit: fragmented \
          blocks are not being evacuated (Heap::analyze_collection_strategy)\n\
          stdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&out.stdout),
@@ -280,8 +284,9 @@ fn stress_evacuation_frees_blocks_in_the_same_collection() {
 }
 
 /// As above, for a heap fragmented by deep recursions:
-/// `gc_004_fragmentation.eu` failed under `EU_GC_STRESS` at 10 MiB.
+/// `gc_004_fragmentation.eu` failed under `EU_GC_STRESS` at 10 MiB (the
+/// limit is 11 MiB since eu-oaz72.175, see above).
 #[test]
 fn stress_evacuation_compacts_fragmented_heap_under_limit() {
-    assert_stress_passes_under_limit("tests/harness/gc/gc_004_fragmentation.eu", "10");
+    assert_stress_passes_under_limit("tests/harness/gc/gc_004_fragmentation.eu", "11");
 }
