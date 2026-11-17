@@ -13210,6 +13210,18 @@ Configure your editor to use `eu lsp` as the language server command
 for `.eu` files. A VS Code extension is available in the `editors/vscode/`
 directory of the repository.
 
+`eu lsp` exits with:
+
+- `0` - the client sent `shutdown` then `exit`, or closed stdin
+- `1` - the client sent `exit` without a prior `shutdown`
+- `2` - a server or transport error: the initialise handshake failed, or a
+  reader or writer I/O thread failed (for example a malformed message on
+  stdin, or the client closing its end of the server's output)
+
+A failed send of diagnostics or a refresh request does not end the server
+by itself: it logs the drop to stderr and carries on until the client ends
+the session.
+
 ## Version Assertions
 
 The `eu.requires` function allows eucalypt source files to assert a
@@ -18582,21 +18594,16 @@ than catenation. When an infix operator follows a pipeline (catenation
 chain), it binds to the last function in the chain, not to the result
 of the whole pipeline.
 
-**Gotcha**: Writing `xs foldl(f, 0) + 1` is **not** parsed as
-`(xs foldl(f, 0)) + 1`. Instead, the shunting-yard algorithm sees:
-
-```
-[xs, cat@20, foldl, call@90, (f,0), +@75, 1]
-```
-
-Because `+` (75) has higher precedence than `cat` (20), the `+`
-binds first: `foldl(f, 0) + 1` is evaluated (adding 1 to a partial
-application — a type error), and then the result is applied to `xs`.
+**Gotcha**: Infix operators bind tighter than catenation, so
+`xs foldl(+, 0) + 1` means `xs (foldl(+, 0) + 1)`, which is not
+`(xs foldl(+, 0)) + 1`. The `+` is applied to the partial application
+`foldl(+, 0)`, which is a type error, and the result is then applied to
+`xs`.
 
 **Example**:
 ```eu,notest
 # WRONG — fails at runtime:
-n: xs foldl(+, 0) + 1        # Parsed as: (foldl(+, 0) + 1)(xs)
+n: xs foldl(+, 0) + 1        # Means: xs (foldl(+, 0) + 1)
 
 # CORRECT — use parentheses:
 n: (xs foldl(+, 0)) + 1      # Explicit grouping
@@ -19224,14 +19231,18 @@ The `=>` / `⇒` operator (precedence 15) builds a `cond` clause
 (`condition => result`).  It looks similar to the assertion meta-operator
 `//=>` (precedence 5) but has a completely different purpose:
 
-```eu,notest
-# CLAUSE — builds a cond branch; result is a list element
-cond[x > 0 => "positive", "non-positive"]
+```eu
+x: 5
 
-# ASSERTION — checks a value equals the RHS at meta-evaluation time
-` { result //=> "positive" }
-result: "positive"
+# CLAUSE — builds a cond branch; the last element is the default
+sign: cond[x > 0 => "positive", "non-positive"]
+
+# ASSERTION — checks the expression equals the RHS and passes it through
+checked: sign //=> "positive"
 ```
+
+`//=>` goes after the expression it checks, not inside block metadata.
+See [Testing](../guide/testing.md#inline-assertions).
 
 Mixing these up produces confusing type or parse errors.
 
@@ -19394,16 +19405,3 @@ result: { :io }.42
 # CORRECT
 result: { :io r: io.return(42) }.r
 ```
-
----
-
-# Migration from v0.2 to v0.3
-
-*Migration guide is under construction.*
-
-Key changes in v0.3:
-
-- Subcommand structure: `eu test` replaces `-T`, `eu dump` replaces
-  `-p`/`--dump-xxx`
-- All existing command patterns continue to work (backward compatible)
-- New `eu fmt` and `eu lsp` subcommands
