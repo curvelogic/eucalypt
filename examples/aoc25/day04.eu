@@ -102,7 +102,7 @@ peel(counts, stack, n): stack nil? then(n, peel-on(peel-roll(counts, stack tail,
 peel-on([counts, stack], n): seq(counts, seq(n, peel(counts, stack, n)))
 
 ` "Is the `[key, count]` entry a roll with fewer than 4 neighbouring rolls?"
-removable?([_, n]): n < 4
+removable?[_, n]: n < 4
 
 ` "Total removed rolls, peeling from a dict of neighbour counts."
 solve2(grid): {
