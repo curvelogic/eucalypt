@@ -60,11 +60,23 @@ fn value_to_core(edn: &Value, file_id: usize, data_only: bool) -> Result<RcExpr,
                 Span::default(),
             )),
         },
-        Value::BigInt(i) => Err(SourceError::InvalidNumber(
-            i.to_string(),
-            file_id,
-            Span::default(),
-        )),
+        // The EDN exporter writes integers above i64::MAX as BigInt (`N`
+        // suffix) to keep their exact digits, so read back every BigInt
+        // that a eucalypt number can hold exactly. Anything wider is still
+        // rejected: rounding it to a float would silently change the value.
+        Value::BigInt(i) => {
+            if let Ok(n) = i64::try_from(i) {
+                Ok(acore::num(n))
+            } else if let Ok(n) = u64::try_from(i) {
+                Ok(acore::num(n))
+            } else {
+                Err(SourceError::InvalidNumber(
+                    i.to_string(),
+                    file_id,
+                    Span::default(),
+                ))
+            }
+        }
         Value::BigDec(d) => Err(SourceError::InvalidNumber(
             d.to_string(),
             file_id,
@@ -117,5 +129,45 @@ fn value_to_core(edn: &Value, file_id: usize, data_only: bool) -> Result<RcExpr,
             value_to_core(e, file_id, data_only)?,
             acore::block(iter::once(("tag".to_string(), acore::str(t.name())))),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::expr::tests::smid_strip;
+
+    fn read(text: &str) -> Result<RcExpr, SourceError> {
+        let mut sm = SourceMap::new();
+        read_edn(&mut sm, 0, text, true).map(smid_strip)
+    }
+
+    #[test]
+    fn bigint_above_i64_max_reads_back_exactly() {
+        // The form the EDN exporter emits for an integer above i64::MAX.
+        assert_eq!(
+            read("9999999999999999999N").unwrap(),
+            acore::num(9_999_999_999_999_999_999u64)
+        );
+        assert_eq!(read("18446744073709551615N").unwrap(), acore::num(u64::MAX));
+    }
+
+    #[test]
+    fn bigint_within_i64_reads_as_ordinary_integer() {
+        assert_eq!(read("5N").unwrap(), acore::num(5));
+        assert_eq!(read("-5N").unwrap(), acore::num(-5));
+    }
+
+    #[test]
+    fn bigint_beyond_number_range_is_rejected() {
+        // No eucalypt number holds these exactly; rounding would corrupt.
+        assert!(matches!(
+            read("18446744073709551616N"),
+            Err(SourceError::InvalidNumber(..))
+        ));
+        assert!(matches!(
+            read("-9223372036854775809N"),
+            Err(SourceError::InvalidNumber(..))
+        ));
     }
 }
