@@ -290,7 +290,7 @@ that unconditionally would copy the argument *expression* once per
 occurrence of its binder, and separate copies become separate thunks that
 share nothing — so a callee that uses a parameter twice would evaluate
 that argument twice, and a caller passing its own recursive call would go
-from linear to exponential (eu-gua64).
+from linear to exponential.
 
 An argument is therefore substituted directly only when doing so
 duplicates no work:
@@ -336,9 +336,9 @@ Eucalypt originally had a second engine — a HeapSyn tree-walk machine
 (`src/eval/machine/vm.rs`) that walked a materialised STG tree of
 heap-allocated nodes directly, the only engine before 0.12.0 and retained
 afterwards as the performance baseline and differential-testing oracle
-behind an `EU_HEAPSYN=1` opt-out. Once an A/B study (eu-7oshh) confirmed the
+behind an `EU_HEAPSYN=1` opt-out. Once an A/B study confirmed the
 bytecode engine was at parity or ahead everywhere that mattered, the Phase 4
-collapse (eu-oufc) deleted HeapSyn, its `EU_HEAPSYN`/`EU_BYTECODE` selectors,
+collapse deleted HeapSyn, its `EU_HEAPSYN`/`EU_BYTECODE` selectors,
 and the differential-testing infrastructure that compared the two engines
 (what remains under `src/eval/bytecode/differential.rs` compares the
 bytecode engine's two *dispatch* configurations — pre-decoded vs
@@ -711,7 +711,7 @@ three hashed inputs are:
 - **`src/eval/intrinsics.rs`** — the intrinsic catalogue. Its length fixes the
   global slot numbering the blob bakes in as `Ref::G(INTRINSIC_COUNT + prelude
   slot)`, so adding or removing an intrinsic shifts *every* prelude global's
-  slot. Hashing the catalogue makes that invalidation automatic (eu-3skeg);
+  slot. Hashing the catalogue makes that invalidation automatic;
   before it did, a stale blob was silently accepted with an off-by-N slot map
   and the binary returned wrong answers with no warning.
 - **`BYTECODE_WIRE_FORMAT_VERSION`** — the serialised code-stream layout, which
@@ -911,7 +911,7 @@ The prelude is:
 | `src/core/cook/` | Operator resolution | `shunt.rs`, `fixity.rs` |
 | `src/eval/stg/` | STG syntax, compiler, prelude blob | `syntax.rs`, `compiler.rs`, `blob.rs` |
 | `src/eval/machine/` | Shared runtime infrastructure (env frames, intrinsic ABI, metrics, crash diagnostics) | `env.rs`, `intrinsic.rs`, `metrics.rs` |
-| `src/eval/bytecode/` | Bytecode engine (BV1, the sole engine since eu-oufc) | `machine.rs`, `encode.rs`, `predecode.rs` |
+| `src/eval/bytecode/` | Bytecode engine (BV1, the sole engine since the Phase 4 collapse) | `machine.rs`, `encode.rs`, `predecode.rs` |
 | `src/eval/memory/` | Heap and GC | `heap.rs`, `collect.rs` |
 | `src/driver/` | CLI orchestration | `options.rs`, `eval.rs` |
 | `src/export/` | Output formats | `yaml.rs`, `json.rs` |
