@@ -4,7 +4,9 @@
         reduced to a saturated `if`, so a self-recursive loop with a strict
         accumulator no longer pushes a frame per iteration.
         eu-oaz72.147: loops whose step or test is a parameter also run in
-        constant stack."
+        constant stack.
+        eu-oaz72.66: a strict loop that shares its name with a lazy one keeps
+        its own demand signature, so it still runs in constant stack."
 }
 
 # Strict accumulator: `a` is forced by the condition on every step, so the
@@ -53,6 +55,28 @@ loop-values(context): {
 
 ` "no loop grows the stack with its iteration count"
 constant-stack(context): (context.stats.max-stack < 1000) then(:PASS, :FAIL)
+
+` "eu-oaz72.66: `go` is strict in its accumulator here..."
+strict-go-sum(k): {
+  go(i, a): (i = 0) then(a, go(i - 1, a + 1))
+}.(go(k, 0))
+
+` "...and lazy in it here, so a signature keyed by name was their lub: lazy"
+lazy-go-count(k): {
+  go(i, a): (i = 0) then(i, go(i - 1, a + 1))
+}.(go(k, 0))
+
+` { target: :same-name-loops
+    verify: [:same-name-values, :constant-stack] }
+same-name-loops: {
+  strict-sum: strict-go-sum(n)
+  lazy-count: lazy-go-count(n)
+}
+
+` "both same-named loops compute their values"
+same-name-values(context): {
+  r: context.result
+}.([r.strict-sum = 100000, r.lazy-count = 0] all-true? then(:PASS, :FAIL))
 
 ` { target: :test-semantics }
 semantics: {

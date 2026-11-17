@@ -6,8 +6,8 @@
 use crate::core::demand::Demand;
 use serde::{Deserialize, Serialize};
 
-/// A single let-binding entry: a name, its bound expression, and its demand
-/// annotation.
+/// A single let-binding entry: a name, its bound expression, its demand
+/// annotation and, for a lambda, its demand signature.
 ///
 /// The `demand` field starts at `Demand::default()` (all `Unknown`) and is
 /// refined by analysis passes.  The STG compiler reads it at
@@ -20,6 +20,15 @@ pub struct CoreBinding<T: Clone> {
     pub expr: T,
     /// Demand annotation — populated by analysis passes and the prune pass.
     pub demand: Demand,
+    /// The demand the bound lambda places on each of its parameters, set by
+    /// demand analysis on a let-bound lambda. The STG compiler gives a call
+    /// whose callee is a bound variable the signature of the binding that
+    /// variable names, so two bindings that share a name keep their own
+    /// signatures (eu-oaz72.66). Not serialised: it exists only between
+    /// demand analysis and STG compilation, so the blob encoding of core is
+    /// unchanged.
+    #[serde(skip)]
+    pub signature: Option<Vec<Demand>>,
 }
 
 impl<T: Clone> CoreBinding<T> {
@@ -30,12 +39,30 @@ impl<T: Clone> CoreBinding<T> {
             name,
             expr,
             demand: Demand::default(),
+            signature: None,
         }
     }
 
     /// Create a binding with an explicit demand annotation.
     pub fn with_demand(name: String, expr: T, demand: Demand) -> Self {
-        CoreBinding { name, expr, demand }
+        CoreBinding {
+            name,
+            expr,
+            demand,
+            signature: None,
+        }
+    }
+
+    /// The same binding over a new expression: name, demand and signature
+    /// are kept. Passes that rebuild a binding's expression use this, so
+    /// the annotations demand analysis leaves survive them.
+    pub fn with_expr<U: Clone>(&self, expr: U) -> CoreBinding<U> {
+        CoreBinding {
+            name: self.name.clone(),
+            expr,
+            demand: self.demand,
+            signature: self.signature.clone(),
+        }
     }
 }
 

@@ -48,10 +48,7 @@ impl ScopeCompressor {
                     .pattern
                     .iter()
                     .filter(|b| !matches!(*b.expr.inner, Expr::ErrEliminated))
-                    .map(|b| {
-                        self.compress(&b.expr)
-                            .map(|val| CoreBinding::with_demand(b.name.clone(), val, b.demand))
-                    })
+                    .map(|b| self.compress(&b.expr).map(|val| b.with_expr(val)))
                     .collect();
 
                 let new_bindings = match new_bindings {

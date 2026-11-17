@@ -36,100 +36,16 @@ pub type DemandSignature = Vec<Demand>;
 /// data, mapping to per-argument demand vectors.
 pub type SignatureTable = HashMap<SigKey, DemandSignature>;
 
-/// Name-keyed demand signature table for user function calls.
-///
-/// Maps binding names to per-argument demand vectors. Built during
-/// `analyse_let` by recording the signature of each Let binding whose
-/// RHS is a Lam with a known signature. Used by the STG compiler to
-/// apply per-argument demands at user function call sites.
-pub type NamedSignatureTable = HashMap<String, DemandSignature>;
-
 /// Peel `Meta` wrappers from an expression, returning the innermost non-Meta
 /// node. Source-path bindings (every prelude combinator, and any
 /// user-annotated binding) are `Meta(Lam(...), {doc, type})`, not a bare
-/// `Lam`; used to look through that wrapper when recording named demand
+/// `Lam`; used to look through that wrapper when recording binding
 /// signatures (see `analyse_let`).
 fn peel_meta(expr: &RcExpr) -> &RcExpr {
     match &*expr.inner {
         Expr::Meta(_, inner, _) => peel_meta(inner),
         _ => expr,
     }
-}
-
-/// Names whose name-keyed signature would not be sound for every call
-/// that uses the name: names bound anywhere as a lambda parameter or as a
-/// let binding whose right-hand side is not a lambda (an alias such as
-/// `step: f` may refer to a lazy function), and names bound to lambdas of
-/// different arities. Let-bound lambdas of one arity remain merged by
-/// `record_named_signature`, whose lub is sound for each of them.
-///
-/// The names are whole-program, but they cover only bindings in the
-/// analysed tree: the STG compiler takes a free callee's signature (a
-/// blob-mode prelude global) from the slot it resolves to (eu-oaz72.77), so
-/// a block key or parameter named `map` does not hide the prelude `map`'s
-/// signature.
-fn ambiguous_names(expr: &RcExpr) -> HashSet<String> {
-    #[derive(Default)]
-    struct Uses {
-        /// Arities of let-bound lambdas with this name.
-        arities: HashSet<usize>,
-        /// Bound as a parameter or as a non-lambda let binding.
-        other: bool,
-    }
-
-    fn visit(expr: &RcExpr, uses: &mut HashMap<String, Uses>) {
-        match &*expr.inner {
-            Expr::Let(_, scope, _) => {
-                for binding in &scope.pattern {
-                    let entry = uses.entry(binding.name.clone()).or_default();
-                    match &*peel_meta(&binding.expr).inner {
-                        Expr::Lam(_, _, lam) => {
-                            entry.arities.insert(lam.pattern.len());
-                        }
-                        _ => entry.other = true,
-                    }
-                    visit(&binding.expr, uses);
-                }
-                visit(&scope.body, uses);
-            }
-            Expr::Lam(_, _, scope) => {
-                for param in &scope.pattern {
-                    let entry = uses.entry(param.clone()).or_default();
-                    entry.other = true;
-                }
-                visit(&scope.body, uses);
-            }
-            Expr::Lookup(_, e, _, fallback) => {
-                visit(e, uses);
-                if let Some(fb) = fallback {
-                    visit(fb, uses);
-                }
-            }
-            Expr::List(_, xs) | Expr::ArgTuple(_, xs) | Expr::Soup(_, xs, _) => {
-                xs.iter().for_each(|x| visit(x, uses));
-            }
-            Expr::Block(_, block_map) => {
-                block_map.iter().for_each(|(_, v)| visit(v, uses));
-            }
-            Expr::Meta(_, e, m) => {
-                visit(e, uses);
-                visit(m, uses);
-            }
-            Expr::App(_, f, xs) => {
-                visit(f, uses);
-                xs.iter().for_each(|x| visit(x, uses));
-            }
-            Expr::Operator(_, _, _, e) => visit(e, uses),
-            _ => {}
-        }
-    }
-
-    let mut uses = HashMap::new();
-    visit(expr, &mut uses);
-    uses.into_iter()
-        .filter(|(_, u)| u.other || u.arities.len() > 1)
-        .map(|(name, _)| name)
-        .collect()
 }
 
 /// Build intrinsic seed signatures from the INTRINSICS catalogue.
@@ -223,9 +139,9 @@ pub fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
 /// the SCC split source mode also applies first) and reads, for each
 /// binding of the top-level `Let`/`Meta` chain — the chain `xtask
 /// prelude-compile` peels into global slots — the signature its `Let`
-/// group settled on: a lambda's own (by binder, not the name-merged
-/// [`NamedSignatureTable`] entry, so a local helper of the same name
-/// elsewhere in the prelude cannot weaken or strengthen it), and for an
+/// group settled on: a lambda's own (by binder, so a local helper of the
+/// same name elsewhere in the prelude cannot weaken or strengthen it), and
+/// for an
 /// alias or a partial application (`zip-with: map2`, `zip:
 /// zip-with(pair)`) the signature of the function it denotes
 /// (eu-oaz72.92).
@@ -441,14 +357,6 @@ pub struct DemandAnalyser<'p> {
     prelude: Option<PreludeSignatures<'p>>,
     /// Signatures discovered during analysis (keyed by Lam body pointer).
     signatures: SignatureTable,
-    /// Name-keyed signatures for user function calls. The STG compiler
-    /// looks them up by callee name, so bindings that share a name share
-    /// an entry: it holds the lub of their signatures (sound for each), or
-    /// `None` once two of them disagree in arity.
-    named_signatures: HashMap<String, Option<DemandSignature>>,
-    /// Previous values of `named_signatures` entries changed by the
-    /// current fixpoint rounds, so a discarded round can be undone.
-    named_log: Vec<(String, Option<Option<DemandSignature>>)>,
     /// The last signatures a `Let` group settled on, keyed by its scope's
     /// address in the input tree. An enclosing group re-analyses a nested
     /// one on each of its own rounds; starting from the previous answer
@@ -487,8 +395,6 @@ impl<'p> DemandAnalyser<'p> {
             intrinsic_sigs: build_intrinsic_signatures(),
             prelude: None,
             signatures: HashMap::new(),
-            named_signatures: HashMap::new(),
-            named_log: Vec::new(),
             seeds: HashMap::new(),
             root_block: None,
             nested_value: false,
@@ -516,27 +422,17 @@ impl<'p> DemandAnalyser<'p> {
     }
 
     /// Run the demand analysis on the given expression, returning the
-    /// annotated expression, the pointer-keyed signature table, and the
-    /// name-keyed signature table for user function calls.
-    pub fn analyse(mut self, expr: &RcExpr) -> (RcExpr, SignatureTable, NamedSignatureTable) {
+    /// annotated expression and the pointer-keyed signature table. Each
+    /// let-bound lambda's signature is also left on its binding
+    /// (`CoreBinding::signature`), where the STG compiler finds it.
+    pub fn analyse(mut self, expr: &RcExpr) -> (RcExpr, SignatureTable) {
         self.root_block = if self.nested_value {
             None
         } else {
             root_block(expr)
         };
         let (new_expr, _env) = self.analyse_expr(expr);
-        let mut named: NamedSignatureTable = self
-            .named_signatures
-            .into_iter()
-            .filter_map(|(name, sig)| sig.map(|sig| (name, sig)))
-            .collect();
-        // The compiler finds a call's signature by the callee's name, so a
-        // name that does not refer to let-bound lambdas of one arity alone
-        // gets an empty signature: no argument is strict.
-        for name in ambiguous_names(expr) {
-            named.insert(name, Vec::new());
-        }
-        (new_expr, self.signatures, named)
+        (new_expr, self.signatures)
     }
 
     /// Analyse an expression, returning the annotated expression and
@@ -888,33 +784,33 @@ impl<'p> DemandAnalyser<'p> {
                 outer_env = merge_envs(&outer_env, &shifted);
             }
 
-            // If the binding's RHS is a Lam with a known signature, record
-            // the signature under the binding name for STG compiler use.
+            // If the binding's RHS is a Lam with a known signature, leave
+            // the signature on the binding, where the STG compiler finds it
+            // for a call through a variable bound to this binding. Keyed by
+            // binder rather than name, two bindings that share a name keep
+            // their own signatures (eu-oaz72.66).
             //
             // Peel `Meta` first: on the source-prelude path every binding
             // (including recursive higher-order combinators such as
             // `foldl`) is `Meta(Lam(_, true, _), {doc, type})`, not a bare
-            // `Lam`, so without peeling this check never fires there — the
-            // named signature table stays empty and the STG compiler falls
-            // back to conservative (lazy) treatment of the recursive copy's
-            // higher-order parameter, defeating demand specialisation even
-            // though `tag_combinators`/`distribute`'s meta-peel (eu-rb5n
-            // sub-problem 1) has already localised the recursive copy. The
-            // blob path never hits this: `inlinable_bindings` are peeled at
+            // `Lam`. The blob path's `inlinable_bindings` are peeled at
             // blob-gen time (`xtask`), so their injected values are already
             // bare `Lam`s here.
-            if let Expr::Lam(_, _, ref lam_scope) = &*peel_meta(&new_rhs_exprs[i]).inner {
-                let key = Rc::as_ptr(&lam_scope.body.inner) as usize;
-                if let Some(sig) = self.signatures.get(&key).cloned() {
-                    self.record_named_signature(&binding.name, sig);
-                }
-            }
+            let signature = match &*peel_meta(&new_rhs_exprs[i]).inner {
+                Expr::Lam(_, _, lam_scope) => self
+                    .signatures
+                    .get(&(Rc::as_ptr(&lam_scope.body.inner) as usize))
+                    .cloned(),
+                _ => None,
+            };
 
-            new_bindings.push(CoreBinding::with_demand(
+            let mut new_binding = CoreBinding::with_demand(
                 binding.name.clone(),
                 new_rhs_exprs[i].clone(),
                 binding_demand,
-            ));
+            );
+            new_binding.signature = signature;
+            new_bindings.push(new_binding);
         }
 
         let new_scope = Scope {
@@ -923,22 +819,6 @@ impl<'p> DemandAnalyser<'p> {
         };
 
         (RcExpr::from(Expr::Let(s, new_scope, let_type)), outer_env)
-    }
-
-    /// Record `sig` as the signature of a binding called `name`, merging it
-    /// with any other binding's of the same name (see `named_signatures`).
-    fn record_named_signature(&mut self, name: &str, sig: DemandSignature) {
-        let previous = self.named_signatures.get(name).cloned();
-        let merged = match &previous {
-            None => Some(sig),
-            Some(None) => None,
-            Some(Some(other)) if other.len() == sig.len() => {
-                Some(other.iter().zip(&sig).map(|(a, b)| a.lub(*b)).collect())
-            }
-            Some(Some(_)) => None,
-        };
-        self.named_log.push((name.to_string(), previous));
-        self.named_signatures.insert(name.to_string(), merged);
     }
 
     /// Analyse the RHSs of a `Let` in the scope's signature frame (the
@@ -989,7 +869,6 @@ impl<'p> DemandAnalyser<'p> {
         let mut rounds = 0;
         loop {
             let mark = self.sig_log.len();
-            let named_mark = self.named_log.len();
             self.frames[frame].consulted = false;
 
             let mut new_rhs_exprs = Vec::with_capacity(arities.len());
@@ -1033,12 +912,6 @@ impl<'p> DemandAnalyser<'p> {
             // expressions are dropped and their addresses may be reused.
             for key in self.sig_log.drain(mark..) {
                 self.signatures.remove(&key);
-            }
-            for (name, previous) in self.named_log.drain(named_mark..).rev() {
-                match previous {
-                    Some(entry) => self.named_signatures.insert(name, entry),
-                    None => self.named_signatures.remove(&name),
-                };
             }
             rounds += 1;
             self.frames[frame].sigs = if rounds == MAX_SIGNATURE_ITERATIONS {
@@ -1281,8 +1154,14 @@ impl<'p> DemandAnalyser<'p> {
         };
         let mut env = f_env;
 
-        // Try to find the function's signature
-        let sig = self.lookup_signature(head, total);
+        // Try to find the function's signature. A lambda literal's is
+        // recorded under its analysed body, so look it up on the analysed
+        // head (eu-oaz72.66, #1156); every other head is looked up as
+        // written.
+        let sig = match &*head.inner {
+            Expr::Lam(..) => self.lookup_signature(&new_head, total),
+            _ => self.lookup_signature(head, total),
+        };
         // A saturated call of a conditional evaluates exactly one branch.
         let shape = self
             .shape_of(head, 0)
@@ -1408,7 +1287,7 @@ fn app_spine(expr: &RcExpr) -> (&RcExpr, Vec<(Smid, &[RcExpr])>) {
 /// Run the demand analysis pass on a core expression.
 ///
 /// Returns the annotated expression and the signature side-table.
-pub fn analyse_demands(expr: &RcExpr) -> (RcExpr, SignatureTable, NamedSignatureTable) {
+pub fn analyse_demands(expr: &RcExpr) -> (RcExpr, SignatureTable) {
     analyse_demands_with_prelude(expr, None)
 }
 
@@ -1417,12 +1296,13 @@ pub fn analyse_demands(expr: &RcExpr) -> (RcExpr, SignatureTable, NamedSignature
 pub fn analyse_demands_with_prelude(
     expr: &RcExpr,
     prelude: Option<PreludeSignatures<'_>>,
-) -> (RcExpr, SignatureTable, NamedSignatureTable) {
+) -> (RcExpr, SignatureTable) {
     DemandAnalyser::new().with_prelude(prelude).analyse(expr)
 }
 
 /// Walk the annotated core expression and print demand annotations for
-/// every let-bound name to `out`. Used by `eu dump demands`.
+/// every let-bound name to `out`, with the signature of each let-bound
+/// lambda. Used by `eu dump demands`.
 ///
 /// Write failures are returned rather than panicking, so a closed pipe
 /// (`eu dump demands … | head`) can end the dump quietly.
@@ -1451,7 +1331,17 @@ fn print_demands_inner(
                     Cardinality::Absent => "Absent",
                     Cardinality::Unknown => "Unknown",
                 };
-                writeln!(out, "{}{}: ({}, {})", "  ".repeat(depth), b.name, s, c)?;
+                write!(out, "{}{}: ({}, {})", "  ".repeat(depth), b.name, s, c)?;
+                // A let-bound lambda's signature, as the STG compiler
+                // finds it for a call of this binding (eu-oaz72.66).
+                if let Some(sig) = &b.signature {
+                    let demands: Vec<String> = sig
+                        .iter()
+                        .map(|d| format!("({:?},{:?})", d.strictness, d.cardinality))
+                        .collect();
+                    write!(out, " [{}]", demands.join(", "))?;
+                }
+                writeln!(out)?;
                 print_demands_inner(&b.expr, depth + 1, out)?;
             }
             print_demands_inner(&scope.body, depth, out)?;
@@ -1502,7 +1392,7 @@ mod tests {
         // in any cycle and can safely skip the Update frame.
         let x = free("x");
         let expr = let_(vec![(x.clone(), num(1))], var(x));
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1524,7 +1414,7 @@ mod tests {
             vec![(x.clone(), app(bif("ADD"), vec![var(x.clone()), num(1)]))],
             var(x),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1548,7 +1438,7 @@ mod tests {
             ],
             app(bif("ADD"), vec![var(x), var(y)]),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1577,7 +1467,7 @@ mod tests {
             ],
             var(x),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1595,7 +1485,7 @@ mod tests {
         let x = free("x");
         let y = free("y");
         let expr = let_(vec![(x.clone(), num(1)), (y.clone(), num(2))], var(x));
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1612,7 +1502,7 @@ mod tests {
             vec![(x.clone(), num(1))],
             app(bif("ADD"), vec![var(x.clone()), var(x)]),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1639,7 +1529,7 @@ mod tests {
             ],
             app(bif("ADD"), vec![var(y), var(z)]),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1667,7 +1557,7 @@ mod tests {
             ],
             app(bif("ADD"), vec![var(x), var(y)]),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1700,7 +1590,7 @@ mod tests {
             None,
         );
         let expr = let_(vec![(b, num(1)), (c, num(2))], body);
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1719,7 +1609,7 @@ mod tests {
         // (eu-oaz72.40).
         let c = free("c");
         let expr = let_(vec![(c.clone(), num(2))], list(vec![var(c)]));
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1740,7 +1630,7 @@ mod tests {
             vec![(b.clone(), num(1))],
             block([("b".to_string(), var(b))]),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1760,7 +1650,7 @@ mod tests {
             vec![(b.clone(), num(1))],
             block([("b".to_string(), var(b))]),
         );
-        let (result, _sigs, _named) = DemandAnalyser::new().as_nested_value().analyse(&expr);
+        let (result, _sigs) = DemandAnalyser::new().as_nested_value().analyse(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1783,7 +1673,7 @@ mod tests {
             block([("b".to_string(), var(b))]),
         );
         let expr = let_(vec![(x.clone(), inner)], block([("x".to_string(), var(x))]));
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => match &*scope.pattern[0].expr.inner {
@@ -1812,7 +1702,7 @@ mod tests {
             app(bif("IF"), vec![var(cond.clone()), num(0), var(a)]),
         );
         let expr = let_(vec![(b, num(1)), (cond, num(0))], inner);
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1846,7 +1736,7 @@ mod tests {
                 ],
             ),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1884,7 +1774,7 @@ mod tests {
                 vec![num(0), app(bif("ADD"), vec![num(0), var(x)])],
             ),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1920,7 +1810,7 @@ mod tests {
                 )],
             ),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1957,7 +1847,7 @@ mod tests {
                 ),
             ),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -1985,7 +1875,7 @@ mod tests {
                 vec![num(2)],
             ),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -2020,7 +1910,7 @@ mod tests {
                 vec![num(2)],
             ),
         );
-        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -2068,8 +1958,8 @@ mod tests {
             vec![(lp.clone(), lam(vec!["a".into(), "n".into()], body))],
             app(var(lp), vec![num(0), num(1)]),
         );
-        let (_result, _sigs, named) = analyse_demands(&expr);
-        let sig = named.get("loop").expect("loop signature");
+        let (result, _sigs) = analyse_demands(&expr);
+        let sig = &binding_signatures(&result, "loop")[0];
         assert_eq!(sig[0].strictness, Strictness::Strict);
         assert_eq!(sig[1].strictness, Strictness::Strict);
     }
@@ -2104,8 +1994,8 @@ mod tests {
             )],
             var(f),
         );
-        let (_result, _sigs, named) = analyse_demands(&expr);
-        let sig = named.get("f").expect("f signature");
+        let (result, _sigs) = analyse_demands(&expr);
+        let sig = &binding_signatures(&result, "f")[0];
         assert_eq!(sig[1].strictness, Strictness::Lazy);
         assert_eq!(sig[2].strictness, Strictness::Strict);
     }
@@ -2331,7 +2221,7 @@ mod tests {
             app(var(free("f")), vec![var(x)]),
         );
         let x_strictness = |prelude| {
-            let (result, _, _) = analyse_demands_with_prelude(&expr, prelude);
+            let (result, _) = analyse_demands_with_prelude(&expr, prelude);
             match &*result.inner {
                 Expr::Let(_, scope, _) => scope.pattern[0].demand.strictness,
                 other => panic!("expected Let, got: {other:?}"),
@@ -2352,7 +2242,7 @@ mod tests {
         let x = free("x");
         // \x y -> x (y is unused)
         let lam_expr = lam(vec!["x".to_string(), "y".to_string()], var(x.clone()));
-        let (result, sigs, _named_sigs) = analyse_demands(&lam_expr);
+        let (result, sigs) = analyse_demands(&lam_expr);
 
         assert!(!sigs.is_empty(), "signature table should not be empty");
 
@@ -2367,18 +2257,121 @@ mod tests {
         }
     }
 
+    /// The signatures left on every binding called `name`, outermost
+    /// first; panics where such a binding has none.
+    fn binding_signatures(expr: &RcExpr, name: &str) -> Vec<DemandSignature> {
+        fn walk(expr: &RcExpr, name: &str, out: &mut Vec<DemandSignature>) {
+            match &*expr.inner {
+                Expr::Let(_, scope, _) => {
+                    for b in &scope.pattern {
+                        if b.name == name {
+                            out.push(b.signature.clone().expect("binding signature"));
+                        }
+                        walk(&b.expr, name, out);
+                    }
+                    walk(&scope.body, name, out);
+                }
+                Expr::Lam(_, _, scope) => walk(&scope.body, name, out),
+                Expr::Meta(_, e, _) => walk(e, name, out),
+                Expr::App(_, f, args) => {
+                    walk(f, name, out);
+                    args.iter().for_each(|a| walk(a, name, out));
+                }
+                Expr::List(_, xs) => xs.iter().for_each(|x| walk(x, name, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        walk(expr, name, &mut out);
+        out
+    }
+
+    /// Two loops that share a name, one strict in its accumulator and one
+    /// lazy in it, each keep their own signature (eu-oaz72.66): keyed by
+    /// name, the lub of the two made the strict loop lazy.
     #[test]
-    fn named_signature_recorded_for_let_bound_lam() {
+    fn same_named_bindings_keep_their_own_signatures() {
+        // loop(a, n) = IF(n, a, loop(ADD(a, 1), n)) — strict in a
+        let strict_loop = {
+            let lp = free("loop");
+            let a = free("a");
+            let n = free("n");
+            let body = app(
+                bif("IF"),
+                vec![
+                    var(n.clone()),
+                    var(a.clone()),
+                    app(
+                        var(lp.clone()),
+                        vec![app(bif("ADD"), vec![var(a), num(1)]), var(n)],
+                    ),
+                ],
+            );
+            let_(
+                vec![(lp.clone(), lam(vec!["a".into(), "n".into()], body))],
+                app(var(lp), vec![num(0), num(1)]),
+            )
+        };
+        // loop(a, n) = IF(n, n, loop(ADD(a, 1), n)) — lazy in a
+        let lazy_loop = {
+            let lp = free("loop");
+            let a = free("a");
+            let n = free("n");
+            let body = app(
+                bif("IF"),
+                vec![
+                    var(n.clone()),
+                    var(n.clone()),
+                    app(
+                        var(lp.clone()),
+                        vec![app(bif("ADD"), vec![var(a), num(1)]), var(n)],
+                    ),
+                ],
+            );
+            let_(
+                vec![(lp.clone(), lam(vec!["a".into(), "n".into()], body))],
+                app(var(lp), vec![num(0), num(1)]),
+            )
+        };
+        let expr = RcExpr::from(Expr::List(Smid::default(), vec![strict_loop, lazy_loop]));
+        let (result, _sigs) = analyse_demands(&expr);
+        let sigs = binding_signatures(&result, "loop");
+        assert_eq!(sigs.len(), 2);
+        assert_eq!(sigs[0][0].strictness, Strictness::Strict);
+        assert_eq!(sigs[1][0].strictness, Strictness::Lazy);
+    }
+
+    /// A lambda literal applied in place takes its own signature (#1156):
+    /// `(\x -> ADD(x, 1))(y)` is strict in `y`, so a let-bound `y` used only
+    /// there is strict.
+    #[test]
+    fn lambda_literal_in_function_position_takes_its_signature() {
+        let x = free("x");
+        let y = free("y");
+        let callee = lam(vec!["x".into()], app(bif("ADD"), vec![var(x), num(1)]));
+        let expr = let_(
+            vec![(y.clone(), app(bif("ADD"), vec![num(1), num(2)]))],
+            app(callee, vec![var(y)]),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(scope.pattern[0].demand.strictness, Strictness::Strict)
+            }
+            _ => panic!("expected Let"),
+        }
+    }
+
+    #[test]
+    fn signature_recorded_on_let_bound_lam() {
         let x = free("x");
         // let f = \x y -> x in f
         let lam_body = lam(vec!["x".to_string(), "y".to_string()], var(x.clone()));
         let f = free("f");
         let expr = let_(vec![(f.clone(), lam_body)], var(f));
-        let (_result, _sigs, named_sigs) = analyse_demands(&expr);
+        let (result, _sigs) = analyse_demands(&expr);
 
-        let sig = named_sigs
-            .get("f")
-            .expect("named signature should exist for let-bound lambda");
+        let sig = &binding_signatures(&result, "f")[0];
         assert_eq!(sig.len(), 2);
         assert_eq!(sig[0].cardinality, Cardinality::AtMostOnce); // x used once
         assert_eq!(sig[1].cardinality, Cardinality::Absent); // y unused
@@ -2433,7 +2426,7 @@ mod tests {
             var(x.clone()),
         );
 
-        let (unsplit_result, _, _) = analyse_demands(&unsplit);
+        let (unsplit_result, _) = analyse_demands(&unsplit);
         match &*unsplit_result.inner {
             Expr::Let(_, scope, _) => {
                 assert_eq!(
@@ -2447,7 +2440,7 @@ mod tests {
 
         // After SCC splitting: a is in its own Let scope
         let split = split_letrecs(&unsplit);
-        let (split_result, _, _) = analyse_demands(&split);
+        let (split_result, _) = analyse_demands(&split);
 
         // The outermost Let should be `a` (independent, placed outermost)
         match &*split_result.inner {
