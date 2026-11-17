@@ -53,7 +53,13 @@ Entries come out — from `to-list`, `keys`, `values` and in rendered output —
 in key order. Numbers order numerically, strings by their text, symbols by
 name and lists element by element, and across kinds numbers come before
 strings, strings before symbols, and symbols before lists. `1` and `1.0` are
-the same key.
+the same key. When both forms of a key meet — stored twice, or in a merge —
+the integer form is the one kept, whatever the order, so equal dicts render
+alike:
+
+```eu
+both: dict.of[[1.0, :a], [1, :b]] dict.keys //=> [1]
+```
 
 ```eu
 ` :suppress

@@ -168,6 +168,26 @@ exact-checks: {
   ]
 }
 
+` "1 and 1.0 are one element; the integer form is kept, whatever the order of insertion or union"
+
+representative-checks: {
+  ints: [1, 2] set.from-list
+  floats: [1.0, 2.0] set.from-list
+  shown(s): s set.to-list map(str.of)
+  trues: [
+    ([1.0, 1] set.from-list shown) = ["1"],
+    ([1, 1.0] set.from-list shown) = ["1"],
+    (∅ set.add(1.0) set.add(1) shown) = ["1"],
+    (∅ set.add(1) set.add(1.0) shown) = ["1"],
+    (floats set.union(ints) shown) = ["1", "2"],
+    (ints set.union(floats) shown) = ["1", "2"],
+    (floats set.intersect(ints) shown) = ["1", "2"],
+    (ints set.intersect(floats) shown) = ["1", "2"],
+    ([[1.0, 2]] set.from-list set.add([1, 2.0]) set.to-list head map(str.of)) = ["1", "2.0"],
+    (([1.0, 2] set.from-list set.union([1, 2.0] set.from-list)) render-as(:json)) = (([1, 2.0] set.from-list set.union([1.0, 2] set.from-list)) render-as(:json))
+  ]
+}
+
 ` "Sets on tree nodes (eu-oaz72.21) — add, remove and membership on larger
 sets, symbols ordered by name, join-based algebra, fresh results and
 rank-based sampling"
@@ -295,6 +315,7 @@ pass: [
   operator-checks.trues all-true?,
   churn-checks.trues all-true?,
   exact-checks.trues all-true?,
+  representative-checks.trues all-true?,
   tree-checks.trues all-true?,
   list-checks.trues all-true?
   , computed-arg-checks.trues all-true?

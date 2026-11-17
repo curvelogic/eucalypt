@@ -2190,7 +2190,13 @@ Entries come out — from `to-list`, `keys`, `values` and in rendered output —
 in key order. Numbers order numerically, strings by their text, symbols by
 name and lists element by element, and across kinds numbers come before
 strings, strings before symbols, and symbols before lists. `1` and `1.0` are
-the same key.
+the same key. When both forms of a key meet — stored twice, or in a merge —
+the integer form is the one kept, whatever the order, so equal dicts render
+alike:
+
+```eu
+both: dict.of[[1.0, :a], [1, :b]] dict.keys //=> [1]
+```
 
 ```eu
 ` :suppress
@@ -10277,6 +10283,19 @@ eu -e '[1, 2, 2, 3, 3, 3] set.of set.to-list'
 Duplicates are removed and elements are sorted. `set.from-list` is an
 alias of `set.of` — the same function, pairing with `set.to-list`.
 
+`1` and `1.0` are one element. When both forms meet — in `set.of`,
+`set.add`, `set.union` or `set.intersect` — the integer form is kept,
+whatever the order, so equal sets render alike:
+
+```sh
+eu -e '[1.0, 2] set.of set.add(1) set.union([2.0] set.of) set.to-list'
+```
+
+```yaml
+- 1
+- 2
+```
+
 The empty set is written as `∅`:
 
 ```sh
@@ -15091,7 +15110,8 @@ counting loop use `update-strict` or `merge-with-strict`, which evaluate each
 new value, so no chain of unevaluated additions builds up.
 
 Order across types: numbers < strings < symbols (by name) < lists
-(lexicographic). `dict.of` keeps the first of equal keys and the last value.
+(lexicographic). Of equal keys (`1` and `1.0`) a dict or set keeps the
+integer form, whatever the order; `dict.of` keeps the last value.
 A dict renders as a mapping in key order (number keys as their rendered
 text, string keys as their text, symbol keys as their name); a list key, or
 two keys with the same text (`1` and `"1"`), is an error, so render

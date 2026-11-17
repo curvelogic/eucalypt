@@ -187,6 +187,19 @@ eu -e '[1, 2, 2, 3, 3, 3] set.of set.to-list'
 Duplicates are removed and elements are sorted. `set.from-list` is an
 alias of `set.of` — the same function, pairing with `set.to-list`.
 
+`1` and `1.0` are one element. When both forms meet — in `set.of`,
+`set.add`, `set.union` or `set.intersect` — the integer form is kept,
+whatever the order, so equal sets render alike:
+
+```sh
+eu -e '[1.0, 2] set.of set.add(1) set.union([2.0] set.of) set.to-list'
+```
+
+```yaml
+- 1
+- 2
+```
+
 The empty set is written as `∅`:
 
 ```sh

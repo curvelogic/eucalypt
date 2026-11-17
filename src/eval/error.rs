@@ -1554,6 +1554,18 @@ impl HasSmid for ExecutionError {
 }
 
 impl ExecutionError {
+    /// Whether this error is raised from internal machinery that has no
+    /// annotation of its own, such as the render wrapper. The machine's last
+    /// annotation is then whatever user code ran last, unrelated to the
+    /// failure, so the diagnostic never falls back to it: no location is
+    /// better than a wrong one (eu-oaz72.21).
+    fn raised_by_internal_machinery(&self) -> bool {
+        matches!(
+            self,
+            ExecutionError::DictKeyNotRenderable(..) | ExecutionError::DictRenderKeyCollision(..)
+        )
+    }
+
     /// Build the diagnostic without access to source text: hints that need
     /// evidence from the source (eu-oaz72.28) are omitted.
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
@@ -1624,15 +1636,13 @@ impl ExecutionError {
             other => (other, [].as_slice(), [].as_slice(), Smid::default()),
         };
 
-        // A dict render error is raised from the render machinery, which has
-        // no annotation of its own: the machine's last annotation is then
-        // whatever user code ran last, unrelated to the dict being rendered
-        // (eu-oaz72.21). Never fall back to it for these errors; no location
-        // is better than a wrong one.
-        let last_annotation = match inner {
-            ExecutionError::DictKeyNotRenderable(..)
-            | ExecutionError::DictRenderKeyCollision(..) => Smid::default(),
-            _ => last_annotation,
+        // An error raised by internal machinery (a dict render error, from
+        // the render wrapper) never falls back to the machine's last
+        // annotation, which is unrelated to it.
+        let last_annotation = if inner.raised_by_internal_machinery() {
+            Smid::default()
+        } else {
+            last_annotation
         };
 
         // Determine the best primary source location:

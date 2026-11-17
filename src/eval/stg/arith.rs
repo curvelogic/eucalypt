@@ -64,6 +64,51 @@ fn floor_mod_i64(a: i64, b: i64) -> Option<i64> {
     }
 }
 
+/// Floor division in i128, for the exact mixed i64/u64 path.
+fn floor_div_i128(a: i128, b: i128) -> Option<i128> {
+    let d = a.checked_div(b)?;
+    let r = a.checked_rem(b)?;
+    if r != 0 && ((r ^ b) < 0) {
+        Some(d - 1)
+    } else {
+        Some(d)
+    }
+}
+
+/// Floor modulus in i128, for the exact mixed i64/u64 path.
+fn floor_mod_i128(a: i128, b: i128) -> Option<i128> {
+    let r = a.checked_rem(b)?;
+    if r != 0 && ((r ^ b) < 0) {
+        Some(r + b)
+    } else {
+        Some(r)
+    }
+}
+
+/// An integer operand (in i64 or u64 range) widened to i128, or `None`
+/// for a float.
+///
+/// Arithmetic on two i64 operands stays in i64 (overflow is a numeric
+/// range error). When either operand is a u64 above `i64::MAX`, the
+/// operation is computed exactly in i128 and the result returned as an
+/// integer if it fits i64 or u64 (`int_number`), so
+/// `18446744073709551615 + -5` is an exact integer rather than a float.
+fn exact_int(n: &Number) -> Option<i128> {
+    n.as_i64()
+        .map(i128::from)
+        .or_else(|| n.as_u64().map(i128::from))
+}
+
+/// An exact integer result as a `Number`: an i64 when it fits, else a u64,
+/// else `None` (a numeric range error at the call site).
+fn int_number(v: i128) -> Option<Number> {
+    if let Ok(i) = i64::try_from(v) {
+        Some(Number::from(i))
+    } else {
+        u64::try_from(v).ok().map(Number::from)
+    }
+}
+
 /// Convert a floored/truncated f64 to an integer Number when possible,
 /// falling back to f64 representation for values outside i64 range.
 fn num_from_floored(val: f64) -> Option<Number> {
@@ -114,13 +159,16 @@ impl StgIntrinsic for Add {
                 y,
             ))?;
             machine_return_num(machine, view, Number::from(total))
-        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let total = l.checked_add(r).ok_or(ExecutionError::NumericRangeError(
-                machine.annotation(),
-                x,
-                y,
-            ))?;
-            machine_return_num(machine, view, Number::from(total))
+        } else if let (Some(l), Some(r)) = (exact_int(&x), exact_int(&y)) {
+            let total =
+                l.checked_add(r)
+                    .and_then(int_number)
+                    .ok_or(ExecutionError::NumericRangeError(
+                        machine.annotation(),
+                        x,
+                        y,
+                    ))?;
+            machine_return_num(machine, view, total)
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l + r) {
                 machine_return_num(machine, view, ret)
@@ -181,13 +229,16 @@ impl StgIntrinsic for Sub {
                 y,
             ))?;
             machine_return_num(machine, view, Number::from(result))
-        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let result = l.checked_sub(r).ok_or(ExecutionError::NumericRangeError(
-                machine.annotation(),
-                x,
-                y,
-            ))?;
-            machine_return_num(machine, view, Number::from(result))
+        } else if let (Some(l), Some(r)) = (exact_int(&x), exact_int(&y)) {
+            let result =
+                l.checked_sub(r)
+                    .and_then(int_number)
+                    .ok_or(ExecutionError::NumericRangeError(
+                        machine.annotation(),
+                        x,
+                        y,
+                    ))?;
+            machine_return_num(machine, view, result)
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l - r) {
                 machine_return_num(machine, view, ret)
@@ -248,13 +299,16 @@ impl StgIntrinsic for Mul {
                 y,
             ))?;
             machine_return_num(machine, view, Number::from(product))
-        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let product = l.checked_mul(r).ok_or(ExecutionError::NumericRangeError(
-                machine.annotation(),
-                x,
-                y,
-            ))?;
-            machine_return_num(machine, view, Number::from(product))
+        } else if let (Some(l), Some(r)) = (exact_int(&x), exact_int(&y)) {
+            let product =
+                l.checked_mul(r)
+                    .and_then(int_number)
+                    .ok_or(ExecutionError::NumericRangeError(
+                        machine.annotation(),
+                        x,
+                        y,
+                    ))?;
+            machine_return_num(machine, view, product)
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l * r) {
                 machine_return_num(machine, view, ret)
@@ -322,13 +376,11 @@ impl StgIntrinsic for Div {
                 y,
             ))?;
             machine_return_num(machine, view, Number::from(result))
-        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let result = l.checked_div(r).ok_or(ExecutionError::NumericRangeError(
-                machine.annotation(),
-                x,
-                y,
-            ))?;
-            machine_return_num(machine, view, Number::from(result))
+        } else if let (Some(l), Some(r)) = (exact_int(&x), exact_int(&y)) {
+            let result = floor_div_i128(l, r).and_then(int_number).ok_or(
+                ExecutionError::NumericRangeError(machine.annotation(), x, y),
+            )?;
+            machine_return_num(machine, view, result)
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             let result = (l / r).floor();
             if let Some(n) = num_from_floored(result) {
@@ -384,13 +436,11 @@ impl StgIntrinsic for Mod {
                 y,
             ))?;
             machine_return_num(machine, view, Number::from(result))
-        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let result = l.checked_rem(r).ok_or(ExecutionError::NumericRangeError(
-                machine.annotation(),
-                x,
-                y,
-            ))?;
-            machine_return_num(machine, view, Number::from(result))
+        } else if let (Some(l), Some(r)) = (exact_int(&x), exact_int(&y)) {
+            let result = floor_mod_i128(l, r).and_then(int_number).ok_or(
+                ExecutionError::NumericRangeError(machine.annotation(), x, y),
+            )?;
+            machine_return_num(machine, view, result)
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             let q = (l / r).floor();
             let result = l - r * q;
@@ -918,13 +968,16 @@ impl StgIntrinsic for Quot {
                 y,
             ))?;
             machine_return_num(machine, view, Number::from(result))
-        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let result = l.checked_div(r).ok_or(ExecutionError::NumericRangeError(
-                machine.annotation(),
-                x,
-                y,
-            ))?;
-            machine_return_num(machine, view, Number::from(result))
+        } else if let (Some(l), Some(r)) = (exact_int(&x), exact_int(&y)) {
+            let result =
+                l.checked_div(r)
+                    .and_then(int_number)
+                    .ok_or(ExecutionError::NumericRangeError(
+                        machine.annotation(),
+                        x,
+                        y,
+                    ))?;
+            machine_return_num(machine, view, result)
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             let result = (l / r).trunc();
             if let Some(n) = num_from_floored(result) {
@@ -980,13 +1033,16 @@ impl StgIntrinsic for Rem {
                 y,
             ))?;
             machine_return_num(machine, view, Number::from(result))
-        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let result = l.checked_rem(r).ok_or(ExecutionError::NumericRangeError(
-                machine.annotation(),
-                x,
-                y,
-            ))?;
-            machine_return_num(machine, view, Number::from(result))
+        } else if let (Some(l), Some(r)) = (exact_int(&x), exact_int(&y)) {
+            let result =
+                l.checked_rem(r)
+                    .and_then(int_number)
+                    .ok_or(ExecutionError::NumericRangeError(
+                        machine.annotation(),
+                        x,
+                        y,
+                    ))?;
+            machine_return_num(machine, view, result)
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l % r) {
                 machine_return_num(machine, view, ret)

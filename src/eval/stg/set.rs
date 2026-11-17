@@ -269,10 +269,12 @@ impl StgIntrinsic for SetAdd {
         let key = arg_to_set_key(machine, view, &args[0])?;
         let root = set_arg(machine, view, &args[1])?.root();
         let d = Dict::new(view, machine.symbol_pool());
-        // A member leaves the tree as it is. The header is always fresh,
-        // even then: set `=` compares by identity, so returning the input
-        // would change it.
+        // A member leaves the tree as it is, unless `key` is the integer
+        // form of a stored float, which replaces it (`Dict::canonical_key`).
+        // The header is always fresh, even then: set `=` compares by
+        // identity, so returning the input would change it.
         let root = match d.lookup(root, &key) {
+            Some(p) if d.prefers(&key, &d.node(p).key()) => d.insert(root, key, set_unit())?,
             Some(_) => root,
             None => d.insert(root, key, set_unit())?,
         };

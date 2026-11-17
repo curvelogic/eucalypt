@@ -195,4 +195,19 @@ exact-comparison: {
   pass: (trues values all-true?) ∧ (falses values map(not) all-true?)
 }
 
-RESULT: (integer-arithmetic.pass ∧ floating-point-arithmetic.pass ∧ mixed-arithmetic.pass ∧ divisibility.pass ∧ exact-comparison.pass) then(:PASS, :FAIL)
+` { doc: "Integer arithmetic mixing a value above the i64 maximum with an i64 is exact and stays an integer (rendered here with `str.of`, so a float result fails)." }
+mixed-width-integers: {
+  checks: {
+    add-neg: ((9223372036854775808 + -1) str.of) = "9223372036854775807"
+    add-neg-umax: ((18446744073709551615 + -5) str.of) = "18446744073709551610"
+    sub-to-small: ((18446744073709551615 - 18446744073709551614) str.of) = "1"
+    sub-to-neg: ((9223372036854775808 - 9223372036854775809) str.of) = "-1"
+    mul-neg: ((9223372036854775808 * -1) str.of) = "-9223372036854775808"
+    div-neg: ((18446744073709551615 / -5) str.of) = "-3689348814741910323"
+    mod-neg: ((18446744073709551615 % -7) str.of) = "-6"
+  }
+
+  pass: checks values all-true?
+}
+
+RESULT: (integer-arithmetic.pass ∧ floating-point-arithmetic.pass ∧ mixed-arithmetic.pass ∧ divisibility.pass ∧ exact-comparison.pass ∧ mixed-width-integers.pass) then(:PASS, :FAIL)

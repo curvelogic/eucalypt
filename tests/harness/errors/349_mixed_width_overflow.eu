@@ -1,0 +1,3 @@
+# Error: integer arithmetic mixing a u64 operand with a negative i64 is exact;
+# a result outside both the i64 and u64 ranges is a numeric overflow, not a float
+x: 9223372036854775808 * -2

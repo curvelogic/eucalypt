@@ -257,8 +257,15 @@ test-type-str: {
   t15: (s"{a: number, ..}" to-data from-data) = s"{a: number, ..}"
   t16: (s"[number]" to-data from-data) = s"[number]"
 
+  ` "dict(k, v) renders in its own DSL form, nested and round-tripping."
+  t17: (s"dict(number, string)" to-data type-str) = "dict(number, string)"
+  t18: (s"dict" to-data type-str) = "dict(any, any)"
+  t19: (s"[dict(symbol, dict(number, [string]))]" to-data type-str)
+         = "[dict(symbol, dict(number, [string]))]"
+  t20: (s"dict(string, number)" to-data from-data) = s"dict(string, number)"
+
   RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15,
-           t16]
+           t16, t17, t18, t19, t20]
     all-true? then(:PASS, :FAIL)
 }
 
