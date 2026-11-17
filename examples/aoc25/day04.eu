@@ -69,13 +69,13 @@ offsets: [-1001, -1000, -999, -1, 1, 999, 1000, 1001]
 
 neighbours(p): offsets map(+ p)
 
-live?([_, [bit, _]]): bit = 1
+live?[_, [bit, _]]: bit = 1
 
 entry-at(r, [c, [_, s]]): [1000 * r + c, s - 1]
 
 ` "`[key, neighbouring roll count]` entries for one row, given its `[bits, block-sums]`.
 The block sum counts the roll itself, hence `s - 1`."
-row-entries([r, [bits, sums]]): zip(ℕ, zip(bits, sums)) filter(live?) map(entry-at(r))
+row-entries[r, [bits, sums]]: zip(ℕ, zip(bits, sums)) filter(live?) map(entry-at(r))
 
 ` "Initial neighbour counts for every roll, reusing the part 1 block sums."
 initial-counts(grid): zip(ℕ, zip(grid, block-sums(grid))) mapcat(row-entries)
