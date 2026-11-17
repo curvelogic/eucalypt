@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/340_inverted_interval_merge_intervals
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/340_inverted_interval_merge_intervals.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/340_inverted_interval_merge_intervals.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: merge-intervals interval [5, 1] is inverted: lo must not exceed hi
+  ┌─ tests/harness/errors/340_inverted_interval_merge_intervals.eu:2:4
+  │
+2 │ x: merge-intervals([[5, 1], [2, 3]])
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - x at 340_inverted_interval_merge_intervals.eu:2:4

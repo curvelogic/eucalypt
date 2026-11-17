@@ -1736,11 +1736,10 @@ find(p?, xs): { r: xs filter(p?) }.(r nil? then(null, r head))
 
 ` { doc: "`index-of(x, xs)` - the 0-based index of the first element of `xs` equal to `x`, or `null` if `x` is absent."
     type: s"any → [any] → (number | null)" }
-index-of(x, xs): { r: enumerate(xs) filter(__index-hit?(x)) }.(r nil? then(null, r head first))
-
-` { doc: "`__index-hit?(x, pair)` - internal: true when the element of the `[index, element]` `pair` equals `x`."
-    export: :suppress }
-__index-hit?(x, [_, y]): y = x
+index-of(x, xs): {
+  hit?([i, y]): y = x
+  r: enumerate(xs) filter(hit?)
+}.(r nil? then(null, r head first))
 
 ` { doc: "`frequencies(xs)` - a dict mapping each distinct element of `xs` to the number of times it occurs. Elements must be valid dict keys (numbers, strings, symbols or lists of those). Runs in constant stack."
     type: s"[k] → dict(k, number)" }
@@ -1777,13 +1776,21 @@ permutations(xs): {
     export: :suppress }
 __picks(front, xs): xs nil? then([], cons([head(xs), front ++ tail(xs)], __picks(front ++ [head(xs)], tail(xs))))
 
-` { doc: "`merge-intervals(is)` - merge closed integer intervals `[lo, hi]`: sort by `lo`, then merge those that overlap or are adjacent. Sorted intervals `[lo1, hi1]` and `[lo2, hi2]` merge when `lo2 <= hi1 + 1`, so `[1, 3]` and `[3, 5]` give `[1, 5]`, `[1, 3]` and `[4, 6]` give `[1, 6]`, and `[1, 3]` and `[5, 6]` stay separate. Nested intervals are absorbed. Empty input gives `[]`. A non-integer bound is an error."
+` { doc: "`merge-intervals(is)` - merge closed integer intervals `[lo, hi]`: sort by `lo`, then merge those that overlap or are adjacent. Sorted intervals `[lo1, hi1]` and `[lo2, hi2]` merge when `lo2 <= hi1 + 1`, so `[1, 3]` and `[3, 5]` give `[1, 5]`, `[1, 3]` and `[4, 6]` give `[1, 6]`, and `[1, 3]` and `[5, 6]` stay separate. Nested intervals are absorbed. Empty input gives `[]`. A non-number or non-integer bound, or an inverted interval (`lo > hi`), is an error naming `merge-intervals`."
     type: s"[[number]] → [[number]]" }
 merge-intervals(is): __require-int-bounds(is, __merge-sorted(is sort-by-num(first)))
 
-` { doc: "`__require-int-bounds(is, v)` - internal: `v`, or an error naming `merge-intervals` and the first non-integer bound among the intervals `is`."
+` { doc: "`__require-int-bounds(is, v)` - internal: `v`, or an error naming `merge-intervals` when an interval in `is` has a non-number or non-integer bound, or `lo > hi`."
     export: :suppress }
-__require-int-bounds(is, v): is concat foldr({ b: • acc: • }.(__require-int("merge-intervals bound", b, acc)), v)
+__require-int-bounds(is, v): is foldr(__check-interval, v)
+
+` { doc: "`__check-interval([lo, hi], v)` - internal: `v`, or an error naming `merge-intervals` when `lo` or `hi` is not an integer, or `lo > hi`."
+    export: :suppress }
+__check-interval([lo, hi], v): __check-bound(lo, __check-bound(hi, (lo > hi) then(panic("merge-intervals interval [{lo}, {hi}] is inverted: lo must not exceed hi"), v)))
+
+` { doc: "`__check-bound(b, v)` - internal: `v`, or an error naming `merge-intervals` when `b` is not an integer."
+    export: :suppress }
+__check-bound(b, v): (b number?) then(__require-int("merge-intervals bound", b, v), panic("merge-intervals bound {b} must be a number"))
 
 ` { doc: "`__merge-sorted(s)` - internal: merge the intervals `s`, already sorted by `lo`."
     export: :suppress }

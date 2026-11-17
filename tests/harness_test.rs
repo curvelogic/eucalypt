@@ -3724,6 +3724,13 @@ pub fn test_error_232_unclosed_bracket_eof() {
 }
 
 #[test]
+/// eu-oaz72.42: an unclosed bracket mid-file is reported at the opening
+/// bracket.
+pub fn test_error_333_unclosed_bracket_open() {
+    run_error_test(&error_opts("333_unclosed_bracket_open.eu"));
+}
+
+#[test]
 /// eu-oaz72.43: a negative index to nth is an error rather than a hang on
 /// an infinite list (checked on a finite one to stay bounded).
 pub fn test_error_233_nth_negative() {
@@ -4748,11 +4755,18 @@ pub fn test_typecheck_132_union_callback_param_rejects() {
     run_typecheck_test("132_union_callback_param_rejects.eu");
 }
 
+/// A `prelude:` unit-metadata override is honoured by the type checker on
+/// both `eu check` and the evaluate path (eu-oaz72.177).
+#[test]
+pub fn test_typecheck_133_prelude_override_type_mismatch() {
+    run_typecheck_test("133_prelude_override_type_mismatch.eu");
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]
-pub fn test_typecheck_133_aoc_helpers_strict_clean() {
-    run_typecheck_test("133_aoc_helpers_strict_clean.eu");
+pub fn test_typecheck_134_aoc_helpers_strict_clean() {
+    run_typecheck_test("134_aoc_helpers_strict_clean.eu");
 }
 
 /// The dict prelude signatures must not warn on valid dict code: the
@@ -5333,6 +5347,18 @@ pub fn test_error_338_non_integer_lcm() {
 #[test]
 pub fn test_error_339_non_integer_merge_intervals() {
     run_error_test(&error_opts("339_non_integer_merge_intervals.eu"));
+}
+
+/// An inverted `merge-intervals` interval is an error (eu-oaz72.26, decision 53).
+#[test]
+pub fn test_error_340_inverted_interval_merge_intervals() {
+    run_error_test(&error_opts("340_inverted_interval_merge_intervals.eu"));
+}
+
+/// A non-number `merge-intervals` bound is an error (eu-oaz72.26, decision 53).
+#[test]
+pub fn test_error_341_non_number_merge_intervals() {
+    run_error_test(&error_opts("341_non_number_merge_intervals.eu"));
 }
 
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).

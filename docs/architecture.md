@@ -290,7 +290,7 @@ that unconditionally would copy the argument *expression* once per
 occurrence of its binder, and separate copies become separate thunks that
 share nothing — so a callee that uses a parameter twice would evaluate
 that argument twice, and a caller passing its own recursive call would go
-from linear to exponential (eu-gua64).
+from linear to exponential.
 
 An argument is therefore substituted directly only when doing so
 duplicates no work:
@@ -336,9 +336,9 @@ Eucalypt originally had a second engine — a HeapSyn tree-walk machine
 (`src/eval/machine/vm.rs`) that walked a materialised STG tree of
 heap-allocated nodes directly, the only engine before 0.12.0 and retained
 afterwards as the performance baseline and differential-testing oracle
-behind an `EU_HEAPSYN=1` opt-out. Once an A/B study (eu-7oshh) confirmed the
+behind an `EU_HEAPSYN=1` opt-out. Once an A/B study confirmed the
 bytecode engine was at parity or ahead everywhere that mattered, the Phase 4
-collapse (eu-oufc) deleted HeapSyn, its `EU_HEAPSYN`/`EU_BYTECODE` selectors,
+collapse deleted HeapSyn, its `EU_HEAPSYN`/`EU_BYTECODE` selectors,
 and the differential-testing infrastructure that compared the two engines
 (what remains under `src/eval/bytecode/differential.rs` compares the
 bytecode engine's two *dispatch* configurations — pre-decoded vs
@@ -550,12 +550,10 @@ and with pre-decoded dispatch off, behaviour is byte-identical to the
 byte-stream path. Nothing in the pre-decoded structures is a GC pointer, so
 code stays off the collector's scan set just as the byte stream does.
 
-As of Phase 2 of the lever-(a) rollout (eu-vcr8), pre-decoded dispatch is the
-**default** — unset or `EU_PREDECODE=1` selects it; `EU_PREDECODE=0` opts
-out to the byte-dispatch path, which is retained and soaked through this
-release (CI's `test-byte-dispatch-baseline` job keeps it exercised) before
-Phase 3 deletes it, per the design's phased landing plan
-(`docs/superpowers/specs/2026-07-13-predecoded-execution-ir-design.md` §6).
+Pre-decoded dispatch is the **default** — unset or `EU_PREDECODE=1` selects
+it; `EU_PREDECODE=0` opts out to the byte-dispatch path, which is retained
+for now (CI's `test-byte-dispatch-baseline` job keeps it exercised) and is
+due to be removed in a later release.
 
 #### Why bytecode won, and the performance story
 
@@ -567,20 +565,16 @@ from source. On op-dense, allocation-light workloads the byte-stream
 interpreter's per-tick re-decode cost historically left it slower per tick
 than the HeapSyn tree-walk — closing that remaining gap is exactly what the
 pre-decoded IR and the fused-primop superinstructions targeted, and the
-eu-7oshh A/B study that authorised HeapSyn's deletion (eu-oufc) confirmed
-parity or a bytecode win across the canonical suite.
+A/B study that preceded HeapSyn's removal confirmed parity or a bytecode
+win across the canonical suite.
 
 All engine-versus-engine performance numbers in this project are governed by
-a checked-in measurement protocol
-([`docs/superpowers/engine-ab/PROTOCOL.md`](superpowers/engine-ab/PROTOCOL.md)):
-deterministic VM ticks and allocation counts first, interleaved
+a measurement protocol: deterministic VM ticks and allocation counts first, interleaved
 median-of-N wall timings second, a canonical eight-bench suite, and a
 mandatory confidence label (*measured-verified* / *measured-single* /
 *projected*) on every figure. Because those figures are machine- and
 load-sensitive and evolve release to release, this document deliberately
-states the shape of the trade-off rather than quoting ratios; consult the
-protocol's ledger (`results.jsonl`) and the dated transition-review reports
-under `docs/superpowers/reports/` for current, labelled measurements.
+states the shape of the trade-off rather than quoting ratios.
 
 ## Memory Management and Garbage Collection
 
@@ -717,7 +711,7 @@ three hashed inputs are:
 - **`src/eval/intrinsics.rs`** — the intrinsic catalogue. Its length fixes the
   global slot numbering the blob bakes in as `Ref::G(INTRINSIC_COUNT + prelude
   slot)`, so adding or removing an intrinsic shifts *every* prelude global's
-  slot. Hashing the catalogue makes that invalidation automatic (eu-3skeg);
+  slot. Hashing the catalogue makes that invalidation automatic;
   before it did, a stale blob was silently accepted with an off-by-N slot map
   and the binary returned wrong answers with no warning.
 - **`BYTECODE_WIRE_FORMAT_VERSION`** — the serialised code-stream layout, which
@@ -917,7 +911,7 @@ The prelude is:
 | `src/core/cook/` | Operator resolution | `shunt.rs`, `fixity.rs` |
 | `src/eval/stg/` | STG syntax, compiler, prelude blob | `syntax.rs`, `compiler.rs`, `blob.rs` |
 | `src/eval/machine/` | Shared runtime infrastructure (env frames, intrinsic ABI, metrics, crash diagnostics) | `env.rs`, `intrinsic.rs`, `metrics.rs` |
-| `src/eval/bytecode/` | Bytecode engine (BV1, the sole engine since eu-oufc) | `machine.rs`, `encode.rs`, `predecode.rs` |
+| `src/eval/bytecode/` | Bytecode engine (BV1, the sole engine since the Phase 4 collapse) | `machine.rs`, `encode.rs`, `predecode.rs` |
 | `src/eval/memory/` | Heap and GC | `heap.rs`, `collect.rs` |
 | `src/driver/` | CLI orchestration | `options.rs`, `eval.rs` |
 | `src/export/` | Output formats | `yaml.rs`, `json.rs` |

@@ -1,0 +1,36 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/341_non_number_merge_intervals
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/341_non_number_merge_intervals.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/341_non_number_merge_intervals.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'merge-intervals'
+  ┌─ tests/harness/errors/341_non_number_merge_intervals.eu:2:20
+  │
+2 │ x: merge-intervals([["a", 3]])
+  │                    ^^^^^^^^^^ expected [[number]], found [("a", number)]
+
+error: merge-intervals bound a must be a number
+  ┌─ tests/harness/errors/341_non_number_merge_intervals.eu:2:4
+  │
+2 │ x: merge-intervals([["a", 3]])
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │                    │
+  │                    expected [[number]], found [("a", number)]
+  │
+  = while evaluating (outermost first):
+    - x at 341_non_number_merge_intervals.eu:2:4

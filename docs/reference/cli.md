@@ -530,8 +530,7 @@ Options:
 
 Profiling slows a run by about 15% (1.02–1.42× across the benchmark
 suite). With the flag off the engine runs its unprofiled dispatch loops and
-there is no measurable cost. Both figures were measured on a single machine;
-see `docs/superpowers/reports/2026-11-14-eu-oaz72.37-profiler.md`.
+there is no measurable cost. Both figures were measured on a single machine.
 
 ### Heap Limit
 
@@ -737,6 +736,18 @@ The LSP server provides:
 Configure your editor to use `eu lsp` as the language server command
 for `.eu` files. A VS Code extension is available in the `editors/vscode/`
 directory of the repository.
+
+`eu lsp` exits with:
+
+- `0` - the client sent `shutdown` then `exit`, or closed stdin
+- `1` - the client sent `exit` without a prior `shutdown`
+- `2` - a server or transport error: the initialise handshake failed, or a
+  reader or writer I/O thread failed (for example a malformed message on
+  stdin, or the client closing its end of the server's output)
+
+A failed send of diagnostics or a refresh request does not end the server
+by itself: it logs the drop to stderr and carries on until the client ends
+the session.
 
 ## Version Assertions
 
