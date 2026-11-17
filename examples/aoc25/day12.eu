@@ -6,37 +6,32 @@ can fit all their assigned pieces without overlap.
 
 Approach: area check (needed cells ≤ total cells) plus box check
 (each shape's 3×3 bounding box fits in the region). This suffices
-for the actual puzzle input — no borderline cases exist.
+for the actual puzzle input — no borderline cases exist. Only the
+number of cells in each shape matters, so shapes are reduced to their
+sizes as they are parsed.
+
+Notable eucalypt techniques:
+- juxtaposed list-destructuring, `fits?[w, h, counts]`
+- `str.matches-of` (pipeline-friendly) for numbers
+- `zip-with` and `sum` as a dot product
 "
 
-` "Split input: region lines contain 'x', everything else is shape data."
-split-sections(data): {
-  region?(line): line str.letters any(= "x")
-  shape-lines: data filter(region? ; not)
-  region-lines: data filter(region?)
-}.[shape-lines, region-lines]
+` "Is this input line a region spec such as '12x5: 1 0 1'?"
+region?(line): line str.contains?("x")
 
-` "Parse a shape block (e.g. '0:\\n###\\n##.\\n##.') into a list of [r,c] cells."
-parse-shape-block(lines): {
-  grid-lines: lines tail
-  parse-row(r, line): {
-    chars: line str.letters
-    make-cell(c, ch): ch = "#" then([[r, c]], [])
-  }.(chars zip-with(make-cell, ℕ) concat)
-}.(grid-lines zip-with(parse-row, ℕ) concat)
+` "Number of cells in a shape block such as ['0:', '###', '##.', '##.']:
+the '#' characters after the header line."
+shape-size(lines): lines tail mapcat(str.letters) filter(= "#") count
 
-` "Parse all shape definitions. Shapes are separated by blank lines.
-Returns list of cell-lists indexed by shape number."
-parse-shapes(section):
-  section split-on(= "") filter(non-nil?) map(parse-shape-block)
+` "Sizes of all shape definitions, in shape-number order. Shapes are
+separated by blank lines."
+parse-sizes(shape-lines):
+  shape-lines split-on(= "") filter(non-nil?) map(shape-size)
 
 ` "Parse a region spec like '12x5: 1 0 1 0 2 2' into [w, h, [shape-counts]]."
 parse-region(line): {
-  ns: str.matches(line, "\d+") map(num)
-  w: ns first
-  h: ns second
-  counts: ns drop(2)
-}.[w, h, counts]
+  ns: line str.matches-of("\d+") map(num)
+}.[ns first, ns second, ns drop(2)]
 
 ` "Part 1: count regions where all assigned pieces could fit.
 Cell check: total cells needed ≤ grid area. This eliminates regions that are so
@@ -51,19 +46,9 @@ and disproofs are possible for the test data but they don't run quickly and woul
 to large problems anyway, so there's no point.
 "
 solve-all(data): {
-  sections: split-sections(data)
-  shapes: sections first parse-shapes
-  regions: sections second map(parse-region)
-  sizes: shapes map(count)
+  sizes: data filter(region? ; not) parse-sizes
 
-  # cell check
-  needed[w, h, counts]: zip-with(*, counts, sizes) sum
-  total[w, h, _]: w * h
-  area-ok?(r): needed(r) <= total(r)
-
-  # box check
-  min-dim[w, h, _]: min(w, h)
-  box-ok?(r): min-dim(r) >= 3
-
-  fits?(r): area-ok?(r) ∧ box-ok?(r)
-}.(regions filter(fits?) count)
+  area-ok?(w, h, counts): (zip-with(*, counts, sizes) sum) <= (w * h)
+  box-ok?(w, h): min(w, h) >= 3
+  fits?[w, h, counts]: area-ok?(w, h, counts) ∧ box-ok?(w, h)
+}.(data filter(region?) map(parse-region) filter(fits?) count)

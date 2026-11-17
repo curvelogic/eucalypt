@@ -7,23 +7,21 @@ name followed by the devices its outputs connect to.
 Part 2: Count paths from 'svr' to 'out' that visit both 'dac' and
 'fft' (in any order). Uses inclusion-exclusion:
   paths(both) = total - no_dac - no_fft + neither
-where each term is a dynamic programming path count on a graph variant with nodes
-removed.
+where each term counts paths in the graph with some nodes forbidden.
 
-Approach: DFS-based topological sort, then dynamic programming path counting over
-reverse topological order. Block-based lookup tables (sym(name) keys)
-are searched linearly (O(n) per lookup). Part 2 runs four dynamic programming passes on graph variants
-with required nodes removed.
+Approach: the graph is a dict from device name to its destinations. The
+path count of every device is a lazy value in a second dict that refers
+to itself, so each count is computed once, on demand, as the dict is
+consulted: a memo table with no explicit ordering of the nodes. Forbidden
+nodes are a set; a path count through one is zero.
 
 Notable eucalypt techniques:
-- `sym` for dynamic symbol creation as block keys
-- `block` to build lookup tables from `[key, value]` pairs (linear-time lookup)
-- `set.add` / `set.contains?` for visited tracking (O(log n) add and membership)
-- `merge` for incremental block table construction
-- `filter-items(by-key(...))` and `map-values` for graph manipulation
-- inclusion-exclusion as four independent dynamic programming computations
+- `dict.of` with string keys for the graph (O(log n) lookups)
+- a self-referential dict of lazy values as a memo table
+- `set.of` and `∈` for the forbidden nodes
+- inclusion-exclusion as four independent counts, run under `par-map`
 
-Running time: ~2s (part 1), ~3 min (part 2)
+Running time: well under a second for each part
 "
 
 ` "Parse 'name: d1 d2 ...' into [name, [d1, d2, ...]]."
@@ -33,51 +31,20 @@ parse-line(line): {
   dests: parts second str.split-on(" ")
 }.[name, dests]
 
-` "Parse input into a block mapping sym(name) to [dest_strs] (lookups are linear)."
-parse-graph(data):
-  data filter(!= "") map(parse-line) map-first(sym) block
+` "Parse input into a dict mapping each device name to its destination names."
+parse-graph(data): data filter(!= "") map(parse-line) dict.of
 
-` "Get destinations for a node. Returns [] for nodes not in graph (e.g. 'out').
-Graph is a block (sym(name) -> [dest_strs]); lookups are linear.
-NB: use merge(a, b) not `a merge b` — catenation parses the latter
-as a(merge)(b) which fails."
-dests-of(g, name): lookup-or(sym(name), [], g)
-
-` "Remove node x: delete its entry and strip it from all destination lists."
-remove-node(x, g):
-  g filter-items(by-key(!= sym(x))) block map-values(filter(!= x))
-
-` "DFS from node. Skips already-visited nodes. Prepends node to
-order AFTER all descendants, giving forward topological order.
-State threaded as [order_list, visited_set] using a set for O(log n) membership.
-Parameters ordered so partial application dfs-topo(g) matches foldl(acc, elem).
-NB: graph.topo-sort works on numeric adjacency lists; converting to/from
-string-keyed blocks is slower than processing directly."
-dfs-topo(g, [order, visited], node): {
-}.(set.contains?(node, visited) then([order, visited], {
-    new-vis: visited set.add(node)
-    after: foldl(dfs-topo(g), [order, new-vis], dests-of(g, node))
-  }.[cons(node, after first), after second]))
-
-` "Look up path count for a node in the dynamic programming block table."
-lookup-count(table, name): lookup-or(sym(name), 0, table)
-
-` "Dynamic programming step: compute count for one node and merge into block table.
-At 'out' the count is 1; otherwise sum counts of all destinations."
-dp-step(g, table, node): {
-  c: node = "out" then(1,
-    dests-of(g, node) map(lookup-count(table)) sum)
-}.(merge(table, kv-block(sym(node), c)))
-
-` "Count all paths from start to 'out' using dynamic programming.
-DFS gives forward topo order; reverse it so sinks are processed first."
-count-paths(start, g): {
-  order: dfs-topo(g, [[], ∅], start) first reverse
-  table: foldl(dp-step(g), {}, order)
-}.(lookup-count(table, start))
+` "Count paths from `start` to 'out' in `graph` that avoid every node in the
+set `forbidden`. 'out' has one path; devices that are not in the graph have
+none."
+count-paths(graph, start, forbidden): {
+  paths(node): (node = "out") then(1, (node ∈ forbidden) then(0, memo dict.get-or(node, 0)))
+  total(dests): dests map(paths) sum
+  memo: graph dict.to-list map-second(total) dict.of
+}.(paths(start))
 
 ` "Part 1: count all distinct paths from 'you' to 'out'."
-solve(data): data parse-graph count-paths("you")
+solve(data): count-paths(parse-graph(data), "you", set.of[])
 
 ` { target: :test
     import: "ex1=inputs/day11-ex1.txt" }
@@ -87,18 +54,14 @@ test: {
 }
 
 ` "Count paths from 'svr' to 'out' visiting both 'dac' and 'fft'.
-By inclusion-exclusion over graph variants with required nodes removed:
+By inclusion-exclusion over forbidden-node sets:
   through_both = total - no_dac - no_fft + neither
-The four dynamic programming passes are independent, so they run under
-`par-map` over the graph variants (counts come back in variant order:
-total, no-dac, no-fft, neither; parallel on macOS/Linux)."
+The four counts are independent, so they run under `par-map` over the
+forbidden sets (counts come back in order: total, no-dac, no-fft, neither;
+parallel on macOS/Linux)."
 solve2(data): {
-  g: parse-graph(data)
-  variants: [g,
-             g remove-node("dac"),
-             g remove-node("fft"),
-             g remove-node("dac") remove-node("fft")]
-  counts: variants par-map(count-paths("svr"))
+  forbidden-sets: [set.of[], set.of["dac"], set.of["fft"], set.of["dac", "fft"]]
+  counts: forbidden-sets par-map(count-paths(parse-graph(data), "svr"))
 }.((counts !! 0) - (counts !! 1) - (counts !! 2) + (counts !! 3))
 
 ` { target: :test2

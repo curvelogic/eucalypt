@@ -7,70 +7,77 @@ minimum total presses across all machines.
 
 Part 2: Each button can be pressed any number of times. Each press
 increments listed counters by 1. Find minimum total presses to reach
-joltage targets — an integer linear program: minimise sum(x) subject
-to A*x = b, x >= 0.
+the joltage targets — an integer linear program: minimise sum(x)
+subject to A*x = b, x >= 0.
 
-Approach: Part 1 uses DFS subset enumeration in GF(2) with
-incremental XOR. Part 2 uses Gaussian elimination in two forms:
-float reduced row echelon form (exact `÷` division) for structure
-detection and pruning bounds, and integer row echelon form (Bareiss
-algorithm) for exact back-
-substitution. Branch-and-bound over free variables with slope-based
-pruning.
+Approach: both parts share one table of every subset of a machine's
+buttons (at most 2^13), grouped by the parity pattern the subset
+produces as a bitmask. Part 1 is the smallest subset whose pattern is
+the target. Part 2 uses the halving argument: any solution x is a
+0/1 subset s (x mod 2) plus twice a solution y of (b - A*s) / 2, so
+the cost is |s| + 2*|y| and only subsets whose parity matches b are
+candidates. Levels of the halving are walked forwards, keeping for
+each distinct remaining target the cheapest cost so far, in a dict
+keyed by the target vector.
 
 Notable eucalypt techniques:
-- `÷` exact division for row echelon normalisation
-- block-scoped modules (`gauss`, `gauss-int`) for matrix algorithms
-- lazy `∨` for short-circuit DFS (part 1)
-- `range` and `map` for matrix construction and row operations
-- deep nesting of block intermediates for solver state
-- juxtaposed list-destructuring syntax `solve-machine[target, buttons]:`
-- juxtaposed empty-list call syntax `eval-free[]`
+- `bit.xor` and `bit.shl` for parity bitmasks
+- `set.of` and `∈` for membership while building button vectors
+- `foldl-strict` to file subsets into the table and to relax each level's states
+- `dict.update-strict` with lists as keys for grouping and relaxation
+- juxtaposed list-destructuring syntax `fewest-toggles[lights, buttons, _]:`
 - `str.matches-of` (pipeline-friendly) for pattern matching
 
-Running time: ~6s (part 1), ~80s (part 2)
+Running time: under a second (part 1), a few seconds (part 2)
 "
+
+INF: 999999999
+
+` "Pack a list of 0/1 digits, least significant first, into a bitmask."
+bit-mask(bits): zip-with(bit.shl, bits, ℕ) sum
 
 ` "Build toggle vector of length `n`: 1 at each listed index, 0 elsewhere."
 bit-vec(n, indices): {
-  bit(i): indices any(= i) then(1, 0)
+  hit: set.of(indices)
+  bit(i): i ∈ hit then(1, 0)
 }.(ℕ take(n) map(bit))
 
-` "Parse a machine line into [target, buttons]."
+` "Parse a machine line into [lights, buttons, joltage]: the 0/1 light
+pattern, the button toggle vectors and the joltage targets."
 parse-machine(line): {
-  parts: line str.matches-of("[.#]+|[(][0-9,]+[)]")
-  target: parts head str.letters map((= "#") ; then(1, 0))
-  n: target count
-  parse-btn(s): str.matches(s, "[0-9]+") map(num) bit-vec(n)
-  buttons: parts tail map(parse-btn)
-}.[target, buttons]
+  parts: line str.matches-of("[.#]+|[(][0-9,]+[)]|[{{][0-9,]+[}}]")
+  numbers(s): s str.matches-of("[0-9]+") map(num)
+  lights: parts head str.letters map((= "#") ; then(1, 0))
+  buttons: parts tail filter(str.starts-with?("[(]")) map(numbers ; bit-vec(lights count))
+  joltage: parts last numbers
+}.[lights, buttons, joltage]
 
-` "XOR bit: (a + b) mod 2."
-xor-bit(a, b): (a + b) % 2
-xor-vec(a, b): zip-with(xor-bit, a, b)
+` "Every subset of `buttons` as [parity-mask, size, counter-increments].
+The increments are only evaluated when a part needs them."
+subsets(buttons): {
+  zeros: repeat(0) take(buttons head count)
+  add-button(subs, button): {
+    bm: bit-mask(button)
+    press[mask, size, vec]: [bit.xor(mask, bm), size + 1, zip-with(+, vec, button)]
+  }.(subs ++ (subs map(press)))
+}.(buttons foldl(add-button, [[0, 0, zeros]]))
 
-` "Is there a size-k subset of buttons whose combined toggles match target?
-DFS with the target XOR'd incrementally; short-circuits via lazy ∨."
-has-solution?(k, target, buttons): {
-  all-off: sum(target) = 0
-  more?: (k > 0) ∧ (buttons non-nil?)
-  trivial-solution: (k = 0 ∧ all-off)
-  solution-with-head: (has-solution?(k - 1, xor-vec(target, buttons head), buttons tail))
-  solution-without-head: has-solution?(k, target, buttons tail)
-}.(trivial-solution ∨ (more? ∧ (solution-with-head ∨ solution-without-head)))
+` "Subsets of `buttons` grouped by parity mask: a dict from mask to a list
+of [size, counter-increments]."
+press-table(buttons): {
+  file(table, [mask, size, vec]):
+    table dict.update-strict(mask, cons([size, vec]), [])
+}.(subsets(buttons) foldl-strict(file, dict.of[]))
 
-` "Minimum presses for one machine (Part 1).
-Find the smallest subset size k with a valid solution."
-solve-machine[target, buttons]: {
-  nb: buttons count
-  solved?(k): has-solution?(k, target, buttons)
-}.(ℕ take(nb + 1) filter(solved?) min-of-or(nb + 1))
+` "Fewest presses to reach the light pattern `lights` (Part 1)."
+fewest-toggles[lights, buttons, _]:
+  press-table(buttons) dict.get-or(bit-mask(lights), []) map(first) min-of-or(INF)
 
 ` "Sum of minimum presses across machines. Machines are independent, so
 the per-machine solves run under `par-sum` (same value as
-`map(parse-machine ; solve-machine) sum`; parallel on macOS/Linux)."
+`map(parse-machine ; fewest-toggles) sum`; parallel on macOS/Linux)."
 solve(data):
-  data filter(!= "") par-sum(parse-machine ; solve-machine)
+  data filter(!= "") par-sum(parse-machine ; fewest-toggles)
 
 ` { target: :test
     import: "ex1=inputs/day10-ex1.txt" }
@@ -79,292 +86,43 @@ test: {
   RESULT: part-1 then(:PASS, :FAIL)
 }
 
-` "Parse machine for Part 2: [joltage-targets, button-bit-vectors]."
-parse-machine2(line): {
-  joltage: line str.split-on(" ") last str.matches-of("[0-9]+") map(num)
-  n: joltage count
-  parse-btn(s): str.matches(s, "[0-9]+") map(num) bit-vec(n)
-  buttons: line str.matches-of("[(][0-9,]+[)]") map(parse-btn)
-}.[joltage, buttons]
+` "Fewest presses to bring the counters to `joltage` (Part 2).
 
-` "Gaussian elimination on an augmented matrix.
-Produces reduced row echelon form by dividing each pivot row by its pivot entry (using ÷)
-then eliminating all other rows. Tracks pivot columns.
-Returns [reduced-matrix, pivot-column-list]."
-gauss: {
-  ` "Normalise row: divide all entries by the pivot at column `c`."
-  norm(c, row): row map(÷ (row !! c))
+Each level halves what remains: `states` maps each remaining target to the
+cheapest cost reaching it, `weight` is 2^level. A subset is a candidate when
+its parity mask equals that of the target and it does not overshoot; the
+next target is (target - increments) / 2. Targets shrink each level, so the
+walk ends once every state is all zeros (or none survive)."
+fewest-presses[_, buttons, joltage]: {
+  table: press-table(buttons)
+  zero: joltage map(const(0))
 
-  ` "Eliminate column `c` in target row using a normalised pivot row."
-  elim(pivot, target, c): zip-with(_1 - (target !! c) * _0, pivot, target)
+  parity(counters): counters map(% 2) bit-mask
+  fits?(counters, [_, vec]): zip-with(>=, counters, vec) all(identity)
+  halve(x, y): (x - y) / 2
 
-  ` "Find first row >= `start` with non-zero entry in column `c`."
-  find-pivot(c, start, mat):
-    mat drop(start) zip(ℕ drop(start))
-      filter(second ; (_ !! c != 0))
-      map(first)
-      head-or(-1)
+  ` "The states reached from `[counters, cost]` by one halving level."
+  expand(weight, [counters, cost]): {
+    options: table dict.get-or(parity(counters), []) filter(fits?(counters))
+    next[size, vec]: [zip-with(halve, counters, vec), cost + weight * size]
+  }.(options map(next))
 
-  ` "Swap rows at indices `i` and `j`."
-  swap(i, j, mat): {
-    ri: mat !! i
-    rj: mat !! j
-    nr: mat count
-    pick(k): if(k = i, rj, if(k = j, ri, mat !! k))
-  }.(ℕ take(nr) map(pick))
+  relax(states, [counters, cost]):
+    states dict.update-strict(counters, min(cost), cost)
 
-  ` "Process column `c` with pivot at row `p`, placing result at row `r`.
-  Normalises pivot row then eliminates column `c` from ALL other rows."
-  process-column(r, c, p, mat): {
-    smat: p = r then(mat, swap(r, p, mat))
-    prow: norm(c, smat !! r)
-    nr: smat count
-    sub-row(k): if(smat !! k !! c = 0, smat !! k, elim(prow, smat !! k, c))
-    row(k): k = r then(prow, sub-row(k))
-  }.(ℕ take(nr) map(row))
+  step(weight, states):
+    states dict.to-list mapcat(expand(weight)) foldl-strict(relax, dict.of[])
 
-  ` "Forward elimination tracking pivot columns.
-  Returns [reduced-matrix, pivot-column-list]."
-  forward(ncols, mat): {
-    nr: mat count
+  done?(states): states dict.keys all(all(= 0))
 
-    step(r, c, m, pivs):
-      if((r >= nr) ∨ (c >= ncols), [m, pivs], {
-        p: find-pivot(c, r, m)
-        step-next-column: step(r, c + 1, m, pivs)
-        step-new-pivot: step(r + 1, c + 1, process-column(r, c, p, m), pivs ++ [c])
-      }.(if(p < 0, step-next-column, step-new-pivot)))
+  descend(weight, states):
+    done?(states) then(states dict.get-or(zero, INF), descend(weight * 2, step(weight, states)))
+}.(descend(1, dict.of[[joltage, 0]]))
 
-  }.(step(0, 0, mat, []))
-}
-
-` "Bareiss (fraction-free) Gaussian elimination.
-Keeps all matrix entries as exact integers throughout. Each elimination
-step computes (pv*t - tc*p) / prev where prev is the previous pivot,
-and this division is always exact. Rows with zero coefficient in the
-pivot column are scaled by pv/prev to maintain the Bareiss invariant.
-Returns [ref-matrix, pivot-column-list]."
-gauss-int: {
-  find-pivot: gauss.find-pivot
-  swap: gauss.swap
-
-  ` "Bareiss elimination of one row: (pv*t - tc*p) / prev for each entry."
-  elim(pivot-row, target-row, c, prev): {
-    pv: pivot-row !! c
-    tc: target-row !! c
-    f(p, t): (pv * t - tc * p) / prev
-  }.(zip-with(f, pivot-row, target-row))
-
-  ` "Scale a zero-coefficient row by pv/prev to maintain Bareiss invariant.
-  Without this, subsequent divisions by prev would not be exact."
-  scale-row(pivot-row, row, c, prev):
-    row map((* (pivot-row !! c)) ; (/ prev))
-
-  ` "Process column `c`: swap pivot to row `r`, eliminate/scale all rows below."
-  process-column(r, c, p, mat, prev): {
-    smat: p = r then(mat, swap(r, p, mat))
-    prow: smat !! r
-    nr: smat count
-
-    sub-row(k):
-      if(smat !! k !! c = 0,
-        scale-row(prow, smat !! k, c, prev),
-        elim(prow, smat !! k, c, prev))
-
-    row(k): k <= r then(smat !! k, sub-row(k))
-  }.(ℕ take(nr) map(row))
-
-  ` "Bareiss forward elimination. Returns [ref-matrix, pivot-column-list].
-  `prev` tracks the previous pivot value (starts at 1 by convention)."
-  forward(ncols, mat): {
-    nr: mat count
-
-    step(r, c, m, pivs, prev):
-      if((r >= nr) ∨ (c >= ncols), [m, pivs], {
-        p: find-pivot(c, r, m)
-
-        step-next-column:
-          step(r, c + 1, m, pivs, prev)
-
-        step-new-pivot: {
-          nm: process-column(r, c, p, m, prev)
-        }.(step(r + 1, c + 1, nm, pivs ++ [c], nm !! r !! c))
-
-      }.(if(p < 0, step-next-column, step-new-pivot)))
-
-  }.(step(0, 0, mat, [], 1))
-}
-
-` "Find minimum total button presses for one machine (Part 2).
-
-The system A*x = b (nc counters, nb buttons) is solved by:
-1. Float reduced row echelon form identifies pivot/free columns, computes slopes and bounds
-2. Integer row echelon form (Bareiss) provides exact back-substitution
-3. Branch-and-bound searches over free variable assignments
-
-The cost of a solution is the total number of button presses (sum of x).
-
-For nfree = 0: unique solution, just back-substitute.
-For nfree > 0: cost = base-cost + sum(slope_j * f_j).
-  The search iterates outer free variables with cost-based pruning,
-  and exhaustively searches the last free variable over [lo, hi]."
-solve-machine2[target, buttons]: {
-  nc: target count
-  nb: buttons count
-  INF: 999999
-
-  # Build augmented matrix [A|b]: rows = counters, cols = buttons + target.
-  row(j): (buttons map(_ !! j)) ++ [target !! j]
-  mat: ℕ take(nc) map(row)
-
-  # Use basic gaussian elimination to find pivots and free indices
-  result: gauss.forward(nb, mat)
-  reduced: result first
-  pivots: result second
-  rank: pivots count
-  nfree: nb - rank
-
-  col-free?(c): pivots filter(= c) nil?
-
-  ` "Free columns: button indices not among pivot columns."
-  frees: ℕ take(nb) filter(col-free?)
-
-  ` "Reduced row echelon coefficient of free variable `fi` in pivot row `i`."
-  rcoeff(i, fi): reduced !! i !! (frees !! fi)
-
-  # Approximate presses per pivot button when all free vars = 0.
-  solution-vec: reduced take(rank) map(last)
-  # Total presses (cost) at this baseline, used for pruning.
-  base-cost: solution-vec sum
-
-  ` "Lower bound per free var: if reduced row echelon coeff < 0 in some pivot row,
-  the free var must be large enough to keep that pivot non-negative."
-  free-lower-bound(fi): {
-    lo-from-row(i): {
-      c: rcoeff(i, fi)
-      r: last(reduced !! i)
-    }.(c < 0 then(ceiling(r ÷ c), 0))
-  }.(ℕ take(rank) map(lo-from-row) max-of-or(0))
-
-  ` "Upper bound per free var: presses can't exceed any counter target
-  that the corresponding button affects."
-  free-upper-bound(fi): {
-    fc: frees !! fi
-    btn: buttons !! fc
-    cap(b, t): b = 0 then(INF, t)
-  }.(zip-with(cap, btn, target) min-of-or(INF))
-
-  lowers: ℕ take(nfree) map(free-lower-bound)
-  uppers: ℕ take(nfree) map(free-upper-bound)
-
-  ` "Slope: change in total presses per unit increase of free variable `fi`.
-  Total presses = base-cost + sum(slope_j * f_j)."
-  free-slope(fi): {
-    col-val(i): rcoeff(i, fi)
-  }.(1 - (ℕ take(rank) map(col-val) sum))
-  slopes: ℕ take(nfree) map(free-slope)
-
-  # Integer gaussian elimination for exact back-substitution
-  result-int: gauss-int.forward(nb, mat)
-  iref: result-int first
-
-  ` "Total button presses for a given free-variable assignment, or INF if infeasible.
-  Uses exact integer back-substitution from row rank-1 up to row 0 in the
-  Bareiss row echelon form.
-
-  NB: Named functions are used instead of block anaphora for the map
-  callbacks because of a bug where {{k: •}}.(expr) fails when expr
-  combines the anaphor with outer-scope variables in infix operators
-  (see eu-dobu)."
-  eval-free(fvs): {
-    ` "Contribution of previously-solved pivot `k` to current row."
-    prev-term(ref-row, i, xs, k): ref-row !! (pivots !! (i + 1 + k)) * (xs !! k)
-    ` "Contribution of free variable `k` to current row."
-    free-term(ref-row, k): ref-row !! (frees !! k) * (fvs !! k)
-
-    ` "Back-substitute: `xs` is solved pivots (newest first), `acc` is running sum."
-    step(i, xs, acc):
-      if(i < 0, acc, {
-        ref-row: iref !! i
-        nprev: count(xs)
-        prev-contrib: ℕ take(nprev) map(prev-term(ref-row, i, xs)) sum
-        free-contrib: ℕ take(nfree) map(free-term(ref-row)) sum
-        numer: (last(ref-row)) - prev-contrib - free-contrib
-        denom: ref-row !! (pivots !! i)
-        val: numer / denom
-        unsolvable?: (numer % denom) != 0 || val < 0
-      }.(if(unsolvable?, INF, step(i - 1, [val] ++ xs, acc + val))))
-
-    psum: step(rank - 1, [], 0)
-    fsum: sum(fvs)
-  }.(psum >= INF then(INF, psum + fsum))
-
-  ` "Adjusted target for pivot row `i` after partially assigning outer free vars."
-  adjusted-target(i, fvs): {
-    base: last(reduced !! i)
-    nv: count(fvs)
-    contrib(k): rcoeff(i, k) * (fvs !! k)
-  }.(base - (ℕ take(nv) map(contrib) sum))
-
-  ` "Lower bound for the last free variable given all others assigned."
-  adjusted-lower-bound(fvs): {
-    lfi: nfree - 1
-    lo-from-row(i): {
-      c: rcoeff(i, lfi)
-      ar: adjusted-target(i, fvs)
-    }.(c < 0 then(ceiling(ar ÷ c), 0))
-  }.(ℕ take(rank) map(lo-from-row) max-of-or(0))
-
-  ` "Upper bound for the last free variable given all others assigned."
-  adjusted-upper-bound(fvs): {
-    lfi: nfree - 1
-    hi-from-row(i): {
-      c: rcoeff(i, lfi)
-      ar: adjusted-target(i, fvs)
-    }.(c > 0 then(floor(ar ÷ c), INF))
-  }.(min(uppers !! (nfree - 1), ℕ take(rank) map(hi-from-row) min-of-or(INF)))
-
-  ` "Minimum total presses over all assignments of the last free variable.
-  Exhaustively searches [lo-1, hi+1]; the ±1 buffer compensates for
-  float row echelon bound imprecision."
-  inner-solve(fvs): {
-    lo: max(0, (adjusted-lower-bound(fvs)) - 1)
-    hi: (adjusted-upper-bound(fvs)) + 1
-    cost(k): eval-free(fvs ++ [k])
-  }.(range(lo, hi + 1) map(cost) min-of-or(INF))
-
-  cost-lower-bound(fi): {
-    sl: slopes !! fi
-    ub: uppers !! fi
-  }.(sl < 0 then(sl * ub, 0))
-
-  ` "Lower bound on remaining presses from free vars fi..nfree-1.
-  Negative-slope vars contribute most at their upper bound; positive at 0."
-  remaining-cost-lower-bound(from): range(from, nfree) map(cost-lower-bound) sum
-
-  ` "Minimum total presses over all feasible assignments of free variables fi..nfree-1.
-  Searches variables 0..nfree-2 with pruning based on lower bound of total presses;
-  the last variable is solved exhaustively by `inner-solve`.
-  `partial-cost` = sum of slope_j * f_j for previously assigned free vars."
-  search(fi, fvs, partial-cost, best): {
-    last-free-var?: fi >= nfree - 1
-    sl: slopes !! fi
-    hi: uppers !! fi
-    rlb: remaining-cost-lower-bound(fi + 1)
-
-    ` "Try assigning `k` presses to free variable `fi`, pruning when cost exceeds `b`."
-    try(k, b): {
-      cost-lower: base-cost + partial-cost + sl * k + rlb
-      pruned?: (k > hi) ∨ (cost-lower >= b)
-      nb: search(fi + 1, fvs ++ [k], partial-cost + sl * k, b)
-    }.(pruned? then(b, try(k + 1, nb)))
-
-  }.(last-free-var? then(min(best, inner-solve(fvs)), try(0, best)))
-
-}.(nfree = 0 then(eval-free[], search(0, [], 0, INF)))
-
+` "Sum of minimum presses across machines for the joltage targets. The
+per-machine solves run under `par-sum`, as for Part 1."
 solve2(data):
-  data filter(!= "") map(parse-machine2 ; solve-machine2) sum
+  data filter(!= "") par-sum(parse-machine ; fewest-presses)
 
 ` { target: :test2
     import: "ex1=inputs/day10-ex1.txt" }

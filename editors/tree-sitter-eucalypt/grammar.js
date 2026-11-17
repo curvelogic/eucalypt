@@ -164,12 +164,18 @@ module.exports = grammar({
     list_param: $ => seq(
       token.immediate('['),
       choice(
-        // Cons pattern: [h : t]
-        seq($.identifier, ':', $.identifier),
-        // List pattern: [x, y, ...]
+        // Cons pattern: [h : t], [h1, h2 : t]; heads may be nested patterns
         seq(
+          $._param,
+          repeat(seq(',', $._param)),
+          ':',
           $.identifier,
-          repeat(seq(',', $.identifier)),
+        ),
+        // List pattern: [x, y, ...]; elements may be nested patterns,
+        // e.g. `live?[_, [bit, _]]` (eu-ioz21.12)
+        seq(
+          $._param,
+          repeat(seq(',', $._param)),
           optional(','),
         ),
       ),
