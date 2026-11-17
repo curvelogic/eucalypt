@@ -530,8 +530,7 @@ Options:
 
 Profiling slows a run by about 15% (1.02–1.42× across the benchmark
 suite). With the flag off the engine runs its unprofiled dispatch loops and
-there is no measurable cost. Both figures were measured on a single machine;
-see `docs/superpowers/reports/2026-11-14-eu-oaz72.37-profiler.md`.
+there is no measurable cost. Both figures were measured on a single machine.
 
 ### Heap Limit
 
