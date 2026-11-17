@@ -11,7 +11,7 @@ number of cells in each shape matters, so shapes are reduced to their
 sizes as they are parsed.
 
 Notable eucalypt techniques:
-- juxtaposed list-destructuring with a cons tail, `fits?[w, h : counts]`
+- juxtaposed list-destructuring, `fits?[w, h, counts]`
 - `str.matches-of` (pipeline-friendly) for numbers
 - `zip-with` and `sum` as a dot product
 "
@@ -28,8 +28,10 @@ separated by blank lines."
 parse-sizes(shape-lines):
   shape-lines split-on(= "") filter(non-nil?) map(shape-size)
 
-` "Parse a region spec like '12x5: 1 0 1 0 2 2' into [w, h, ...shape-counts]."
-parse-region(line): line str.matches-of("\d+") map(num)
+` "Parse a region spec like '12x5: 1 0 1 0 2 2' into [w, h, [shape-counts]]."
+parse-region(line): {
+  ns: line str.matches-of("\d+") map(num)
+}.[ns first, ns second, ns drop(2)]
 
 ` "Part 1: count regions where all assigned pieces could fit.
 Cell check: total cells needed ≤ grid area. This eliminates regions that are so
@@ -48,5 +50,5 @@ solve-all(data): {
 
   area-ok?(w, h, counts): (zip-with(*, counts, sizes) sum) <= (w * h)
   box-ok?(w, h): min(w, h) >= 3
-  fits?[w, h : counts]: area-ok?(w, h, counts) ∧ box-ok?(w, h)
+  fits?[w, h, counts]: area-ok?(w, h, counts) ∧ box-ok?(w, h)
 }.(data filter(region?) map(parse-region) filter(fits?) count)
