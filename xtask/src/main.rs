@@ -444,6 +444,26 @@ fn cmd_prelude_compile() -> Result<()> {
         // instead of branching on an inlined case.
         let body = &inline_intrinsic_aliases(name, body, &inlinable_bindings)
             .with_context(|| format!("inline intrinsic aliases into '{name}'"))?;
+        // Run the demand analysis and re-flatten over this body, as
+        // `driver/eval.rs` does for user code and source mode does for the
+        // whole prelude (eu-oaz72.175). Without it the body's inner
+        // let/letrec bindings keep default demands: a local recursive
+        // producer such as `range`'s `up` passes its counter unforced, and
+        // the alias chain pins the list under a consumer.
+        // Analysed as a nested value: source mode analyses a prelude body
+        // inside the prelude block, never as the rendered root unit, so the
+        // members of a namespace block must stay lazy.
+        let (annotated, _signatures, named_sigs) =
+            eucalypt::core::analyse_demand::DemandAnalyser::new()
+                .with_prelude(Some(eucalypt::core::analyse_demand::PreludeSignatures {
+                    name_to_slot: &name_to_slot,
+                    sigs: &demand_signatures,
+                }))
+                .as_nested_value()
+                .analyse(body);
+        let annotated = eucalypt::core::reflatten::reflatten(&annotated);
+        let mut body_settings = stg_settings.clone();
+        body_settings.user_demand_sigs = named_sigs;
         // Compile with the binding's own name as the self-recursion context
         // (eu-e3c3i). After peeling, a binding's recursive self-reference is
         // `Var::Free(<own name>)` — invisible to demand analysis, which can
@@ -459,8 +479,8 @@ fn cmd_prelude_compile() -> Result<()> {
         // This supplies exactly the `demand.recursive`-derived context that
         // source-mode whole-unit compilation gives these same bindings.
         let stg = eucalypt::eval::stg::compile_named(
-            &stg_settings,
-            body.clone(),
+            &body_settings,
+            annotated,
             runtime.as_ref(),
             Some(name.as_str()),
         )
