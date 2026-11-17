@@ -143,6 +143,10 @@ pub const DEMAND_ANALYSIS_PATHS: &[&str] = &[
     "src/eval/bytecode/closed.rs",
     "src/eval/bytecode/opcode.rs",
     "src/eval/stg/tags.rs",
+    // The generator that runs the analysis over each prelude body
+    // (eu-oaz72.175): a change to what it compiles changes the blob's code.
+    "xtask/src/main.rs",
+    "src/core/reflatten.rs",
 ];
 
 /// Path, relative to the workspace root, of this very file — which `build.rs`
@@ -175,6 +179,8 @@ pub const BUILD_RERUN_PATHS: &[&str] = &[
     "src/eval/bytecode/closed.rs",
     "src/eval/bytecode/opcode.rs",
     "src/eval/stg/tags.rs",
+    "xtask/src/main.rs",
+    "src/core/reflatten.rs",
     // Embedded via `include_bytes!` in `src/driver/resources.rs`; cargo does
     // not track non-Rust files referenced that way.
     "lib/test.eu",

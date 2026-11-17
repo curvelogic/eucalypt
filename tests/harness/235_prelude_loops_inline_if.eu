@@ -4,7 +4,10 @@
         aliases in each binding body, as source mode does, so `foldl` and
         the loops built on it branch on an inlined case instead of calling
         the global `if` with thunked branches. The old blob exceeded each
-        tick budget below."
+        tick budget below. eu-oaz72.175: each prelude body is also compiled
+        with the demand analysis, so `range` does not pin its list; the
+        `retention-*` targets are peak-heap gated in `tests/harness_test.rs`
+        (blob mode only)."
 }
 
 snd(a, b): b
@@ -54,3 +57,17 @@ semantics: {
   as-value: { f: foldl }.(f(+, 0, [1, 2, 3])) = 6
   RESULT: [empty-foldl, empty-count, lazy-op, as-value] all-true? then(:PASS, :FAIL)
 }
+
+` "the sum is right"
+retention-ok(context): (context.result = 4999950000) then(:PASS, :FAIL)
+
+` { target: :retention-small
+    verify: [:retention-ok] }
+retention-small: range(0, 100000) foldl-strict(+, 0)
+
+` { target: :retention-large
+    verify: [:retention-ok-large] }
+retention-large: range(0, 400000) foldl-strict(+, 0)
+
+` "the large sum is right"
+retention-ok-large(context): (context.result = 79999800000) then(:PASS, :FAIL)
