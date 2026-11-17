@@ -517,7 +517,19 @@
       "required": true,
       "types": [
         {
+          "type": "block_pattern",
+          "named": true
+        },
+        {
+          "type": "cons_pattern",
+          "named": true
+        },
+        {
           "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "list_pattern",
           "named": true
         }
       ]

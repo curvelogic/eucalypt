@@ -363,7 +363,23 @@
               "members": [
                 {
                   "type": "SYMBOL",
-                  "name": "identifier"
+                  "name": "_param"
+                },
+                {
+                  "type": "REPEAT",
+                  "content": {
+                    "type": "SEQ",
+                    "members": [
+                      {
+                        "type": "STRING",
+                        "value": ","
+                      },
+                      {
+                        "type": "SYMBOL",
+                        "name": "_param"
+                      }
+                    ]
+                  }
                 },
                 {
                   "type": "STRING",
@@ -380,7 +396,7 @@
               "members": [
                 {
                   "type": "SYMBOL",
-                  "name": "identifier"
+                  "name": "_param"
                 },
                 {
                   "type": "REPEAT",
@@ -393,7 +409,7 @@
                       },
                       {
                         "type": "SYMBOL",
-                        "name": "identifier"
+                        "name": "_param"
                       }
                     ]
                   }
