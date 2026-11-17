@@ -1,0 +1,5 @@
+# Error test: a leading or trailing dot in a string interpolation is a
+# parse error, not dropped: "{.x}" and "{x.}" used to read silently as
+# "{x}".
+x: 1
+a: "{.x}"

@@ -64,6 +64,11 @@ pub enum ParseError {
     InvalidStringInterpolation {
         range: TextRange,
     },
+    /// A c-string interpolation opens straight onto a second `{`, as in
+    /// `c"{{}}"`: `{{` is not an escape in a c-string (`\{` is)
+    DoubledBraceInCString {
+        range: TextRange,
+    },
     InvalidZdtLiteral {
         range: TextRange,
         /// A brief description of why the literal is invalid
@@ -144,6 +149,13 @@ impl fmt::Display for ParseError {
                 f,
                 "unexpected content in string interpolation: expected a name or \
                  dotted lookup, optionally followed by ':' and a format"
+            ),
+            ParseError::DoubledBraceInCString { .. } => write!(
+                f,
+                "unexpected content in string interpolation: '{{{{' is not an escape \
+                 in a c-string\n  \
+                 help: write a literal brace in a c-string as \\{{ or \\}}, \
+                 or use a plain string, where '{{{{' and '}}}}' are literal braces"
             ),
             ParseError::InvalidZdtLiteral { reason, .. } => match reason {
                 ZdtInvalidReason::Empty => write!(

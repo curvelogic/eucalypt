@@ -129,12 +129,13 @@ Literal types are most useful in **discriminated unions** — type aliases
 where a tag field distinguishes variants:
 
 ```eu,notest
-{ types: { Shape: c"{{type: \"circle\", radius: number, ..}} | {{type: \"rect\", w: number, h: number, ..}}" } }
+{ types: { Shape: c"\{type: \"circle\", radius: number, ..\} | \{type: \"rect\", w: number, h: number, ..\}" } }
 ```
 
 Because writing complex union types inline is verbose, defining a `types:`
 alias is the recommended approach. (Note the `c"..."` **c-string** — see
-*Writing literal types in annotation strings* below.)
+*Writing literal types in annotation strings* below. In a c-string a
+literal brace is written `\{` and `\}`: `{{` is not an escape there.)
 
 **Subtyping rules**:
 - `"foo"` is consistent with `string` — a literal satisfies a string parameter

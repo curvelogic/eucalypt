@@ -1,0 +1,5 @@
+# Error test: in a c-string, `{{` is not an escape (a literal brace is
+# written `\{`), so c"{{}}" is an interpolation holding a stray `{`. It
+# must be a parse error whose help says how to write a literal brace,
+# never a silent wrong answer (it once rendered as "null}").
+a: c"{{}}"
