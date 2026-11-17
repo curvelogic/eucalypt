@@ -5683,6 +5683,12 @@ pub fn test_300_strict_prelude_sites() {
     run_test(&opts("300_strict_prelude_sites.eu"));
 }
 
+/// Inlining must not capture names across a nested block (eu-oaz72.182).
+#[test]
+pub fn test_301_inline_name_capture() {
+    run_test(&opts("301_inline_name_capture.eu"));
+}
+
 #[test]
 pub fn test_error_330_reduce_forces_each_step() {
     run_error_test(&error_opts("330_reduce_forces_each_step.eu"));
