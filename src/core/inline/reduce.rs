@@ -411,6 +411,17 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                         // otherwise bound once in a Let wrapped round the
                         // reduced body, leaving the occurrences to share that
                         // single thunk.
+                        //
+                        // The opened body is reduced first (eu-oaz72.175): a
+                        // callee copied into a call site (e.g. a recursive
+                        // combinator copy-specialised at a saturated call)
+                        // can carry redexes of its own, such as an inlined
+                        // `then` spliced in as a lambda but never applied.
+                        // Left unreduced they cost a closure and a branch
+                        // thunk allocated in the enclosing frame, which pins
+                        // that frame.  A self-reference stays a variable, so
+                        // this does not unroll recursion.
+                        let body = beta_reduce(&body)?;
                         let occurrences = free_var_occurrences(&body);
                         // The occurrence map's keys are exactly the body's
                         // free names (same traversal), so reuse them rather
@@ -491,6 +502,23 @@ pub mod tests {
         let expected = let_(vec![(f, inline(vec![x, y.clone()], var(y)))], num(23));
 
         assert_eq!(inline_pass(&original).unwrap(), expected);
+    }
+
+    /// A saturated inlinable whose own body holds an unreduced redex (as
+    /// arrives when a pre-expanded combinator is copied into a call site)
+    /// must come out fully reduced (eu-oaz72.175).
+    #[test]
+    pub fn test_beta_reduce_reduces_redex_inside_callee_body() {
+        let x = free("x");
+        let a = free("a");
+
+        let redex = app(
+            inline(vec![a.clone()], var(a.clone())),
+            vec![var(x.clone())],
+        );
+        let call = app(inline(vec![x.clone()], redex), vec![num(22)]);
+
+        assert_eq!(beta_reduce(&call).unwrap(), num(22));
     }
 
     #[test]

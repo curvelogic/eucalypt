@@ -1,10 +1,8 @@
 ` "eu-oaz72.175: a wrapper function whose frame holds the list head while a
    closed `+` lambda is threaded through a strict fold must not pin the list.
-   Deliberately written with `if` and a `.( )` tail, against docs/eucalypt-style.md:
-   the `l nil? then(...)` form pins the list by a separate route that closed
-   bindings do not reach (11,256 blocks in source-prelude mode), so it cannot
-   gate this fix. `.result` would add an update frame per level instead."
-fs(op, i, l): if(l nil?, i, { a: op(i, l head) }.(seq(a, fs(op, a, l tail))))
+   The `.( )` tail position is deliberate: a `.result` binding would be a thunk
+   holding an update frame per level, which is a different (stack) retention."
+fs(op, i, l): l nil? then(i, { a: op(i, l head) }.(seq(a, fs(op, a, l tail))))
 
 c3(l): fs(+, 0, l)
 

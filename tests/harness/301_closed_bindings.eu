@@ -5,7 +5,11 @@
         own frames is closed over a slotless annotation spine instead of the
         enclosing frame. These targets cover closed and not-closed shapes:
         a misclassified binding would read a missing slot and error or return
-        a wrong value."
+        a wrong value. Limit: the compiler emits case branches, fallbacks and
+        DeMeta inside user bindings only via inlined intrinsics that let-bind
+        their operands first, and BlockKvList only in global wrappers, so no
+        target can place an outer read exactly on a frame boundary there; the
+        frame-size rules are gated by the unit tests in closed.rs."
 }
 
 ` "A closed lambda in a let, applied twice."
@@ -20,14 +24,20 @@ letrec-mix(n): { go(i, acc): (i = 0) then(acc, go(i - 1, acc + i)), twice(i): go
 ` "A closed lambda whose body cases on a list: branch fields are local."
 sum-list(xs): { s(l, a): l nil? then(a, s(tail(l), a + head(l))) }.s(xs, 0)
 
-` "Case branches and fallback inside a closed lambda."
+` "Inlined `head` expands to a case with Cons/Nil branches and a fallback inside a closed lambda."
 branches(x): { f(v): v nil? then(0, v head) }.f(x)
 
-` "Block destructuring (BlockKvList branch) inside a closed lambda."
+` "Block lookup inside a closed lambda (compiles to a lookup call, not a BlockKvList branch)."
 block-field(b): { f(blk): blk lookup(:k) }.f(b)
 
-` "DeMeta: metadata is read inside a closed lambda."
+` "Metadata read inside a lambda: its handler reads its own argument, so it is not closed."
 meta-of(x): { m(v): v meta }.m(x)
+
+` "Block merge expands to nested DeMeta handlers inside a lambda that reads an outer local."
+merge-outer(a): { f(v): v << a }.f{ p: 1 }
+
+` "Block merge in a single-binding thunk reading the parameter."
+merge-thunk(a): { t: a << { p: 1 } }.t
 
 ` "A nested lambda that reads an outer local is not closed."
 nested-outer(n): { outer(a): { inner(b): a + b }.inner(10) }.outer(n)
@@ -67,6 +77,8 @@ test-values: {
   bo: block-outer(5) = 8
   lo: list-outer(5) = 6
   mo: meta-outer(5) = 5
-  RESULT: [br, fb, bo, lo, mo, lam, thunk, rec, sum, branch-nonempty, branch-empty, block, meta, nested, deeper]
+  mg: merge-outer{ q: 2 } = { p: 1 q: 2 }
+  mt: merge-thunk{ q: 2 } = { q: 2 p: 1 }
+  RESULT: [br, fb, bo, lo, mo, mg, mt, lam, thunk, rec, sum, branch-nonempty, branch-empty, block, meta, nested, deeper]
           all-true? then(:PASS, :FAIL)
 }
