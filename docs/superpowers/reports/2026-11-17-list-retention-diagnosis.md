@@ -83,3 +83,40 @@ Proposed fix (awaiting coordinator approval): last-use dead-slot clearing in
 the STG compiler for params consumed only by a tail call and not free in any
 closure allocated in the frame. Alternative: avoid wrapper frames in prelude
 hot paths (needs lib/prelude.eu, currently held by another lane).
+
+## Update 2: pinning path in detail, and why the approved fix is non-trivial
+
+Coordinator approved last-use dead-slot clearing (conservative: slot not free in
+any closure/thunk/lambda allocated in the frame body at any depth; only after
+the last read). Not yet implemented; findings for the next lane (measured-single):
+
+- Bytecode opcode numbers: `Op::Cons` is 3, `Op::Case` is 2, `Op::Atom` is 1.
+  The "non-update Case closures" in the earlier tracer notes are really **list
+  cells (Cons closures)**: the chain is the list itself, linked via tail slots.
+- Tracer on `c3(l): fs(+,0,l)`; `x: range(0,200000) c3` (also leaks, 10,346
+  blocks). Roots: the pending `SeqBind` (stack index 3) env reaches ~312k
+  frames. Path: loop frame slot0 (`op`, an arity-2 lambda) -> its env, a letrec
+  frame holding the `+` lambda -> `next`: the wrapper's frame whose slot0 `l`
+  is an **Atom alias closure** (op 1) -> the caller frame whose slot holds the
+  list thunk, updated to the head Cons -> the whole list.
+- Mechanism: `make_arg_array`/`make_arg_array_pd` pass an unsettled local as a
+  non-updating alias closure `Atom ✳i` over the *current frame*
+  (machine.rs `make_arg_array`), so callee params keep the caller frame
+  alive; and `op` lambdas allocated in a frame capture the whole frame. Any
+  frame on that chain holding the evaluated list head pins it. Memoising the
+  alias slot (previous lane) does not help, since the head then sits in the
+  wrapper frame directly.
+- Design difficulties for slot clearing: (1) Refs are flat de Bruijn indices
+  across a cactus chain, so a "clear" needs the frame depth resolved like
+  `resolve_ref`; (2) the alias closure defers the read (it enters the caller's
+  slot later, possibly several times, e.g. count's inlined body reads `l`
+  three times), so "last read" is not at the call site; (3) the encoder,
+  predecoder, machine (both dispatch paths), blob wire format and
+  `Reference` users (~60 `Ref::L` sites) all need the new form/flag
+  (`FLAG_EAGER`-style bit on App/DirectApp is the least invasive carrier).
+- Separate follow-up (not fixed here): `count`'s signature records `l` as
+  `(Strict, AtMostOnce)`, but the inlined body uses `l` three times (stale
+  cardinality after inlining).
+- Cheap validation experiment worth doing first: an unsound prototype that
+  clears every local read by a tail-call argument, to confirm peak blocks drop
+  to ~1,000 for `count` and the `c3` shape before building the sound analysis.
