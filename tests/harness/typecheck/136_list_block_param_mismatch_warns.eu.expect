@@ -1,0 +1,2 @@
+exit: 1
+stderr: "expected {.._r0, ..}, found number"

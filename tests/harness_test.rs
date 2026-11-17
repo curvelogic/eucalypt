@@ -4739,6 +4739,19 @@ pub fn test_typecheck_134_identity_monad_derived_no_warning() {
     run_typecheck_test("134_identity_monad_derived_no_warning.eu");
 }
 
+/// A list-destructuring parameter with a block element is not a block
+/// parameter: the valid call checks clean (eu-oaz72.172).
+#[test]
+pub fn test_typecheck_135_list_block_param_no_warning() {
+    run_typecheck_test("135_list_block_param_no_warning.eu");
+}
+
+/// Block-param detection through a nested let still warns on a non-block.
+#[test]
+pub fn test_typecheck_136_list_block_param_mismatch_warns() {
+    run_typecheck_test("136_list_block_param_mismatch_warns.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).
