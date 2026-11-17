@@ -577,13 +577,23 @@ fn extract_children(decl: &ast::Declaration) -> Vec<DocEntry> {
         if let ast::Element::Block(block) = element {
             for inner_decl in block.declarations() {
                 if let Some(mut child) = entry_from_declaration(&inner_decl) {
-                    child.namespace = Some(namespace.clone());
+                    qualify_namespace(&mut child, &namespace);
                     children.push(child);
                 }
             }
         }
     }
     children
+}
+
+/// Set `entry`'s namespace to `ns`, and its own children's to `ns.entry`,
+/// recursively, so nested blocks carry their full dotted path.
+fn qualify_namespace(entry: &mut DocEntry, ns: &str) {
+    entry.namespace = Some(ns.to_string());
+    let inner = format!("{ns}.{}", entry.name);
+    for child in &mut entry.children {
+        qualify_namespace(child, &inner);
+    }
 }
 
 /// Collapse runs of whitespace (including newlines from wrapped source
