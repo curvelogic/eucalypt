@@ -230,6 +230,10 @@ result: helper(42)
 x: custom-fn(1)
 ```
 
+A `prelude:` path is resolved against the library path, then the working
+directory (not relative to the file naming it); a path that is not found is an
+error.
+
 **Trace metadata**: annotate declarations to trace entry arguments
 and/or exit values to stderr during evaluation:
 

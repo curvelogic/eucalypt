@@ -5642,6 +5642,11 @@ pub fn test_error_331_iterate_applies_f_at_cell() {
 }
 
 #[test]
+pub fn test_error_347_missing_prelude_path() {
+    run_error_test(&error_opts("347_missing_prelude_path.eu"));
+}
+
+#[test]
 pub fn test_error_332_scanl_applies_op_at_cell() {
     run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
 }
@@ -5691,4 +5696,29 @@ pub fn test_check_fails_on_missing_prelude_override() {
         String::from_utf8_lossy(&output.stderr)
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A `prelude:` path that does not exist must be an error naming the path on
+/// `eu`, `eu check` and `eu check --strict`, even when its file stem matches a
+/// bundled library (eu-oaz72.181).
+#[test]
+pub fn test_missing_prelude_path_is_an_error() {
+    let file = "tests/harness/errors/347_missing_prelude_path.eu";
+    for args in [
+        vec![file],
+        vec!["check", file],
+        vec!["check", "--strict", file],
+    ] {
+        let output = std::process::Command::new(eu_binary())
+            .args(&args)
+            .output()
+            .expect("failed to run eu");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{args:?}:\n{stderr}");
+        assert!(
+            stderr.contains("could not read 'nope/prelude.eu'")
+                && stderr.contains("not resolved relative to the file"),
+            "{args:?}:\n{stderr}"
+        );
+    }
 }

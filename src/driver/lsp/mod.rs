@@ -431,6 +431,17 @@ impl ServerState {
                 let parse_errors = self.queries.last_parse_errors(&file_id).unwrap_or(&empty);
                 let mut diags = diagnostics::diagnostics_from_parse_errors(&text, parse_errors);
                 diags.extend(type_diags);
+                // A `prelude:` override that could not be loaded: the
+                // default prelude was used, but the user must be told.
+                if let Some(err) = &entry.prelude_error {
+                    diags.push(lsp_types::Diagnostic {
+                        range: err.range.unwrap_or_default(),
+                        severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+                        source: Some("eucalypt-pipeline".to_string()),
+                        message: err.message.clone(),
+                        ..Default::default()
+                    });
+                }
 
                 let params = PublishDiagnosticsParams {
                     uri: uri.clone(),
@@ -1284,10 +1295,10 @@ fn run_pipeline(
         None,
         "eu",
     );
-    if loader
-        .detect_and_load_prelude_override(&[detect_input])
-        .is_err()
-    {
+    let mut prelude_error = None;
+    if let Err(e) = loader.detect_and_load_prelude_override(&[detect_input]) {
+        // Keep the reason, so it is published as a diagnostic below.
+        prelude_error = Some(make_pipeline_error(&loader, &e));
         // An override that cannot be loaded (e.g. a relative path that does
         // not resolve from the server's working directory) must not cost
         // the document all its diagnostics: discard the half-set override
@@ -1488,6 +1499,7 @@ fn run_pipeline(
         imports,
         alias_types,
         stage_hashes,
+        prelude_error,
     })
 }
 
@@ -1544,6 +1556,18 @@ mod tests {
             !session.pipeline_warnings().is_empty(),
             "diagnostics against the default prelude were lost"
         );
+    }
+
+    /// A missing `prelude:` path keeps the default-prelude fallback but is
+    /// reported, naming the path (eu-oaz72.181).
+    #[test]
+    fn run_pipeline_reports_missing_prelude_path() {
+        let mut session = testing::LspTestSession::new();
+        session.set_uri("file:///tmp/eu_lsp_prelude_missing_test.eu");
+        session.run_pipeline("{ prelude: \"nope/prelude.eu\" }\nx: 1\n");
+        assert!(session.has_cached(), "fallback to the default prelude");
+        let msg = session.prelude_error().expect("prelude error recorded");
+        assert!(msg.contains("nope/prelude.eu"), "message: {msg}");
     }
 
     /// The live pipeline must honour a `prelude:` override in the open

@@ -640,6 +640,24 @@ impl SourceLoader {
                 }
             }
 
+            // A filesystem path must exist: `read_fs_input` would otherwise
+            // fall back to a bundled library of the same file stem (e.g.
+            // `nope/prelude.eu`), silently ignoring a mistyped path.
+            if let Locator::Fs(path) = prelude_input.locator() {
+                let found = self.lib_path.iter().any(|d| d.join(path).is_file()) || path.is_file();
+                if !found {
+                    return Err(EucalyptError::FileCouldNotBeRead(
+                        path.to_string_lossy().to_string(),
+                        Some(
+                            "prelude: path not found (searched the library path and the \
+                             working directory; it is not resolved relative to the file \
+                             that names it)"
+                                .to_string(),
+                        ),
+                    ));
+                }
+            }
+
             self.prelude_override = Some(prelude_input.clone());
             // Load the alternative prelude now so it is ready for translate/merge.
             self.load(&prelude_input)?;
