@@ -1400,6 +1400,12 @@ These **do exist** and are commonly available:
 - `abs(n)` — absolute value
 - `mulmod(a, b, m)`, `powmod(b, e, m)`, `modinv(a, m)` — exact modular arithmetic for 64-bit signed integers (no overflow from `a * b % m`); result in `[0, m)`
 - `crt[[r, m], ...]` — Chinese remainder theorem: least `x ≥ 0` with `x ≡ r (mod m)` for every pair; moduli must be pairwise coprime (else a `modinv` error); `[] crt` is 0
+- `gcd(a, b)`, `lcm(a, b)` — integer greatest common divisor / least common multiple, non-negative; `gcd(0, b)` is `|b|`, `lcm(0, _)` is 0; a non-integer is an error
+- `enumerate(xs)` — `[[0, x0], [1, x1], ...]`; `find(p?, xs)` — first match or `null`; `index-of(x, xs)` — 0-based index or `null`
+- `frequencies(xs)` — dict of element → count (elements must be valid dict keys)
+- `combinations(n, xs)`, `permutations(xs)` — lazy lists of lists, in input order; `combinations(0, xs)` is `[[]]`, `permutations([])` is `[[]]`
+- `merge-intervals(is)` — sort closed `[lo, hi]` intervals and merge when `hi1 >= lo2` (`[1, 3]` + `[3, 5]` merge, `[1, 3]` + `[4, 6]` do not)
+- `str.reverse(s)` — reverse by character
 - `str.to-upper(s)` / `str.to-lower(s)` — case conversion (not `str.upper` / `str.lower`)
 
 ### 5.12 str.split-on Uses Regex, Not Literal Strings
@@ -1660,6 +1666,7 @@ All functions verified against `lib/prelude.eu`:
 | `str.matches?` | `matches?(re, s)` | True if `re` matches full string `s` |
 | `str.letters` | `letters(s)` | List of individual characters |
 | `str.len` | `len(s)` | String length in characters |
+| `str.reverse` | `reverse(s)` | Reverse by character |
 | `str.format` | `format(spec, x)` | Printf-style format (`%d %x %X %o %b %f %e %s`); `255 str.format("%x")` |
 | `str.fmt` | `fmt(x, spec)` | DEPRECATED — use `str.format` |
 | `str.to-upper` | `to-upper(s)` | Convert to upper case |

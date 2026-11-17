@@ -11452,10 +11452,10 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 
 ## Categories
 
-- [Lists](lists.md) -- list construction, transformation, folding, sorting (92 entries)
+- [Lists](lists.md) -- list construction, transformation, folding, sorting (99 entries)
 - [Blocks](blocks.md) -- block construction, access, merging, transformation (66 entries)
-- [Strings](strings.md) -- string manipulation, regex, formatting (43 entries)
-- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (36 entries)
+- [Strings](strings.md) -- string manipulation, regex, formatting (44 entries)
+- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (38 entries)
 - [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (13 entries)
 - [Combinators](combinators.md) -- function composition, application, utilities (14 entries)
 - [Calendar](calendar.md) -- date and time functions (8 entries)
@@ -11469,7 +11469,7 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
 - [IO](io.md) -- environment, time, argument access, and monad utility (37 entries)
 
-*416 documented entries in total.*
+*426 documented entries in total.*
 
 ## Standard Libraries
 
@@ -11641,6 +11641,13 @@ by-age: people sort-by-num(.age)         # sorted by age
 | `butlast(l)` | Return all elements of list `l` except the last |
 | `unzip(pairs)` | List of pairs to pair of lists. Inverse of zip |
 | `interleave(a, b)` | Alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended |
+| `enumerate(xs)` | Pair each element of `xs` with its 0-based index: `[[0, x0], [1, x1], ...]` |
+| `find(p?, xs)` | The first element of `xs` satisfying `p?`, or `null` if none does (so a `null` result is ambiguous if `null` is itself a matching element) |
+| `index-of(x, xs)` | The 0-based index of the first element of `xs` equal to `x`, or `null` if `x` is absent |
+| `frequencies(xs)` | A dict mapping each distinct element of `xs` to the number of times it occurs. Elements must be valid dict keys (numbers, strings, symbols or lists of those). Runs in constant stack |
+| `combinations(n, xs)` | All `n`-element combinations of `xs` as lists, in input order (lexicographic by position), produced lazily. `combinations(0, xs)` is `[[]]`; there are none if `n` exceeds the length of `xs` or is negative. A non-integer `n` is an error |
+| `permutations(xs)` | All permutations of `xs` as lists, in input order (lexicographic by position), produced lazily. `permutations([])` is `[[]]`. Elements are distinguished by position, so duplicates give repeated permutations |
+| `merge-intervals(is)` | Sort closed intervals `[lo, hi]` by `lo` and merge those that overlap. Intervals merge when `hi1 >= lo2` (a shared endpoint merges: `[1, 3]` and `[3, 5]` give `[1, 5]`); intervals that merely abut, such as `[1, 3]` and `[4, 6]`, stay separate. Nested intervals are absorbed. Empty input gives `[]` |
 | `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n`; a size that is not positive gives `[]`, otherwise a step that is not positive is an error; a non-integer size or step is an error |
 | `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk; a size that is not positive gives `[]`; a non-integer size is an error |
 | `group-consecutive-by(f, xs)` | Group consecutive elements where `f` returns equal values into sublists |
@@ -11811,6 +11818,7 @@ hosts: data deep-query("*.config.host")
 | `str.suffix(b, a)` | Return string `b` suffixed onto `a` |
 | `str.prefix(b, a)` | Return string `b` prefixed onto `a` |
 | `str.letters` | Return individual letters of `s` as list of strings |
+| `str.reverse(s)` | Reverse string `s` by character, as `letters` splits it |
 | `str.len` | Return length of string in characters |
 | `str.format(spec, x)` | Format `x` using printf-style format `spec` (`%d`, `%x`, `%X`, `%o`, `%b`, `%f`, `%e`, `%s`, with width and flags). Pipeline-friendly: `255 str.format` with a spec argument |
 | `str.fmt` | DEPRECATED: use `str.format(spec, x)`, which takes the spec first so it works in pipelines |
@@ -11926,6 +11934,8 @@ character.
 | `powmod(b, e, m)` | `b` raised to the power `e` modulo `m`, exact for all 64-bit signed integers; `e` must be non-negative; result in `[0, m)` |
 | `modinv(a, m)` | The inverse of `a` modulo `m`: `x` in `[0, m)` with `mulmod(a, x, m) = 1 % m` (so `modinv(a, 1)` is 0); an error when `a` and `m` are not coprime |
 | `crt(congruences)` | Chinese remainder theorem: given `[[r, m], ...]`, the least non-negative `x` with `x ≡ r (mod m)` for every pair; the moduli must be pairwise coprime (otherwise an error from `modinv`) and the running product of the moduli should fit within 64 bits (a running product past 2^63 may stop with a `numeric overflow` error). Remainders are normalised; the empty list gives 0 |
+| `gcd(a, b)` | Greatest common divisor of integers `a` and `b`, always non-negative: `gcd(0, b)` is `\|b\|` and `gcd(0, 0)` is 0. A non-integer argument is an error |
+| `lcm(a, b)` | Least common multiple of integers `a` and `b`, always non-negative: `lcm(0, _)` and `lcm(_, 0)` are 0. A non-integer argument is an error |
 | `sum(l)` | Sum a list of numbers |
 | `product(l)` | Multiply a list of numbers |
 | `max(l, r)` | Return max of `l` and `r` by `>` |
@@ -15538,6 +15548,12 @@ These **do exist** and are commonly available:
 - `abs(n)` — absolute value
 - `mulmod(a, b, m)`, `powmod(b, e, m)`, `modinv(a, m)` — exact modular arithmetic for 64-bit signed integers (no overflow from `a * b % m`); result in `[0, m)`
 - `crt[[r, m], ...]` — Chinese remainder theorem: least `x ≥ 0` with `x ≡ r (mod m)` for every pair; moduli must be pairwise coprime (else a `modinv` error); `[] crt` is 0
+- `gcd(a, b)`, `lcm(a, b)` — integer greatest common divisor / least common multiple, non-negative; `gcd(0, b)` is `|b|`, `lcm(0, _)` is 0; a non-integer is an error
+- `enumerate(xs)` — `[[0, x0], [1, x1], ...]`; `find(p?, xs)` — first match or `null`; `index-of(x, xs)` — 0-based index or `null`
+- `frequencies(xs)` — dict of element → count (elements must be valid dict keys)
+- `combinations(n, xs)`, `permutations(xs)` — lazy lists of lists, in input order; `combinations(0, xs)` is `[[]]`, `permutations([])` is `[[]]`
+- `merge-intervals(is)` — sort closed `[lo, hi]` intervals and merge when `hi1 >= lo2` (`[1, 3]` + `[3, 5]` merge, `[1, 3]` + `[4, 6]` do not)
+- `str.reverse(s)` — reverse by character
 - `str.to-upper(s)` / `str.to-lower(s)` — case conversion (not `str.upper` / `str.lower`)
 
 ### 5.12 str.split-on Uses Regex, Not Literal Strings
@@ -15798,6 +15814,7 @@ All functions verified against `lib/prelude.eu`:
 | `str.matches?` | `matches?(re, s)` | True if `re` matches full string `s` |
 | `str.letters` | `letters(s)` | List of individual characters |
 | `str.len` | `len(s)` | String length in characters |
+| `str.reverse` | `reverse(s)` | Reverse by character |
 | `str.format` | `format(spec, x)` | Printf-style format (`%d %x %X %o %b %f %e %s`); `255 str.format("%x")` |
 | `str.fmt` | `fmt(x, spec)` | DEPRECATED — use `str.format` |
 | `str.to-upper` | `to-upper(s)` | Convert to upper case |

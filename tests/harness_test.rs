@@ -5310,6 +5310,24 @@ pub fn test_error_275_non_integer_take() {
     run_error_test(&error_opts("275_non_integer_take.eu"));
 }
 
+/// A non-integer argument to `gcd` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_301_non_integer_gcd() {
+    run_error_test(&error_opts("301_non_integer_gcd.eu"));
+}
+
+/// A non-integer argument to `lcm` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_301_non_integer_lcm() {
+    run_error_test(&error_opts("301_non_integer_lcm.eu"));
+}
+
+/// A non-integer argument to `combinations` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_301_non_integer_combinations() {
+    run_error_test(&error_opts("301_non_integer_combinations.eu"));
+}
+
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
 pub fn test_error_275_non_integer_drop() {
@@ -5615,6 +5633,25 @@ pub fn test_error_314() {
 /// A huge bitwise operand is shown capped (eu-oaz72.160).
 pub fn test_error_315() {
     run_error_test(&error_opts("315_bitwise_operand_capped.eu"));
+}
+
+/// gcd and lcm on integers (eu-oaz72.26, owner decision 43).
+#[test]
+pub fn test_301_gcd_lcm() {
+    run_test(&opts("301_gcd_lcm.eu"));
+}
+
+/// enumerate, find, index-of, frequencies, combinations and permutations,
+/// including laziness (eu-oaz72.26, owner decision 43).
+#[test]
+pub fn test_302_list_helpers() {
+    run_test(&opts("302_list_helpers.eu"));
+}
+
+/// str.reverse and merge-intervals (eu-oaz72.26, owner decision 43).
+#[test]
+pub fn test_303_reverse_and_intervals() {
+    run_test(&opts("303_reverse_and_intervals.eu"));
 }
 
 /// Prelude sites converted to constant-stack strict forms (eu-oaz72.165,

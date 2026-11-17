@@ -1,0 +1,39 @@
+#!/usr/bin/env eu
+{
+  title: "301 gcd and lcm"
+  doc: "gcd and lcm on integers (owner decision 43, eu-oaz72.26): gcd(0, b) is
+        |b|, lcm(0, _) is 0, results are non-negative, and a non-integer is
+        an error (see tests/harness/errors/301_*). RESULT is computed from
+        every check, so any failing check fails the test."
+}
+
+` "gcd"
+gcd-checks: [
+  gcd(12, 18) = 6,
+  gcd(18, 12) = 6,
+  gcd(0, 5) = 5,
+  gcd(5, 0) = 5,
+  gcd(0, -5) = 5,
+  gcd(0, 0) = 0,
+  gcd(-4, 6) = 2,
+  gcd(-4, -6) = 2,
+  gcd(7, 13) = 1,
+  gcd(1071, 462) = 21,
+  gcd(6.0, 4) = 2,
+  (12 gcd(18)) = 6
+]
+
+` "lcm"
+lcm-checks: [
+  lcm(4, 6) = 12,
+  lcm(0, 3) = 0,
+  lcm(3, 0) = 0,
+  lcm(0, 0) = 0,
+  lcm(-4, 6) = 12,
+  lcm(-4, -6) = 12,
+  lcm(7, 13) = 91,
+  lcm(5, 5) = 5,
+  ([3, 4, 6] foldl(lcm, 1)) = 12
+]
+
+RESULT: [gcd-checks, lcm-checks] concat all-true? then(:PASS, :FAIL)

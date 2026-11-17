@@ -33,6 +33,8 @@
 | `powmod(b, e, m)` | `b` raised to the power `e` modulo `m`, exact for all 64-bit signed integers; `e` must be non-negative; result in `[0, m)` |
 | `modinv(a, m)` | The inverse of `a` modulo `m`: `x` in `[0, m)` with `mulmod(a, x, m) = 1 % m` (so `modinv(a, 1)` is 0); an error when `a` and `m` are not coprime |
 | `crt(congruences)` | Chinese remainder theorem: given `[[r, m], ...]`, the least non-negative `x` with `x ≡ r (mod m)` for every pair; the moduli must be pairwise coprime (otherwise an error from `modinv`) and the running product of the moduli should fit within 64 bits (a running product past 2^63 may stop with a `numeric overflow` error). Remainders are normalised; the empty list gives 0 |
+| `gcd(a, b)` | Greatest common divisor of integers `a` and `b`, always non-negative: `gcd(0, b)` is `\|b\|` and `gcd(0, 0)` is 0. A non-integer argument is an error |
+| `lcm(a, b)` | Least common multiple of integers `a` and `b`, always non-negative: `lcm(0, _)` and `lcm(_, 0)` are 0. A non-integer argument is an error |
 | `sum(l)` | Sum a list of numbers |
 | `product(l)` | Multiply a list of numbers |
 | `max(l, r)` | Return max of `l` and `r` by `>` |

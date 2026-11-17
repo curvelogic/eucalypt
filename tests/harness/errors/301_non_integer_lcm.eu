@@ -1,0 +1,2 @@
+` "lcm: non-integer is an error"
+x: lcm(4, 2.5)

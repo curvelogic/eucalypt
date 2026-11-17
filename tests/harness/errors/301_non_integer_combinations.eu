@@ -1,0 +1,2 @@
+` "combinations: non-integer is an error"
+x: combinations(1.5, [1, 2])

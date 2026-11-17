@@ -1,0 +1,71 @@
+#!/usr/bin/env eu
+{
+  title: "302 list helpers: enumerate, find, index-of, frequencies, combinations, permutations"
+  doc: "Owner decision 43 (eu-oaz72.26). Covers empty inputs, misses giving
+        null, combinations(0, xs), n larger than the list, permutations([]),
+        and laziness: take(1) over a very large input must finish at once.
+        RESULT is computed from every check."
+}
+
+` "enumerate"
+enumerate-checks: [
+  enumerate([:a, :b, :c]) = [[0, :a], [1, :b], [2, :c]],
+  enumerate([]) = [],
+  enumerate(range(0, 3) map(inc)) = [[0, 1], [1, 2], [2, 3]]
+]
+
+` "find and index-of"
+find-checks: [
+  find(> 2, [1, 2, 3, 4]) = 3,
+  find(> 9, [1, 2]) = null,
+  find(> 0, []) = null,
+  (find(> 5, iota(0)) = 6),
+  index-of(3, [1, 2, 3, 3]) = 2,
+  index-of(9, [1, 2]) = null,
+  index-of(1, []) = null,
+  index-of("b", ["a", "b"]) = 1,
+  index-of(1000000, iota(0)) = 1000000
+]
+
+` "frequencies"
+frequencies-checks: [
+  (frequencies(["a", "b", "a"]) dict.to-list) = [["a", 2], ["b", 1]],
+  (frequencies([]) dict.size) = 0,
+  (frequencies([3, 1, 3, 3]) dict.get(3)) = 3,
+  (frequencies([[1, 2], [1, 2], [2, 2]]) dict.get([1, 2])) = 2,
+  (frequencies(range(0, 20000) map(const(7))) dict.get(7)) = 20000
+]
+
+` "combinations"
+combinations-checks: [
+  combinations(2, [1, 2, 3]) = [[1, 2], [1, 3], [2, 3]],
+  combinations(3, [1, 2, 3, 4]) = [[1, 2, 3], [1, 2, 4], [1, 3, 4], [2, 3, 4]],
+  combinations(0, [1, 2]) = [[]],
+  combinations(0, []) = [[]],
+  combinations(3, [1, 2]) = [],
+  combinations(1, []) = [],
+  combinations(-1, [1, 2]) = [],
+  combinations(1, [:a, :b]) = [[:a], [:b]],
+  (combinations(2, range(0, 6)) count) = 15,
+  (combinations(3, range(0, 100000)) take(1)) = [[0, 1, 2]],
+  (combinations(2, iota(0)) take(2)) = [[0, 1], [0, 2]]
+]
+
+` "permutations"
+permutations-checks: [
+  permutations([1, 2, 3]) = [[1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 1, 2], [3, 2, 1]],
+  permutations([]) = [[]],
+  permutations([:a]) = [[:a]],
+  permutations([1, 1]) = [[1, 1], [1, 1]],
+  (permutations(range(0, 5)) count) = 120,
+  (permutations(range(0, 100000)) take(1) map(count)) = [100000],
+  (permutations(range(0, 100000)) head take(3)) = [0, 1, 2]
+]
+
+RESULT: [
+  enumerate-checks,
+  find-checks,
+  frequencies-checks,
+  combinations-checks,
+  permutations-checks
+] concat all-true? then(:PASS, :FAIL)
