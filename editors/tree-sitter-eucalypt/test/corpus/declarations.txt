@@ -1957,3 +1957,34 @@ b: uncurry(__EQ)([1, 0])
               (soup
                 (literal
                   (number))))))))))
+
+================================================================================
+Cons pattern with several heads in a juxtaposed list parameter (eu-oaz72.14:
+f[w, h : counts])
+================================================================================
+
+f[w, h : counts]: w
+g[h : t]: h
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (identifier)
+        (identifier)
+        (identifier)))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (identifier)
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
