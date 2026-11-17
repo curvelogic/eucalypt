@@ -23,9 +23,9 @@ keyed by the target vector.
 Notable eucalypt techniques:
 - `bit.xor` and `bit.shl` for parity bitmasks
 - `set.of` and `∈` for membership while building button vectors
-- `foldl-strict` to grow the subset table and each level's states
+- `foldl-strict` to file subsets into the table and to relax each level's states
 - `dict.update-strict` with lists as keys for grouping and relaxation
-- juxtaposed list-destructuring syntax `solve-machine[lights, buttons, _]:`
+- juxtaposed list-destructuring syntax `fewest-toggles[lights, buttons, _]:`
 - `str.matches-of` (pipeline-friendly) for pattern matching
 
 Running time: under a second (part 1), a few seconds (part 2)
