@@ -181,6 +181,7 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
 
     // ── Phase 2: bidirectional type check + content verifier via pipeline ─────
     let t_phase2 = Instant::now();
+    let mut pipeline_failed = false;
     let (type_warning_count, content_error_count) = match run_type_checker(opt) {
         Ok(result) => {
             let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
@@ -217,6 +218,8 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
             // Pipeline failure is not a type error — log at debug level and
             // continue with the annotation syntax results only.
             eprintln!("eu check: pipeline warning: {e}");
+            // Under --strict an unchecked file must not pass silently.
+            pipeline_failed = opt.check_strict();
             (0, 0)
         }
     };
@@ -231,7 +234,11 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
         );
     }
 
-    let total_issues = syntax_errors + type_warning_count + content_error_count + parse_errors;
+    let total_issues = syntax_errors
+        + type_warning_count
+        + content_error_count
+        + parse_errors
+        + usize::from(pipeline_failed);
 
     if total_issues == 0 {
         Ok(0)
@@ -499,28 +506,11 @@ pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eu
     // as evaluation does (`driver/prepare.rs`): substitute it for the default
     // prelude, or prepend it under `--no-prelude`.  Without this, `check`
     // merged the standard prelude and the override's bindings were unknown.
-    let inputs: Vec<Input> = match loader.prelude_override().cloned() {
-        Some(override_input) => {
-            let default_prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
-            let mut replaced = false;
-            let mut result: Vec<Input> = inputs
-                .iter()
-                .map(|i| {
-                    if i == &default_prelude && !replaced {
-                        replaced = true;
-                        override_input.clone()
-                    } else {
-                        i.clone()
-                    }
-                })
-                .collect();
-            if !replaced {
-                result.insert(0, override_input);
-            }
-            result
-        }
-        None => inputs,
-    };
+    let inputs = crate::driver::prepare::substitute_prelude_override(
+        &inputs,
+        loader.prelude_override(),
+        true,
+    );
 
     // Translate each input to core.
     for input in &inputs {

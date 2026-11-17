@@ -5659,7 +5659,29 @@ pub fn test_check_honours_prelude_metadata() {
         "eu check --strict must accept a prelude: override; stderr:\n{stderr}"
     );
     assert!(
-        !stderr.contains("assignment-style"),
-        "spurious assignment-style error:\n{stderr}"
+        stderr.is_empty(),
+        "eu check must run cleanly (a skipped check prints a pipeline warning):\n{stderr}"
     );
+}
+
+/// An unreadable `prelude:` override must fail `eu check --strict` rather
+/// than silently skip the check (eu-oaz72.173 review).
+#[test]
+pub fn test_check_strict_fails_on_missing_prelude_override() {
+    let dir = std::env::temp_dir().join(format!("eu-check-prelude-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("bad.eu");
+    std::fs::write(&file, "{ prelude: \"nonexistent-prelude.eu\" }\n\nx: 1\n").unwrap();
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", "--strict"])
+        .arg(&file)
+        .output()
+        .expect("failed to run eu check");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
