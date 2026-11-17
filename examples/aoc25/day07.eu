@@ -16,7 +16,7 @@ Notable eucalypt techniques:
 - `dict` with `update-strict` as a counting table
 - `str.split-on` plus `running-sum` to find the columns of a character
 - `foldl-strict` over grid rows with `[beams, count]` state
-- one pass shared by both parts
+- one row step shared by both parts
 "
 
 ` "Find the column index of S in a row: the length of what precedes it."
@@ -65,5 +65,9 @@ solve2(rows, b0): rows foldl-strict(row-step, [b0, 0]) first dict.values sum
 test: {
   part-1: ex1 parse uncurry(solve) //= 21
   part-2: ex1 parse uncurry(solve2) //= 40
-  RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
+  ` "Splitters at both edges and adjacent splitters in one row."
+  edge-grid: ["S....", "^....", ".^...", "^.^..", ".^.^.", "^^^^^"]
+  edges-1: edge-grid parse uncurry(solve) //= 9
+  edges-2: edge-grid parse uncurry(solve2) //= 9
+  RESULT: (part-1 ∧ part-2 ∧ edges-1 ∧ edges-2) then(:PASS, :FAIL)
 }

@@ -9,13 +9,13 @@ digit per row; read the grid column by column, find where each
 problem starts from its operator, read one number per column and
 apply the operator found at the bottom of the problem's first column.
 
-Approach: transpose the grid to convert column-oriented layout into
-row-oriented data. Part 1 transposes number rows; Part 2 pads the rows
+Approach: Part 1 transposes the number rows to convert the
+column-oriented layout into row-oriented data; Part 2 pads the rows
 and holds them as vectors of character codes, so it can read any column
 by index.
 
 Notable eucalypt techniques:
-- `transpose` for matrix pivoting (pipeline form `padded transpose`)
+- `transpose` for matrix pivoting (pipeline form `rows map(line-nums) transpose`)
 - `zip-with` to pair operators with number lists
 - `zip-with` over problem start and end columns
 - `product` and `sum` as the two operators
@@ -32,7 +32,7 @@ line-nums(line): line str.split-on(" +") filter(!= "") map(num)
 ops(line): line str.letters filter(!= " ")
 
 ` "Apply an operator to a list of numbers."
-apply-op(op, nums): (op = "*") then(product(nums), sum(nums))
+apply-op(op, nums): (op = "*") then(nums product, nums sum)
 
 solve(data): {
   lines: data filter(!= "")

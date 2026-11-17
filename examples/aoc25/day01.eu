@@ -10,7 +10,7 @@ steps.
 
 Approach: `scanl(+, 50)` turns the offsets into the list of dial
 positions; part 1 filters it for multiples of 100 and part 2 sums the
-crossings between consecutive positions with `over-sliding-pairs`.
+crossings between consecutive positions.
 
 Notable eucalypt techniques:
 - `scanl` for running totals
