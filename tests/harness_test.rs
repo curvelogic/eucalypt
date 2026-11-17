@@ -4739,6 +4739,13 @@ pub fn test_typecheck_134_identity_monad_derived_no_warning() {
     run_typecheck_test("134_identity_monad_derived_no_warning.eu");
 }
 
+/// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
+/// must accept a mixed-type list.
+#[test]
+pub fn test_typecheck_135_aoc_helpers_strict_clean() {
+    run_typecheck_test("135_aoc_helpers_strict_clean.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).
@@ -5301,6 +5308,48 @@ pub fn test_error_275_non_integer_take() {
     run_error_test(&error_opts("275_non_integer_take.eu"));
 }
 
+/// A non-integer argument to `gcd` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_337_non_integer_gcd() {
+    run_error_test(&error_opts("337_non_integer_gcd.eu"));
+}
+
+/// A non-integer argument to `lcm` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_338_non_integer_lcm() {
+    run_error_test(&error_opts("338_non_integer_lcm.eu"));
+}
+
+/// A non-integer bound to `merge-intervals` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_339_non_integer_merge_intervals() {
+    run_error_test(&error_opts("339_non_integer_merge_intervals.eu"));
+}
+
+/// An inverted `merge-intervals` interval is an error (eu-oaz72.26, decision 53).
+#[test]
+pub fn test_error_340_inverted_interval_merge_intervals() {
+    run_error_test(&error_opts("340_inverted_interval_merge_intervals.eu"));
+}
+
+/// A non-number `merge-intervals` bound is an error (eu-oaz72.26, decision 53).
+#[test]
+pub fn test_error_341_non_number_merge_intervals() {
+    run_error_test(&error_opts("341_non_number_merge_intervals.eu"));
+}
+
+/// A list bound to `merge-intervals` is an error naming it (eu-oaz72.26, decision 53).
+#[test]
+pub fn test_error_342_list_bound_merge_intervals() {
+    run_error_test(&error_opts("342_list_bound_merge_intervals.eu"));
+}
+
+/// A non-integer argument to `combinations` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_336_non_integer_combinations() {
+    run_error_test(&error_opts("336_non_integer_combinations.eu"));
+}
+
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
 pub fn test_error_275_non_integer_drop() {
@@ -5606,6 +5655,25 @@ pub fn test_error_314() {
 /// A huge bitwise operand is shown capped (eu-oaz72.160).
 pub fn test_error_315() {
     run_error_test(&error_opts("315_bitwise_operand_capped.eu"));
+}
+
+/// gcd and lcm on integers (eu-oaz72.26, owner decision 43).
+#[test]
+pub fn test_333_gcd_lcm() {
+    run_test(&opts("333_gcd_lcm.eu"));
+}
+
+/// enumerate, find, index-of, frequencies, combinations and permutations,
+/// including laziness (eu-oaz72.26, owner decision 43).
+#[test]
+pub fn test_334_list_helpers() {
+    run_test(&opts("334_list_helpers.eu"));
+}
+
+/// str.reverse and merge-intervals (eu-oaz72.26, owner decision 43).
+#[test]
+pub fn test_335_reverse_and_intervals() {
+    run_test(&opts("335_reverse_and_intervals.eu"));
 }
 
 /// Prelude sites converted to constant-stack strict forms (eu-oaz72.165,
