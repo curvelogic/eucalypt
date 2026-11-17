@@ -4678,6 +4678,12 @@ pub fn test_typecheck_125_str_matches_flat_list() {
     run_typecheck_test("125_str_matches_flat_list.eu");
 }
 
+/// Idiomatic uses of `interleave` and `parse-as` are clean under `--strict`.
+#[test]
+pub fn test_typecheck_127_strict_clean_idiomatic() {
+    run_typecheck_test("127_strict_clean_idiomatic.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).

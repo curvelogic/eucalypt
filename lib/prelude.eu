@@ -1238,7 +1238,7 @@ render(value): __RENDER_TO_STRING(value, :yaml)
 render-as(fmt, value): __RENDER_TO_STRING(value, fmt)
 
 ` { doc: "parse-as(fmt, str) - parse a string of structured data in the named format and return eucalypt data. The inverse of render-as. Supported formats: :json, :yaml, :toml, :csv, :xml, :edn, :jsonl. Content is parsed as inert data; embedded eucalypt expressions (e.g. YAML !eu tags) are never evaluated."
-    type: s"symbol → string → any?" }
+    type: s"symbol → string → any" }
 parse-as(fmt, str): __PARSE_STRING(fmt, str)
 
 ##
@@ -1662,7 +1662,7 @@ zip: zip-with(pair)
 unzip(pairs): [pairs map(first), pairs map(second)]
 
 ` { doc: "`interleave(a, b)` - alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended."
-    type: s"[a] → [a] → [a]" }
+    type: s"[a] → [b] → [a | b]" }
 interleave(a, b): if(a nil?, b, cons(a head, interleave(b, a tail)))
 
 ` { doc: "`cross(f, xs, ys)` - apply `f` to every combination of elements from `xs` and `ys` (cartesian product)."
