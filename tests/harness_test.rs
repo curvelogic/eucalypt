@@ -3,6 +3,9 @@ use eucalypt::driver::{options::EucalyptOptions, tester};
 use eucalypt::syntax::input::Input;
 use std::{path::Path, path::PathBuf, str::FromStr};
 
+mod common;
+use common::run_with_deadline;
+
 /// Common options for all tests
 pub fn opts(filename: &str) -> EucalyptOptions {
     let lib_path = vec![PathBuf::from("tests/harness")];
@@ -59,61 +62,6 @@ fn run_test(opt: &EucalyptOptions) {
 /// Path to the eu binary built by cargo for this test run.
 fn eu_binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_eu"))
-}
-
-/// Run `cmd`, killing it and returning `None` if it doesn't complete
-/// within `deadline`.
-///
-/// Typecheck fixtures are check-only test material: some are not
-/// designed to terminate under plain evaluation at all (e.g.
-/// `092_self_assign_arg_pos_ok.eu`, `ones: cons(1, ones)` — a
-/// deliberate infinite lazy fixpoint used only to verify the checker
-/// doesn't flag argument-position self-reference), so a bounded wait is
-/// required rather than `Command::output()`'s indefinite block.
-fn run_with_deadline(
-    mut cmd: std::process::Command,
-    deadline: std::time::Duration,
-) -> Option<std::process::Output> {
-    use std::io::Read;
-    use wait_timeout::ChildExt;
-
-    let mut child = cmd
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn eu");
-
-    // Drain both pipes while waiting: a child that writes more than a
-    // pipe buffer's worth would otherwise block on write and never exit,
-    // turning a chatty run into a spurious timeout.
-    fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> std::thread::JoinHandle<Vec<u8>> {
-        std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            if let Some(mut p) = pipe {
-                let _ = p.read_to_end(&mut buf);
-            }
-            buf
-        })
-    }
-    let stdout = drain(child.stdout.take());
-    let stderr = drain(child.stderr.take());
-
-    let status = match child.wait_timeout(deadline).expect("wait_timeout failed") {
-        Some(status) => Some(status),
-        None => {
-            let _ = child.kill();
-            let _ = child.wait();
-            None
-        }
-    };
-    // The child has exited (or been killed), so both pipes reach EOF.
-    let stdout = stdout.join().expect("stdout reader panicked");
-    let stderr = stderr.join().expect("stderr reader panicked");
-    status.map(|status| std::process::Output {
-        status,
-        stdout,
-        stderr,
-    })
 }
 
 /// Run an error test — validates against `.expect` sidecar if present,
