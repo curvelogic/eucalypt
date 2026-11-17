@@ -24,7 +24,7 @@ Notable eucalypt techniques:
   `[x, y, column, row]` points work with `area([x1, y1], [x2, y2])`)
 - `par-max` over per-suffix maxima
 
-Running time: ~1.7s (part 1), ~7s sequential / ~6s parallel (part 2)
+Running time: ~1.5s sequential / ~1.1s parallel (part 1), ~7.8s sequential / ~6s parallel (part 2), on 4 cores
 "
 
 parse-coord(line): line str.split-on(",") map(num)

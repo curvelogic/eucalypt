@@ -27,7 +27,7 @@ Notable eucalypt techniques:
 - `iota` and `ℕ` for index generation alongside `zip-with`
 - dynamic generalised lookup: `prepare` returns a block used as namespace for solver pipelines
 
-Running time: ~3.6s (part 1), ~10s sequential / ~3s parallel on 4 cores (part 2)
+Running time: ~4.9s sequential / ~2.4s parallel (part 1), ~5.8s sequential / ~2.9s parallel (part 2), on 4 cores
 "
 
 ` "Parse a comma-separated line into a list of numbers."
