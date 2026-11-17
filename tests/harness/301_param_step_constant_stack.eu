@@ -1,0 +1,34 @@
+{
+  title: "301 self-recursive loops whose step or test is a parameter run in constant stack"
+  doc: "eu-oaz72.147: a self-recursive combinator that applies one of its own
+        parameters was copied into its own body by the inliner, leaving an
+        unreduced `then` around the recursive call and hiding it from demand
+        analysis, so the loop grew the stack with its iteration count."
+}
+
+# The counter is forced by the test every step; only the step or test
+# function is unknown.
+step-loop(f, n): (n = 0) then(0, step-loop(f, f(n)))
+test-loop(p?, n): p?(n) then(0, test-loop(p?, n - 1))
+
+# A lazy state is forced explicitly with `seq`.
+seq-loop(f, n, x): (n = 0) then(x, seq(x, seq-loop(f, n - 1, f(x))))
+
+n: 100000
+
+` { target: :loops
+    verify: [:loop-values, :constant-stack] }
+loops: {
+  step: step-loop(_ - 1, n)
+  test: test-loop(_ = 0, n)
+  forced: seq-loop(_ + 3, n, 0)
+}
+
+` "every loop computes its value"
+loop-values(context): {
+  r: context.result
+  checks: [r.step = 0, r.test = 0, r.forced = 300000]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` "no loop grows the stack with its iteration count"
+constant-stack(context): (context.stats.max-stack < 1000) then(:PASS, :FAIL)
