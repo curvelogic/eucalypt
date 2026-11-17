@@ -5562,6 +5562,20 @@ pub fn test_error_284_interpolation_two_names() {
     run_error_test(&error_opts("284_interpolation_two_names.eu"));
 }
 
+/// `{{` is not an escape in a c-string: `c"{{}}"` is a parse error whose
+/// help names `\{`, never a silent wrong answer (eu-oaz72.128).
+#[test]
+pub fn test_error_343_cstring_doubled_brace() {
+    run_error_test(&error_opts("343_cstring_doubled_brace.eu"));
+}
+
+/// A leading dot in a string interpolation is a parse error: `{.x}` used
+/// to read silently as `{x}` (eu-oaz72.139).
+#[test]
+pub fn test_error_344_interpolation_stray_dot() {
+    run_error_test(&error_opts("344_interpolation_stray_dot.eu"));
+}
+
 #[test]
 pub fn test_error_291_modinv_not_invertible() {
     run_error_test(&error_opts("291_modinv_not_invertible.eu"));

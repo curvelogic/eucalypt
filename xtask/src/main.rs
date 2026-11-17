@@ -26,7 +26,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::Instant,
 };
 
@@ -41,6 +41,7 @@ use eucalypt::{
         },
         transform::fuse,
         typecheck::check::type_check,
+        verify::closed::verify_prelude_closed,
     },
     driver::source::SourceLoader,
     eval::stg::{
@@ -86,7 +87,12 @@ fn main() -> Result<()> {
 // ── prelude-compile ───────────────────────────────────────────────────────────
 
 fn cmd_prelude_compile() -> Result<()> {
-    let workspace_root = workspace_root()?;
+    compile_prelude_in(&workspace_root()?)
+}
+
+/// Compile `lib/prelude.eu` under `workspace_root` and write the blob to
+/// `lib/prelude.blob` there.
+fn compile_prelude_in(workspace_root: &Path) -> Result<()> {
     let prelude_src = workspace_root.join(PRELUDE_SOURCE_PATH);
     let intrinsic_table = workspace_root.join(INTRINSIC_TABLE_PATH);
     let blob_out = workspace_root.join(BLOB_PATH);
@@ -174,6 +180,16 @@ fn cmd_prelude_compile() -> Result<()> {
         let unit = loader
             .translate(inp)
             .with_context(|| format!("translate {inp}"))?;
+        // An unresolved name anywhere in the prelude fails the per-binding
+        // STG compile below; report it here, at its source, with the same
+        // diagnostic the source-prelude path gives (eu-oaz72.125).
+        if *tag == "prelude" {
+            if let Err(e) = verify_prelude_closed(&unit.expr) {
+                let e = eucalypt::driver::error::EucalyptError::from(e);
+                let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
+                bail!("prelude uses a name it does not define\n{diag}");
+            }
+        }
         desugared_unit_cores.push((tag.to_string(), unit.expr.clone()));
     }
     loader.merge_units(&all_inputs).context("merge_units")?;
@@ -786,4 +802,48 @@ fn flatten_forms_to_arena(
     }
     // arena.forms holds ALL forms (top-level wrappers + inner LetRec forms).
     (arena.nodes, arena.forms, binding_entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A scratch workspace holding the blob's inputs from this one, with
+    /// `extra` appended to its `lib/prelude.eu`.
+    fn scratch_workspace(extra: &str) -> PathBuf {
+        let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let dir = std::env::temp_dir().join(format!("eu-xtask-prelude-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let inputs = ["Cargo.toml", "build-meta.yaml", INTRINSIC_TABLE_PATH]
+            .into_iter()
+            .chain(DEMAND_ANALYSIS_PATHS.iter().copied());
+        for rel in inputs {
+            let to = dir.join(rel);
+            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+            std::fs::copy(real.join(rel), &to).unwrap();
+        }
+        let source = std::fs::read_to_string(real.join(PRELUDE_SOURCE_PATH)).unwrap();
+        let prelude = dir.join(PRELUDE_SOURCE_PATH);
+        std::fs::create_dir_all(prelude.parent().unwrap()).unwrap();
+        std::fs::write(prelude, format!("{source}\n{extra}")).unwrap();
+        dir
+    }
+
+    /// A plain string does not process `\"`, so a prelude doc string
+    /// written with it ends at the `\` and leaves stray names behind. The
+    /// blob compile rejects it, naming the first stray name, exactly as
+    /// the source-prelude path does (the matching test is
+    /// `source_prelude_rejects_doc_string_with_escaped_quote` in
+    /// `src/driver/source.rs`; eu-oaz72.125).
+    #[test]
+    fn blob_compile_rejects_doc_string_with_escaped_quote() {
+        let dir = scratch_workspace("` { doc: \"say \\\"hi\\\" now\" }\ndoc-probe: __NULL\n");
+        let result = compile_prelude_in(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        let message = format!("{:#}", result.expect_err("the blob compile must fail"));
+        assert!(
+            message.contains("unresolved variable: hi"),
+            "unexpected error: {message}"
+        );
+    }
 }

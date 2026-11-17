@@ -56,7 +56,20 @@ If you require C-style escapes, you can use C-strings:
 multiline: c"first line\nsecond line"
 ```
 
-C-strings also support interpolation with `{...}`.
+C-strings also support interpolation with `{...}`. In a c-string a
+literal brace is written with a backslash, `\{` or `\}`: doubling
+(`{{`, `}}`) is **not** an escape there, so `c"{{x}}"` opens an
+interpolation that holds a stray `{` and is a parse error.
+
+```eu
+n: 3
+braces: c"\{n\} is {n}"
+```
+
+```yaml
+n: 3
+braces: '{n} is 3'
+```
 
 ## Basic Interpolation
 
@@ -114,8 +127,9 @@ label: '99'
 > result: "{sum}"
 > ```
 >
-> Anything else inside the braces — a second name, as in `"{ a b }"` —
-> is a parse error. Whitespace around the name and the format
+> Anything else inside the braces — a second name, as in `"{ a b }"`,
+> or a dot with no name on one side, as in `"{.x}"` or `"{x.}"` — is a
+> parse error. Whitespace around the name and the format
 > specifier is ignored: `"{ n : %06d }"` is `"{n:%06d}"`.
 
 ## Escaping Braces
@@ -408,5 +422,7 @@ table: rows map(format-row)
 - Escape literal braces by doubling them: `{{` and `}}`. This works
   straight after an interpolation too: `"{x}}}"` is the value of `x`
   followed by `}`
+- In a c-string, write a literal brace as `\{` or `\}`; `{{` is not an
+  escape there
 - The `str` namespace provides splitting, joining, case conversion,
   matching, and more

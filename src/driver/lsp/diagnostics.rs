@@ -118,6 +118,7 @@ fn error_range(error: &ParseError) -> TextRange {
         | ParseError::EmptyExpression { range }
         | ParseError::UnclosedStringInterpolation { range }
         | ParseError::InvalidStringInterpolation { range }
+        | ParseError::DoubledBraceInCString { range }
         | ParseError::InvalidZdtLiteral { range, .. }
         | ParseError::InvalidDoubleColon { range }
         | ParseError::UnclosedBracketExpr { range }
@@ -153,6 +154,11 @@ fn error_message(error: &ParseError) -> String {
         }
         ParseError::InvalidStringInterpolation { .. } => {
             "unexpected content in string interpolation".to_string()
+        }
+        ParseError::DoubledBraceInCString { .. } => {
+            "unexpected content in string interpolation: '{{' is not an escape in a c-string \
+             (write a literal brace as \\{ or \\})"
+                .to_string()
         }
         ParseError::InvalidZdtLiteral { .. } => "invalid ZDT literal".to_string(),
         ParseError::InvalidDoubleColon { .. } => {

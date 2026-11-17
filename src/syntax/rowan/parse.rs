@@ -1003,6 +1003,12 @@ impl<'text> Parser<'text> {
                         let mut found_close = false;
                         // The range of the non-trivia tokens left over, if any.
                         let mut leftover: Option<TextRange> = None;
+                        // In a c-string, `{{` is not an escape (a literal
+                        // brace there is `\{`): an interpolation opening
+                        // straight onto a second `{` gets a note saying so.
+                        let doubled_c_brace = end_kind == C_STRING_PATTERN_END
+                            && self.next_token == open_brace_idx + 1
+                            && matches!(self.peek(), Some((OPEN_BRACE, _)));
                         while let Some((k, stray_text)) = self.peek() {
                             let stray_len = TextSize::of(stray_text);
                             if k == CLOSE_BRACE {
@@ -1014,8 +1020,11 @@ impl<'text> Parser<'text> {
                                 self.sink().token(CLOSE_BRACE, stray_len);
                                 found_close = true;
                                 if let Some(range) = leftover.filter(|_| !reported_later) {
-                                    self.errors
-                                        .push(ParseError::InvalidStringInterpolation { range });
+                                    self.errors.push(if doubled_c_brace {
+                                        ParseError::DoubledBraceInCString { range }
+                                    } else {
+                                        ParseError::InvalidStringInterpolation { range }
+                                    });
                                 }
                                 break;
                             }
@@ -1062,12 +1071,17 @@ impl<'text> Parser<'text> {
 
     /// Parse the content inside an interpolation {...}
     ///
-    /// Returns true when the content is a dotted lookup with no name in it
-    /// at all (`{..}`): desugaring reports that as an invalid string
-    /// interpolation, so the parser does not report its leftovers too.
+    /// Returns true when the content has already been reported as invalid,
+    /// so the caller does not report its leftovers too. That is the case
+    /// for a dotted lookup with no name in it at all (`{..}`), which
+    /// desugaring reports, and for a dotted lookup with a leading or
+    /// trailing dot (`{.x}`, `{x.}`), which is reported here: without the
+    /// error it would read silently as `{x}`.
     fn parse_string_interpolation_content(&mut self) -> bool {
         self.add_trivia();
         let mut parsed_name = false;
+        // The first dot not between two names (`{.x}`, `{x.}`), if any.
+        let mut stray_dot: Option<TextRange> = None;
 
         // Check if we have dotted references by looking ahead
         let has_dots = self
@@ -1091,11 +1105,16 @@ impl<'text> Parser<'text> {
                 parsed_name = true;
             }
             self.add_trivia();
+            let leading_dot = !parsed_name;
 
             // Parse alternating dots and targets
             while let Some((OPERATOR_IDENTIFIER, text)) = self.peek() {
                 if text == "." {
                     let dot_len = TextSize::of(text);
+                    let dot_range = TextRange::at(self.token_start_at(self.next_token), dot_len);
+                    if leading_dot && stray_dot.is_none() {
+                        stray_dot = Some(dot_range);
+                    }
                     // Parse the dot
                     self.next();
                     self.sink().start_node(NAME);
@@ -1114,6 +1133,9 @@ impl<'text> Parser<'text> {
                         self.add_trivia();
                     } else {
                         // Malformed - dot without following target
+                        if stray_dot.is_none() {
+                            stray_dot = Some(dot_range);
+                        }
                         break;
                     }
                 } else {
@@ -1150,7 +1172,16 @@ impl<'text> Parser<'text> {
             }
             self.add_trivia();
         }
-        has_dots && !parsed_name
+        if !has_dots || !parsed_name {
+            // `{..}` and friends are reported by desugaring.
+            return has_dots;
+        }
+        if let Some(range) = stray_dot {
+            self.errors
+                .push(ParseError::InvalidStringInterpolation { range });
+            return true;
+        }
+        false
     }
 }
 
@@ -2706,8 +2737,17 @@ UNIT@0..105
             ("x: \"{a.b c}\"\n", "c"),
             ("x: \"{x:.2f}\"\n", ".2f"),
             ("x: \"{x:a:b}\"\n", ":b"),
-            ("x: \"{.x y}\"\n", "y"),
-            ("x: \"{.x:.2f}\"\n", ".2f"),
+            // A leading or trailing dot is reported, once, at the dot:
+            // `{.x}` and `{x.}` used to read silently as `{x}`.
+            ("x: \"{.x y}\"\n", "."),
+            ("x: \"{.x:.2f}\"\n", "."),
+            ("x: \"{.x}\"\n", "."),
+            ("x: \"{x.}\"\n", "."),
+            ("x: \"{ .x }\"\n", "."),
+            ("x: \"{ x. }\"\n", "."),
+            ("x: \"{x.:%03d}\"\n", "."),
+            ("x: c\"{.x}\"\n", "."),
+            ("x: c\"{x.}\"\n", "."),
         ] {
             let parse = parse_unit(src);
             assert_eq!(parse.syntax_node().text().to_string(), src);
@@ -2721,6 +2761,10 @@ UNIT@0..105
         for src in [
             "x: \"{ a }\"\n",
             "x: \"{ a.b.c }\"\n",
+            "x: \"{a.b}\"\n",
+            "x: \"{a.b:%03d}\"\n",
+            "x: \"{0}\"\n",
+            "x: \"{}\"\n",
             "x: \"{ s : up }\"\n",
             "x: \"{ n : %03d }\"\n",
             "x: c\"{ n : %03d }\\n\"\n",
