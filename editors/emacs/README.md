@@ -89,7 +89,9 @@ To render text that is not saved to a file:
   | `e` | `∅` | empty |
 
 - **Quail input method** (`eucalypt`) — type ASCII sequences that
-  auto-translate to Unicode, except inside strings and comments. These
+  auto-translate to Unicode, except inside strings and comments (including
+  a string whose closing quote is not typed yet; code in a `{...}`
+  interpolation does translate). These
   translate as typed (the first five are ASCII spellings of the same
   prelude operators):
 

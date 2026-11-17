@@ -378,6 +378,17 @@ ns: { inner: 1 }\n"
                  '(("x: \"\\\\((d)\\\\)\"\n" "((d" t)
                    ("x: c\"a\" # \\\\in\n" "in" t)
                    ("x: a\n" "a" nil)
+                   ;; A string still being typed (eu-oaz72.8 round 2).
+                   ("x: f(\"\\\\(()\n" "\\\\(()" t)
+                   ("x: [\"\\\\(]\n" "\\\\(]" t)
+                   ("x: { a: \"\\\\( }\n" "\\\\( }" t)
+                   ("x: re-match(\"\\\\(" "\\\\(" t)
+                   ("x: \"" "\"" nil)
+                   ;; Code in an interpolation, also while typing.
+                   ("x: \"{a && b}\"\n" "&& b" nil)
+                   ("x: \"{a && b" "&& b" nil)
+                   ;; Code after a closed string on an erroneous line.
+                   ("x: f(\"s\", a && b\n" "&& b" nil)
                    ("x: \"s\" \n" " \n" nil)))
     (with-temp-buffer
       (insert source)
@@ -392,7 +403,9 @@ ns: { inner: 1 }\n"
       (unless (eq (and (eucalypt--in-string-or-comment-p) t) text-p)
         (eucalypt-check--fail "%S at %S: in string or comment should be %S"
                               source before text-p))
-      (when text-p
+      ;; Only where the key should pass through: elsewhere quail would wait
+      ;; for more keys, which a batch Emacs reads from stdin.
+      (when (and text-p (eucalypt--in-string-or-comment-p))
         (unless (equal (eucalypt--input-method ?\\) '(?\\))
           (eucalypt-check--fail "%S: input method translates in text"
                                 source)))))

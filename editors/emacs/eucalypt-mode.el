@@ -1229,21 +1229,61 @@ that a `\\=\\n' escape followed by `i' in a c-string is left alone.)
 ;; predicate for that, so in a `eucalypt-mode' buffer the input method's
 ;; function is wrapped while the `eucalypt' input method is active.
 
+(defun eucalypt--line-text-state (pos)
+  "Return `string', `comment' or nil for POS, scanning its line from the start.
+This sees a string whose closing quote is not typed yet, which the parse
+does not.  `{...}' inside a string is an interpolation, which is code; a
+backslash escapes the next character in a c-string."
+  (save-excursion
+    (goto-char pos)
+    (let ((i (line-beginning-position)) (state nil) (escapes nil) (depth 0))
+      (while (and (< i pos) (not (eq state 'comment)))
+        (let ((c (char-after i)))
+          (cond
+           ((eq state 'string)
+            (cond ((and escapes (eq c ?\\)) (setq i (1+ i)))
+                  ((and (eq c ?{) (eq (char-after (1+ i)) ?{)) (setq i (1+ i)))
+                  ((eq c ?{) (setq state 'code depth 1))
+                  ((eq c ?\") (setq state nil))))
+           ((eq state 'code)
+            (cond ((eq c ?{) (setq depth (1+ depth)))
+                  ((eq c ?}) (setq depth (1- depth))
+                   (when (zerop depth) (setq state 'string)))))
+           ((eq c ?\") (setq state 'string
+                             escapes (eq (char-before i) ?c)))
+           ((eq c ?#) (setq state 'comment))))
+        (setq i (1+ i)))
+      (and (memq state '(string comment)) state))))
+
 (defun eucalypt--in-string-or-comment-p (&optional pos)
-  "Non-nil when POS (default point) is inside a string literal or comment."
+  "Non-nil when POS (default point) is inside a string literal or comment.
+An interpolation inside a string is code; its format spec is text.  A
+string still being typed, with no closing quote yet, counts as a string:
+when the parse has an error, the line is scanned (`eucalypt--line-text-state')."
   (let* ((pos (or pos (point)))
          (n (and (treesit-parser-list) (treesit-node-at pos)))
-         (found nil))
-    (while (and n (not found))
+         (found nil) (done nil))
+    (while (and n (not done))
       (let ((type (treesit-node-type n)))
-        (cond ((member type eucalypt-mode--string-types)
-               (setq found (and (< (treesit-node-start n) pos)
+        (cond ((equal type "interpolation_content") (setq done t))
+              ((equal type "format_spec") (setq done t found t))
+              ((member type eucalypt-mode--string-types)
+               (setq done t
+                     found (and (< (treesit-node-start n) pos)
                                 (< pos (treesit-node-end n)))))
               ((equal type "comment")
-               (setq found (and (< (treesit-node-start n) pos)
+               (setq done t
+                     found (and (< (treesit-node-start n) pos)
                                 (<= pos (treesit-node-end n)))))))
-      (setq n (and (not found) (treesit-node-parent n))))
-    found))
+      (setq n (treesit-node-parent n)))
+    (or found
+        ;; Not inside a parsed string or comment: perhaps an unterminated
+        ;; one, which leaves the parse with an error.
+        (and (not done)
+             (treesit-parser-list)
+             (treesit-node-check (treesit-buffer-root-node) 'has-error)
+             (eucalypt--line-text-state pos)
+             t))))
 
 (defun eucalypt--input-method (key)
   "Translate KEY with the `eucalypt' input method, except in text.
