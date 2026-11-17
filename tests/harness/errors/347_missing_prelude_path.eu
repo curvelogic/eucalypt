@@ -1,0 +1,4 @@
+{ prelude: "nope/prelude.eu" }
+
+` { doc: "A `prelude:` path that does not exist is an error, not a fallback to the bundled prelude (eu-oaz72.181)." }
+result: 42

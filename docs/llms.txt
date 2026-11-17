@@ -76,4 +76,3 @@ evaluation and purely functional semantics.
 - [Frequently Asked Questions](https://curvelogic.github.io/eucalypt/faq.html): Common questions about installation, format conversion, functions, catenation, anaphora, block merging, data processing, and more
 - [Syntax Cheat Sheet](https://curvelogic.github.io/eucalypt/appendices/cheat-sheet.html): Dense single-page reference covering all syntax forms, operators, common patterns, and key prelude functions
 - [Syntax Gotchas](https://curvelogic.github.io/eucalypt/appendices/syntax-gotchas.html): Common pitfalls including operator precedence issues, absence of lambda syntax, and single-quote identifier behaviour
-- [Migration from v0.2 to v0.3](https://curvelogic.github.io/eucalypt/appendices/migration.html): Key changes in v0.3 including subcommand structure and new fmt/lsp subcommands

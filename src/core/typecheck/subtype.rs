@@ -638,6 +638,24 @@ fn is_app_consistent_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> 
     is_subtype(s, t) || is_subtype(t, s)
 }
 
+/// True when `t` is an application whose spine head is an unresolved type
+/// variable, e.g. `m a` or `m a b` with `m :: * → *` still unbound.
+///
+/// Such a type may denote any concrete type, so a call-site argument
+/// mismatch against it cannot be trusted (see the call-site fallback in
+/// `check.rs`).  Deliberately not part of `is_subtype`: subtyping and
+/// type narrowing keep treating `m a` as a distinct application.
+pub fn is_abstract_hkt_app(t: &Type) -> bool {
+    if !matches!(t, Type::App(_, _)) {
+        return false;
+    }
+    let mut head = t;
+    while let Type::App(f, _) = head {
+        head = f;
+    }
+    matches!(head, Type::Var(_, _))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1609,5 +1627,18 @@ mod tests {
         ]);
         assert!(is_consistent(&without_age, &age_optional));
         assert!(is_consistent(&age_optional, &without_age));
+    }
+
+    #[test]
+    fn abstract_hkt_app_detection() {
+        let m = Type::Var(TypeVarId("m".to_string()), Kind::star_to_star());
+        let app = Type::App(Box::new(m), Box::new(Type::Number));
+        assert!(is_abstract_hkt_app(&app));
+        let nested = Type::App(Box::new(app), Box::new(Type::Number));
+        assert!(is_abstract_hkt_app(&nested));
+        assert!(!is_abstract_hkt_app(&Type::Number));
+        assert!(!is_abstract_hkt_app(&Type::list(Type::Number)));
+        // subtyping itself is unchanged
+        assert!(!is_subtype(&Type::Number, &nested));
     }
 }
