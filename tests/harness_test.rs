@@ -3192,6 +3192,9 @@ pub fn test_232_negative_counts() {
 /// catenation produces is reduced to a saturated `if`. The `loops` target's
 /// `constant-stack` validator checks `max-stack` and FAILs on master, where
 /// each `then` iteration pushed a frame (max-stack ~1e5 at n = 1e5).
+/// eu-oaz72.147 adds parameter-step and parameter-test loops: the inliner no
+/// longer copies a self-recursive combinator into itself (max-stack ~5e4 on
+/// master).
 #[test]
 pub fn test_233_constant_stack_loops() {
     run_test(&opts("233_constant_stack_loops.eu"));

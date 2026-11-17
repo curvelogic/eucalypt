@@ -196,7 +196,15 @@ fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                 let bindings = open_bindings
                     .iter()
                     .map(|(name, v)| {
-                        let substituted = v.substs(&inlines);
+                        // A binding's own self-reference must stay a
+                        // reference: substituting the binding's value into
+                        // itself unrolls a self-recursive combinator once
+                        // and leaves the copy's inline combinators
+                        // unreduced in the recursive tail, which hides the
+                        // recursive call from demand analysis (eu-oaz72.147).
+                        let others: Vec<(String, RcExpr)> =
+                            inlines.iter().filter(|(n, _)| n != name).cloned().collect();
+                        let substituted = v.substs(&others);
                         match distribute(&substituted) {
                             Ok(e) => Ok((name.clone(), e)),
                             Err(e) => Err(e),
