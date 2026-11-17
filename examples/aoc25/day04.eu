@@ -101,10 +101,13 @@ peel(counts, stack, n): stack nil? then(n, peel-on(peel-roll(counts, stack tail,
 ` "Continue peeling from the state `[counts, stack]` left by a removal."
 peel-on([counts, stack], n): seq(counts, seq(n, peel(counts, stack, n)))
 
+` "Is the `[key, count]` entry a roll with fewer than 4 neighbouring rolls?"
+removable?([_, n]): n < 4
+
 ` "Total removed rolls, peeling from a dict of neighbour counts."
 solve2(grid): {
   counts: dict.of(grid initial-counts)
-  removable: counts dict.to-list filter(second ; (< 4)) map(first)
+  removable: counts dict.to-list filter(removable?) map(first)
 }.(peel(counts, removable, 0))
 
 ` { target: :test
