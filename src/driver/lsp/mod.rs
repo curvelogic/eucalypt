@@ -32,9 +32,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
-use lsp_server::{
-    Connection, ErrorCode, ExtractError, Message, Notification, Request, RequestId, Response,
-};
+use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
 use lsp_types::{
     notification::{
         DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification as _,
@@ -77,6 +75,10 @@ impl std::fmt::Display for PipelineError {
 /// Result sent from the background pipeline thread.
 struct PipelineResult {
     uri: Url,
+    /// The cancel flag of the run that produced this result.  It is set
+    /// when the document is edited again, closed, or the server shuts
+    /// down, so a result delivered after that is stale.
+    cancel: Arc<AtomicBool>,
     result: Result<PipelineCacheEntry, PipelineError>,
 }
 
@@ -295,9 +297,6 @@ struct ServerState {
     /// the parse-specific `last_green`/`last_parse_errors` fields.
     queries: QueryStore,
 
-    /// Channel for receiving pipeline results from background threads.
-    pipeline_rx: Receiver<PipelineResult>,
-
     /// Sender cloned to each background thread for delivering results.
     pipeline_tx: Sender<PipelineResult>,
 
@@ -312,7 +311,7 @@ struct ServerState {
 }
 
 impl ServerState {
-    fn new(refresh: RefreshSupport) -> Self {
+    fn new(refresh: RefreshSupport) -> (Self, Receiver<PipelineResult>) {
         // Write the embedded prelude to a temp file so go-to-definition
         // can navigate to real source locations instead of the non-existent
         // resource:prelude URI.
@@ -321,16 +320,16 @@ impl ServerState {
                 .unwrap_or_else(|_| Url::parse("file:///prelude.eu").expect("fallback URI"))
         });
         let (pipeline_tx, pipeline_rx) = crossbeam_channel::unbounded();
-        Self {
+        let state = Self {
             store: DocumentStore::new(),
             prelude_table: symbol_table::prelude_symbols(&prelude_uri),
             queries: QueryStore::new(),
-            pipeline_rx,
             pipeline_tx,
             cancel: HashMap::new(),
             refresh,
             next_request_id: 0,
-        }
+        };
+        (state, pipeline_rx)
     }
 
     /// Write the embedded prelude source to a temp file and return its
@@ -409,12 +408,13 @@ impl ServerState {
     }
 
     /// Apply a pipeline result: store in QueryStore and publish type diagnostics.
-    fn apply_pipeline_result(
-        &mut self,
-        connection: &Connection,
-        result: PipelineResult,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn apply_pipeline_result(&mut self, connection: &Connection, result: PipelineResult) {
         let uri = result.uri.clone();
+        // Drop a stale result: the document was edited again or closed
+        // (or the server is shutting down) while the check ran.
+        if result.cancel.load(Ordering::SeqCst) || self.store.get(&uri).is_none() {
+            return;
+        }
         match result.result {
             Ok(entry) => {
                 // Publish type diagnostics from the new pipeline result.
@@ -431,6 +431,17 @@ impl ServerState {
                 let parse_errors = self.queries.last_parse_errors(&file_id).unwrap_or(&empty);
                 let mut diags = diagnostics::diagnostics_from_parse_errors(&text, parse_errors);
                 diags.extend(type_diags);
+                // A `prelude:` override that could not be loaded: the
+                // default prelude was used, but the user must be told.
+                if let Some(err) = &entry.prelude_error {
+                    diags.push(lsp_types::Diagnostic {
+                        range: err.range.unwrap_or_default(),
+                        severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+                        source: Some("eucalypt-pipeline".to_string()),
+                        message: err.message.clone(),
+                        ..Default::default()
+                    });
+                }
 
                 let params = PublishDiagnosticsParams {
                     uri: uri.clone(),
@@ -441,7 +452,7 @@ impl ServerState {
                     lsp_types::notification::PublishDiagnostics::METHOD.to_string(),
                     params,
                 );
-                connection.sender.send(Message::Notification(notif))?;
+                send_best_effort(connection, Message::Notification(notif));
 
                 // Update the import graph in the query store so that future
                 // edits to imported files trigger re-checking of this file.
@@ -483,7 +494,7 @@ impl ServerState {
                             method.to_string(),
                             serde_json::Value::Null,
                         );
-                        connection.sender.send(Message::Request(refresh))?;
+                        send_best_effort(connection, Message::Request(refresh));
                     }
                 }
             }
@@ -515,10 +526,29 @@ impl ServerState {
                     lsp_types::notification::PublishDiagnostics::METHOD.to_string(),
                     params,
                 );
-                connection.sender.send(Message::Notification(notif))?;
+                send_best_effort(connection, Message::Notification(notif));
             }
         }
-        Ok(())
+    }
+
+    /// Cancel every in-flight or debouncing background check.
+    fn cancel_all(&self) {
+        for cancel in self.cancel.values() {
+            cancel.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+/// Send a server-initiated message (diagnostics, refresh requests),
+/// ignoring failure.
+///
+/// A failed send means the client has stopped reading our output.  That
+/// is not an error in the server: clients end a session with
+/// `shutdown`/`exit` or by closing stdin, and the main loop ends on
+/// either, so the server carries on until then.
+fn send_best_effort(connection: &Connection, msg: Message) {
+    if let Err(e) = connection.sender.send(msg) {
+        eprintln!("eucalypt language server: client not reading, dropped message: {e}");
     }
 }
 
@@ -535,8 +565,7 @@ fn main_loop(
     use lsp_types::notification::Exit;
     use lsp_types::request::{Request as _, Shutdown};
 
-    let mut state = ServerState::new(refresh);
-    let pipeline_rx = state.pipeline_rx.clone();
+    let (mut state, pipeline_rx) = ServerState::new(refresh);
     let mut shutdown_requested = false;
 
     loop {
@@ -555,6 +584,7 @@ fn main_loop(
                     }
                     Message::Request(req) if req.method == Shutdown::METHOD => {
                         shutdown_requested = true;
+                        state.cancel_all();
                         let resp = Response::new_ok(req.id, ());
                         connection.sender.send(Message::Response(resp))?;
                     }
@@ -577,7 +607,7 @@ fn main_loop(
                 // `state` holds a sender, so the channel never disconnects.
                 if let Ok(result) = result {
                     if !shutdown_requested {
-                        state.apply_pipeline_result(&connection, result)?;
+                        state.apply_pipeline_result(&connection, result);
                     }
                 }
             }
@@ -594,22 +624,18 @@ where
     R: lsp_types::request::Request,
     T: serde::Serialize,
 {
-    let id = req.id.clone();
-    match req.extract::<R::Params>(R::METHOD) {
-        Ok((id, params)) => Response::new_ok(id, handler(params)),
-        Err(ExtractError::JsonError { method, error }) => {
+    // The caller has already matched `req.method` against `R::METHOD`.
+    match serde_json::from_value::<R::Params>(req.params) {
+        Ok(params) => Response::new_ok(req.id, handler(params)),
+        Err(error) => {
+            let method = req.method;
             eprintln!("invalid params for {method}: {error}");
             Response::new_err(
-                id,
+                req.id,
                 ErrorCode::InvalidParams as i32,
                 format!("invalid params for {method}: {error}"),
             )
         }
-        Err(ExtractError::MethodMismatch(req)) => Response::new_err(
-            id,
-            ErrorCode::MethodNotFound as i32,
-            format!("unhandled request: {}", req.method),
-        ),
     }
 }
 
@@ -822,7 +848,7 @@ fn on_document_changed(
         lsp_types::notification::PublishDiagnostics::METHOD.to_string(),
         params,
     );
-    connection.sender.send(Message::Notification(notif))?;
+    send_best_effort(connection, Message::Notification(notif));
 
     // Cancel any in-flight pipeline run for this document.
     if let Some(prev_cancel) = state.cancel.get(&uri) {
@@ -1172,7 +1198,11 @@ fn spawn_pipeline(
                 return;
             }
 
-            let _ = tx.send(PipelineResult { uri, result });
+            let _ = tx.send(PipelineResult {
+                uri,
+                cancel,
+                result,
+            });
         })
         .expect("failed to spawn LSP pipeline thread");
 }
@@ -1238,7 +1268,7 @@ fn run_pipeline(
         Input::new(Locator::Literal(text.to_string()), None, "eu")
     };
 
-    let inputs = vec![prelude, doc_input];
+    let mut inputs = vec![prelude, doc_input];
     let mut loader = SourceLoader::new(vec![]);
 
     // Per-stage content hashes.
@@ -1250,11 +1280,50 @@ fn run_pipeline(
     // future optimisation.
     let file_text_hash = hash_str(text);
 
+    // File id of the open document, so that warnings located in imported
+    // files can be told apart from warnings in the document itself.
+    let mut doc_file_id = None;
+    // Detect a `prelude:` override in the open document before loading, as
+    // `prepare()` does for evaluation (eu-oaz72.177).
+    // Detection only reads buffer text, so always present the document as a
+    // buffer, even when its URI did not map to a path (e.g. on Windows).
+    let detect_input = Input::new(
+        Locator::Buffer {
+            path: path.map(|p| p.to_path_buf()).unwrap_or_default(),
+            text: text.to_string(),
+        },
+        None,
+        "eu",
+    );
+    let mut prelude_error = None;
+    if let Err(e) = loader.detect_and_load_prelude_override(&[detect_input]) {
+        // Keep the reason, so it is published as a diagnostic below.
+        prelude_error = Some(make_pipeline_error(&loader, &e));
+        // An override that cannot be loaded (e.g. a relative path that does
+        // not resolve from the server's working directory) must not cost
+        // the document all its diagnostics: discard the half-set override
+        // and check against the default prelude, as before.
+        loader = SourceLoader::new(vec![]);
+    }
     for input in &inputs {
-        if let Err(e) = loader.load(input) {
-            return Err(make_pipeline_error(&loader, &e));
+        match loader.load(input) {
+            Ok(id) => {
+                if std::ptr::eq(input, &inputs[1]) {
+                    doc_file_id = Some(id);
+                }
+            }
+            Err(e) => return Err(make_pipeline_error(&loader, &e)),
         }
     }
+    // Honour a `prelude:` unit-metadata override found while loading, as
+    // evaluation and `eu check` do (eu-oaz72.177): substitute it for the
+    // default prelude before translate and merge.  `doc_file_id` is a loader
+    // file id, unaffected by the substitution.
+    inputs = crate::driver::prepare::substitute_prelude_override(
+        &inputs,
+        loader.prelude_override(),
+        true,
+    );
     for input in &inputs {
         if let Err(e) = loader.translate(input) {
             return Err(make_pipeline_error(&loader, &e));
@@ -1299,8 +1368,27 @@ fn run_pipeline(
     // Inline hash: proxy (inline pass runs next; no separate call here).
     let inline_hash = eliminate_hash;
 
+    // Deprecation references must be collected from the pruned core, as the
+    // `eu check` driver does, so that the quick-fix can fire in an editor.
+    // Keep only references located in the open document: diagnostics and
+    // quick-fixes are positioned against its text, so a reference inside an
+    // import (or the prelude) would land on unrelated source.
+    let deprecation_warnings: Vec<_> =
+        crate::core::verify::deprecation::check_deprecated_references(
+            &loader.core().expr,
+            &loader.core().deprecations,
+        )
+        .into_iter()
+        .filter(|w| {
+            loader
+                .source_map()
+                .source_info_for_smid(w.smid)
+                .is_some_and(|info| info.file == doc_file_id)
+        })
+        .collect();
     let core_expr = loader.core().expr.clone();
-    let result = type_check_full(&core_expr);
+    let mut result = type_check_full(&core_expr);
+    result.warnings.extend(deprecation_warnings);
 
     // Type-check hash: derived from the actual output (warnings + binding names)
     // so that a refactoring that preserves types produces the same hash even
@@ -1411,12 +1499,199 @@ fn run_pipeline(
         imports,
         alias_types,
         stage_hashes,
+        prelude_error,
     })
 }
 
 #[cfg(test)]
 mod tests {
+    /// A deprecated reference inside an imported file must not be reported
+    /// against the open document (eu-oaz72.162, review round 1).
+    #[test]
+    fn run_pipeline_ignores_deprecations_in_imports() {
+        let dir = std::env::temp_dir().join(format!("eu_lsp_dep_import_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("lib.eu"), "uses: str.fmt(255, \"%x\")\n").unwrap();
+        let main = dir.join("main.eu");
+        let mut session = testing::LspTestSession::new();
+        session.set_uri(&format!("file://{}", main.display()));
+        session.run_pipeline("{ import: \"lib.eu\" }\nresult: uses\n");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(session.has_cached(), "pipeline should succeed");
+        assert!(
+            session
+                .pipeline_warnings()
+                .iter()
+                .all(|w| !w.message.contains("str.fmt")),
+            "import-located deprecation leaked: {:?}",
+            session.pipeline_warnings()
+        );
+    }
+
+    /// The live pipeline must surface deprecation warnings, so that the
+    /// `replaced-by` quick-fix is offered in an editor (eu-oaz72.162).
+    #[test]
+    fn run_pipeline_offers_deprecation_quickfix() {
+        let mut session = testing::LspTestSession::new();
+        session.set_uri("file:///tmp/eu_lsp_deprecation_test.eu");
+        session.run_pipeline(
+            "` { replaced-by: \"new-fn\" }\nold-fn(x): x\nnew-fn(x): x\nresult: old-fn(1)\n",
+        );
+        let titles = session.code_action_titles(3, 0, 3, 20);
+        assert!(
+            titles.iter().any(|t| t == "Replace 'old-fn' with 'new-fn'"),
+            "expected deprecation quick-fix, got {titles:?}"
+        );
+    }
+
+    /// An unresolvable `prelude:` path must not discard the document's other
+    /// diagnostics (eu-oaz72.177, review round 1).
+    #[test]
+    fn run_pipeline_survives_unloadable_prelude_override() {
+        let mut session = testing::LspTestSession::new();
+        session.set_uri("file:///tmp/eu_lsp_prelude_unloadable_test.eu");
+        session.run_pipeline("{ prelude: \"tests/fixtures/\" }\nbad: str.fmt(255, \"%x\")\n");
+        assert!(session.has_cached(), "pipeline should still succeed");
+        assert!(
+            !session.pipeline_warnings().is_empty(),
+            "diagnostics against the default prelude were lost"
+        );
+    }
+
+    /// A missing `prelude:` path keeps the default-prelude fallback but is
+    /// reported, naming the path (eu-oaz72.181).
+    #[test]
+    fn run_pipeline_reports_missing_prelude_path() {
+        let mut session = testing::LspTestSession::new();
+        session.set_uri("file:///tmp/eu_lsp_prelude_missing_test.eu");
+        session.run_pipeline("{ prelude: \"nope/prelude.eu\" }\nx: 1\n");
+        assert!(session.has_cached(), "fallback to the default prelude");
+        let msg = session.prelude_error().expect("prelude error recorded");
+        assert!(msg.contains("nope/prelude.eu"), "message: {msg}");
+    }
+
+    /// The live pipeline must honour a `prelude:` override in the open
+    /// document, so the editor's diagnostics match `eu check` (eu-oaz72.177).
+    #[test]
+    fn run_pipeline_honours_prelude_override() {
+        let mut session = testing::LspTestSession::new();
+        session.set_uri("file:///tmp/eu_lsp_prelude_override_test.eu");
+        session.run_pipeline(
+            "{ prelude: \"tests/fixtures/alt-prelude-typed.eu\" }\nbad: alt-show(\"x\")\n",
+        );
+        assert!(session.has_cached(), "pipeline should succeed");
+        assert!(
+            session
+                .pipeline_warnings()
+                .iter()
+                .any(|w| w.message.contains("alt-show")),
+            "expected a type warning from the overriding prelude, got {:?}",
+            session.pipeline_warnings()
+        );
+    }
+
     use super::*;
+
+    /// A pipeline error result for `uri` carrying `cancel`.
+    fn error_result(uri: &Url, cancel: Arc<AtomicBool>) -> PipelineResult {
+        PipelineResult {
+            uri: uri.clone(),
+            cancel,
+            result: Err(PipelineError {
+                message: "boom".to_string(),
+                range: None,
+            }),
+        }
+    }
+
+    /// Number of publishDiagnostics notifications waiting on `client`.
+    fn published(client: &Connection) -> usize {
+        client
+            .receiver
+            .try_iter()
+            .filter(|m| matches!(m, Message::Notification(n) if n.method == "textDocument/publishDiagnostics"))
+            .count()
+    }
+
+    #[test]
+    fn stale_pipeline_results_are_not_published() {
+        let (server, client) = Connection::memory();
+        let (mut state, _rx) = ServerState::new(RefreshSupport::default());
+        let uri = Url::parse("file:///stale.eu").unwrap();
+
+        // Document open and current: published.
+        state.store.open(uri.clone(), "x: 1\n".to_string());
+        let live = Arc::new(AtomicBool::new(false));
+        state.apply_pipeline_result(&server, error_result(&uri, live.clone()));
+        assert_eq!(published(&client), 1, "current result not published");
+
+        // Superseded by a newer edit (flag set): dropped.
+        live.store(true, Ordering::SeqCst);
+        state.apply_pipeline_result(&server, error_result(&uri, live));
+        assert_eq!(published(&client), 0, "superseded result published");
+
+        // Document closed: dropped.
+        state.store.close(&uri);
+        let fresh = Arc::new(AtomicBool::new(false));
+        state.apply_pipeline_result(&server, error_result(&uri, fresh));
+        assert_eq!(published(&client), 0, "result published for closed file");
+    }
+
+    /// A missing `prelude:` path is published to the client as an ERROR
+    /// diagnostic (eu-oaz72.181).
+    #[test]
+    fn missing_prelude_path_is_published_as_error_diagnostic() {
+        let (server, client) = Connection::memory();
+        let (mut state, _rx) = ServerState::new(RefreshSupport::default());
+        let uri = Url::parse("file:///tmp/eu_lsp_prelude_publish_test.eu").unwrap();
+        let text = "{ prelude: \"nope/prelude.eu\" }\nx: 1\n";
+        state.store.open(uri.clone(), text.to_string());
+        let Ok(entry) = run_pipeline(&uri, text, None) else {
+            panic!("pipeline should fall back to the default prelude");
+        };
+        state.apply_pipeline_result(
+            &server,
+            PipelineResult {
+                uri: uri.clone(),
+                cancel: Arc::new(AtomicBool::new(false)),
+                result: Ok(entry),
+            },
+        );
+        let diags: Vec<lsp_types::Diagnostic> = client
+            .receiver
+            .try_iter()
+            .filter_map(|m| match m {
+                Message::Notification(n) if n.method == "textDocument/publishDiagnostics" => {
+                    serde_json::from_value::<PublishDiagnosticsParams>(n.params).ok()
+                }
+                _ => None,
+            })
+            .flat_map(|p| p.diagnostics)
+            .collect();
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.severity == Some(lsp_types::DiagnosticSeverity::ERROR)
+                    && d.message.contains("nope/prelude.eu")),
+            "expected an ERROR diagnostic naming the path, got {diags:?}"
+        );
+    }
+
+    #[test]
+    fn cancel_all_flags_every_in_flight_run() {
+        let (state, _rx) = ServerState::new(RefreshSupport::default());
+        let mut state = state;
+        let a = Arc::new(AtomicBool::new(false));
+        let b = Arc::new(AtomicBool::new(false));
+        state
+            .cancel
+            .insert(Url::parse("file:///a.eu").unwrap(), a.clone());
+        state
+            .cancel
+            .insert(Url::parse("file:///b.eu").unwrap(), b.clone());
+        state.cancel_all();
+        assert!(a.load(Ordering::SeqCst) && b.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn server_capabilities_has_text_sync() {

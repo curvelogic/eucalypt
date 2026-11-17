@@ -230,6 +230,56 @@ impl<T: Sized + Clone> Array<T> {
         })
     }
 
+    /// Construct an Array of up to `len` elements taken from `iter`,
+    /// written straight into the freshly allocated heap buffer.
+    ///
+    /// No intermediate Rust-side buffer is built, so the result is
+    /// accounted by the managed heap from the start. Callers must supply
+    /// exactly `len` items: a shorter iterator trips a debug assertion
+    /// (release builds shorten the array to what was written); extra items
+    /// are ignored.
+    pub fn try_from_exact_iter<'guard, A, I>(
+        mem: &A,
+        len: usize,
+        iter: I,
+    ) -> Result<Self, ExecutionError>
+    where
+        A: ScopedAllocator<'guard>,
+        T: Copy,
+        I: IntoIterator<Item = T>,
+    {
+        if len == 0 {
+            return Ok(Array {
+                length: 0,
+                data: RawArray::new(),
+            });
+        }
+        let bytes = len.checked_mul(size_of::<T>()).ok_or_else(|| {
+            ExecutionError::from(super::heap::HeapError::InvalidAllocationSize {
+                requested_size: usize::MAX,
+                max_size: isize::MAX as usize,
+            })
+        })?;
+        let raw = mem.alloc_bytes_uninit(bytes)?;
+        let base = RefPtr::new(raw.as_ptr() as *mut T).expect("allocation returned null");
+        let mut written = 0usize;
+        for item in iter.into_iter().take(len) {
+            // SAFETY: `written < len`, so the slot lies inside the
+            // allocation of `len * size_of::<T>()` bytes; `T: Copy` has
+            // no drop glue, so overwriting uninitialised memory is sound.
+            unsafe { base.as_ptr().add(written).write(item) };
+            written += 1;
+        }
+        debug_assert_eq!(written, len, "iterator shorter than the declared length");
+        Ok(Array {
+            length: written,
+            data: RawArray {
+                capacity: len,
+                ptr: Some(base),
+            },
+        })
+    }
+
     /// Length of the array
     pub fn len(&self) -> usize {
         self.length

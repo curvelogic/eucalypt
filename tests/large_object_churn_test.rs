@@ -1,7 +1,7 @@
 //! eu-oaz72.55: large objects (allocations of a GC block or more) are freed
 //! once dead.
 //!
-//! Runs `tests/harness/238_oaz72_55_large_object_churn.eu` — 3,000 rounds of
+//! Runs `tests/harness/gc/gc_014_large_object_churn.eu` — 3,000 rounds of
 //! `arr.set` on a 100x100 array, each round allocating a new large object
 //! and dropping the previous one — under a small heap limit, and reads the
 //! large-object count still held at exit from `--statistics-file`.
@@ -12,7 +12,7 @@
 
 use std::path::Path;
 
-const FIXTURE: &str = "tests/harness/238_oaz72_55_large_object_churn.eu";
+const FIXTURE: &str = "tests/harness/gc/gc_014_large_object_churn.eu";
 const MAX_LOBS_HELD: u64 = 1_000;
 
 #[test]

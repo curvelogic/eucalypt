@@ -1,0 +1,46 @@
+{ doc: "String interpolation lexing: close braces after an interpolation and whitespace inside one (eu-uhd7d, eu-oaz72.3)." }
+
+` { target: :test-close-brace
+    doc: "eu-uhd7d: a `}` inside an interpolation always closes it. A `}` run straight after an interpolation is literal text: `}}` is the escape for one `}`, and a lone `}` is literal as anywhere else in a string. Expected values write literal braces with the escapes, which the first check shows work away from an interpolation." }
+test-close-brace: {
+  x: "abc"
+
+  ` "The escape on its own, before and after an interpolation"
+  escape-alone: "}}" = "}"
+  escape-before: "}}{x}" = "}abc"
+  plain-after: "{x}z" = "abcz"
+
+  ` "The cases that were mis-lexed"
+  escape-after: "{x}}}" = "abc}"
+  lone-after: "{x}}" = "abc}"
+  escape-between: "{x}}}{x}" = "abc}abc"
+  wrapped: "{{{x}}}" = "{{abc}}"
+  after-format: "{x:%5s}}}" = "  abc}"
+
+  ` "Open braces are unaffected"
+  open-after: "{x}{{" = "abc{{"
+  escaped-pair: (("{{x}}" str.len) = 3) ∧ ("{{x}}" != x)
+
+  RESULT: [escape-alone, escape-before, plain-after,
+           escape-after, lone-after, escape-between, wrapped, after-format,
+           open-after, escaped-pair]
+    all-true? then(:PASS, :FAIL)
+}
+
+` { target: :test-interpolation-whitespace
+    doc: "eu-oaz72.3: whitespace inside an interpolation was dropped by the string lexer, so the syntax tree was shorter than the source and LSP hover panicked with rowan `Bad offset`. Whitespace is now kept in the tree as trivia; it must not change what an interpolation means." }
+test-interpolation-whitespace: {
+  a: 1
+  n: 7
+  r: { b: { c: "deep" } }
+
+  t1: "{ a }" = "{a}"
+  t2: "<{ a }|{a }|{  a}>" = "<1|1|1>"
+  t3: "{ n :%03d}" = "{n:%03d}"
+  t4: "{ r.b.c }" = "{r.b.c}"
+  t5: "{ r . b . c }" = "deep"
+  t6: c"{ a }\t" = c"1\t"
+  t7: "{	a	}" = "1"
+
+  RESULT: [t1, t2, t3, t4, t5, t6, t7] all-true? then(:PASS, :FAIL)
+}

@@ -1209,6 +1209,13 @@ pub fn return_data(
     args: &[DecodedRef],
     atoms: &[CodeRef],
 ) -> Result<(), ExecutionError> {
+    // `free_slots` sizes a case branch's frame by the constructor's arity;
+    // the frame built here is `args.len()` wide. They must agree.
+    debug_assert!(
+        tag == DataConstructor::BlockKvList.tag()
+            || DataConstructor::try_from(tag).map_or(true, |c| c.arity() == args.len()),
+        "constructor arity differs from the node's argument count (tag {tag})"
+    );
     let Some(cont) = state.stack.pop() else {
         state.terminated = true;
         if DataConstructor::is_io_constructor(tag) {
@@ -4860,6 +4867,41 @@ impl BcBifContext<'_, '_> {
 /// update.
 const DETACH_BUDGET: usize = 64;
 
+/// What `detach`, `share_trimmed_thunk` and `minimal_env` share for one
+/// `memo_cell` call: the constructor budget, and the constructors (code and
+/// environment) whose rebuild is in progress. A value that refers back to
+/// itself reaches its own constructor again through a stored thunk; that
+/// re-entry is refused at once, so the thunk is shared through one cell
+/// instead of being trimmed afresh at every level until the budget runs out.
+struct DetachState {
+    budget: usize,
+    active: SmallVec<[(CodeRef, RefPtr<BcEnvFrame>); 8]>,
+}
+
+impl DetachState {
+    fn new() -> Self {
+        DetachState {
+            budget: DETACH_BUDGET,
+            active: SmallVec::new(),
+        }
+    }
+}
+
+/// `minimal_env` copies the innermost frames, those starting below this flat
+/// index, and shares the rest of the chain by pointer: loop state lives in
+/// the few frames of one iteration, while the frames beyond (a unit's
+/// top-level bindings, say) live for the whole run anyway.
+const MINIMAL_ENV_OUTER: usize = 16;
+
+/// The most slots `minimal_env` will rebuild; a larger inner region is stored
+/// over its original chain.
+const MINIMAL_ENV_SLOTS: usize = 64;
+
+/// The most code nodes `free_slots` visits for one closure; a larger body is
+/// stored over its original chain, so the scan costs a bounded amount per
+/// stored value.
+const FREE_VAR_SCAN_NODES: usize = 1024;
+
 impl IntrinsicMachine for BcBifContext<'_, '_> {
     fn rcache(&mut self) -> &mut LruCache<String, Regex> {
         self.rcache
@@ -5242,6 +5284,10 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         // (`acc dict.assoc(k, v)` in a loop), so every version would be
         // retained. Look through aliases to the value they name.
         let target = self.follow_aliases(view, original.clone(), false)?;
+        // One budget for the whole call: `detach`, `share_trimmed_thunk` and
+        // `minimal_env` recurse into each other (a stored value that refers
+        // back to itself), and the budget is what ends that recursion.
+        let mut budget = DetachState::new();
         let c = match &target {
             BcValue::Native(_) => return Ok(AbiClosure::Byte(target)),
             BcValue::Closure(c) => *c,
@@ -5253,7 +5299,6 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
             // frame — so it is rebuilt over fresh frames where it can be
             // (`detach`); otherwise it is stored as it is.
             let AbiClosure::Byte(value) = &target;
-            let mut budget = DETACH_BUDGET;
             return Ok(match self.detach(view, value.clone(), &mut budget)? {
                 Some(detached) => AbiClosure::Byte(detached),
                 None => target,
@@ -5272,13 +5317,26 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         let BcValue::Closure(oc) = original else {
             return Ok(target);
         };
-        let thunk = BcValue::Closure(BcClosure::close(
-            &InfoTagged::thunk_annotated(oc.code(), oc.annotation()),
-            oc.env(),
-        ));
         // Stamp the original's frame annotation, not the intrinsic's own
         // (eu-oaz72.157): it is the call site a trace reports.
         let frame_ann = view.scoped(oc.env()).annotation();
+        // An alias of a thunk whose free variables are all values: share one
+        // trimmed cell with the slot the alias names (`share_trimmed_thunk`).
+        if let Some(cell) = self.share_trimmed_thunk(view, &oc, None, frame_ann, &mut budget)? {
+            return Ok(AbiClosure::Byte(BcValue::Closure(cell)));
+        }
+        // When every free variable is already a value, close over a minimal
+        // copy of the environment instead of the whole chain it was built in
+        // (`minimal_env`); otherwise keep the original chain, and with it the
+        // sharing of any thunk the code reads.
+        let env = match self.minimal_env(view, &oc, &mut budget)? {
+            Some(minimal) => minimal,
+            None => oc.env(),
+        };
+        let thunk = BcValue::Closure(BcClosure::close(
+            &InfoTagged::thunk_annotated(oc.code(), oc.annotation()),
+            env,
+        ));
         let frame = view.from_value(thunk, self.state.root_env, frame_ann)?;
         Ok(AbiClosure::Byte(BcValue::Closure(BcClosure::new(
             self.program.cell_template,
@@ -5294,17 +5352,47 @@ impl BcBifContext<'_, '_> {
     /// a data constructor is rebuilt field by field, following `OP_ATOM`
     /// aliases, and a nullary constructor over the root env is kept.
     ///
-    /// All or nothing: `None` if any reachable field is not a native or a
-    /// data constructor (a thunk, a function, a cell — each of which pins
-    /// its own frame, so copying the rest would gain nothing), or if more
-    /// than `budget` constructors would be rebuilt. Never forces; nothing is
+    /// `None` if any reachable field is not a native or a data constructor
+    /// and cannot be shared as a trimmed cell (a function, an existing cell,
+    /// a thunk with a free variable that is not a value), or if more than
+    /// `budget` constructors would be rebuilt. `budget` is shared with the
+    /// `share_trimmed_thunk` and `minimal_env` calls it makes, so a value that
+    /// refers back to itself ends the recursion. Not side-effect-free: a field
+    /// thunk shared before a later field fails has already been replaced in
+    /// its constructor's slot by the shared cell (invisible to readers, who
+    /// enter the cell and get the same value). Never forces; nothing is
     /// collected while it runs, since an intrinsic does not reach a safe
     /// point between allocations.
     fn detach(
         &self,
         view: MutatorHeapView<'_>,
         value: BcValue,
-        budget: &mut usize,
+        budget: &mut DetachState,
+    ) -> Result<Option<BcValue>, ExecutionError> {
+        let value = self.follow_aliases(view, value, true)?;
+        let key = match &value {
+            BcValue::Closure(c) => self
+                .cons_of(&AbiClosure::Byte(value.clone()))
+                .map(|(_, env, _)| (c.code(), env)),
+            BcValue::Native(_) => None,
+        };
+        let Some(key) = key else {
+            return self.detach_inner(view, value, budget);
+        };
+        if budget.active.contains(&key) {
+            return Ok(None);
+        }
+        budget.active.push(key);
+        let result = self.detach_inner(view, value, budget);
+        budget.active.pop();
+        result
+    }
+
+    fn detach_inner(
+        &self,
+        view: MutatorHeapView<'_>,
+        value: BcValue,
+        budget: &mut DetachState,
     ) -> Result<Option<BcValue>, ExecutionError> {
         // An updatable `Atom` thunk (`thunk ✳i`, as a let-bound list element
         // naming a variable) is looked through too: its value is the value
@@ -5320,18 +5408,33 @@ impl BcBifContext<'_, '_> {
             let AbiClosure::Byte(value) = closure;
             return Ok(Some(value));
         }
-        if *budget == 0 {
+        if budget.budget == 0 {
             return Ok(None);
         }
-        *budget -= 1;
+        budget.budget -= 1;
         let mut fields = Vec::with_capacity(offsets.len());
         for idx in 0..offsets.len() {
             let Some(AbiClosure::Byte(field)) = self.data_field(view, &closure, idx) else {
                 return Ok(None);
             };
-            match self.detach(view, field, budget)? {
+            match self.detach(view, field.clone(), budget)? {
                 Some(f) => fields.push(f),
-                None => return Ok(None),
+                None => {
+                    // An unevaluated field: share a trimmed cell with the
+                    // constructor's own slot (eu-oaz72.84).
+                    let BcValue::Closure(fc) = &field else {
+                        return Ok(None);
+                    };
+                    let slot = match arg_ref(self.program.code.as_slice(), offsets[idx]) {
+                        Ok(DecodedRef::Local(j)) => Some((env, j as usize)),
+                        _ => None,
+                    };
+                    let ann = view.scoped(env).annotation();
+                    match self.share_trimmed_thunk(view, fc, slot, ann, budget)? {
+                        Some(cell) => fields.push(BcValue::Closure(cell)),
+                        None => return Ok(None),
+                    }
+                }
             }
         }
         // Keep the original frame's annotation (eu-oaz72.83): it is the call
@@ -5361,6 +5464,300 @@ impl BcBifContext<'_, '_> {
             frame_ann,
         )?;
         Ok(Some(BcValue::Closure(BcClosure::new(code, new_env))))
+    }
+
+    /// The flat environment indices a thunk's code reads from the frame it
+    /// closes over (with repeats), or `None` when the scan gives up (more
+    /// than [`FREE_VAR_SCAN_NODES`] nodes, a malformed node).
+    ///
+    /// The scan follows binders. A flat index `n` read at binder depth `d`
+    /// (the slots bound inside the code so far) names the closure's own
+    /// environment at `n - d` when `n >= d`, and a local binding otherwise.
+    /// Depth grows by the frame each binder pushes: a `Let`/`LetRec` by its
+    /// binding count, a lambda form by its arity, a case branch by its
+    /// constructor's arity, a case fallback by one, a `DeMeta` handler by two
+    /// and its `or_else` by one (`return_data`, `return_native`,
+    /// `return_meta`). Overestimating a frame would drop a free index, so
+    /// each size is the one the machine allocates.
+    fn free_slots(&self, start: usize) -> Option<SmallVec<[usize; 16]>> {
+        let code = self.program.code.as_slice();
+        let mut free: SmallVec<[usize; 16]> = SmallVec::new();
+        let mut work: SmallVec<[(usize, usize); 16]> = SmallVec::new();
+        work.push((start, 0));
+        let mut nodes = 0usize;
+        let note = |free: &mut SmallVec<[usize; 16]>, r: DecodedRef, depth: usize| -> Option<()> {
+            if let DecodedRef::Local(n) = r {
+                if let Some(i) = (n as usize).checked_sub(depth) {
+                    free.push(i);
+                }
+            }
+            Some(())
+        };
+        while let Some((off, depth)) = work.pop() {
+            nodes += 1;
+            if nodes > FREE_VAR_SCAN_NODES {
+                return None;
+            }
+            let mut pc = off;
+            match Op::from_u8(read_u8(code, &mut pc))? {
+                Op::Atom => note(&mut free, read_ref(code, &mut pc).ok()?, depth)?,
+                Op::Case => {
+                    let scr = read_u32(code, &mut pc);
+                    let min_tag = read_u8(code, &mut pc);
+                    let len = read_u8(code, &mut pc);
+                    work.push((scr as usize, depth));
+                    for i in 0..len {
+                        let entry = read_u32(code, &mut pc);
+                        if entry != NO_BRANCH {
+                            let tag = min_tag.checked_add(i)?;
+                            // `BlockKvList` is built with one field though its
+                            // arity is 2, so the arity cannot size its frame.
+                            if tag == DataConstructor::BlockKvList.tag() {
+                                return None;
+                            }
+                            let arity = DataConstructor::try_from(tag).ok()?.arity();
+                            work.push((entry as usize, depth + arity));
+                        }
+                    }
+                    if read_u8(code, &mut pc) == 1 {
+                        work.push((read_u32(code, &mut pc) as usize, depth + 1));
+                    }
+                }
+                Op::Cons => {
+                    let _tag = read_u8(code, &mut pc);
+                    for a in read_arg_offsets(code, &mut pc) {
+                        work.push((a as usize, depth));
+                    }
+                }
+                Op::App | Op::DirectApp => {
+                    let op_is_direct = code[off] == Op::DirectApp as u8;
+                    let _flags = read_u8(code, &mut pc);
+                    if op_is_direct {
+                        let _smid = read_u32(code, &mut pc);
+                    }
+                    note(&mut free, read_ref(code, &mut pc).ok()?, depth)?;
+                    for a in read_arg_offsets(code, &mut pc) {
+                        work.push((a as usize, depth));
+                    }
+                }
+                Op::Bif => {
+                    let _intrinsic = read_u8(code, &mut pc);
+                    for a in read_arg_offsets(code, &mut pc) {
+                        work.push((a as usize, depth));
+                    }
+                }
+                Op::Let | Op::LetRec => {
+                    let count = read_u32(code, &mut pc) as usize;
+                    // A `Let`'s bindings close over the enclosing frame; a
+                    // `LetRec`'s over the frame it allocates.
+                    let inner = if code[off] == Op::LetRec as u8 {
+                        depth + count
+                    } else {
+                        depth
+                    };
+                    for _ in 0..count {
+                        let h = read_form_header(code, &mut pc);
+                        work.push((h.body as usize, inner + h.arity as usize));
+                    }
+                    work.push((read_u32(code, &mut pc) as usize, depth + count));
+                }
+                Op::Ann => {
+                    let _smid = read_u32(code, &mut pc);
+                    work.push((read_u32(code, &mut pc) as usize, depth));
+                }
+                Op::Meta => {
+                    work.push((read_u32(code, &mut pc) as usize, depth));
+                    work.push((read_u32(code, &mut pc) as usize, depth));
+                }
+                Op::DeMeta => {
+                    work.push((read_u32(code, &mut pc) as usize, depth));
+                    work.push((read_u32(code, &mut pc) as usize, depth + 2));
+                    work.push((read_u32(code, &mut pc) as usize, depth + 1));
+                }
+                Op::Seq => {
+                    work.push((read_u32(code, &mut pc) as usize, depth));
+                    work.push((read_u32(code, &mut pc) as usize, depth));
+                }
+                Op::LookupLit => {
+                    let _smid = read_u32(code, &mut pc);
+                    note(&mut free, read_ref(code, &mut pc).ok()?, depth)?;
+                    note(&mut free, read_ref(code, &mut pc).ok()?, depth)?;
+                    work.push((read_u32(code, &mut pc) as usize, depth));
+                }
+                Op::FusedPrimop => {
+                    let _id = read_u8(code, &mut pc);
+                    work.push((read_u32(code, &mut pc) as usize, depth));
+                    work.push((read_u32(code, &mut pc) as usize, depth));
+                }
+                Op::BlackHole => {}
+            }
+        }
+        Some(free)
+    }
+
+    /// Store an unevaluated thunk reached through `OP_ATOM` aliases without
+    /// pinning the frame the alias lives in (eu-oaz72.84).
+    ///
+    /// `alias` (found in `slot`, when it is a slot's value rather than a bare
+    /// alias argument) names a slot `(E, k)` whose value is an unevaluated thunk `T`
+    /// with all its free variables already values (`minimal_env`). Allocate a
+    /// one-slot frame `F` holding `T` over its minimal environment, build the
+    /// shared cell `cell_template` over `F` (as `memo_cell` does for a lazy
+    /// value), write that cell back into `E[k]` and return it. The caller's
+    /// slot and the stored value then name the same `F[0]`: `T` is evaluated
+    /// once and memoised for both, as before, but the stored value no longer
+    /// reaches `E`. Replacing `E[k]` is invisible to readers of it: the cell
+    /// enters `T` and yields the same value.
+    ///
+    /// `None`, changing nothing, unless the walk ends at a thunk that is a
+    /// plain unevaluated one: not a function, an existing cell, a black hole
+    /// (under evaluation: its `Update` continuation still names the slot), a
+    /// global or constant, or one with a free variable that is not a value.
+    fn share_trimmed_thunk(
+        &self,
+        view: MutatorHeapView<'_>,
+        alias: &BcClosure,
+        mut slot: Option<(RefPtr<BcEnvFrame>, usize)>,
+        annotation: Smid,
+        budget: &mut DetachState,
+    ) -> Result<Option<BcClosure>, ExecutionError> {
+        let code = self.program.code.as_slice();
+        let mut cur = *alias;
+        for _ in 0..64 {
+            if cur.code() == self.program.cell_template || cur.code() == self.program.blackhole {
+                return Ok(None);
+            }
+            if cur.update() || cur.arity() > 0 {
+                break;
+            }
+            let mut pc = peek_pc(self.decoded, &cur);
+            if Op::from_u8(read_u8(code, &mut pc)) != Some(Op::Atom) {
+                break;
+            }
+            let DecodedRef::Local(k) = read_ref(code, &mut pc)? else {
+                return Ok(None);
+            };
+            let Some(BcValue::Closure(next)) = view.scoped(cur.env()).get(&view, k as usize) else {
+                return Ok(None);
+            };
+            slot = Some((cur.env(), k as usize));
+            cur = next;
+        }
+        // The walk may have run out of hops without testing its last `cur`.
+        if cur.code() == self.program.cell_template || cur.code() == self.program.blackhole {
+            return Ok(None);
+        }
+        let Some((slot_env, slot_idx)) = slot else {
+            return Ok(None);
+        };
+        if cur.arity() > 0
+            || self
+                .cons_of(&AbiClosure::Byte(BcValue::Closure(cur)))
+                .is_some()
+        {
+            return Ok(None);
+        }
+        let Some(minimal) = self.minimal_env(view, &cur, budget)? else {
+            return Ok(None);
+        };
+        let thunk = BcValue::Closure(BcClosure::close(
+            &InfoTagged::thunk_annotated(cur.code(), cur.annotation()),
+            minimal,
+        ));
+        let frame = view.from_value(thunk, self.state.root_env, annotation)?;
+        let cell = BcClosure::new(self.program.cell_template, frame);
+        view.scoped(slot_env)
+            .update(&view, slot_idx, BcValue::Closure(cell))?;
+        Ok(Some(cell))
+    }
+
+    /// A minimal environment for an unevaluated closure about to be stored
+    /// (eu-oaz72.84): one frame standing for the innermost frames of its
+    /// chain (the first `MINIMAL_ENV_OUTER` slots' worth), holding only the
+    /// values the closure's code reads, at the flat indices the code already
+    /// uses, so nothing is renumbered and the bytecode is unchanged. Its
+    /// parent is the original chain from the first outer frame on, shared, so
+    /// a variable out there is read through the same slot as before. Every
+    /// other inner slot holds a black hole, so a read the scan missed is a
+    /// loud error and not a wrong value.
+    ///
+    /// `None` (the caller keeps the original chain) unless every free
+    /// variable in the inner region is already a value: a native, a function,
+    /// or an evaluated data constructor (rebuilt by `detach` where it can
+    /// be). A free variable there that is still a thunk is shared through its
+    /// slot, and a copy would evaluate it again, so it is never copied. Never forces; nothing
+    /// is collected while it runs.
+    fn minimal_env(
+        &self,
+        view: MutatorHeapView<'_>,
+        closure: &BcClosure,
+        budget: &mut DetachState,
+    ) -> Result<Option<RefPtr<BcEnvFrame>>, ExecutionError> {
+        let root = self.state.root_env;
+        if closure.arity() > 0 || closure.env() == root {
+            return Ok(None);
+        }
+        // Walk to the first frame starting at `MINIMAL_ENV_OUTER` or beyond:
+        // everything before it (`inner` slots) is copied, it and the rest
+        // are shared. The inner frames' sizes and annotations are recorded so
+        // the copy keeps one frame per original (error traces read the
+        // annotation of each frame in the chain).
+        let mut inner = 0usize;
+        let mut tail = closure.env();
+        let mut frames: SmallVec<[(usize, Smid); 8]> = SmallVec::new();
+        while tail != root && inner < MINIMAL_ENV_OUTER {
+            let frame = view.scoped(tail);
+            let len = frame.logical_len();
+            inner += len;
+            frames.push((len, frame.annotation()));
+            match frame.next_frame() {
+                Some(next) => tail = next,
+                None => {
+                    tail = root;
+                    break;
+                }
+            }
+        }
+        if inner > MINIMAL_ENV_SLOTS {
+            return Ok(None);
+        }
+        let Some(mut free) = self.free_slots(peek_pc(self.decoded, closure)) else {
+            return Ok(None);
+        };
+        // A constructor read twice must be detached once: the first detach
+        // rewrites its field slots into cells, so a second would refuse.
+        free.sort_unstable();
+        free.dedup();
+        let env = view.scoped(closure.env());
+        let hole = BcValue::Closure(BcClosure::new(self.program.blackhole, root));
+        let mut slots = vec![hole; inner];
+        for &i in free.iter().filter(|&&i| i < inner) {
+            let Some(value) = env.get(&view, i) else {
+                return Ok(None);
+            };
+            let value = self.follow_aliases(view, value, false)?;
+            slots[i] = match &value {
+                BcValue::Native(_) => value,
+                BcValue::Closure(c) if c.arity() > 0 => value,
+                BcValue::Closure(_) => {
+                    let as_abi = AbiClosure::Byte(value.clone());
+                    if self.cons_of(&as_abi).is_none() {
+                        return Ok(None);
+                    }
+                    self.detach(view, value.clone(), budget)?.unwrap_or(value)
+                }
+            };
+        }
+        // Rebuild the chain outermost frame first, so each new frame's parent
+        // is the one beyond it.
+        let mut parent = tail;
+        let mut end = inner;
+        for &(len, ann) in frames.iter().rev() {
+            let start = end - len;
+            parent = view.from_values(slots[start..end].iter().cloned(), len, parent, ann)?;
+            end = start;
+        }
+        Ok(Some(parent))
     }
 
     /// Follow `OP_ATOM` alias closures to the value they name (at most a
@@ -5722,7 +6119,7 @@ mod tests {
             &BytecodeProgram::default(),
             &DecodedProgram::default(),
             7,
-            &[DecodedRef::Local(0)],
+            &[DecodedRef::Local(0), DecodedRef::Local(0)],
             &[],
         )
         .unwrap();
@@ -6453,7 +6850,7 @@ mod tests {
     /// the containers reachable only through a bif frame.
     fn native_containers_fixture(heap: &Heap) -> NativeContainers {
         use crate::eval::memory::dict::Dict;
-        use crate::eval::memory::ndarray::{self, HeapNdArray};
+        use crate::eval::memory::ndarray::HeapNdArray;
         use crate::eval::memory::set::{HeapSet, Primitive};
         use crate::eval::memory::string::HeapString;
         use crate::eval::memory::symbol::SymbolPool;
@@ -6486,7 +6883,8 @@ mod tests {
         let flat: Vec<f64> = (0..600).map(|i| i as f64).collect();
         let arr = view
             .alloc(
-                HeapNdArray::from_ndarray(&view, &ndarray::from_flat(&[20, 30], flat).unwrap())
+                HeapNdArray::from_flat(&view, &[20, 30], &flat)
+                    .unwrap()
                     .unwrap(),
             )
             .unwrap()

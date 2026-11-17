@@ -1,0 +1,123 @@
+#!/usr/bin/env eu
+{
+  title: "300 strict prelude sites"
+  doc: "eu-oaz72.165, owner decisions 40 and 41: `max-of`, `min-of`, `max-of-by`,
+        `min-of-by`, `all-true?`, `reduce`, `range`, `iterate` and `scanl` run in
+        constant stack. Each target walks 300,000 elements (the lists come from `iota`, which is constant-stack, so each target isolates its own function; only `range` uses `range`) (each of these grew the
+        stack in proportion to the size before the change) and is checked for both
+        its value and a stack depth under 1,000. `foldl` stays lazy. The
+        error cases for the documented forcing changes are in
+        `tests/harness/errors/330..332`."
+}
+
+n: 300000
+
+` "no walk grows the stack with its size"
+constant-stack(context): (context.stats.max-stack < 1000) then(:PASS, :FAIL)
+
+` { target: :max-min-of
+    verify: [:max-min-of-values, :constant-stack] }
+max-min-of: {
+  hi: (iota(0) take(n)) max-of
+  lo: (iota(0) take(n)) min-of
+}
+
+` "max-of and min-of compute their values"
+max-min-of-values(context): {
+  r: context.result
+  checks: [r.hi = 299999, r.lo = 0]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` { target: :max-min-of-by
+    verify: [:max-min-of-by-values, :constant-stack] }
+max-min-of-by: {
+  hi: (iota(0) take(n)) max-of-by(negate)
+  lo: (iota(0) take(n)) min-of-by(negate)
+}
+
+` "max-of-by and min-of-by compute their values"
+max-min-of-by-values(context): {
+  r: context.result
+  checks: [r.hi = 0, r.lo = 299999]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` { target: :all-true-walk
+    verify: [:all-true-values, :constant-stack] }
+all-true-walk: {
+  long: repeat(true) take(n) all-true? then(:yes, :no)
+  broken: ((repeat(true) take(n)) ++ [false]) all-true? then(:yes, :no)
+}
+
+` "all-true? computes its value"
+all-true-values(context): {
+  r: context.result
+  checks: [r.long = "yes", r.broken = "no"]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` { target: :reduce-walk
+    verify: [:reduce-walk-values, :constant-stack] }
+reduce-walk: (iota(0) take(n)) reduce(+)
+
+` "reduce computes its value"
+reduce-walk-values(context): (context.result = 44999850000) then(:PASS, :FAIL)
+
+` { target: :range-walk
+    verify: [:range-walk-values, :constant-stack] }
+range-walk: {
+  end: range(0, n) last
+  at: range(0, n) nth(299999)
+  offset: range(5, 9)
+  empty: range(3, 3)
+}
+
+` "range computes its values"
+range-walk-values(context): {
+  r: context.result
+  checks: [r.end = 299999, r.at = 299999, r.offset = [5, 6, 7, 8], r.empty = []]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` { target: :iterate-walk
+    verify: [:iterate-walk-values, :constant-stack] }
+iterate-walk: {
+  far: iterate(inc, 0) nth(n)
+  prefix: iterate(inc, 5) take(3)
+}
+
+` "iterate computes its values"
+iterate-walk-values(context): {
+  r: context.result
+  checks: [r.far = 300000, r.prefix = [5, 6, 7]]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` { target: :scanl-walk
+    verify: [:scanl-walk-values, :constant-stack] }
+scanl-walk: {
+  end: scanl(+, 0, iota(0) take(n)) last
+  small: scanl(+, 0, [1, 2, 3])
+  empty: scanl(+, 7, [])
+  infinite: scanl(+, 0, iota(1)) take(4)
+}
+
+` "scanl computes its values"
+scanl-walk-values(context): {
+  r: context.result
+  checks: [r.end = 44999850000, r.small = [0, 1, 3, 6], r.empty = [7], r.infinite = [0, 1, 3, 6]]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` "Keeps its second argument; ignores the accumulator."
+keep-second(a, b): b
+
+` { target: :test-unchanged
+    doc: "Results and laziness that the conversion must not change." }
+test-unchanged: {
+  max-empty-or: ([] max-of-or(9)) = 9
+  reduce-single: reduce(+, [4]) = 4
+  reduce-order: reduce(-, [10, 3, 2]) = 5
+  reduce-lazy-element: reduce(keep-second, [1, 2]) = 2
+  all-true-short: all-true?([true, false, true]) = false
+  foldl-lazy: foldl(keep-second, 0, [panic("step forced"), 5]) = 5
+  iterate-lazy-spine: (iterate(inc, 0) tail head) = 1
+  RESULT: [max-empty-or, reduce-single, reduce-order, reduce-lazy-element,
+           all-true-short, foldl-lazy, iterate-lazy-spine]
+          all-true? then(:PASS, :FAIL)
+}

@@ -53,11 +53,44 @@ checks4: {
   trues: [ip-components = ["192", "168", "0", "1"]]
 }
 
+checks5: {
+  kv: "a=1, bb=22, c=3" str.matches-with("(\w+)=(\d+)")
+  trues: [
+    kv = [["a=1", "a", "1"], ["bb=22", "bb", "22"], ["c=3", "c", "3"]],
+    (kv map(second)) = ["a", "bb", "c"],
+    ("xyz" str.matches-with("\d+")) = [],
+    ("a1b2" str.matches-with("\d")) = [["1"], ["2"]],
+    # context-sensitive: matches must be found in one pass over the whole string
+    ("ax" str.matches-with("\Bx")) = [["x"]],
+    ("a12" str.matches-with("\B\d")) = [["1"], ["2"]],
+    ("ab ab" str.matches-with("^(a)b")) = [["ab", "a"]],
+    ("ab ab" str.matches-with("(a)b$")) = [["ab", "a"]],
+    ("12" str.matches-with("^(\d)|(\d)")) = [["1", "1", ""], ["2", "", "2"]],
+    ("ab" str.matches-with("(ab)$|(a)(b)")) = [["ab", "ab", "", ""]]
+  ]
+}
+
 case-tests: {
   α: "hello" str.to-upper //= "HELLO"
   β: "GOODBYE" str.to-lower //= "goodbye"
 }
 
-RESULT: checks.trues ++ checks2.trues ++ checks3.trues ++ checks4.trues ++ (case-tests values)
+` "Hand-written wrappers must force a computed (non-literal) argument before reading it as a native value: every argument below is the result of a function call, so its payload is an unevaluated thunk."
+computed-num(x): x + 0
+computed-str(x): str.of(x)
+
+computed-args: {
+  a: str.join(["a", "b"], computed-str(1)) //= "a1b"
+  b: ["a", "b"] str.join-on(computed-str(",")) //= "a,b"
+  c: [computed-str("a"), computed-str("b")] str.join-on(ch.n) str.letters count //= 3
+  d: ch.of-code-point(computed-num(65)) //= "A"
+  e: str.from-code-points[computed-num(65), computed-num(66)] //= "AB"
+  f: str.format(computed-str("%03d"), computed-num(5)) //= "005"
+  g: str.format(computed-str("%s"), computed-str("x")) //= "x"
+  h: computed-str("x") str.to-upper //= "X"
+  i: computed-str(1) str.len //= 1
+}
+
+RESULT: (checks.trues ++ checks2.trues ++ checks3.trues ++ checks4.trues ++ checks5.trues ++ (case-tests values) ++ (computed-args values))
         all-true?
         then(:PASS, :FAIL)

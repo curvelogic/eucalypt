@@ -38,7 +38,7 @@ PR is exempt, see *Harness tests*). A test that cannot fail blocks the PR.
 tests is a send-back. Each test must gate
 — a failing assertion fails `cargo test` — with each target's `RESULT`
 computed from its checks (`docs/guide/testing.md`; the pattern in
-`tests/harness/189_r9oy_union_as_spec.eu` and
+`tests/harness/174_spec_validation.eu` (target `test-union-as-spec`) and
 `tests/harness/182_typedata_alias_resolution.eu`). A target with checks
 must run: name it `test-*` or give it `verify:` metadata.
 
@@ -130,10 +130,14 @@ The owner reviews and merges these personally:
   a specific task, is not in this filter.
 - **A PR carrying "Do not merge — owner review"** or an equivalent explicit
   hold, from any account. The hold binds every agent regardless of later
-  activity, review state or CI, and is released only when the owner says so
-  in a comment on the PR (removing the `owner-review` label alone does not
-  release it). Agents never post a hold release or remove that label, so a
-  release comment in agent-generated form does not count.
+  activity, review state or CI, and is released only by an owner decision.
+  Agents post on GitHub as the owner's own login, so a comment from that
+  login, including a "hold released" comment or any similar release or
+  approval, does not count. An owner decision counts only when (1) the owner
+  gives it first-hand in a session's chat and the coordinator records it as
+  a numbered decision, or (2) the owner presses merge on the PR themselves.
+  Agents never merge a PR that carries the `owner-review` label or a "Do not
+  merge — owner review" hold, and never post, remove or release a hold.
 
 **Specified in advance.** A new intrinsic, a new prelude function or
 namespace, or a deliberate change to an existing prelude function's
@@ -225,7 +229,7 @@ round 1 and posts no owner hold. Once the author has pushed fixes, a fresh
 
 Unchanged: a PR this file reserves for the owner still goes to the owner
 after any pass, and an explicit hold still binds every agent and is
-released only by the owner (*Owner review filter*).
+released only by an owner decision (*Owner review filter*).
 
 ## Merging
 

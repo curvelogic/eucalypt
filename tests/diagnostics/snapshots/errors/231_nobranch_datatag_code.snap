@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/231_nobranch_datatag_code
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/231_nobranch_datatag_code.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/231_nobranch_datatag_code.eu:8:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected block, found number
+  ┌─ tests/harness/errors/231_nobranch_datatag_code.eu:8:9
+  │
+8 │ result: n.foo
+  │         ^
+  │
+  = the '.' operator performs key lookup on blocks; numbers do not have fields
+  = to apply a function to a number, use pipeline catenation, e.g. 'x abs' or 'x negate' instead of 'x.abs'
+  = while evaluating (outermost first):
+    - result at 231_nobranch_datatag_code.eu:8:9

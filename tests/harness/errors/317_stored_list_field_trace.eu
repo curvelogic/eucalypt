@@ -1,0 +1,4 @@
+` "the same for an unevaluated list field of a stored value: the two 'called from here' sites master reports are kept (eu-oaz72.84)."
+f(i): { v: [i + 1, i + "a"]  d: dict.empty dict.assoc(:k, v) }.d
+
+out: f(3) dict.get(:k) tail head

@@ -244,7 +244,7 @@ fn assert_stress_passes_under_limit(file: &str, limit_mib: &str) {
 /// freed it passes (measured down to 10 MiB).
 #[test]
 fn stress_evacuation_frees_blocks_in_the_same_collection() {
-    assert_stress_passes_under_limit("tests/harness/228_bc34x_meta_body_memoisation.eu", "14");
+    assert_stress_passes_under_limit("tests/harness/228_meta_body_memoisation.eu", "14");
 }
 
 /// As above, for a heap fragmented by deep recursions:

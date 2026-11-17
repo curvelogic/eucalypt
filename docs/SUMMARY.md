@@ -80,4 +80,3 @@
 
 - [Syntax Cheat Sheet](appendices/cheat-sheet.md)
 - [Syntax Gotchas](appendices/syntax-gotchas.md)
-- [Migration from v0.2 to v0.3](appendices/migration.md)

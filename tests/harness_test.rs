@@ -2520,73 +2520,73 @@ pub fn test_typecheck_069_projection_value_type_mismatch() {
 // ── B7: Prelude type-summary cache — behaviour preservation ──────────────────
 
 #[test]
-pub fn test_typecheck_070_b7_predicate_narrowing() {
-    run_typecheck_test("070_b7_predicate_narrowing.eu");
+pub fn test_typecheck_070_predicate_narrowing() {
+    run_typecheck_test("070_predicate_narrowing.eu");
 }
 
 #[test]
-pub fn test_typecheck_071_b7_then_brancher() {
-    run_typecheck_test("071_b7_then_brancher.eu");
+pub fn test_typecheck_071_then_brancher() {
+    run_typecheck_test("071_then_brancher.eu");
 }
 
 #[test]
-pub fn test_typecheck_072_b7_user_brancher_wrapping_free() {
-    run_typecheck_test("072_b7_user_brancher_wrapping_free.eu");
+pub fn test_typecheck_072_user_brancher_wrapping_free() {
+    run_typecheck_test("072_user_brancher_wrapping_free.eu");
 }
 
 #[test]
-pub fn test_typecheck_073_b7_head_tail_free() {
-    run_typecheck_test("073_b7_head_tail_free.eu");
+pub fn test_typecheck_073_head_tail_free() {
+    run_typecheck_test("073_head_tail_free.eu");
 }
 
 #[test]
-pub fn test_typecheck_074_b5_partial_type_parses() {
-    run_typecheck_test("074_b5_partial_type_parses.eu");
+pub fn test_typecheck_074_partial_type_parses() {
+    run_typecheck_test("074_partial_type_parses.eu");
 }
 
 #[test]
-pub fn test_typecheck_075_b5_execution_error_type() {
-    run_typecheck_test("075_b5_execution_error_type.eu");
+pub fn test_typecheck_075_execution_error_type() {
+    run_typecheck_test("075_execution_error_type.eu");
 }
 
 #[test]
-pub fn test_typecheck_076_b5_partial_warns_in_total_position() {
-    run_typecheck_test("076_b5_partial_warns_in_total_position.eu");
+pub fn test_typecheck_076_partial_warns_in_total_position() {
+    run_typecheck_test("076_partial_warns_in_total_position.eu");
 }
 
 #[test]
-pub fn test_typecheck_077_b5_partial_silent_in_any() {
-    run_typecheck_test("077_b5_partial_silent_in_any.eu");
+pub fn test_typecheck_077_partial_silent_in_any() {
+    run_typecheck_test("077_partial_silent_in_any.eu");
 }
 
 #[test]
-pub fn test_typecheck_078_b9_merge_row_inference_no_warn() {
-    run_typecheck_test("078_b9_merge_row_inference_no_warn.eu");
+pub fn test_typecheck_078_merge_row_inference_no_warn() {
+    run_typecheck_test("078_merge_row_inference_no_warn.eu");
 }
 
 #[test]
-pub fn test_typecheck_079_b9_merge_row_field_type_mismatch() {
-    run_typecheck_test("079_b9_merge_row_field_type_mismatch.eu");
+pub fn test_typecheck_079_merge_row_field_type_mismatch() {
+    run_typecheck_test("079_merge_row_field_type_mismatch.eu");
 }
 
 #[test]
-pub fn test_typecheck_080_b9_non_block_param_no_row_var() {
-    run_typecheck_test("080_b9_non_block_param_no_row_var.eu");
+pub fn test_typecheck_080_non_block_param_no_row_var() {
+    run_typecheck_test("080_non_block_param_no_row_var.eu");
 }
 
 #[test]
-pub fn test_typecheck_081_b2_constraint_satisfied() {
-    run_typecheck_test("081_b2_constraint_satisfied.eu");
+pub fn test_typecheck_081_constraint_satisfied() {
+    run_typecheck_test("081_constraint_satisfied.eu");
 }
 
 #[test]
-pub fn test_typecheck_082_b2_constraint_violated() {
-    run_typecheck_test("082_b2_constraint_violated.eu");
+pub fn test_typecheck_082_constraint_violated() {
+    run_typecheck_test("082_constraint_violated.eu");
 }
 
 #[test]
-pub fn test_typecheck_083_b2_constraint_gradual_any() {
-    run_typecheck_test("083_b2_constraint_gradual_any.eu");
+pub fn test_typecheck_083_constraint_gradual_any() {
+    run_typecheck_test("083_constraint_gradual_any.eu");
 }
 
 #[test]
@@ -2968,8 +2968,8 @@ pub fn test_error_181() {
 /// for HeapSyn); the pattern accepts either engine's wording, since only
 /// the HeapSyn engine's `return_fun` has the symbol pool available to
 /// resolve the key name into the message.
-pub fn test_191_m93j_lookup_on_function() {
-    run_error_test(&error_opts("191_m93j_lookup_on_function.eu"));
+pub fn test_191_lookup_on_function() {
+    run_error_test(&error_opts("191_lookup_on_function.eu"));
 }
 
 #[test]
@@ -2981,8 +2981,8 @@ pub fn test_191_m93j_lookup_on_function() {
 /// `ExecutionError::UnexpectedFunction`, reporting "found a function"
 /// instead (eu-1tkk.7.9). Also covers the `catenation_arith` diagnostics
 /// corpus fixture's underlying message-content bug.
-pub fn test_192_1tkk_7_9_function_not_block() {
-    run_error_test(&error_opts("192_1tkk_7_9_function_not_block.eu"));
+pub fn test_192_function_not_block() {
+    run_error_test(&error_opts("192_function_not_block.eu"));
 }
 
 #[test]
@@ -3001,13 +3001,13 @@ pub fn test_192_1tkk_7_9_function_not_block() {
 /// Engine-agnostic: this is presentation-layer curation over Smids both
 /// engines record identically, and it is verified under `cargo test`
 /// (bytecode) and `EU_HEAPSYN=1 cargo test` (HeapSyn).
-pub fn test_193_1tkk_7_12_curated_trace() {
-    run_error_test(&error_opts("193_1tkk_7_12_curated_trace.eu"));
+pub fn test_193_curated_trace() {
+    run_error_test(&error_opts("193_curated_trace.eu"));
 }
 
 /// Wall-clock budget for the eu-gua64 complexity gate below.
 ///
-/// A correct compiler runs `210_gua64_inline_arg_sharing.eu` in ~0.15s
+/// A correct compiler runs `210_inline_arg_sharing.eu` in ~0.15s
 /// (debug build, measured); one that duplicates inlined arguments needs
 /// 2^29 evaluation steps — over ten minutes in a *release* build and far
 /// longer in a debug one. Three orders of magnitude of headroom either
@@ -3025,18 +3025,18 @@ const GUA64_DEADLINE: std::time::Duration = std::time::Duration::from_secs(180);
 /// fails, rather than the suite hanging. `run_test` afterwards applies
 /// the ordinary harness verdict (`RESULT` computed from all ten checks in
 /// the file) so the correctness half is gated the usual way.
-pub fn test_210_gua64_inline_arg_sharing() {
+pub fn test_210_inline_arg_sharing() {
     let mut cmd = std::process::Command::new(eu_binary());
     cmd.args([
         "--heap-limit-mib",
         "2048",
         "-t",
         "main",
-        "tests/harness/210_gua64_inline_arg_sharing.eu",
+        "tests/harness/210_inline_arg_sharing.eu",
     ]);
     let output = run_with_deadline(cmd, GUA64_DEADLINE).unwrap_or_else(|| {
         panic!(
-            "210_gua64_inline_arg_sharing.eu did not complete within {}s — \
+            "210_inline_arg_sharing.eu did not complete within {}s — \
              the inliner is duplicating a non-atomic argument across the \
              repeated uses of its binder, making the recursive caller 2^n \
              (eu-gua64, `beta_reduce` in src/core/inline/reduce.rs)",
@@ -3045,15 +3045,15 @@ pub fn test_210_gua64_inline_arg_sharing() {
     });
     assert!(
         output.status.success(),
-        "eu exited {:?} on 210_gua64_inline_arg_sharing.eu\nstderr:\n{}",
+        "eu exited {:?} on 210_inline_arg_sharing.eu\nstderr:\n{}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
 
-    run_test(&opts("210_gua64_inline_arg_sharing.eu"));
+    run_test(&opts("210_inline_arg_sharing.eu"));
 }
 
-/// A correct compiler runs `228_bc34x_meta_body_memoisation.eu` in well
+/// A correct compiler runs `228_meta_body_memoisation.eu` in well
 /// under a second (measured ~0.09s, release build): three independently
 /// annotated bindings, each `slow(30000)`, each read 200 times via
 /// `map`+`sum`. A compiler that fails to memoise a metadata-annotated
@@ -3077,18 +3077,18 @@ const BC34X_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 /// all five checks in the file, including that metadata is still readable
 /// after the binding has been forced) so the correctness half is gated
 /// the usual way.
-pub fn test_228_bc34x_meta_body_memoisation() {
+pub fn test_228_meta_body_memoisation() {
     let mut cmd = std::process::Command::new(eu_binary());
     cmd.args([
         "--heap-limit-mib",
         "2048",
         "-t",
         "main",
-        "tests/harness/228_bc34x_meta_body_memoisation.eu",
+        "tests/harness/228_meta_body_memoisation.eu",
     ]);
     let output = run_with_deadline(cmd, BC34X_DEADLINE).unwrap_or_else(|| {
         panic!(
-            "228_bc34x_meta_body_memoisation.eu did not complete within {}s — \
+            "228_meta_body_memoisation.eu did not complete within {}s — \
              a metadata-annotated binding's body is being recomputed on every \
              read instead of memoising once (eu-bc34x, `return_meta` in \
              src/eval/machine/vm.rs and src/eval/bytecode/machine.rs)",
@@ -3097,51 +3097,42 @@ pub fn test_228_bc34x_meta_body_memoisation() {
     });
     assert!(
         output.status.success(),
-        "eu exited {:?} on 228_bc34x_meta_body_memoisation.eu\nstderr:\n{}",
+        "eu exited {:?} on 228_meta_body_memoisation.eu\nstderr:\n{}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
 
-    run_test(&opts("228_bc34x_meta_body_memoisation.eu"));
+    run_test(&opts("228_meta_body_memoisation.eu"));
 }
 
-/// eu-uhd7d: a '}' run straight after a string interpolation was lexed as
-/// the '}}' escape inside the interpolation, so `"{x}}}"` lost its brace and
-/// `"{x}}"` failed to parse. Each case in the file is in its RESULT.
+/// String interpolation lexing: close braces after an interpolation
+/// (eu-uhd7d) and whitespace inside one (eu-oaz72.3).
 #[test]
-pub fn test_230_uhd7d_close_brace_after_interpolation() {
-    run_test(&opts("230_uhd7d_close_brace_after_interpolation.eu"));
-}
-
-/// eu-oaz72.1: demand analysis marked a block binding strict when it was
-/// needed only in an untaken branch, via a lazy sibling whose right-hand
-/// side held a nested `let` (prefix `drop-while`). Each case is in RESULT.
-#[test]
-pub fn test_231_oaz72_1_demand_untaken_branch() {
-    run_test(&opts("231_oaz72_1_demand_untaken_branch.eu"));
+pub fn test_230_string_interpolation() {
+    run_test(&opts("230_string_interpolation.eu"));
 }
 
 /// eu-oaz72.5: set and vec storage lives in the GC heap with string
 /// elements traced. Churns string sets/vecs whose strings are reachable only
 /// through the container, and checks contents, order and set algebra.
 #[test]
-pub fn test_234_oaz72_5_native_storage_gc() {
-    run_test(&opts("234_oaz72_5_native_storage_gc.eu"));
+pub fn test_gc_013() {
+    run_test(&opts("gc/gc_013_native_storage.eu"));
 }
 
 /// eu-oaz72.55 — large-object churn computes correctly and a large object
 /// live across the churn survives; `tests/large_object_churn_test.rs`
 /// gates that the dead ones are freed.
 #[test]
-pub fn test_238_oaz72_55_large_object_churn() {
-    run_test(&opts("238_oaz72_55_large_object_churn.eu"));
+pub fn test_gc_014() {
+    run_test(&opts("gc/gc_014_large_object_churn.eu"));
 }
 
-/// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
-/// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
+/// `take`, `drop`, `split-at` and `rotate` with counts at or below zero
+/// terminate (eu-oaz72.35, eu-oaz72.43).
 #[test]
-pub fn test_232_oaz72_35_range_take_termination() {
-    run_test(&opts("232_oaz72_35_range_take_termination.eu"));
+pub fn test_232_negative_counts() {
+    run_test(&opts("232_negative_counts.eu"));
 }
 
 /// eu-oaz72.34 — a self-recursive loop through `if` or `then` with a strict
@@ -3149,9 +3140,12 @@ pub fn test_232_oaz72_35_range_take_termination() {
 /// catenation produces is reduced to a saturated `if`. The `loops` target's
 /// `constant-stack` validator checks `max-stack` and FAILs on master, where
 /// each `then` iteration pushed a frame (max-stack ~1e5 at n = 1e5).
+/// eu-oaz72.147 adds parameter-step and parameter-test loops: the inliner no
+/// longer copies a self-recursive combinator into itself (max-stack ~5e4 on
+/// master).
 #[test]
-pub fn test_233_oaz72_34_constant_stack_loops() {
-    run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
+pub fn test_233_constant_stack_loops() {
+    run_test(&opts("233_constant_stack_loops.eu"));
 }
 
 /// eu-oaz72.36 — a list built by `foldr` or `filter` is computed once and
@@ -3163,8 +3157,8 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
 /// FAILs in blob mode on master, where `.` on an unforced prelude global
 /// rebuilt the namespace block on every read (eu-oaz72.94).
 #[test]
-pub fn test_236_oaz72_36_constructor_field_sharing() {
-    run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
+pub fn test_236_constructor_field_sharing() {
+    run_test(&opts("236_constructor_field_sharing.eu"));
 }
 
 /// eu-oaz72.134 — the assignment-style check must give the same answer in
@@ -3233,6 +3227,10 @@ pub fn test_250_dict() {
         "to-list-shared",
         "update-shared",
         "merge-shared",
+        // A thunk over an evaluated variable, stored and also read through its
+        // own slot, or stored twice: still one evaluation (eu-oaz72.84).
+        "slot-shared",
+        "store-twice-shared",
     ] {
         let shared = ticks_with_demand_analysis(file, target);
         assert!(
@@ -3256,6 +3254,16 @@ pub fn test_250_dict() {
         "assoc-chain peaked at {peak} heap blocks: earlier dict versions are being \
          retained by stored values (eu-oaz72.21)"
     );
+    // A stored value that refers back to itself must stay shared: forcing the
+    // stored stream costs about what forcing it without a dict does. (Trimming
+    // afresh at every level of the cycle made it 8x or more, eu-oaz72.84.)
+    let stored = ticks(file, "stream-stored-run", &[]);
+    let plain = ticks(file, "stream-plain-run", &[]);
+    assert!(
+        stored < plain * 2,
+        "a stored self-referential stream took {stored} ticks against {plain} without a \
+         dict: its sharing is lost (eu-oaz72.84)"
+    );
     // The same for evaluated list values: `memo_cell` rebuilds them over fresh
     // frames, so they do not pin the frame holding the previous version
     // (eu-oaz72.70). Unfixed, the run outgrows the heap limit.
@@ -3269,6 +3277,22 @@ pub fn test_250_dict() {
         peak < 2500,
         "assoc-chain-lists peaked at {peak} heap blocks: earlier dict versions are \
          being retained by stored list values (eu-oaz72.70)"
+    );
+    // The same for unevaluated values built over an evaluated variable (a list
+    // with a computed element, a block literal): `memo_cell` shares one cell
+    // holding the thunk over just the variables it reads with the slot that
+    // named it, so the stored value no longer pins the caller's frame
+    // (eu-oaz72.84). Unfixed, the run outgrows the heap limit.
+    let peak = stat(
+        file,
+        "assoc-chain-lazy",
+        &["--heap-limit-mib", "64"],
+        "Peak Blocks",
+    );
+    assert!(
+        peak < 2500,
+        "assoc-chain-lazy peaked at {peak} heap blocks: earlier dict versions are \
+         being retained by stored unevaluated values (eu-oaz72.84)"
     );
     // The same for `dict.update`: the new value's application is built over
     // a fresh frame `[f, old]`, not the caller's frame, which holds the
@@ -3288,8 +3312,8 @@ pub fn test_250_dict() {
 }
 
 #[test]
-pub fn test_241_oaz72_32_set_vec_of() {
-    run_test(&opts("241_oaz72_32_set_vec_of.eu"));
+pub fn test_241_set_vec_of() {
+    run_test(&opts("241_set_vec_of.eu"));
 }
 
 /// mulmod, powmod and modinv are exact across the i64 range and normalise
@@ -3297,6 +3321,13 @@ pub fn test_241_oaz72_32_set_vec_of() {
 #[test]
 pub fn test_291_modular_arithmetic() {
     run_test(&opts("291_modular_arithmetic.eu"));
+}
+
+/// `seq(a, b)` forces `a` to WHNF and returns `b`; `foldl-strict` and `iota`
+/// use it and keep their results, laziness and constant stack (eu-oaz72.161).
+#[test]
+pub fn test_292_seq_intrinsic() {
+    run_test(&opts("292_seq_intrinsic.eu"));
 }
 
 /// The BFS and Dijkstra templates of the Advent of Code cookbook
@@ -3353,8 +3384,8 @@ fn stat(file: &str, target: &str, flags: &[&str], name: &str) -> u64 {
 /// (as on master, where it hid nothing), forcing the element three times must
 /// cost about one fold, not three.
 #[test]
-pub fn test_237_oaz72_48_list_element_sharing() {
-    let file = "237_oaz72_48_list_element_sharing.eu";
+pub fn test_237_list_element_sharing() {
+    let file = "237_list_element_sharing.eu";
     let fold = ticks_without_demand_analysis(file, "fold");
     let shared = ticks_without_demand_analysis(file, "shared");
     assert!(
@@ -3365,28 +3396,36 @@ pub fn test_237_oaz72_48_list_element_sharing() {
     run_test(&opts(file));
 }
 
-/// eu-oaz72.3: whitespace inside a string interpolation is kept in the
-/// syntax tree as trivia and does not change the interpolation's meaning.
-#[test]
-pub fn test_234_oaz72_3_interpolation_whitespace() {
-    run_test(&opts("234_oaz72_3_interpolation_whitespace.eu"));
-}
-
-#[test]
-/// eu-oaz72.43: negative counts to drop, split-at and rotate are consistent
-/// with take and terminate on infinite lists.
-pub fn test_233_oaz72_43_negative_counts() {
-    run_test(&opts("233_oaz72_43_negative_counts.eu"));
-}
-
 /// eu-oaz72.47: the pre-compiled prelude resolves intrinsic aliases in each
 /// binding body, so `foldl` and the loops built on it branch on an inlined
 /// case rather than calling the global `if`. The per-element tick budgets
 /// FAIL against a blob compiled without it (blob mode only; source mode
 /// inlined these already).
 #[test]
-pub fn test_235_oaz72_47_prelude_loops_inline_if() {
-    run_test(&opts("235_oaz72_47_prelude_loops_inline_if.eu"));
+pub fn test_235_prelude_loops_inline_if() {
+    run_test(&opts("235_prelude_loops_inline_if.eu"));
+}
+
+/// eu-oaz72.175: the pre-compiled prelude runs the demand analysis over each
+/// body, so `range` forces its counter and a streaming fold keeps constant
+/// heap. Without it the counter's alias chain pins every cell (about 12,900
+/// blocks at 400k). Blob mode only: the source prelude never had the defect.
+#[cfg(prelude_blob_ok)]
+#[test]
+pub fn test_235_blob_range_does_not_retain_list() {
+    let file = "235_prelude_loops_inline_if.eu";
+    let small = stat(file, "retention-small", &[], "Peak Blocks");
+    let large = stat(file, "retention-large", &[], "Peak Blocks");
+    assert!(
+        large <= 1100,
+        "range(0, 400000) foldl-strict peaked at {large} heap blocks: the list is \
+         retained (eu-oaz72.175)"
+    );
+    assert!(
+        large <= small + 16,
+        "peak heap grew with the list: {small} blocks at 100k, {large} at 400k \
+         (eu-oaz72.175)"
+    );
 }
 
 /// Reformat `source` as `eu fmt --reformat` does and check the result
@@ -3415,8 +3454,8 @@ fn reformat_round_trip(label: &str, source: &str) -> String {
 /// The file passes, its reformat parses and is a fixed point, and the
 /// reformatted copy passes too. LSP formatting shares this path; see
 /// `src/driver/lsp/formatting.rs` for its test on the same file.
-pub fn test_235_oaz72_6_fmt_leading_docstring() {
-    let name = "235_oaz72_6_fmt_leading_docstring.eu";
+pub fn test_242_fmt_leading_docstring() {
+    let name = "242_fmt_leading_docstring.eu";
     run_test(&opts(name));
 
     let source = std::fs::read_to_string(format!("tests/harness/{name}")).unwrap();
@@ -3457,16 +3496,8 @@ pub fn test_235_oaz72_6_reformat_corpus_round_trip() {
 /// little live data and checks that data live across the collections
 /// survives them. Each check is in RESULT.
 #[test]
-pub fn test_234_oaz72_4_gc_volume_trigger() {
-    run_test(&opts("234_oaz72_4_gc_volume_trigger.eu"));
-}
-
-/// eu-oaz72.40: demand analysis treated block field values and list
-/// elements as strict, forcing a binding used only by an unselected
-/// field. Each case is in RESULT.
-#[test]
-pub fn test_238_oaz72_40_block_body_demand() {
-    run_test(&opts("238_oaz72_40_block_body_demand.eu"));
+pub fn test_gc_012() {
+    run_test(&opts("gc/gc_012_volume_trigger.eu"));
 }
 
 /// eu-oaz72.40: a binding referred to once inside a block field or list
@@ -3474,8 +3505,8 @@ pub fn test_238_oaz72_40_block_body_demand() {
 /// read through the structure recomputed it. With demand analysis on, three
 /// reads must cost about one fold, not three.
 #[test]
-pub fn test_239_oaz72_40_constructor_sharing() {
-    let file = "239_oaz72_40_constructor_sharing.eu";
+pub fn test_239_constructor_sharing() {
+    let file = "239_constructor_sharing.eu";
     let fold = ticks_with_demand_analysis(file, "fold");
     for target in ["list-body", "list-field"] {
         let shared = ticks_with_demand_analysis(file, target);
@@ -3492,8 +3523,8 @@ pub fn test_239_oaz72_40_constructor_sharing() {
 /// update was elided and every call of the lambda recomputed it. With
 /// demand analysis on, six calls must cost about one fold.
 #[test]
-pub fn test_240_oaz72_41_lambda_capture_sharing() {
-    let file = "240_oaz72_41_lambda_capture_sharing.eu";
+pub fn test_240_lambda_capture_sharing() {
+    let file = "240_lambda_capture_sharing.eu";
     let fold = ticks_with_demand_analysis(file, "fold");
     for target in ["let-bound", "returned", "partial-app"] {
         let shared = ticks_with_demand_analysis(file, target);
@@ -3516,8 +3547,8 @@ pub fn test_240_oaz72_41_lambda_capture_sharing() {
 /// merely finding the fixture's name somewhere in the output: before the fix
 /// the user's file still appeared in the `while evaluating (outermost
 /// first):` note, so a looser pattern passes either way and gates nothing.
-pub fn test_194_8a49h_library_blame() {
-    run_error_test(&error_opts("194_8a49h_library_blame.eu"));
+pub fn test_194_library_blame() {
+    run_error_test(&error_opts("194_library_blame.eu"));
 }
 
 #[test]
@@ -3531,8 +3562,8 @@ pub fn test_194_8a49h_library_blame() {
 /// `file:line:col` (line 15, the `result` declaration) *before* the
 /// `while evaluating (outermost first):` marker, so a regression that only
 /// fixes the note cannot satisfy it.
-pub fn test_195_og3u6_trace_anchor() {
-    run_error_test(&error_opts("195_og3u6_trace_anchor.eu"));
+pub fn test_195_trace_anchor() {
+    run_error_test(&error_opts("195_trace_anchor.eu"));
 }
 
 #[test]
@@ -3541,8 +3572,8 @@ pub fn test_195_og3u6_trace_anchor() {
 /// code, the headline's violation count and rendered spec type, and both
 /// violation lines as notes — a `:type-mismatch` with a path and a
 /// closed-record `:unexpected`.
-pub fn test_201_sv3_contract_violation() {
-    run_error_test(&error_opts("201_sv3_contract_violation.eu"));
+pub fn test_201_contract_violation() {
+    run_error_test(&error_opts("201_contract_violation.eu"));
 }
 
 #[test]
@@ -3550,8 +3581,8 @@ pub fn test_201_sv3_contract_violation() {
 /// `ExecutionError` variant from the `ContractViolation` a non-conforming
 /// *value* produces. This is what makes design decision 6 testable: a schema
 /// typo must not masquerade as bad input data.
-pub fn test_202_sv3_contract_bad_spec() {
-    run_error_test(&error_opts("202_sv3_contract_bad_spec.eu"));
+pub fn test_202_contract_bad_spec() {
+    run_error_test(&error_opts("202_contract_bad_spec.eu"));
 }
 
 #[test]
@@ -3561,8 +3592,8 @@ pub fn test_202_sv3_contract_bad_spec() {
 /// `.expect("failure translating import")`, while the same file evaluated
 /// directly produced a clean codespan diagnostic. Gates that the import
 /// path now diagnoses too: exit 1, "invalid embedding" on stderr.
-pub fn test_206_mqlkv_import_bad_embedding() {
-    run_error_test(&error_opts("206_mqlkv_import_bad_embedding.eu"));
+pub fn test_206_import_bad_embedding() {
+    run_error_test(&error_opts("206_import_bad_embedding.eu"));
 }
 
 #[test]
@@ -3570,8 +3601,8 @@ pub fn test_206_mqlkv_import_bad_embedding() {
 /// `CoreError` raised while translating an import took the same panicking
 /// route. This exercises `CoreError::VersionRequirementFailed` from an
 /// imported unit's unsatisfiable `requires:`.
-pub fn test_207_mqlkv_import_bad_requires() {
-    run_error_test(&error_opts("207_mqlkv_import_bad_requires.eu"));
+pub fn test_207_import_bad_requires() {
+    run_error_test(&error_opts("207_import_bad_requires.eu"));
 }
 
 #[test]
@@ -3581,16 +3612,16 @@ pub fn test_207_mqlkv_import_bad_requires() {
 /// `.expect` sites panicked independently, so each needs its own gate:
 /// without this test two thirds of the fix could be reverted with the
 /// suite green while users still hit exit 101.
-pub fn test_208_mqlkv_scoped_import_bad_embedding() {
-    run_error_test(&error_opts("208_mqlkv_scoped_import_bad_embedding.eu"));
+pub fn test_208_scoped_import_bad_embedding() {
+    run_error_test(&error_opts("208_scoped_import_bad_embedding.eu"));
 }
 
 #[test]
 /// eu-mqlkv, **site 3 of 3** — the `Block` impl's block-metadata import
 /// loop, reached by leading metadata on a nested block rather than on the
 /// unit or on a declaration.
-pub fn test_209_mqlkv_block_import_bad_embedding() {
-    run_error_test(&error_opts("209_mqlkv_block_import_bad_embedding.eu"));
+pub fn test_209_block_import_bad_embedding() {
+    run_error_test(&error_opts("209_block_import_bad_embedding.eu"));
 }
 
 #[test]
@@ -3632,8 +3663,8 @@ pub fn test_error_228_type_warning_argument_span() {
 /// (`foldl`, five). The sidecar pins the caret run to exactly eleven, so
 /// reverting the shunting yard to stamping the `App` with `f.smid()`
 /// fails this test.
-pub fn test_error_229_1tkk_7_38_underapplied_call_span() {
-    run_error_test(&error_opts("229_1tkk_7_38_underapplied_call_span.eu"));
+pub fn test_error_229_underapplied_call_span() {
+    run_error_test(&error_opts("229_underapplied_call_span.eu"));
 }
 
 #[test]
@@ -3651,29 +3682,36 @@ pub fn test_error_230_lazy_demand_site_blame() {
 /// `EU-EVAL-TYPE` code allow-list. `n.foo` on a number raises
 /// `NoBranchForDataTag` via the `LookupLitForce` continuation (not
 /// `TypeMismatch`); the sidecar pins the coded header.
-pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
-    run_error_test(&error_opts("231_1tkk_7_44_nobranch_datatag_code.eu"));
+pub fn test_error_231_nobranch_datatag_code() {
+    run_error_test(&error_opts("231_nobranch_datatag_code.eu"));
 }
 
 #[test]
 /// eu-oaz72.2: an unclosed unicode bracket at end of file reports a parse
 /// error instead of panicking the parser.
-pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
-    run_error_test(&error_opts("232_oaz72_2_unclosed_bracket_eof.eu"));
+pub fn test_error_232_unclosed_bracket_eof() {
+    run_error_test(&error_opts("232_unclosed_bracket_eof.eu"));
+}
+
+#[test]
+/// eu-oaz72.42: an unclosed bracket mid-file is reported at the opening
+/// bracket.
+pub fn test_error_333_unclosed_bracket_open() {
+    run_error_test(&error_opts("333_unclosed_bracket_open.eu"));
 }
 
 #[test]
 /// eu-oaz72.43: a negative index to nth is an error rather than a hang on
 /// an infinite list (checked on a finite one to stay bounded).
-pub fn test_error_233_oaz72_43_nth_negative() {
-    run_error_test(&error_opts("233_oaz72_43_nth_negative.eu"));
+pub fn test_error_233_nth_negative() {
+    run_error_test(&error_opts("233_nth_negative.eu"));
 }
 
 #[test]
 /// eu-oaz72.43: a negative index to update-nth is an error, not a silent
 /// update of element 0.
-pub fn test_error_233_oaz72_43_update_nth_negative() {
-    run_error_test(&error_opts("233_oaz72_43_update_nth_negative.eu"));
+pub fn test_error_234_update_nth_negative() {
+    run_error_test(&error_opts("234_update_nth_negative.eu"));
 }
 
 #[test]
@@ -3775,21 +3813,21 @@ pub fn test_error_250_dict_merge_strict() {
 #[test]
 /// eu-oaz72.32: a non-primitive element in set.of / set.from-list raises the
 /// typed "expected a primitive value" error with help, as set.add does.
-pub fn test_error_241_oaz72_32_set_of_non_primitive() {
-    run_error_test(&error_opts("241_oaz72_32_set_of_non_primitive.eu"));
+pub fn test_error_241_set_of_non_primitive() {
+    run_error_test(&error_opts("241_set_of_non_primitive.eu"));
 }
 
 #[test]
 /// eu-oaz72.32: a datetime element in set.of raises set.add's type mismatch,
 /// not "empty boxed value" from its unforced inner value.
-pub fn test_error_241_oaz72_32_set_of_datetime() {
-    run_error_test(&error_opts("241_oaz72_32_set_of_datetime.eu"));
+pub fn test_error_236_set_of_datetime() {
+    run_error_test(&error_opts("236_set_of_datetime.eu"));
 }
 
 #[test]
 /// eu-oaz72.32: a function element in set.from-list raises set.add's error.
-pub fn test_error_241_oaz72_32_set_of_function() {
-    run_error_test(&error_opts("241_oaz72_32_set_of_function.eu"));
+pub fn test_error_237_set_of_function() {
+    run_error_test(&error_opts("237_set_of_function.eu"));
 }
 
 #[test]
@@ -3967,16 +4005,11 @@ pub fn test_173_direct_app_dispatch() {
     run_test(&opts("173_direct_app_dispatch.eu"));
 }
 
+/// Spec and contract validation: s-string type data, `as-spec`, `match?`,
+/// `validate` and `ensure` (eu-sv1, eu-sv2, eu-r9oy, eu-u9xj.1). One target each.
 #[test]
-/// SV1 type-data semantics: to-data projection, from-data round-trip, passthru.
-pub fn test_174_sv1_typedata() {
-    run_test(&opts("174_sv1_typedata.eu"));
-}
-
-#[test]
-/// SV2 to-spec / as-spec: convert type-data to match?-compatible patterns.
-pub fn test_175_sv2_to_spec() {
-    run_test(&opts("175_sv2_to_spec.eu"));
+pub fn test_174_spec_validation() {
+    run_test(&opts("174_spec_validation.eu"));
 }
 
 #[test]
@@ -3994,11 +4027,11 @@ pub fn test_178_sv_optional_fields_to_spec() {
     run_test(&opts("178_sv_optional_fields_to_spec.eu"));
 }
 
+/// Demand analysis and laziness soundness (eu-cg3, eu-v8n8, eu-2sa6,
+/// eu-oaz72.1, eu-oaz72.40). One target each.
 #[test]
-/// CG3: higher-order recursive folds with strict arg forcing at self-recursive
-/// call sites produce correct results and complete in linear time.
-pub fn test_179_cg3_strict_recurse() {
-    run_test(&opts("179_cg3_strict_recurse.eu"));
+pub fn test_179_demand_laziness() {
+    run_test(&opts("179_demand_laziness.eu"));
 }
 
 #[test]
@@ -4006,11 +4039,6 @@ pub fn test_179_cg3_strict_recurse() {
 /// called at exact arity should use the DirectApp fast path.
 pub fn test_180_direct_app_local() {
     run_test(&opts("180_direct_app_local.eu"));
-}
-
-#[test]
-pub fn test_181_cg3_bomb() {
-    run_test(&opts("181_cg3_bomb.eu"));
 }
 
 #[test]
@@ -4047,72 +4075,13 @@ pub fn test_187_sv_prefix_list() {
     run_test(&opts("187_sv_prefix_list.eu"));
 }
 
-#[test]
-pub fn test_188_v8n8_cluster_laziness() {
-    run_test(&opts("188_v8n8_cluster_laziness.eu"));
-}
-
-/// eu-2sa6 — regression test for Wicket's PR #1016 review concern: a
-/// self-recursive local function with a cond/pattern-match where only some
-/// branches reference the recursive calls must not force branches that
-/// aren't on the demanded path. See the .eu file for full context.
-#[test]
-pub fn test_189_branch_gated_self_recursion() {
-    run_test(&opts("189_branch_gated_self_recursion.eu"));
-}
-
-#[test]
-pub fn test_189_r9oy_union_as_spec() {
-    run_test(&opts("189_r9oy_union_as_spec.eu"));
-}
-
 /// eu-odkp — regression test for XML import silently dropping entity /
 /// character references in text content (and splitting the surrounding
 /// text into separate trimmed nodes) since the quick-xml 0.25→0.41 bump.
 /// See the .eu file for full context.
 #[test]
-pub fn test_190_odkp_xml_entity_refs() {
-    run_test(&opts("190_odkp_xml_entity_refs.eu"));
-}
-
-/// SV3 (eu-u9xj.1) — the `t-record` projection carries record closedness as
-/// an additive trailing element, and `from-data` renders it, closing the
-/// open-record round-trip loss. See the .eu file for full context.
-#[test]
-pub fn test_196_sv3_projection_closedness() {
-    run_test(&opts("196_sv3_projection_closedness.eu"));
-}
-
-/// SV3 (eu-u9xj.1) — `reflect.type-str` is the canonical `t-*` renderer,
-/// hoisted out of `from-data`'s block so a runtime consumer can name the
-/// type it expected. See the .eu file for full context.
-#[test]
-pub fn test_197_sv3_type_str() {
-    run_test(&opts("197_sv3_type_str.eu"));
-}
-
-/// SV3 (eu-u9xj.1) — `validate` is the reporting dual of `as-spec`: it walks
-/// spec and value together carrying a path, and emits an entry for every
-/// mismatch instead of collapsing to a bit. See the .eu file for full context.
-#[test]
-pub fn test_198_sv3_validate() {
-    run_test(&opts("198_sv3_validate.eu"));
-}
-
-/// SV3 (eu-u9xj.1) — the executable statement of "cost paid only where
-/// written": every check would raise or diverge if `validate` forced a
-/// subtree its spec does not name. See the .eu file for full context.
-#[test]
-pub fn test_199_sv3_forcing_discipline() {
-    run_test(&opts("199_sv3_forcing_discipline.eu"));
-}
-
-/// SV3 (eu-u9xj.1) — `ensure` returns conforming data unchanged, so it drops
-/// into a pipeline; plus the report-line renderers the raised diagnostic
-/// shows as notes. See the .eu file for full context.
-#[test]
-pub fn test_200_sv3_ensure() {
-    run_test(&opts("200_sv3_ensure.eu"));
+pub fn test_190_xml_entity_refs() {
+    run_test(&opts("190_xml_entity_refs.eu"));
 }
 
 /// eu-3aa6s — regression test for `meta()` raising "expected block, found
@@ -4120,14 +4089,14 @@ pub fn test_200_sv3_ensure() {
 /// layer with the recursive result for the body, and Merge is a block
 /// operation. See the .eu file for full context.
 #[test]
-pub fn test_204_3aa6s_meta_symbol_metadata() {
-    run_test(&opts("204_3aa6s_meta_symbol_metadata.eu"));
+pub fn test_204_meta_symbol_metadata() {
+    run_test(&opts("204_meta_symbol_metadata.eu"));
 }
 
 // EF1 combined effect monad (do): uses io.shell, so runs with --allow-io.
 #[test]
-pub fn test_203_ef1_do_monad() {
-    run_test(&io_opts("203_ef1_do_monad.eu"));
+pub fn test_203_do_monad() {
+    run_test(&io_opts("203_do_monad.eu"));
 }
 
 /// eu-frf2o — regression test for a metadata-annotated inline block literal
@@ -4137,8 +4106,8 @@ pub fn test_203_ef1_do_monad() {
 /// silently wrong value (the caller's first argument) inside a function.
 /// See the .eu file for full context.
 #[test]
-pub fn test_205_frf2o_inline_annotated_block() {
-    run_test(&opts("205_frf2o_inline_annotated_block.eu"));
+pub fn test_205_inline_annotated_block() {
+    run_test(&opts("205_inline_annotated_block.eu"));
 }
 
 /// eu-1tkk.7.24 — the html exporter's success path, which had no
@@ -4174,8 +4143,8 @@ pub fn test_213_edn_large_integer() {
 /// complexity class itself is gated on VM ticks by
 /// `tests/fold_over_map_growth_test.rs`.
 #[test]
-pub fn test_221_wpswc_settled_slot_passthrough() {
-    run_test(&opts("221_wpswc_settled_slot_passthrough.eu"));
+pub fn test_221_settled_slot_passthrough() {
+    run_test(&opts("221_settled_slot_passthrough.eu"));
 }
 
 /// eu-u9xj.6 (PP) — the process-parallelism combinators are semantically
@@ -4186,8 +4155,8 @@ pub fn test_221_wpswc_settled_slot_passthrough() {
 /// through the same serialise/deserialise codec the fork path uses. The real
 /// fork path is validated out-of-process below.
 #[test]
-pub fn test_222_pp_par_equivalence() {
-    run_test(&opts("222_pp_par_equivalence.eu"));
+pub fn test_222_pp_process_parallel_equivalence() {
+    run_test(&opts("222_process_parallel_equivalence.eu"));
 }
 
 /// eu-u9xj.6 (PP) — a streaming import must not disable `par-*`, and `par-*`
@@ -4196,8 +4165,8 @@ pub fn test_222_pp_par_equivalence() {
 /// process-lifetime state, so any unit naming a stream import lost `par-*` —
 /// as did every later unit evaluated by the same process.
 #[test]
-pub fn test_224_pp_stream_import_boundary() {
-    run_test(&opts("224_pp_stream_import_boundary.eu"));
+pub fn test_224_pp_process_parallel_stream_import() {
+    run_test(&opts("224_process_parallel_stream_import.eu"));
 }
 
 /// eu-pazes — `max-of`/`min-of` must be linear in list length.
@@ -4223,12 +4192,12 @@ pub fn test_224_pp_stream_import_boundary() {
 /// deadline at all. Anything between those is a regression; no plausible CI
 /// slowness closes a gap that wide.
 #[test]
-pub fn test_223_pazes_max_of_linear() {
+pub fn test_223_max_of_linear() {
     let deadline = std::time::Duration::from_secs(180);
     let mut cmd = std::process::Command::new(eu_binary());
     cmd.arg("test")
         .arg("--source-prelude")
-        .arg("tests/harness/223_pazes_max_of_linear.eu")
+        .arg("tests/harness/223_max_of_linear.eu")
         .arg("--heap-limit-mib")
         .arg("8192");
 
@@ -4242,7 +4211,7 @@ pub fn test_223_pazes_max_of_linear() {
     });
     assert!(
         out.status.success(),
-        "223_pazes_max_of_linear failed after {:?}: {}{}",
+        "223_max_of_linear failed after {:?}: {}{}",
         started.elapsed(),
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
@@ -4717,6 +4686,57 @@ pub fn test_typecheck_124_coalesce_result_may_be_null() {
 #[test]
 pub fn test_typecheck_125_str_matches_flat_list() {
     run_typecheck_test("125_str_matches_flat_list.eu");
+}
+
+/// Idiomatic uses of `interleave` and `parse-as` are clean under `--strict`.
+#[test]
+pub fn test_typecheck_127_strict_clean_idiomatic() {
+    run_typecheck_test("127_strict_clean_idiomatic.eu");
+}
+
+/// Literal symbols inside tuples widen on type-variable binding (eu-oaz72.127).
+#[test]
+pub fn test_typecheck_128_tuple_literal_symbols_widen() {
+    run_typecheck_test("128_tuple_literal_symbols_widen.eu");
+}
+
+/// A union of record types (list of records with differing fields) is
+/// accepted where a `Dict` is expected (eu-oaz72.169).
+#[test]
+pub fn test_typecheck_129_record_union_lookup() {
+    run_typecheck_test("129_record_union_lookup.eu");
+}
+
+/// A union with a non-record member still warns against `Dict`.
+#[test]
+pub fn test_typecheck_130_record_union_mismatch_warns() {
+    run_typecheck_test("130_record_union_mismatch_warns.eu");
+}
+
+/// A union *parameter* still rejects a wider argument (eu-oaz72.169).
+#[test]
+pub fn test_typecheck_131_union_param_rejects_wide_arg() {
+    run_typecheck_test("131_union_param_rejects_wide_arg.eu");
+}
+
+/// The union rule stays argument-side inside callback types (eu-oaz72.169).
+#[test]
+pub fn test_typecheck_132_union_callback_param_rejects() {
+    run_typecheck_test("132_union_callback_param_rejects.eu");
+}
+
+/// A `prelude:` unit-metadata override is honoured by the type checker on
+/// both `eu check` and the evaluate path (eu-oaz72.177).
+#[test]
+pub fn test_typecheck_133_prelude_override_type_mismatch() {
+    run_typecheck_test("133_prelude_override_type_mismatch.eu");
+}
+
+/// Derived monad combinators on identity-like monads and `random` check
+/// clean: an abstract `m a` is gradual against a concrete type (eu-oaz72.170).
+#[test]
+pub fn test_typecheck_134_identity_monad_derived_no_warning() {
+    run_typecheck_test("134_identity_monad_derived_no_warning.eu");
 }
 
 /// The dict prelude signatures must not warn on valid dict code: the
@@ -5530,6 +5550,16 @@ pub fn test_error_306_complex_result_large_float() {
 }
 
 #[test]
+pub fn test_error_316_stored_value_trace() {
+    run_error_test(&error_opts("316_stored_value_trace.eu"));
+}
+
+#[test]
+pub fn test_error_317_stored_list_field_trace() {
+    run_error_test(&error_opts("317_stored_list_field_trace.eu"));
+}
+
+#[test]
 pub fn test_error_250_dict_detached_label() {
     run_error_test(&error_opts("250_dict_detached_label.eu"));
 }
@@ -5539,4 +5569,140 @@ pub fn test_error_250_dict_detached_label() {
 /// surfaces there (its first two cells stay lazy, gated by harness 165).
 pub fn test_error_309() {
     run_error_test(&error_opts("309_iota_third_cell_start_forced.eu"));
+}
+
+#[test]
+/// `seq` forces its first argument, so an error there surfaces (eu-oaz72.161).
+pub fn test_error_310() {
+    run_error_test(&error_opts("310_seq_forces_first_argument.eu"));
+}
+
+#[test]
+/// `seq` evaluates its first argument before its second, so with both
+/// erroring the first error surfaces (eu-oaz72.161).
+pub fn test_error_311() {
+    run_error_test(&error_opts("311_seq_first_argument_before_second.eu"));
+}
+
+#[test]
+/// A huge array dimension is shown capped (eu-oaz72.160).
+pub fn test_error_312() {
+    run_error_test(&error_opts("312_array_dims_capped.eu"));
+}
+
+#[test]
+/// A huge array index is reported as given, not saturated (eu-oaz72.160).
+pub fn test_error_313() {
+    run_error_test(&error_opts("313_array_index_not_saturated.eu"));
+}
+
+#[test]
+/// A huge modular operand is shown capped (eu-oaz72.160).
+pub fn test_error_314() {
+    run_error_test(&error_opts("314_modular_operand_capped.eu"));
+}
+
+#[test]
+/// A huge bitwise operand is shown capped (eu-oaz72.160).
+pub fn test_error_315() {
+    run_error_test(&error_opts("315_bitwise_operand_capped.eu"));
+}
+
+/// Prelude sites converted to constant-stack strict forms (eu-oaz72.165,
+/// owner decisions 40 and 41).
+#[test]
+pub fn test_300_strict_prelude_sites() {
+    run_test(&opts("300_strict_prelude_sites.eu"));
+}
+
+#[test]
+pub fn test_error_330_reduce_forces_each_step() {
+    run_error_test(&error_opts("330_reduce_forces_each_step.eu"));
+}
+
+#[test]
+pub fn test_error_331_iterate_applies_f_at_cell() {
+    run_error_test(&error_opts("331_iterate_applies_f_at_cell.eu"));
+}
+
+#[test]
+pub fn test_error_347_missing_prelude_path() {
+    run_error_test(&error_opts("347_missing_prelude_path.eu"));
+}
+
+#[test]
+pub fn test_error_332_scanl_applies_op_at_cell() {
+    run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
+}
+
+/// `eu check` must honour `prelude:` unit metadata exactly as evaluation
+/// does (eu-oaz72.173): the alternative prelude's bindings are known, so
+/// `--strict` exits 0 with no spurious "assignment-style" error.
+#[test]
+pub fn test_check_honours_prelude_metadata() {
+    let output = std::process::Command::new(eu_binary())
+        .args([
+            "check",
+            "--strict",
+            "tests/harness/163_prelude_selection.eu",
+        ])
+        .output()
+        .expect("failed to run eu check");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "eu check --strict must accept a prelude: override; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.is_empty(),
+        "eu check must run cleanly (a skipped check prints a pipeline warning):\n{stderr}"
+    );
+}
+
+/// An unreadable `prelude:` override must fail `eu check` (strict or not) rather
+/// than silently skip the check (eu-oaz72.173 review).
+#[test]
+pub fn test_check_fails_on_missing_prelude_override() {
+    let dir = std::env::temp_dir().join(format!("eu-check-prelude-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("bad.eu");
+    std::fs::write(&file, "{ prelude: \"nonexistent-prelude.eu\" }\n\nx: 1\n").unwrap();
+    let output = std::process::Command::new(eu_binary())
+        .args(["check"])
+        .arg(&file)
+        .output()
+        .expect("failed to run eu check");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A `prelude:` path that does not exist must be an error naming the path on
+/// `eu`, `eu check` and `eu check --strict`, even when its file stem matches a
+/// bundled library (eu-oaz72.181).
+#[test]
+pub fn test_missing_prelude_path_is_an_error() {
+    let file = "tests/harness/errors/347_missing_prelude_path.eu";
+    for args in [
+        vec![file],
+        vec!["check", file],
+        vec!["check", "--strict", file],
+    ] {
+        let output = std::process::Command::new(eu_binary())
+            .args(&args)
+            .output()
+            .expect("failed to run eu");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{args:?}:\n{stderr}");
+        assert!(
+            stderr.contains("could not read 'nope/prelude.eu'")
+                && stderr.contains("not resolved relative to the file"),
+            "{args:?}:\n{stderr}"
+        );
+    }
 }

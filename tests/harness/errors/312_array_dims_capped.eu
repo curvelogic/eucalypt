@@ -1,0 +1,2 @@
+` "A huge dimension is shown capped, not as a 300-digit string (eu-oaz72.160)"
+a: arr.zeros[(10.0 ^ 300), 3]

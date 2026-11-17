@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/331_iterate_applies_f_at_cell
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/331_iterate_applies_f_at_cell.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/331_iterate_applies_f_at_cell.eu:2:10
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: f applied
+  ┌─ tests/harness/errors/331_iterate_applies_f_at_cell.eu:2:10
+  │
+2 │ boom(x): panic("f applied")
+  │          ^^^^^^^^^^^^^^^^^^
+3 │ x: iterate(boom, 0) take(2) count
+  │    ---------------- called from here
+  │
+  = while evaluating (outermost first):
+    - x at 331_iterate_applies_f_at_cell.eu:3:29

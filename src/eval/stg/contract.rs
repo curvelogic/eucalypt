@@ -108,7 +108,7 @@ impl StgIntrinsic for ContractFail {
         // and `is_user_file` reported true for it. `load_source` now marks a
         // file it served from a baked-in resource, and §9.1 is met in both
         // prelude modes — asserted by the primary-label anchor in
-        // `tests/harness/errors/201_sv3_contract_violation.eu.expect`.
+        // `tests/harness/errors/201_contract_violation.eu.expect`.
         //
         // `machine.annotation()` in fact also lands on the `ensure` call site
         // for the fixture above, so this choice is no longer *demonstrably*

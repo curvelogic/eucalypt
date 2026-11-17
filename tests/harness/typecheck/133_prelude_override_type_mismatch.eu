@@ -1,0 +1,4 @@
+{ prelude: "tests/fixtures/alt-prelude-typed.eu" }
+
+` "alt-show is typed and defined only by the overriding prelude"
+bad: alt-show("x")

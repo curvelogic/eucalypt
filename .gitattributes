@@ -1,1 +1,4 @@
 tests/conform/*.golden text eol=lf
+
+# All eucalypt sources (prelude, library, harness and others) must check out with LF endings: string values must not depend on core.autocrlf.
+**/*.eu text eol=lf

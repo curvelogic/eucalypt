@@ -230,6 +230,10 @@ result: helper(42)
 x: custom-fn(1)
 ```
 
+A `prelude:` path is resolved against the library path, then the working
+directory (not relative to the file naming it); a path that is not found is an
+error.
+
 **Trace metadata**: annotate declarations to trace entry arguments
 and/or exit values to stderr during evaluation:
 
@@ -665,6 +669,18 @@ it over `foldl` when `op` is strict in the accumulator (`+`, `max`); keep
 range(0, 1000000) foldl-strict(max, 0)   # 999999
 ```
 
+#### `seq(a, b)` — force `a`, return `b`
+
+Evaluates `a` to weak head normal form (only the outermost constructor of a
+list or block), then returns `b`. An error in `a` surfaces; `b` is not
+evaluated first. Use it to force a loop's accumulator before the tail call so
+the stack stays constant. In a pipeline the subject is `b`: `x seq(a)` is
+`seq(a, x)`. `foldl-strict` and `iota` are written with it.
+
+```
+count-up(a, n): (n = 0) then(a, seq(a, count-up(a + 1, n - 1)))
+```
+
 #### `foldr(op, i, l)` — right fold
 
 ```
@@ -1037,7 +1053,8 @@ catenation) — navigate with `(xs nth(2)).port` or a lens.
   different error from a contract violation, so a schema typo cannot
   masquerade as bad data.
 - Literal types (`"prod"`, `:ok`) are checked by equality here but **not**
-  by `as-spec`, which matches anything for them (eu-pub3r).
+  by `as-spec`, which matches anything for them (a known
+  defect).
 
 See [Structural Contracts](../guide/contracts.md).
 
@@ -1238,7 +1255,7 @@ range(1, 6)                          # [1, 2, 3, 4, 5]
 range(6, 1)                          # [] (empty when e <= b)
 
 # Infinite iteration
-iterate(* 2, 1) take(6)             # [1, 2, 4, 8, 16, 32]
+iterate(* 2, 1) take(6)             # [1, 2, 4, 8, 16, 32] (elements evaluated as each cell is reached)
 ```
 
 ---
@@ -1602,6 +1619,26 @@ _0✓ && count(_0) >= 4    # λ(a). a != null && count(a) >= 4
 Without the outer `_0✓`, the `_0` inside `count(_0)` would form a
 separate lambda at the ArgTuple level.
 
+### 5.24 A Loop With a Lazy Accumulator Uses O(n) Stack
+
+When a loop's step is a *parameter*, the accumulator stays lazy and builds a
+chain `f(f(f(x)))` forced at the end: about 2M stack frames at 1e6 steps. A
+named step does not have this problem. Force the accumulator with `seq`, or
+use `iterate`, which is strict:
+
+```eu,notest
+times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))              # O(n) stack
+```
+
+```eu
+times(f, n, x): (n = 0) then(x, seq(x, times(f, n - 1, f(x))))      # constant stack
+
+a: times(+ 3, 1000, 0) //=> 3000
+b: iterate(+ 3, 0) nth(1000) //=> 3000                              # constant stack
+```
+
+See the [Advent of Code cookbook](../guide/advent-of-code.md#loops-with-a-lazy-accumulator).
+
 ---
 
 ## 6. Quick CLI Reference
@@ -1644,6 +1681,7 @@ All functions verified against `lib/prelude.eu`:
 | `str.extract-or` | `extract-or(re, d, s)` | Extract first capture group or default `d` |
 | `str.matches` | `matches(s, re)` | All matches of `re` in `s` |
 | `str.matches-of` | `matches-of(re, s)` | All matches (pipeline-friendly) |
+| `str.matches-with` | `matches-with(re, s)` | All matches, each as `[whole, g1, ...]` |
 | `str.matches?` | `matches?(re, s)` | True if `re` matches full string `s` |
 | `str.letters` | `letters(s)` | List of individual characters |
 | `str.len` | `len(s)` | String length in characters |

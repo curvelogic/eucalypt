@@ -22,8 +22,8 @@ use super::{
     printf::{self, PrintfError},
     support::{
         collect_num_list, machine_return_bool, machine_return_num, machine_return_str,
-        machine_return_str_iter, machine_return_str_list, machine_return_sym, num_arg, str_arg,
-        str_arg_ref, str_list_arg,
+        machine_return_str_iter, machine_return_str_list, machine_return_str_list_of_lists,
+        machine_return_sym, num_arg, str_arg, str_arg_ref, str_list_arg,
     },
     syntax::{
         dsl::{atom, box_str, case, data, force, lambda, let_, local, lref, str, unbox_str, value},
@@ -158,9 +158,17 @@ impl StgIntrinsic for Join {
                 unbox_str(
                     local(2),
                     // [unbox-sep] [sl] [l] [s]
-                    let_(
-                        vec![value(call::bif::join(lref(1), lref(0)))],
-                        data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
+                    //
+                    // The separator's payload may itself be an unevaluated
+                    // thunk (e.g. the result of `str.of(..)` or
+                    // `ch.of-code-point(..)`), so force it to a native string.
+                    force(
+                        local(0),
+                        // [sep] [unbox-sep] [sl] [l] [s]
+                        let_(
+                            vec![value(call::bif::join(lref(2), lref(0)))],
+                            data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
+                        ),
                     ),
                 ),
             ),
@@ -248,6 +256,44 @@ impl StgIntrinsic for Matches {
 }
 
 impl CallGlobal2 for Matches {}
+
+/// MATCHES_WITH(string, regex-string)
+///
+/// Return all matches of regex-string in string in a single pass, each as
+/// a list of the whole match followed by its capture groups. A group that
+/// does not take part in a match is the empty string (as for `MATCH`).
+pub struct MatchesWith;
+
+impl StgIntrinsic for MatchesWith {
+    fn name(&self) -> &str {
+        "MATCHES_WITH"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let string = str_arg_ref(machine, view, &args[0])?;
+        let regex = str_arg_ref(machine, view, &args[1])?;
+        let re = cached_regex(machine, &*regex)?;
+
+        let v: Vec<Vec<String>> = re
+            .captures_iter(&string)
+            .map(|captures| {
+                captures
+                    .iter()
+                    .map(|m| m.map_or_else(String::new, |mch| mch.as_str().to_string()))
+                    .collect()
+            })
+            .collect();
+        machine_return_str_list_of_lists(machine, view, v)
+    }
+}
+
+impl CallGlobal2 for MatchesWith {}
 
 /// SPLIT(string, regex-string)
 ///

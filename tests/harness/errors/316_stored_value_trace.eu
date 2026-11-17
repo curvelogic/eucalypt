@@ -1,0 +1,7 @@
+` "an error raised from a lazy value stored in a dict keeps every caller frame master reports as 'called from here' (the }.d get site, the }.d block, the enclosing function), not just the dict.assoc call (eu-oaz72.84)."
+g(n): {
+  v: n + "x"
+  d: dict.empty dict.assoc(:v, v)
+}.d dict.get(:v)
+
+out: g(3)

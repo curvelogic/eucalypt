@@ -338,14 +338,21 @@ impl LspTestSession {
             Position::new(start_line, start_char),
             Position::new(end_line, end_char),
         );
+        // Use the cached pipeline's warnings, as `on_code_action` does.
+        let file_id = FileId::from_url(&self.uri);
+        let cached = self.queries.get_pipeline_result(&file_id);
+        let empty_source_map = crate::common::sourcemap::SourceMap::new();
+        let (warnings, source_map) = cached
+            .map(|c| (c.warnings.as_slice(), &c.source_map))
+            .unwrap_or((&[], &empty_source_map));
         actions::code_actions(
             &self.content,
             &root,
             &range,
             &self.uri,
             &table,
-            &[],
-            &crate::common::sourcemap::SourceMap::new(),
+            warnings,
+            source_map,
         )
     }
 
@@ -408,6 +415,23 @@ impl LspTestSession {
     /// Return the last pipeline error, if any.
     pub fn last_pipeline_error(&self) -> Option<&PipelineError> {
         self.last_pipeline_error.as_ref()
+    }
+
+    /// Warnings from the cached pipeline result (empty if none cached).
+    pub fn pipeline_warnings(&self) -> Vec<crate::core::typecheck::error::TypeWarning> {
+        let file_id = FileId::from_url(&self.uri);
+        self.queries
+            .get_pipeline_result(&file_id)
+            .map(|c| c.warnings.clone())
+            .unwrap_or_default()
+    }
+
+    /// Message of the cached result's `prelude:` override error, if any.
+    pub fn prelude_error(&self) -> Option<String> {
+        let file_id = FileId::from_url(&self.uri);
+        self.queries
+            .get_pipeline_result(&file_id)
+            .and_then(|c| c.prelude_error.as_ref().map(|e| e.message.clone()))
     }
 
     /// Check if a cached pipeline result is available.

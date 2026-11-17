@@ -1155,6 +1155,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "SPLIT" => Some("str.split"),
         "MATCH" => Some("str.match"),
         "MATCHES" => Some("str.matches"),
+        "MATCHES_WITH" => Some("str.matches-with"),
         "JOIN" => Some("str.join"),
         "FMT" => Some("fmt"),
         "STR" => Some("str"),
@@ -1194,6 +1195,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
 
         // Control flow
         "IF" => Some("if"),
+        "SEQ" => Some("seq"),
         "PANIC" => Some("panic"),
         "ASSERT_FAIL" => Some("assert.fail"),
 

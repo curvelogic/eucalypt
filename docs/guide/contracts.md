@@ -179,8 +179,8 @@ The source location is the `ensure` call site under both prelude modes.
 It briefly was not: a shipped library imported by filename was
 misclassified as user code, so a frame inside `lib/contract.eu` could win
 the "blame user code" ranking and become the primary label under the
-pre-compiled prelude. That was **eu-8a49h**, not specific to contracts,
-and it is fixed. `tests/harness/errors/201_sv3_contract_violation.eu`
+pre-compiled prelude. That defect was not specific to contracts, and it
+is fixed. `tests/harness/errors/201_contract_violation.eu`
 anchors the primary label on the `ensure` call site so a regression fails
 the build.
 
@@ -289,8 +289,8 @@ specs and deliberately differs on closed ones.
   `validate` checks a literal (`"prod"`, `:ok`) by equality, as you would
   expect. `as-spec` has no arm for literal types, so it falls through to
   "matches anything" — `s"\"prod\"" as-spec` accepts any value at all. That
-  is a defect on the `as-spec` side, tracked as **eu-pub3r**; `validate`
-  does the right thing rather than replicating it. Until the bead lands, do
+  is a known defect on the `as-spec` side; `validate` does the right
+  thing rather than replicating it. Until it is fixed, do
   not expect `data match?(spec as-spec)` and `(data validate(spec)) nil?`
   to agree on a spec containing a literal type.
 - **Data-file blame** — reporting `config.yaml:12` rather than the `ensure`

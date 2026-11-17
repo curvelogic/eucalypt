@@ -280,7 +280,10 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
         // Structural: function types.
         (Type::Function(a1, b1), Type::Function(a2, b2)) => {
             let (a1, b1, a2, b2) = (a1.clone(), b1.clone(), a2.clone(), b2.clone());
-            unify(&a1, &a2, subst)?;
+            // Parameters are contravariant: swap, so the union rule below
+            // (which fires only for a union on the right, the argument side)
+            // sees the callback's expected parameter on the right.
+            unify(&a2, &a1, subst)?;
             let b1 = apply_subst(&b1, subst);
             let b2 = apply_subst(&b2, subst);
             unify(&b1, &b2, subst)
@@ -500,6 +503,22 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             unify(&Type::Any, &t, subst)
         }
 
+        // A union on the argument (right) side against a concrete non-union
+        // type: every variant must unify with it, under one trial
+        // substitution committed only on success.  This lets a list of
+        // records with differing fields, whose element type is a union of
+        // record types, satisfy `Dict(a)` (eu-oaz72.169).  Deliberately
+        // one-sided: a union *parameter* such as `:asc | :desc` must not
+        // accept an argument merely because each variant widens to it.
+        (other, Type::Union(variants)) if !matches!(other, Type::Union(_) | Type::Var(..)) => {
+            let mut trial = subst.clone();
+            variants
+                .iter()
+                .try_for_each(|v| unify(other, v, &mut trial))?;
+            *subst = trial;
+            Ok(())
+        }
+
         // Recursive type (Mu): unfold once and unify.
         (Type::Mu(x, body), other) | (other, Type::Mu(x, body)) => {
             let (x, body) = (x.clone(), body.clone());
@@ -530,11 +549,17 @@ fn bind_var(
     // different literal values of the same base type — e.g. `min("a", "b")`
     // would otherwise bind the type variable to `"a"` and then fail to
     // unify the second argument `"b"` against it.
-    let rhs = match rhs {
-        Type::LiteralString(_) => Type::String,
-        Type::LiteralSymbol(_) => Type::Symbol,
-        other => other,
-    };
+    // Tuples are widened component-wise, so `cons([2, :d], [[3, :c]])` does
+    // not bind the variable to `(number, :d)` (eu-oaz72.127).
+    fn widen_bound(t: Type) -> Type {
+        match t {
+            Type::LiteralString(_) => Type::String,
+            Type::LiteralSymbol(_) => Type::Symbol,
+            Type::Tuple(ts) => Type::Tuple(ts.into_iter().map(widen_bound).collect()),
+            other => other,
+        }
+    }
+    let rhs = widen_bound(rhs);
     // Kind check: the rhs must have the same kind as the variable.
     let rhs_kind = kind_of(&rhs);
     if rhs_kind != kind {

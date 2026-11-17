@@ -1,7 +1,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 //! Native containers (set, vec, ndarray) under collection (bead eu-oaz72.54).
 //!
-//! The harness run of `tests/harness/234_oaz72_5_native_storage_gc.eu` has
+//! The harness run of `tests/harness/gc/gc_013_native_storage.eu` has
 //! no heap limit and so does not collect. This spawns the compiled `eu`
 //! binary on that file under `--heap-limit-mib 32` and `EU_GC_STRESS=1`
 //! (force-evacuate), where its `gc-checks` hold a set, a vec and an ndarray
@@ -15,7 +15,7 @@ use std::process::Command;
 use std::time::Duration;
 use wait_timeout::ChildExt;
 
-const HARNESS: &str = "tests/harness/234_oaz72_5_native_storage_gc.eu";
+const HARNESS: &str = "tests/harness/gc/gc_013_native_storage.eu";
 
 /// Run `eu` with `args` under the small heap limit and `EU_GC_STRESS=1`,
 /// output to files so a full pipe cannot block the child. Returns

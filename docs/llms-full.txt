@@ -6288,7 +6288,7 @@ Because the `RESULT` key takes precedence, a target that defines
 `RESULT` is judged solely on that value; its other bindings reach the
 verdict only through whatever computes `RESULT`. Computing `RESULT`
 from the checks keeps every check in the verdict — see
-`tests/harness/189_r9oy_union_as_spec.eu` and
+`tests/harness/174_spec_validation.eu` (its `test-union-as-spec` target) and
 `tests/harness/182_typedata_alias_resolution.eu`, which gather their
 checks into a list and finish with `all-true? then(:PASS, :FAIL)`.
 
@@ -6929,9 +6929,8 @@ Because the gate is gone, the caller is the one who should judge whether a
 workload is worth forking. The fixed per-call cost of the fork mechanism
 itself — process fork plus the shared arena, isolated from the
 serialise/deserialise codec both paths already pay — measures **~2–3ms** on
-macOS ARM64 (Apple Silicon, measured-single, moderate background load; see
-`docs/superpowers/reports/2026-08-04-eu-2obtj-fork-overhead.md` for the
-session). That is the amount a tiny,
+macOS ARM64 (Apple Silicon, a single measurement session under moderate
+background load, not independently repeated). That is the amount a tiny,
 cheap `par-map` adds over the plain sequential form: worth it for anything
 with real per-element cost, easily lost in noise for a handful of trivial
 elements. `EU_PP_THRESHOLD` (below) remains available to force the
@@ -8980,7 +8979,7 @@ b: { tags: [1, 2] }     match?(spec)   # => false
 
 > **Known limitation**: `as-spec` on a **union** type
 > (`s"number | string"`) currently produces a predicate that never
-> matches — a defect tracked as bead `eu-r9oy`. Until it is fixed, build a
+> matches — a known defect. Until it is fixed, build a
 > union validator directly, e.g. `v number? or v string?`, rather than via
 > `as-spec`.
 
@@ -9200,8 +9199,8 @@ The source location is the `ensure` call site under both prelude modes.
 It briefly was not: a shipped library imported by filename was
 misclassified as user code, so a frame inside `lib/contract.eu` could win
 the "blame user code" ranking and become the primary label under the
-pre-compiled prelude. That was **eu-8a49h**, not specific to contracts,
-and it is fixed. `tests/harness/errors/201_sv3_contract_violation.eu`
+pre-compiled prelude. That defect was not specific to contracts, and it
+is fixed. `tests/harness/errors/201_contract_violation.eu`
 anchors the primary label on the `ensure` call site so a regression fails
 the build.
 
@@ -9310,8 +9309,8 @@ specs and deliberately differs on closed ones.
   `validate` checks a literal (`"prod"`, `:ok`) by equality, as you would
   expect. `as-spec` has no arm for literal types, so it falls through to
   "matches anything" — `s"\"prod\"" as-spec` accepts any value at all. That
-  is a defect on the `as-spec` side, tracked as **eu-pub3r**; `validate`
-  does the right thing rather than replicating it. Until the bead lands, do
+  is a known defect on the `as-spec` side; `validate` does the right
+  thing rather than replicating it. Until it is fixed, do
   not expect `data match?(spec as-spec)` and `(data validate(spec)) nil?`
   to agree on a spec containing a literal type.
 - **Data-file blame** — reporting `config.yaml:12` rather than the `ensure`
@@ -9862,10 +9861,12 @@ letters; escape them if they hold regex characters.
 
 ### Loops
 
-`iterate(f, x)` is the lazy list `x`, `f(x)`, `f(f(x))`, … and
-`iterate(f, x) nth(n)` is `f` applied `n` times, which is fine while `n`
-is modest. For a long loop, write a tail-recursive function that calls
-the step directly:
+`iterate(f, x)` is the list `x`, `f(x)`, `f(f(x))`, … (each element is
+evaluated to weak head normal form as its cell is reached) and
+`iterate(f, x) nth(n)` is `f` applied `n` times. For a number state that runs
+in constant stack, but a block or list state is evaluated only to its outermost
+constructor, so its fields can still build chains. A tail-recursive function
+that calls the step directly avoids building the list:
 
 ```eu
 ` "one step of the simulation"
@@ -9878,19 +9879,45 @@ final: run(100000, 1) //=> 940193
 ```
 
 This runs in constant stack: eucalypt can see that `step` uses its
-argument, so each state is computed as the loop goes. Two forms lose that,
-and instead build a chain of unevaluated steps that is only
-worked through at the end, using stack and memory in proportion:
-
-- `iterate(step, s) nth(n)` with a large `n`;
-- a generic loop that takes the step as a parameter, such as
-  `times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))`: eucalypt cannot
-  tell whether an unknown `f` uses its argument.
-
-So for a long loop, name the step function in the loop itself. A loop that
-runs until something holds tests the state in the same place, as in
+argument, so each state is computed as the loop goes. So for a long loop of
+your own, name the step function in the loop itself. A loop that runs until
+something holds tests the state in the same place, as in
 `run-until(s): (s done?) then(s, run-until(step(s)))`, and looking at the
 state in the test also keeps it evaluated.
+
+### Loops with a lazy accumulator
+
+A generic loop that takes the step as a parameter loses that. Eucalypt
+cannot tell whether an unknown `f` uses its argument, so the accumulator
+stays lazy and `f(f(f(...)))` is a chain of unevaluated steps, worked through
+only at the end. This is correct lazy semantics, not a bug, but it costs
+stack and memory in proportion to `n` (about two stack frames per step; a
+million steps needs around two million):
+
+```eu,notest
+# Avoid: x is never forced until the loop ends
+times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))
+```
+
+Force the accumulator on each step with `seq`, which evaluates its first
+argument and then returns the second:
+
+```eu
+times(f, n, x): (n = 0) then(x, seq(x, times(f, n - 1, f(x))))
+
+final: times(+ 3, 100000, 0) //=> 300000
+```
+
+Or skip the hand-written loop: `iterate` evaluates each element as its cell
+is reached, so `iterate(f, x) nth(n)` runs in constant stack too:
+
+```eu
+final: iterate(+ 3, 0) nth(100000) //=> 300000
+```
+
+Both forms force only to weak head normal form, so a block or list state
+still needs its fields forced if they accumulate chains of their own. Where a
+loop names its step (`run` above), none of this is needed.
 
 ### Cycle detection
 
@@ -10607,6 +10634,7 @@ results:
 | `%u` | Unsigned decimal integer | `{42:%u}` → `42` |
 | `%o` | Octal | `{255:%o}` → `377` |
 | `%x`, `%X` | Hexadecimal (lower/upper) | `{255:%x}` → `ff` |
+| `%b` | Binary (negatives as 64-bit two's complement) | `{5:%08b}` → `00000101` |
 | `%f`, `%F` | Decimal notation | `{3.14:%.1f}` → `3.1` |
 | `%e`, `%E` | Scientific notation | `{1000:%e}` → `1e3` |
 | `%g`, `%G` | Auto (decimal or scientific) | `{0.001:%g}` → `0.001` |
@@ -11449,11 +11477,11 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 
 ## Categories
 
-- [Lists](lists.md) -- list construction, transformation, folding, sorting (91 entries)
+- [Lists](lists.md) -- list construction, transformation, folding, sorting (92 entries)
 - [Blocks](blocks.md) -- block construction, access, merging, transformation (66 entries)
-- [Strings](strings.md) -- string manipulation, regex, formatting (41 entries)
+- [Strings](strings.md) -- string manipulation, regex, formatting (43 entries)
 - [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (36 entries)
-- [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (12 entries)
+- [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (13 entries)
 - [Combinators](combinators.md) -- function composition, application, utilities (14 entries)
 - [Calendar](calendar.md) -- date and time functions (8 entries)
 - [Sets](sets.md) -- set operations (15 entries)
@@ -11466,7 +11494,7 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
 - [IO](io.md) -- environment, time, argument access, and monad utility (37 entries)
 
-*412 documented entries in total.*
+*416 documented entries in total.*
 
 ## Standard Libraries
 
@@ -11523,9 +11551,9 @@ Repeated `!!` over the same list in a loop is quadratic.
 | Function | Description |
 |----------|-------------|
 | `repeat(i)` | Return infinite list of instances of item `i` |
-| `iterate(f, i)` | Return list of `i` with subsequent repeated applications of `f` to `i` |
+| `iterate(f, i)` | Return list of `i` with subsequent repeated applications of `f` to `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so `f` is applied (and an error in it surfaces) when the cell is reached rather than when the element is used, and a long walk runs in constant stack |
 | `ints-from` | Return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility |
-| `range(b, e)` | Return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b` |
+| `range(b, e)` | Return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b`. Strict: the counter is evaluated as each cell is demanded, so a long walk (`last`, `nth`, `foldl`) runs in constant stack |
 | `cycle(l)` | Create infinite list by cycling elements of list `l` |
 
 ## Transformations
@@ -11573,15 +11601,16 @@ Repeated `!!` over the same list in a loop is quadratic.
 | Function | Description |
 |----------|-------------|
 | `foldl(op, i, l)` | Left fold operator `op` over list `l` starting from value `i` |
+| `foldl-strict(op, i, l)` | As `foldl`, but the accumulator is evaluated to weak head normal form at each step, so a long fold runs in constant stack instead of building a chain of unevaluated `op` calls (for a scalar accumulator; a list or block accumulator is forced only to its outermost constructor). Use it where `op` is strict in the accumulator, as `+` and `max` are. `op(i, x)` is evaluated even where `op` would ignore it, so an error there surfaces where `foldl` would have skipped it |
 | `foldr(op, i, l)` | Right fold operator `op` over list `l` ending with value `i` |
-| `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i` |
+| `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i`. Strict: each element is evaluated to weak head normal form as its cell is reached, so a long scan runs in constant stack and an error in a step surfaces when that cell is reached |
 | `scanr(op, i, l)` | Right scan operator `op` over list `l` ending with value `i` |
 
 ## Predicates
 
 | Function | Description |
 |----------|-------------|
-| `all-true?(l)` | True if and only if all items in list `l` are true |
+| `all-true?(l)` | True if and only if all items in list `l` are true. Strict: each step is evaluated as it is reached, so a long list runs in constant stack |
 | `all(p?, l)` | True if and only if all items in list `l` satisfy predicate `p?` |
 | `any-true?(l)` | True if and only if any items in list `l` are true |
 | `any(p?, l)` | True if and only if any items in list `l` satisfy predicate `p?` |
@@ -11630,9 +11659,9 @@ by-age: people sort-by-num(.age)         # sorted by age
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`. An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |
-| `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
+| `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list. Strict, as `foldl-strict`: each step's result is evaluated to weak head normal form, so a long list runs in constant stack, and an error in a step surfaces even where `op` would have discarded it |
 | `tails(l)` | Return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]` |
-| `iota(n)` | Return infinite list of integers from `n` upwards |
+| `iota(n)` | Return infinite list of integers from `n` upwards. `n` is left unevaluated for the first two cells, so `iota(panic) tail nil?` is `false`; from the third cell on it is evaluated as each cell is demanded, which keeps a long walk in constant stack |
 | `ℕ` | The natural numbers: `[0, 1, 2, ...]` |
 | `butlast(l)` | Return all elements of list `l` except the last |
 | `unzip(pairs)` | List of pairs to pair of lists. Inverse of zip |
@@ -11802,12 +11831,13 @@ hosts: data deep-query("*.config.host")
 | `str.extract-or(re, d, s)` | Use regex `re` (with single capture) to extract substring of `s` - or default `d` |
 | `str.matches` | Return list of all matches in string `s` of regex `re` |
 | `str.matches-of` | Return list of all matches in string `s` of regex `re` |
+| `str.matches-with(re, s)` | Return all matches of regex `re` in string `s`, each as a list of the full match followed by its capture groups. Matching is a single pass, so anchors and word boundaries see their context. A group that does not take part in a match is the empty string, indistinguishable from an empty capture |
 | `str.matches?(re, s)` | Return true if `re` matches full string `s` |
 | `str.suffix(b, a)` | Return string `b` suffixed onto `a` |
 | `str.prefix(b, a)` | Return string `b` prefixed onto `a` |
 | `str.letters` | Return individual letters of `s` as list of strings |
 | `str.len` | Return length of string in characters |
-| `str.format` | Format `x` using printf-style format `spec` (`%d`, `%x`, `%X`, `%o`, `%b`, `%f`, `%e`, `%s`, with width and flags). Pipeline-friendly: `255 str.format("%x")` |
+| `str.format(spec, x)` | Format `x` using printf-style format `spec` (`%d`, `%x`, `%X`, `%o`, `%b`, `%f`, `%e`, `%s`, with width and flags). Pipeline-friendly: `255 str.format` with a spec argument |
 | `str.fmt` | DEPRECATED: use `str.format(spec, x)`, which takes the spec first so it works in pipelines |
 | `str.to-upper` | Convert string `s` to upper case |
 | `str.to-lower` | Convert string `s` to lower case |
@@ -11831,8 +11861,7 @@ hosts: data deep-query("*.config.host")
 
 ## Character Constants
 
-> We don't support the usual string escapes so these make it
-a little more convenient to use interpolation instead..
+> We don't support the usual string escapes so these make it a little more convenient to use interpolation instead.
 
 | Function | Description |
 |----------|-------------|
@@ -11925,13 +11954,13 @@ character.
 | `sum(l)` | Sum a list of numbers |
 | `product(l)` | Multiply a list of numbers |
 | `max(l, r)` | Return max of `l` and `r` by `>` |
-| `max-of(l)` | `max-of(l) - return max element in list of numbers `l` - error if empty` |
-| `max-of-by(f, l)` | Return the element of `l` that maximises `f`. Error if empty |
+| `max-of(l)` | Return max element in list of numbers `l` - error if empty. Strict: each step's running maximum is evaluated as it is reached, so a long list runs in constant stack |
+| `max-of-by(f, l)` | Return the element of `l` that maximises `f`. Error if empty. Strict: each step's comparison is evaluated as it is reached, so a long list runs in constant stack |
 | `max-map(f, l)` | Return maximum value of `f(x)` across elements of `l` |
 | `max-of-or(d, l)` | Return max element in list `l`, or default `d` if empty |
 | `min(l, r)` | Return min of `l` and `r` by `<` |
-| `min-of(l)` | `min-of(l) - return min element in list of numbers `l` - error if empty` |
-| `min-of-by(f, l)` | Return the element of `l` that minimises `f`. Error if empty |
+| `min-of(l)` | Return min element in list of numbers `l` - error if empty. Strict: each step's running minimum is evaluated as it is reached, so a long list runs in constant stack |
+| `min-of-by(f, l)` | Return the element of `l` that minimises `f`. Error if empty. Strict: each step's comparison is evaluated as it is reached, so a long list runs in constant stack |
 | `min-map(f, l)` | Return minimum value of `f(x)` across elements of `l` |
 | `min-of-or(d, l)` | Return min element in list `l`, or default `d` if empty |
 
@@ -11947,6 +11976,7 @@ character.
 | `true` | Constant logical true |
 | `false` | Constant logical false |
 | `if` | If `c` is `true`, return `t` else `f` |
+| `seq` | Evaluate `a` to weak head normal form, then return `b`. `a` is forced only to its outermost constructor (a list or block is not forced element by element); an error in `a` surfaces, and `b` is not evaluated first. Use it to force an accumulator or counter so a recursion runs in constant stack instead of building a chain of thunks |
 | `then(t, f, c)` | For pipeline if: `x? then(t, f)` |
 | `when(p?, f, x)` | When `x` satisfies `p?` apply `f` else pass through unchanged |
 
@@ -12973,8 +13003,7 @@ Options:
 
 Profiling slows a run by about 15% (1.02–1.42× across the benchmark
 suite). With the flag off the engine runs its unprofiled dispatch loops and
-there is no measurable cost. Both figures were measured on a single machine;
-see `docs/superpowers/reports/2026-11-14-eu-oaz72.37-profiler.md`.
+there is no measurable cost. Both figures were measured on a single machine.
 
 ### Heap Limit
 
@@ -13180,6 +13209,18 @@ The LSP server provides:
 Configure your editor to use `eu lsp` as the language server command
 for `.eu` files. A VS Code extension is available in the `editors/vscode/`
 directory of the repository.
+
+`eu lsp` exits with:
+
+- `0` - the client sent `shutdown` then `exit`, or closed stdin
+- `1` - the client sent `exit` without a prior `shutdown`
+- `2` - a server or transport error: the initialise handshake failed, or a
+  reader or writer I/O thread failed (for example a malformed message on
+  stdin, or the client closing its end of the server's output)
+
+A failed send of diagnostics or a refresh request does not end the server
+by itself: it logs the drop to stderr and carries on until the client ends
+the session.
 
 ## Version Assertions
 
@@ -14408,7 +14449,7 @@ old-fn(x): x + 1
 ` { deprecated: "use new-fn instead" }
 old-fn(x): x + 1
 
-# With replacement pointer (enables LSP quick-fix)
+# With replacement pointer (drop-in successor only; enables LSP quick-fix)
 ` { deprecated: "use new-fn instead"
     replaced-by: "new-fn" }
 old-fn(x): x + 1
@@ -14417,6 +14458,11 @@ old-fn(x): x + 1
 Referencing a deprecated declaration emits a warning on stderr.
 Under `eu check --strict`, deprecation warnings become errors.
 Deprecated declarations still work — deprecation is advisory.
+
+`replaced-by:` must name a drop-in successor: same arguments in the same order,
+because the LSP quick-fix only renames the call. If the successor reorders or
+changes arguments (`str.fmt(x, spec)` → `str.format(spec, x)`), give the advice
+in `deprecated:` and omit `replaced-by:`.
 
 A top-level declaration is matched by its bare name; a declaration nested in a
 namespace block is matched by the dotted path a caller writes (`state.exec`),
@@ -14778,8 +14824,31 @@ Note: `foldl` takes 3 args and the catenated list supplies the last
 one, so both forms above work. You can also partially apply it:
 
 ```
-sum: foldl(+, 0)
+sum: foldl-strict(+, 0)
 [1,2,3,4,5] sum              # 15
+```
+
+#### `foldl-strict(op, i, l)` — left fold with a strict accumulator
+
+Same arguments as `foldl`, but the accumulator is evaluated at each step, so a
+long fold runs in constant stack. `sum`, `product` and `count` use it. Prefer
+it over `foldl` when `op` is strict in the accumulator (`+`, `max`); keep
+`foldl` where the accumulator may be unneeded or lazy.
+
+```
+range(0, 1000000) foldl-strict(max, 0)   # 999999
+```
+
+#### `seq(a, b)` — force `a`, return `b`
+
+Evaluates `a` to weak head normal form (only the outermost constructor of a
+list or block), then returns `b`. An error in `a` surfaces; `b` is not
+evaluated first. Use it to force a loop's accumulator before the tail call so
+the stack stays constant. In a pipeline the subject is `b`: `x seq(a)` is
+`seq(a, x)`. `foldl-strict` and `iota` are written with it.
+
+```
+count-up(a, n): (n = 0) then(a, seq(a, count-up(a + 1, n - 1)))
 ```
 
 #### `foldr(op, i, l)` — right fold
@@ -15154,7 +15223,8 @@ catenation) — navigate with `(xs nth(2)).port` or a lens.
   different error from a contract violation, so a schema typo cannot
   masquerade as bad data.
 - Literal types (`"prod"`, `:ok`) are checked by equality here but **not**
-  by `as-spec`, which matches anything for them (eu-pub3r).
+  by `as-spec`, which matches anything for them (a known
+  defect).
 
 See [Structural Contracts](../guide/contracts.md).
 
@@ -15355,7 +15425,7 @@ range(1, 6)                          # [1, 2, 3, 4, 5]
 range(6, 1)                          # [] (empty when e <= b)
 
 # Infinite iteration
-iterate(* 2, 1) take(6)             # [1, 2, 4, 8, 16, 32]
+iterate(* 2, 1) take(6)             # [1, 2, 4, 8, 16, 32] (elements evaluated as each cell is reached)
 ```
 
 ---
@@ -15719,6 +15789,26 @@ _0✓ && count(_0) >= 4    # λ(a). a != null && count(a) >= 4
 Without the outer `_0✓`, the `_0` inside `count(_0)` would form a
 separate lambda at the ArgTuple level.
 
+### 5.24 A Loop With a Lazy Accumulator Uses O(n) Stack
+
+When a loop's step is a *parameter*, the accumulator stays lazy and builds a
+chain `f(f(f(x)))` forced at the end: about 2M stack frames at 1e6 steps. A
+named step does not have this problem. Force the accumulator with `seq`, or
+use `iterate`, which is strict:
+
+```eu,notest
+times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))              # O(n) stack
+```
+
+```eu
+times(f, n, x): (n = 0) then(x, seq(x, times(f, n - 1, f(x))))      # constant stack
+
+a: times(+ 3, 1000, 0) //=> 3000
+b: iterate(+ 3, 0) nth(1000) //=> 3000                              # constant stack
+```
+
+See the [Advent of Code cookbook](../guide/advent-of-code.md#loops-with-a-lazy-accumulator).
+
 ---
 
 ## 6. Quick CLI Reference
@@ -15761,6 +15851,7 @@ All functions verified against `lib/prelude.eu`:
 | `str.extract-or` | `extract-or(re, d, s)` | Extract first capture group or default `d` |
 | `str.matches` | `matches(s, re)` | All matches of `re` in `s` |
 | `str.matches-of` | `matches-of(re, s)` | All matches (pipeline-friendly) |
+| `str.matches-with` | `matches-with(re, s)` | All matches, each as `[whole, g1, ...]` |
 | `str.matches?` | `matches?(re, s)` | True if `re` matches full string `s` |
 | `str.letters` | `letters(s)` | List of individual characters |
 | `str.len` | `len(s)` | String length in characters |
@@ -16464,7 +16555,7 @@ that unconditionally would copy the argument *expression* once per
 occurrence of its binder, and separate copies become separate thunks that
 share nothing — so a callee that uses a parameter twice would evaluate
 that argument twice, and a caller passing its own recursive call would go
-from linear to exponential (eu-gua64).
+from linear to exponential.
 
 An argument is therefore substituted directly only when doing so
 duplicates no work:
@@ -16510,9 +16601,9 @@ Eucalypt originally had a second engine — a HeapSyn tree-walk machine
 (`src/eval/machine/vm.rs`) that walked a materialised STG tree of
 heap-allocated nodes directly, the only engine before 0.12.0 and retained
 afterwards as the performance baseline and differential-testing oracle
-behind an `EU_HEAPSYN=1` opt-out. Once an A/B study (eu-7oshh) confirmed the
+behind an `EU_HEAPSYN=1` opt-out. Once an A/B study confirmed the
 bytecode engine was at parity or ahead everywhere that mattered, the Phase 4
-collapse (eu-oufc) deleted HeapSyn, its `EU_HEAPSYN`/`EU_BYTECODE` selectors,
+collapse deleted HeapSyn, its `EU_HEAPSYN`/`EU_BYTECODE` selectors,
 and the differential-testing infrastructure that compared the two engines
 (what remains under `src/eval/bytecode/differential.rs` compares the
 bytecode engine's two *dispatch* configurations — pre-decoded vs
@@ -16724,12 +16815,10 @@ and with pre-decoded dispatch off, behaviour is byte-identical to the
 byte-stream path. Nothing in the pre-decoded structures is a GC pointer, so
 code stays off the collector's scan set just as the byte stream does.
 
-As of Phase 2 of the lever-(a) rollout (eu-vcr8), pre-decoded dispatch is the
-**default** — unset or `EU_PREDECODE=1` selects it; `EU_PREDECODE=0` opts
-out to the byte-dispatch path, which is retained and soaked through this
-release (CI's `test-byte-dispatch-baseline` job keeps it exercised) before
-Phase 3 deletes it, per the design's phased landing plan
-(`docs/superpowers/specs/2026-07-13-predecoded-execution-ir-design.md` §6).
+Pre-decoded dispatch is the **default** — unset or `EU_PREDECODE=1` selects
+it; `EU_PREDECODE=0` opts out to the byte-dispatch path, which is retained
+for now (CI's `test-byte-dispatch-baseline` job keeps it exercised) and is
+due to be removed in a later release.
 
 #### Why bytecode won, and the performance story
 
@@ -16741,20 +16830,16 @@ from source. On op-dense, allocation-light workloads the byte-stream
 interpreter's per-tick re-decode cost historically left it slower per tick
 than the HeapSyn tree-walk — closing that remaining gap is exactly what the
 pre-decoded IR and the fused-primop superinstructions targeted, and the
-eu-7oshh A/B study that authorised HeapSyn's deletion (eu-oufc) confirmed
-parity or a bytecode win across the canonical suite.
+A/B study that preceded HeapSyn's removal confirmed parity or a bytecode
+win across the canonical suite.
 
 All engine-versus-engine performance numbers in this project are governed by
-a checked-in measurement protocol
-([`docs/superpowers/engine-ab/PROTOCOL.md`](superpowers/engine-ab/PROTOCOL.md)):
-deterministic VM ticks and allocation counts first, interleaved
+a measurement protocol: deterministic VM ticks and allocation counts first, interleaved
 median-of-N wall timings second, a canonical eight-bench suite, and a
 mandatory confidence label (*measured-verified* / *measured-single* /
 *projected*) on every figure. Because those figures are machine- and
 load-sensitive and evolve release to release, this document deliberately
-states the shape of the trade-off rather than quoting ratios; consult the
-protocol's ledger (`results.jsonl`) and the dated transition-review reports
-under `docs/superpowers/reports/` for current, labelled measurements.
+states the shape of the trade-off rather than quoting ratios.
 
 ## Memory Management and Garbage Collection
 
@@ -16891,7 +16976,7 @@ three hashed inputs are:
 - **`src/eval/intrinsics.rs`** — the intrinsic catalogue. Its length fixes the
   global slot numbering the blob bakes in as `Ref::G(INTRINSIC_COUNT + prelude
   slot)`, so adding or removing an intrinsic shifts *every* prelude global's
-  slot. Hashing the catalogue makes that invalidation automatic (eu-3skeg);
+  slot. Hashing the catalogue makes that invalidation automatic;
   before it did, a stale blob was silently accepted with an off-by-N slot map
   and the binary returned wrong answers with no warning.
 - **`BYTECODE_WIRE_FORMAT_VERSION`** — the serialised code-stream layout, which
@@ -17091,7 +17176,7 @@ The prelude is:
 | `src/core/cook/` | Operator resolution | `shunt.rs`, `fixity.rs` |
 | `src/eval/stg/` | STG syntax, compiler, prelude blob | `syntax.rs`, `compiler.rs`, `blob.rs` |
 | `src/eval/machine/` | Shared runtime infrastructure (env frames, intrinsic ABI, metrics, crash diagnostics) | `env.rs`, `intrinsic.rs`, `metrics.rs` |
-| `src/eval/bytecode/` | Bytecode engine (BV1, the sole engine since eu-oufc) | `machine.rs`, `encode.rs`, `predecode.rs` |
+| `src/eval/bytecode/` | Bytecode engine (BV1, the sole engine since the Phase 4 collapse) | `machine.rs`, `encode.rs`, `predecode.rs` |
 | `src/eval/memory/` | Heap and GC | `heap.rs`, `collect.rs` |
 | `src/driver/` | CLI orchestration | `options.rs`, `eval.rs` |
 | `src/export/` | Output formats | `yaml.rs`, `json.rs` |
@@ -17924,7 +18009,7 @@ old-fn(x): x
 ` { deprecated: "use new-fn instead" }
 old-fn(x): x
 
-# With message and replacement hint
+# With message and replacement hint (drop-in only: same signature and argument order)
 ` { deprecated: "use new-fn instead"
     replaced-by: "new-fn" }
 old-fn(x): x
@@ -18071,6 +18156,8 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `map(f)` | Transform each element |
 | `filter(p?)` | Keep elements matching predicate |
 | `foldl(f, init)` | Left fold |
+| `foldl-strict(f, init)` | Left fold, accumulator evaluated at each step (constant stack for scalars) |
+| `seq(a, b)` | Evaluate `a` to WHNF, return `b` (force an accumulator; `x seq(a)` pipeline form) |
 | `foldr(f, init)` | Right fold |
 | `sort-by(f)` | Sort by key function |
 | `take(n)` | First n elements (`[]` if n <= 0) |
@@ -18118,6 +18205,7 @@ float such as `2.0` is accepted.
 | Function | Description |
 |----------|-------------|
 | `str.len(s)` | String length |
+| `str.format(spec, x)` | Printf-style format, spec first: `255 str.format("%x")`, `5 str.format("%08b")` (`%b` binary) |
 | `str.to-upper(s)` | Upper case |
 | `str.to-lower(s)` | Lower case |
 | `str.starts-with?(re, s)` | Starts with regex match? |
@@ -18506,21 +18594,16 @@ than catenation. When an infix operator follows a pipeline (catenation
 chain), it binds to the last function in the chain, not to the result
 of the whole pipeline.
 
-**Gotcha**: Writing `xs foldl(f, 0) + 1` is **not** parsed as
-`(xs foldl(f, 0)) + 1`. Instead, the shunting-yard algorithm sees:
-
-```
-[xs, cat@20, foldl, call@90, (f,0), +@75, 1]
-```
-
-Because `+` (75) has higher precedence than `cat` (20), the `+`
-binds first: `foldl(f, 0) + 1` is evaluated (adding 1 to a partial
-application — a type error), and then the result is applied to `xs`.
+**Gotcha**: Infix operators bind tighter than catenation, so
+`xs foldl(+, 0) + 1` means `xs (foldl(+, 0) + 1)`, which is not
+`(xs foldl(+, 0)) + 1`. The `+` is applied to the partial application
+`foldl(+, 0)`, which is a type error, and the result is then applied to
+`xs`.
 
 **Example**:
 ```eu,notest
 # WRONG — fails at runtime:
-n: xs foldl(+, 0) + 1        # Parsed as: (foldl(+, 0) + 1)(xs)
+n: xs foldl(+, 0) + 1        # Means: xs (foldl(+, 0) + 1)
 
 # CORRECT — use parentheses:
 n: (xs foldl(+, 0)) + 1      # Explicit grouping
@@ -19148,14 +19231,18 @@ The `=>` / `⇒` operator (precedence 15) builds a `cond` clause
 (`condition => result`).  It looks similar to the assertion meta-operator
 `//=>` (precedence 5) but has a completely different purpose:
 
-```eu,notest
-# CLAUSE — builds a cond branch; result is a list element
-cond[x > 0 => "positive", "non-positive"]
+```eu
+x: 5
 
-# ASSERTION — checks a value equals the RHS at meta-evaluation time
-` { result //=> "positive" }
-result: "positive"
+# CLAUSE — builds a cond branch; the last element is the default
+sign: cond[x > 0 => "positive", "non-positive"]
+
+# ASSERTION — checks the expression equals the RHS and passes it through
+checked: sign //=> "positive"
 ```
+
+`//=>` goes after the expression it checks, not inside block metadata.
+See [Testing](../guide/testing.md#inline-assertions).
 
 Mixing these up produces confusing type or parse errors.
 
@@ -19318,16 +19405,3 @@ result: { :io }.42
 # CORRECT
 result: { :io r: io.return(42) }.r
 ```
-
----
-
-# Migration from v0.2 to v0.3
-
-*Migration guide is under construction.*
-
-Key changes in v0.3:
-
-- Subcommand structure: `eu test` replaces `-T`, `eu dump` replaces
-  `-p`/`--dump-xxx`
-- All existing command patterns continue to work (backward compatible)
-- New `eu fmt` and `eu lsp` subcommands

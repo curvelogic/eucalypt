@@ -1,0 +1,38 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/316_stored_value_trace
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/316_stored_value_trace.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/316_stored_value_trace.eu:3:8
+help-lines: 0
+note-lines: 2
+secondary-labels: 3
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "x"
+  ┌─ tests/harness/errors/316_stored_value_trace.eu:3:8
+  │
+2 │ ╭ g(n): {
+3 │ │   v: n + "x"
+  │ │        ^
+4 │ │   d: dict.empty dict.assoc(:v, v)
+5 │ │ }.d dict.get(:v)
+  │ │   - ------------ called from here
+  │ │   │
+  │ │   called from here
+  │ ╰────────────────' called from here
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = while evaluating (outermost first):
+    - out at 316_stored_value_trace.eu:7:6
+    - g at 316_stored_value_trace.eu:5:5
