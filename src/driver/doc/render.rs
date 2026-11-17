@@ -333,18 +333,19 @@ pub fn compute_coverage(entries: &[DocEntry]) -> Coverage {
             *undocumented += 1;
             names.push(entry.qualified_name());
         }
-        for child in &entry.children {
-            check(child, documented, undocumented, names);
-        }
     }
 
+    // Coverage counts top-level bindings and their direct namespace members
+    // only; deeper nesting is rendered but not counted.
     for entry in entries {
-        check(
-            entry,
-            &mut documented,
-            &mut undocumented,
-            &mut undocumented_names,
-        );
+        for e in std::iter::once(entry).chain(entry.children.iter()) {
+            check(
+                e,
+                &mut documented,
+                &mut undocumented,
+                &mut undocumented_names,
+            );
+        }
     }
 
     Coverage {
@@ -371,8 +372,8 @@ mod tests {
         assert!(md.contains("#### `g(x)`"), "{md}");
         assert!(md.contains("Deep doc"), "{md}");
         let cov = compute_coverage(&entries);
-        assert_eq!(cov.total, 3);
-        assert_eq!(cov.documented, 3);
+        assert_eq!(cov.total, 2);
+        assert_eq!(cov.documented, 2);
         assert_eq!(
             entries[0].children[0].children[0].qualified_name(),
             "outer.inner.g"

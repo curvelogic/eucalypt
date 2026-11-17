@@ -1,0 +1,15 @@
+"A fixture for nested namespace members."
+
+` "Outer namespace."
+outer: {
+  ` "Inner namespace."
+  inner: {
+    ` "Deep function doc."
+    deep(x): x
+  }
+
+  ` "Scoped value."
+  scoped: { helper-hidden: 1, result: helper-hidden }.result
+
+  cfg-undoc: { data-hidden: 1 }
+}
