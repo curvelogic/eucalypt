@@ -1,9 +1,9 @@
 #!/usr/bin/env eu
 {
-  title: "301 gcd and lcm"
+  title: "333 gcd and lcm"
   doc: "gcd and lcm on integers (owner decision 43, eu-oaz72.26): gcd(0, b) is
         |b|, lcm(0, _) is 0, results are non-negative, and a non-integer is
-        an error (see tests/harness/errors/301_*). RESULT is computed from
+        an error (see tests/harness/errors/336_*). RESULT is computed from
         every check, so any failing check fails the test."
 }
 

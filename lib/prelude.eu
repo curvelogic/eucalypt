@@ -857,11 +857,15 @@ gcd(a, b): __require-int("gcd argument", a, __require-int("gcd argument", b, __g
 
 ` { doc: "`__gcd(a, b)` - internal: Euclid's algorithm on non-negative integers."
     export: :suppress }
-__gcd(a, b): if(b = 0, a, __gcd(b, a % b))
+__gcd(a, b): (b = 0) then(a, __gcd(b, a % b))
 
 ` { doc: "`lcm(a, b)` - least common multiple of integers `a` and `b`, always non-negative: `lcm(0, _)` and `lcm(_, 0)` are 0. A non-integer argument is an error."
     type: s"number → number → number" }
-lcm(a, b): __require-int("lcm argument", a, __require-int("lcm argument", b, if((a = 0) ∨ (b = 0), 0, div(abs(a), gcd(a, b)) * abs(b))))
+lcm(a, b): __require-int("lcm argument", a, __require-int("lcm argument", b, __lcm(a, b)))
+
+` { doc: "`__lcm(a, b)` - internal: `lcm` of integers, without the integer checks."
+    export: :suppress }
+__lcm(a, b): ((a = 0) ∨ (b = 0)) then(0, div(abs(a), __gcd(abs(a), abs(b))) * abs(b))
 
 # --- Bitwise operators ---
 
@@ -1731,7 +1735,7 @@ enumerate(xs): zip(ℕ, xs)
 find(p?, xs): { r: xs filter(p?) }.(r nil? then(null, r head))
 
 ` { doc: "`index-of(x, xs)` - the 0-based index of the first element of `xs` equal to `x`, or `null` if `x` is absent."
-    type: s"a → [a] → (number | null)" }
+    type: s"any → [any] → (number | null)" }
 index-of(x, xs): { hit?(p): second(p) = x
   r: enumerate(xs) filter(hit?) }.(r nil? then(null, r head first))
 
@@ -1749,33 +1753,46 @@ combinations(n, xs): __require-int("combinations count", n, __combinations(n, xs
 
 ` { doc: "`__combinations(n, xs)` - internal: `combinations` without its integer check."
     export: :suppress }
-__combinations(n, xs): if(n < 0, [], if(n = 0, [[]], if(xs nil?, [], append(map(cons(xs head), __combinations(n - 1, xs tail)), __combinations(n, xs tail)))))
+__combinations(n, xs): cond[
+  n < 0 => [],
+  n = 0 => [[]],
+  __fewer-than?(n, xs) => [],
+  append(map(cons(head(xs)), __combinations(n - 1, tail(xs))), __combinations(n, tail(xs)))
+]
+
+` { doc: "`__fewer-than?(n, xs)` - internal: true when the positive count `n` exceeds the length of `xs`; looks at no more than `n` cells, so it is safe on an infinite list."
+    export: :suppress }
+__fewer-than?(n, xs): __drop(n - 1, xs) nil?
 
 ` { doc: "`permutations(xs)` - all permutations of `xs` as lists, in input order (lexicographic by position), produced lazily. `permutations([])` is `[[]]`. Elements are distinguished by position, so duplicates give repeated permutations."
     type: s"[a] → [[a]]" }
 permutations(xs): {
-  with-pick(p): map(cons(first(p)), permutations(second(p)))
-}.(if(xs nil?, [[]], mapcat(with-pick, __picks([], xs))))
+  with-pick([x, rest]): map(cons(x), permutations(rest))
+}.(xs nil? then([[]], mapcat(with-pick, __picks([], xs))))
 
 ` { doc: "`__picks(front, xs)` - internal: for each element of `xs`, `[element, everything else]` with `front` (the already-passed elements) kept before the rest, in order."
     export: :suppress }
-__picks(front, xs): if(xs nil?, [], cons([head(xs), front ++ tail(xs)], __picks(front ++ [head(xs)], tail(xs))))
+__picks(front, xs): xs nil? then([], cons([head(xs), front ++ tail(xs)], __picks(front ++ [head(xs)], tail(xs))))
 
 ` { doc: "`merge-intervals(is)` - merge closed integer intervals `[lo, hi]`: sort by `lo`, then merge those that overlap or are adjacent. Sorted intervals `[lo1, hi1]` and `[lo2, hi2]` merge when `lo2 <= hi1 + 1`, so `[1, 3]` and `[3, 5]` give `[1, 5]`, `[1, 3]` and `[4, 6]` give `[1, 6]`, and `[1, 3]` and `[5, 6]` stay separate. Nested intervals are absorbed. Empty input gives `[]`. A non-integer bound is an error."
     type: s"[[number]] → [[number]]" }
-merge-intervals(is): {
-  bad: is mapcat(identity) filter(__non-integer?)
-  s: is sort-by-num(first)
-  culprit: bad head
-}.(bad nil? then(s nil? then([], __merge-from(s head, s tail)), panic("merge-intervals bound {culprit} must be an integer")))
+merge-intervals(is): __require-int-bounds(is, __merge-sorted(is sort-by-num(first)))
 
-` { doc: "`__non-integer?(n)` - internal: true when `n` is a number that is not an integer."
+` { doc: "`__require-int-bounds(is, v)` - internal: `v`, or an error naming `merge-intervals` and the first non-integer bound among the intervals `is`."
     export: :suppress }
-__non-integer?(n): (n number?) ∧ (floor(n) != n)
+__require-int-bounds(is, v): is concat foldr({ b: • acc: • }.(__require-int("merge-intervals bound", b, acc)), v)
+
+` { doc: "`__merge-sorted(s)` - internal: merge the intervals `s`, already sorted by `lo`."
+    export: :suppress }
+__merge-sorted(s): s nil? then([], __merge-from(head(s), tail(s)))
 
 ` { doc: "`__merge-from(cur, rest)` - internal: merge the sorted intervals `rest` into the running interval `cur`; an interval whose `lo` is at most one past the running `hi` joins it."
     export: :suppress }
-__merge-from(cur, rest): if(rest nil?, [cur], if(first(head(rest)) <= (second(cur) + 1), __merge-from([first(cur), max(second(cur), second(head(rest)))], tail(rest)), cons(cur, __merge-from(head(rest), tail(rest)))))
+__merge-from([lo, hi], rest): rest nil? then([[lo, hi]], __merge-step(lo, hi, head(rest), tail(rest)))
+
+` { doc: "`__merge-step(lo, hi, next, rest)` - internal: join `next` to the running interval `[lo, hi]` when its `lo` is at most `hi + 1`, else emit `[lo, hi]`."
+    export: :suppress }
+__merge-step(lo, hi, [nlo, nhi], rest): (nlo <= (hi + 1)) then(__merge-from([lo, max(hi, nhi)], rest), cons([lo, hi], __merge-from([nlo, nhi], rest)))
 
 ` { doc: "`reverse(l)` - reverse list `l`."
     type: s"[a] → [a]" }

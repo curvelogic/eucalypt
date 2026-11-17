@@ -1,6 +1,6 @@
 #!/usr/bin/env eu
 {
-  title: "302 list helpers: enumerate, find, index-of, frequencies, combinations, permutations"
+  title: "334 list helpers: enumerate, find, index-of, frequencies, combinations, permutations"
   doc: "Owner decision 43 (eu-oaz72.26). Covers empty inputs, misses giving
         null, combinations(0, xs), n larger than the list, permutations([]),
         and laziness: take(1) over a very large input must finish at once.
@@ -48,7 +48,10 @@ combinations-checks: [
   combinations(1, [:a, :b]) = [[:a], [:b]],
   (combinations(2, range(0, 6)) count) = 15,
   (combinations(3, range(0, 100000)) take(1)) = [[0, 1, 2]],
-  (combinations(2, iota(0)) take(2)) = [[0, 1], [0, 2]]
+  (combinations(2, iota(0)) take(2)) = [[0, 1], [0, 2]],
+  (combinations(30, range(0, 31)) count) = 31,
+  combinations(40, range(0, 35)) = [],
+  index-of(1, [1, "a"]) = 0
 ]
 
 ` "permutations"

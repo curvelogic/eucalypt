@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/301_non_integer_merge_intervals
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/301_non_integer_merge_intervals.eu
+fixture: errors/336_non_integer_merge_intervals
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/336_non_integer_merge_intervals.eu
 prelude-modes: identical
 
 === both prelude modes ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/301_non_integer_merge_intervals.eu:2:4
+primary: user tests/harness/errors/336_non_integer_merge_intervals.eu:2:4
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -19,10 +19,10 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: merge-intervals bound 2.5 must be an integer
-  ┌─ tests/harness/errors/301_non_integer_merge_intervals.eu:2:4
+  ┌─ tests/harness/errors/336_non_integer_merge_intervals.eu:2:4
   │
 2 │ x: merge-intervals([[1, 2.5], [3, 4]])
   │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
-    - x at 301_non_integer_merge_intervals.eu:2:4
+    - x at 336_non_integer_merge_intervals.eu:2:4

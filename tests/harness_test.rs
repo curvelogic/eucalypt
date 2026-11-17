@@ -5312,26 +5312,26 @@ pub fn test_error_275_non_integer_take() {
 
 /// A non-integer argument to `gcd` is an error (eu-oaz72.26).
 #[test]
-pub fn test_error_301_non_integer_gcd() {
-    run_error_test(&error_opts("301_non_integer_gcd.eu"));
+pub fn test_error_336_non_integer_gcd() {
+    run_error_test(&error_opts("336_non_integer_gcd.eu"));
 }
 
 /// A non-integer argument to `lcm` is an error (eu-oaz72.26).
 #[test]
-pub fn test_error_301_non_integer_lcm() {
-    run_error_test(&error_opts("301_non_integer_lcm.eu"));
+pub fn test_error_336_non_integer_lcm() {
+    run_error_test(&error_opts("336_non_integer_lcm.eu"));
 }
 
 /// A non-integer bound to `merge-intervals` is an error (eu-oaz72.26).
 #[test]
-pub fn test_error_301_non_integer_merge_intervals() {
-    run_error_test(&error_opts("301_non_integer_merge_intervals.eu"));
+pub fn test_error_336_non_integer_merge_intervals() {
+    run_error_test(&error_opts("336_non_integer_merge_intervals.eu"));
 }
 
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).
 #[test]
-pub fn test_error_301_non_integer_combinations() {
-    run_error_test(&error_opts("301_non_integer_combinations.eu"));
+pub fn test_error_336_non_integer_combinations() {
+    run_error_test(&error_opts("336_non_integer_combinations.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
@@ -5643,21 +5643,21 @@ pub fn test_error_315() {
 
 /// gcd and lcm on integers (eu-oaz72.26, owner decision 43).
 #[test]
-pub fn test_301_gcd_lcm() {
-    run_test(&opts("301_gcd_lcm.eu"));
+pub fn test_333_gcd_lcm() {
+    run_test(&opts("333_gcd_lcm.eu"));
 }
 
 /// enumerate, find, index-of, frequencies, combinations and permutations,
 /// including laziness (eu-oaz72.26, owner decision 43).
 #[test]
-pub fn test_302_list_helpers() {
-    run_test(&opts("302_list_helpers.eu"));
+pub fn test_334_list_helpers() {
+    run_test(&opts("334_list_helpers.eu"));
 }
 
 /// str.reverse and merge-intervals (eu-oaz72.26, owner decision 43).
 #[test]
-pub fn test_303_reverse_and_intervals() {
-    run_test(&opts("303_reverse_and_intervals.eu"));
+pub fn test_335_reverse_and_intervals() {
+    run_test(&opts("335_reverse_and_intervals.eu"));
 }
 
 /// Prelude sites converted to constant-stack strict forms (eu-oaz72.165,
