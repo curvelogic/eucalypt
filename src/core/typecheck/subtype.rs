@@ -126,6 +126,10 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
         // Abstract constructor heads (Var) require invariance.
         // Lens(A, B) <: Traversal(A, B).
         (Type::App(_, _), Type::App(_, _)) => is_app_subtype(s, t, assumed),
+        // An abstract application `m a` with an unresolved higher-kinded head
+        // may denote any type (e.g. `m = λx. x` for an identity-like monad), so
+        // against a non-application it is gradual, as a bare `Var` is above.
+        (Type::App(f, _), _) | (_, Type::App(f, _)) if has_var_head(f) => true,
 
         // ── Tuple ─────────────────────────────────────────────────────────────
         // Tuples widen to lists.
@@ -636,6 +640,15 @@ fn is_app_consistent_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> 
 
     // Abstract heads — check both directions to preserve symmetry.
     is_subtype(s, t) || is_subtype(t, s)
+}
+
+/// True when the head of an application spine is an unresolved type variable,
+/// e.g. `m` in `m a` or `m a b`.
+fn has_var_head(mut t: &Type) -> bool {
+    while let Type::App(f, _) = t {
+        t = f;
+    }
+    matches!(t, Type::Var(_, _))
 }
 
 #[cfg(test)]
@@ -1609,5 +1622,17 @@ mod tests {
         ]);
         assert!(is_consistent(&without_age, &age_optional));
         assert!(is_consistent(&age_optional, &without_age));
+    }
+
+    #[test]
+    fn abstract_hkt_application_is_gradual_against_concrete() {
+        let m = Type::Var(TypeVarId("m".to_string()), Kind::star_to_star());
+        let app = Type::App(Box::new(m.clone()), Box::new(Type::Number));
+        assert!(is_subtype(&Type::Number, &app));
+        let nested = Type::App(
+            Box::new(app),
+            Box::new(Type::Var(TypeVarId("a".to_string()), Kind::Star)),
+        );
+        assert!(is_subtype(&Type::Number, &nested));
     }
 }

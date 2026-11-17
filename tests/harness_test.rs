@@ -4748,6 +4748,13 @@ pub fn test_typecheck_132_union_callback_param_rejects() {
     run_typecheck_test("132_union_callback_param_rejects.eu");
 }
 
+/// Derived monad combinators on identity-like monads and `random` check
+/// clean: an abstract `m a` is gradual against a concrete type (eu-oaz72.170).
+#[test]
+pub fn test_typecheck_133_identity_monad_derived_no_warning() {
+    run_typecheck_test("133_identity_monad_derived_no_warning.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).
