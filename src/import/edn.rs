@@ -64,19 +64,11 @@ fn value_to_core(edn: &Value, file_id: usize, data_only: bool) -> Result<RcExpr,
         // suffix) to keep their exact digits, so read back every BigInt
         // that a eucalypt number can hold exactly. Anything wider is still
         // rejected: rounding it to a float would silently change the value.
-        Value::BigInt(i) => {
-            if let Ok(n) = i64::try_from(i) {
-                Ok(acore::num(n))
-            } else if let Ok(n) = u64::try_from(i) {
-                Ok(acore::num(n))
-            } else {
-                Err(SourceError::InvalidNumber(
-                    i.to_string(),
-                    file_id,
-                    Span::default(),
-                ))
-            }
-        }
+        Value::BigInt(i) => i64::try_from(i)
+            .map(Number::from)
+            .or_else(|_| u64::try_from(i).map(Number::from))
+            .map(acore::num)
+            .map_err(|_| SourceError::InvalidNumber(i.to_string(), file_id, Span::default())),
         Value::BigDec(d) => Err(SourceError::InvalidNumber(
             d.to_string(),
             file_id,

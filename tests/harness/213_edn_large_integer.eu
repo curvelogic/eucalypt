@@ -44,7 +44,7 @@ test: {
   t-round-trip: (edn-out parse-as(:edn)) = 9999999999999999999
   t-round-trip-digits: (edn-out parse-as(:edn) render-as(:json)) = c"9999999999999999999\n"
 
-  # A BigInt-suffixed integer within i64 range imports as that integer.
+  ` "A `N`-suffixed integer within i64 range imports as that integer."
   t-small-bigint: ("5N" parse-as(:edn)) = 5
 
   RESULT: [t-edn-exact, t-edn-not-rounded, t-json, t-text, t-small, t-boundary,
