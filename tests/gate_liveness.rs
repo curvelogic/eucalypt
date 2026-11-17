@@ -165,6 +165,15 @@ const REGISTRY: &[Gate] = &[
                     assert (eu-1tkk.2)",
     },
     Gate {
+        path: "tests/blob_list_retention_test.rs",
+        cfg: "prelude_blob_ok",
+        supplier: Supplier::PreludeBlobJob("diagnostics-blob-mode"),
+        rationale: "asserts that the blob's prelude bodies carry demand \
+                    analysis, so `range` does not pin its list; the source \
+                    prelude has no such defect and nothing blob-specific to \
+                    assert (eu-oaz72.175)",
+    },
+    Gate {
         path: "tests/wire_format_enforcement_test.rs",
         cfg: "prelude_blob_ok",
         supplier: Supplier::PreludeBlobJob("diagnostics-blob-mode"),

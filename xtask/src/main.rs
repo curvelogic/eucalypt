@@ -458,9 +458,26 @@ fn cmd_prelude_compile() -> Result<()> {
         // the O(N²) behind eu-e3c3i (`count`/`sum`/`filter`/`str.len`).
         // This supplies exactly the `demand.recursive`-derived context that
         // source-mode whole-unit compilation gives these same bindings.
+        // Run the demand analysis and re-flatten over this body, as
+        // `driver/eval.rs` does for user code and source mode does for the
+        // whole prelude (eu-oaz72.175). Without it the body's inner
+        // let/letrec bindings keep default demands: a local recursive
+        // producer such as `range`'s `up` passes its counter unforced, and
+        // the alias chain pins the list under a consumer.
+        let (annotated, _signatures, named_sigs) =
+            eucalypt::core::analyse_demand::analyse_demands_with_prelude(
+                body,
+                Some(eucalypt::core::analyse_demand::PreludeSignatures {
+                    name_to_slot: &name_to_slot,
+                    sigs: &demand_signatures,
+                }),
+            );
+        let annotated = eucalypt::core::reflatten::reflatten(&annotated);
+        let mut body_settings = stg_settings.clone();
+        body_settings.user_demand_sigs = named_sigs;
         let stg = eucalypt::eval::stg::compile_named(
-            &stg_settings,
-            body.clone(),
+            &body_settings,
+            annotated,
             runtime.as_ref(),
             Some(name.as_str()),
         )
