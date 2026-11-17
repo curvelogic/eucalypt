@@ -2804,10 +2804,14 @@ fn collect_block_uses(expr: &RcExpr, depth: usize, flags: &mut Vec<bool>) {
             collect_block_uses(&inner_scope.body, depth + 1, flags);
         }
 
-        // Let binding: values are at the current depth; the body is at depth+1.
+        // Let binding: a let is recursive, so both the binding values and the
+        // body sit inside the let's own scope (depth+1).  Scanning the values
+        // at `depth` would mistake references to the let's own binders (e.g.
+        // the `__p1` introduced by list-destructuring parameters) for the
+        // enclosing lambda's parameters.
         Expr::Let(_, inner_scope, _) => {
             for b in &inner_scope.pattern {
-                collect_block_uses(&b.expr, depth, flags);
+                collect_block_uses(&b.expr, depth + 1, flags);
             }
             collect_block_uses(&inner_scope.body, depth + 1, flags);
         }
@@ -2851,18 +2855,16 @@ fn mark_block_param(expr: &RcExpr, depth: usize, flags: &mut [bool]) {
     }
 }
 
-/// Return `true` if `expr` refers to `merge` or `over` — either as a free
+/// Return `true` if `expr` refers to `merge` — either as a free
 /// variable (pre-varify), a named bound variable (post-varify), or an
-/// intrinsic node (post-inline).
+/// intrinsic node (post-inline).  The prelude's `over` is the *lens*
+/// combinator (`over(lens, fn, data)`), whose arguments are not blocks, so it
+/// is deliberately not matched by name.
 fn is_merge_or_over_expr(expr: &RcExpr) -> bool {
     let peeled = peel_meta(expr);
     match &*peeled.inner {
-        Expr::Var(_, Var::Free(name)) => {
-            matches!(name.as_str(), "merge" | "over")
-        }
-        Expr::Var(_, Var::Bound(bv)) => {
-            matches!(bv.name.as_deref(), Some("merge" | "over"))
-        }
+        Expr::Var(_, Var::Free(name)) => name == "merge",
+        Expr::Var(_, Var::Bound(bv)) => bv.name.as_deref() == Some("merge"),
         Expr::Intrinsic(_, name) => {
             matches!(name.as_str(), "MERGE" | "OVER")
         }

@@ -1,0 +1,5 @@
+# A list-destructuring parameter whose first element is itself destructured
+# as a block is a tuple, not a block: the valid call must not warn (eu-oaz72.172).
+list-block([{x y}, z]): [x, y, z]
+
+v: list-block([{x: 10, y: 20}, 30])
