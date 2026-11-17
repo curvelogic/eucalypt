@@ -23,7 +23,7 @@ eu run/day01.eu -t part-1       # part 1 against inputs/day01.txt
 eu run/day01.eu -t part-2       # part 2 against inputs/day01.txt
 
 # Quick exploration of an input
-eu inputs/day01.txt -e 'lines count'
+eu input=inputs/day01.txt -e 'input count'   # bind the input to a name
 ```
 
 Imports resolve relative to the importing file, so these commands work
