@@ -2,7 +2,9 @@
   title: "233 self-recursive loops through if and then run in constant stack"
   doc: "eu-oaz72.34: the curried `then(t, f)(c)` that catenation produces is
         reduced to a saturated `if`, so a self-recursive loop with a strict
-        accumulator no longer pushes a frame per iteration."
+        accumulator no longer pushes a frame per iteration.
+        eu-oaz72.147: loops whose step or test is a parameter also run in
+        constant stack."
 }
 
 # Strict accumulator: `a` is forced by the condition on every step, so the
@@ -14,12 +16,13 @@ via-if(i, a): if(a < 0 ∨ i = 0, a, via-if(i - 1, a + 1))
 true-branch(i, a): if(a >= 0 ∧ i > 0, true-branch(i - 1, a + 1), a)
 nested(i, a): (a < 0 ∨ i = 0) then(a, if(i % 2 = 0, nested(i - 1, a + 1), nested(i - 1, a + 2)))
 
-# eu-oaz72.147: the step or test is a parameter, so the recursive call must
-# not be hidden from demand analysis by a self-inlined copy.
+` "eu-oaz72.147: the step is a parameter, so the recursive call must not be hidden from demand analysis by a self-inlined copy"
 step-loop(f, n): (n = 0) then(0, step-loop(f, f(n)))
+
+` "eu-oaz72.147: the test is a parameter"
 test-loop(p?, n): p?(n) then(0, test-loop(p?, n - 1))
 
-# A lazy state forced explicitly with `seq`.
+` "eu-oaz72.147: a lazy state forced explicitly with `seq`"
 seq-loop(f, n, x): (n = 0) then(x, seq(x, seq-loop(f, n - 1, f(x))))
 
 n: 100000
@@ -32,8 +35,8 @@ loops: {
   true-loop: true-branch(n, 0)
   nested-loop: nested(n, 0)
   param-step-loop: step-loop(_ - 1, n)
-  param-test-loop: test-loop(_ = 0, n)
-  seq-state-loop: seq-loop(_ + 3, n, 0)
+  param-test-loop: test-loop((= 0), n)
+  seq-state-loop: seq-loop((+ 3), n, 0)
 }
 
 ` "every loop computes its value"
