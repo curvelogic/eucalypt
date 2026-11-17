@@ -3724,6 +3724,13 @@ pub fn test_error_232_unclosed_bracket_eof() {
 }
 
 #[test]
+/// eu-oaz72.42: an unclosed bracket mid-file is reported at the opening
+/// bracket.
+pub fn test_error_333_unclosed_bracket_open() {
+    run_error_test(&error_opts("333_unclosed_bracket_open.eu"));
+}
+
+#[test]
 /// eu-oaz72.43: a negative index to nth is an error rather than a hang on
 /// an infinite list (checked on a finite one to stay bounded).
 pub fn test_error_233_nth_negative() {
@@ -4748,6 +4755,20 @@ pub fn test_typecheck_132_union_callback_param_rejects() {
     run_typecheck_test("132_union_callback_param_rejects.eu");
 }
 
+/// A `prelude:` unit-metadata override is honoured by the type checker on
+/// both `eu check` and the evaluate path (eu-oaz72.177).
+#[test]
+pub fn test_typecheck_133_prelude_override_type_mismatch() {
+    run_typecheck_test("133_prelude_override_type_mismatch.eu");
+}
+
+/// Derived monad combinators on identity-like monads and `random` check
+/// clean: an abstract `m a` is gradual against a concrete type (eu-oaz72.170).
+#[test]
+pub fn test_typecheck_134_identity_monad_derived_no_warning() {
+    run_typecheck_test("134_identity_monad_derived_no_warning.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).
@@ -5635,6 +5656,11 @@ pub fn test_error_331_iterate_applies_f_at_cell() {
 }
 
 #[test]
+pub fn test_error_347_missing_prelude_path() {
+    run_error_test(&error_opts("347_missing_prelude_path.eu"));
+}
+
+#[test]
 pub fn test_error_332_scanl_applies_op_at_cell() {
     run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
 }
@@ -5647,8 +5673,8 @@ pub fn test_301_closed_bindings() {
 
 /// An error inside a closed binding keeps its trace (eu-oaz72.175).
 #[test]
-pub fn test_error_333_closed_binding_trace() {
-    run_error_test(&error_opts("333_closed_binding_trace.eu"));
+pub fn test_error_334_closed_binding_trace() {
+    run_error_test(&error_opts("334_closed_binding_trace.eu"));
 }
 
 /// `eu check` must honour `prelude:` unit metadata exactly as evaluation
@@ -5696,4 +5722,29 @@ pub fn test_check_fails_on_missing_prelude_override() {
         String::from_utf8_lossy(&output.stderr)
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A `prelude:` path that does not exist must be an error naming the path on
+/// `eu`, `eu check` and `eu check --strict`, even when its file stem matches a
+/// bundled library (eu-oaz72.181).
+#[test]
+pub fn test_missing_prelude_path_is_an_error() {
+    let file = "tests/harness/errors/347_missing_prelude_path.eu";
+    for args in [
+        vec![file],
+        vec!["check", file],
+        vec!["check", "--strict", file],
+    ] {
+        let output = std::process::Command::new(eu_binary())
+            .args(&args)
+            .output()
+            .expect("failed to run eu");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{args:?}:\n{stderr}");
+        assert!(
+            stderr.contains("could not read 'nope/prelude.eu'")
+                && stderr.contains("not resolved relative to the file"),
+            "{args:?}:\n{stderr}"
+        );
+    }
 }

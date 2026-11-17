@@ -333,6 +333,9 @@ pub struct PipelineCacheEntry {
     pub alias_types: HashMap<String, Type>,
     /// Per-stage content hashes computed during this run.
     pub stage_hashes: PipelineStageHashes,
+    /// Error loading a `prelude:` override, if any; the default prelude
+    /// was used instead.
+    pub prelude_error: Option<super::PipelineError>,
 }
 
 // ── QueryStore ───────────────────────────────────────────────────────────────
@@ -1174,6 +1177,7 @@ mod tests {
                 type_check: file_text_hash,
                 diagnostics: file_text_hash,
             },
+            prelude_error: None,
         }
     }
 

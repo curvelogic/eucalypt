@@ -230,6 +230,10 @@ result: helper(42)
 x: custom-fn(1)
 ```
 
+A `prelude:` path is resolved against the library path, then the working
+directory (not relative to the file naming it); a path that is not found is an
+error.
+
 **Trace metadata**: annotate declarations to trace entry arguments
 and/or exit values to stderr during evaluation:
 
@@ -1049,7 +1053,8 @@ catenation) — navigate with `(xs nth(2)).port` or a lens.
   different error from a contract violation, so a schema typo cannot
   masquerade as bad data.
 - Literal types (`"prod"`, `:ok`) are checked by equality here but **not**
-  by `as-spec`, which matches anything for them (eu-pub3r).
+  by `as-spec`, which matches anything for them (a known
+  defect).
 
 See [Structural Contracts](../guide/contracts.md).
 

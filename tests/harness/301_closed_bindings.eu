@@ -36,7 +36,7 @@ nested-outer(n): { outer(a): { inner(b): a + b }.inner(10) }.outer(n)
 deep(n): { g(a): { h(b): { k(c): c + 1 }.k(b) + a }.h(a) }.g(n)
 
 ` "Outer locals read from inside case branches, the fallback and a block pattern."
-branch-outer(a): { f(l): l nil? then(a, head(l) + a) }.f([1])
+branch-outer(a): { f(l): l nil? then(a, head(l) + a) }.f[1]
 
 ` "A fallback (non-list scrutinee) referencing an outer local."
 fallback-outer(a): { f(v): v = 0 then(a, a + 1) }.f(5)
@@ -45,20 +45,20 @@ fallback-outer(a): { f(v): v = 0 then(a, a + 1) }.f(5)
 block-outer(n): { blk: { x: 1, y: 2 }, f(v): v.x + v.y + n, r: f(blk) }.r
 
 ` "List destructuring parameter whose body reads an outer local."
-list-outer(a): { f([h : t]): h + a }.f([1, 2])
+list-outer(a): { f[h : t]: h + a }.f[1, 2]
 
 ` "Metadata read inside a closed lambda that also reads an outer local."
-meta-outer(a): { f(v): (meta(v) = {}) then(a, 0) }.f({ z: 1 })
+meta-outer(a): { f(v): (meta(v) = {}) then(a, 0) }.f{ z: 1 }
 
 ` { target: :test-values }
 test-values: {
   lam: closed-lambda(5) = 8
   thunk: closed-thunk(1) = 43
   rec: letrec-mix(4) = 20
-  sum: sum-list([1, 2, 3, 4]) = 10
-  branch-nonempty: branches([7, 8]) = 7
-  branch-empty: branches([]) = 0
-  block: block-field({ k: 9 }) = 9
+  sum: sum-list[1, 2, 3, 4] = 10
+  branch-nonempty: branches[7, 8] = 7
+  branch-empty: branches[] = 0
+  block: block-field{ k: 9 } = 9
   meta: ({ a: 1 } meta-of) = {}
   nested: nested-outer(5) = 15
   deeper: deep(3) = 7

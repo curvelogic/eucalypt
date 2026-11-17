@@ -1,2 +1,2 @@
 exit: 1
-stderr: "unclosed bracket expression"
+stderr: "232_unclosed_bracket_eof.eu:3:6"

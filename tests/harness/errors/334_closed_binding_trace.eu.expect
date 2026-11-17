@@ -1,0 +1,2 @@
+exit: 1
+stderr: "(?s)panic: boom.*334_closed_binding_trace\.eu:4:31.*called from here.*called from here.*called from here.*while evaluating \(outermost first\):.*- result at 334_closed_binding_trace\.eu:6:9"

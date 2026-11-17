@@ -2,7 +2,7 @@
 
 [![eucalypt build](https://github.com/curvelogic/eucalypt/actions/workflows/build-rust.yaml/badge.svg)](https://github.com/curvelogic/eucalypt/actions/workflows/build-rust.yaml)
 
-[Eucalypt](https://curvelogic.github.io/eucalypt/) is a tool and a
+[Eucalypt](https://eucalypt.curvelogic.info/) is a tool and a
 small functional language for generating, templating, rendering and
 processing structured data formats like YAML, JSON and TOML.
 
@@ -52,17 +52,17 @@ Installs the latest release binary to `~/.local/bin`. Set `EUCALYPT_INSTALL_DIR`
 cargo install --path .
 ```
 
-See the [documentation](https://curvelogic.github.io/eucalypt/) for
+See the [documentation](https://eucalypt.curvelogic.info/docs/) for
 other installation options.
 
 ## Documentation
 
-Full documentation is available at https://curvelogic.github.io/eucalypt/
+Full documentation is available at https://eucalypt.curvelogic.info/docs/
 
-- [Getting Started](https://curvelogic.github.io/eucalypt/welcome/quick-start.html)
-- [Language Syntax](https://curvelogic.github.io/eucalypt/reference/syntax.html)
-- [Command Line](https://curvelogic.github.io/eucalypt/reference/cli.html)
-- [Prelude Reference](https://curvelogic.github.io/eucalypt/reference/prelude/index.html)
+- [Getting Started](https://eucalypt.curvelogic.info/docs/welcome/quick-start/)
+- [Language Syntax](https://eucalypt.curvelogic.info/docs/reference/syntax/)
+- [Command Line](https://eucalypt.curvelogic.info/docs/reference/cli/)
+- [Prelude Reference](https://eucalypt.curvelogic.info/docs/reference/prelude/)
 
 ## Development
 

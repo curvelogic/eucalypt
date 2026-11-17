@@ -1130,7 +1130,7 @@ b: { tags: [1, 2] }     match?(spec)   # => false
 
 > **Known limitation**: `as-spec` on a **union** type
 > (`s"number | string"`) currently produces a predicate that never
-> matches — a defect tracked as bead `eu-r9oy`. Until it is fixed, build a
+> matches — a known defect. Until it is fixed, build a
 > union validator directly, e.g. `v number? or v string?`, rather than via
 > `as-spec`.
 

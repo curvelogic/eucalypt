@@ -616,6 +616,8 @@ impl SourceLoader {
             // Parse the file's source and look for a `prelude:` key.
             let source = match input.locator() {
                 Locator::Fs(path) => self.read_fs_input(path).ok().map(FsInput::into_text),
+                // An editor buffer carries its own (possibly unsaved) text.
+                Locator::Buffer { text, .. } => Some(text.clone()),
                 _ => None,
             };
             let Some(source) = source else {
@@ -635,6 +637,24 @@ impl SourceLoader {
             if let Locator::Resource(name) = prelude_input.locator() {
                 if self.resources.get(name).is_none() {
                     return Err(EucalyptError::UnknownResource(name.clone()));
+                }
+            }
+
+            // A filesystem path must exist: `read_fs_input` would otherwise
+            // fall back to a bundled library of the same file stem (e.g.
+            // `nope/prelude.eu`), silently ignoring a mistyped path.
+            if let Locator::Fs(path) = prelude_input.locator() {
+                let found = self.lib_path.iter().any(|d| d.join(path).is_file()) || path.is_file();
+                if !found {
+                    return Err(EucalyptError::FileCouldNotBeRead(
+                        path.to_string_lossy().to_string(),
+                        Some(
+                            "prelude: path not found (searched the library path and the \
+                             working directory; it is not resolved relative to the file \
+                             that names it)"
+                                .to_string(),
+                        ),
+                    ));
                 }
             }
 

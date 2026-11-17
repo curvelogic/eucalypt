@@ -212,16 +212,23 @@ fn run() -> i32 {
         // a `deprecated` declaration in `lib/prelude.eu` would be inert on
         // this (shipped default) path while working under `eu check`.
         #[cfg(not(target_arch = "wasm32"))]
-        let blob_check_seed = loader.prelude_blob().and_then(|b| {
-            b.decode_desugared_unit_cores().map(|units| {
-                (
-                    units,
-                    b.monad_specs.clone(),
-                    b.monad_type_hints.clone(),
-                    b.deprecations.clone(),
-                )
-            })
-        });
+        let blob_check_seed = loader
+            .prelude_blob()
+            // A `prelude:` unit-metadata override replaces the prelude the
+            // blob baked, so the blob's cores would check the user's file
+            // against the wrong prelude (eu-oaz72.177): take the source
+            // path, which honours the override as `eu check` does.
+            .filter(|_| loader.prelude_override().is_none())
+            .and_then(|b| {
+                b.decode_desugared_unit_cores().map(|units| {
+                    (
+                        units,
+                        b.monad_specs.clone(),
+                        b.monad_type_hints.clone(),
+                        b.deprecations.clone(),
+                    )
+                })
+            });
         #[cfg(target_arch = "wasm32")]
         let blob_check_seed: Option<(
             Vec<(String, eucalypt::core::expr::RcExpr)>,
