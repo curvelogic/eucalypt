@@ -1637,6 +1637,46 @@ mod tests {
         assert_eq!(published(&client), 0, "result published for closed file");
     }
 
+    /// A missing `prelude:` path is published to the client as an ERROR
+    /// diagnostic (eu-oaz72.181).
+    #[test]
+    fn missing_prelude_path_is_published_as_error_diagnostic() {
+        let (server, client) = Connection::memory();
+        let (mut state, _rx) = ServerState::new(RefreshSupport::default());
+        let uri = Url::parse("file:///tmp/eu_lsp_prelude_publish_test.eu").unwrap();
+        let text = "{ prelude: \"nope/prelude.eu\" }\nx: 1\n";
+        state.store.open(uri.clone(), text.to_string());
+        let Ok(entry) = run_pipeline(&uri, text, None) else {
+            panic!("pipeline should fall back to the default prelude");
+        };
+        state.apply_pipeline_result(
+            &server,
+            PipelineResult {
+                uri: uri.clone(),
+                cancel: Arc::new(AtomicBool::new(false)),
+                result: Ok(entry),
+            },
+        );
+        let diags: Vec<lsp_types::Diagnostic> = client
+            .receiver
+            .try_iter()
+            .filter_map(|m| match m {
+                Message::Notification(n) if n.method == "textDocument/publishDiagnostics" => {
+                    serde_json::from_value::<PublishDiagnosticsParams>(n.params).ok()
+                }
+                _ => None,
+            })
+            .flat_map(|p| p.diagnostics)
+            .collect();
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.severity == Some(lsp_types::DiagnosticSeverity::ERROR)
+                    && d.message.contains("nope/prelude.eu")),
+            "expected an ERROR diagnostic naming the path, got {diags:?}"
+        );
+    }
+
     #[test]
     fn cancel_all_flags_every_in_flight_run() {
         let (state, _rx) = ServerState::new(RefreshSupport::default());
