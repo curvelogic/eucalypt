@@ -461,6 +461,9 @@ pub struct DemandAnalyser<'p> {
     /// document RENDER_DOC renders, so its fields are all forced and keep
     /// strict demand; every other block's fields are lazy.
     root_block: Option<usize>,
+    /// Treat the analysed expression as a nested value, never the rendered
+    /// root unit (see [`DemandAnalyser::as_nested_value`]).
+    nested_value: bool,
     /// One frame per enclosing `Let`/`Lam` scope, innermost last.
     frames: Vec<SigFrame>,
     /// Keys inserted into `signatures`, in order, so that the entries
@@ -488,6 +491,7 @@ impl<'p> DemandAnalyser<'p> {
             named_log: Vec::new(),
             seeds: HashMap::new(),
             root_block: None,
+            nested_value: false,
             frames: Vec::new(),
             sig_log: Vec::new(),
             visits: 0,
@@ -501,11 +505,25 @@ impl<'p> DemandAnalyser<'p> {
         self
     }
 
+    /// Analyse the expression as a value nested in a larger program, not as
+    /// the root unit: a block it ends in is not rendered, so its members keep
+    /// the lazy demands whole-program analysis gives a nested block. Used for
+    /// each pre-compiled prelude body (eu-oaz72.175), which source mode
+    /// analyses as part of the prelude block, never as the rendered root.
+    pub fn as_nested_value(mut self) -> Self {
+        self.nested_value = true;
+        self
+    }
+
     /// Run the demand analysis on the given expression, returning the
     /// annotated expression, the pointer-keyed signature table, and the
     /// name-keyed signature table for user function calls.
     pub fn analyse(mut self, expr: &RcExpr) -> (RcExpr, SignatureTable, NamedSignatureTable) {
-        self.root_block = root_block(expr);
+        self.root_block = if self.nested_value {
+            None
+        } else {
+            root_block(expr)
+        };
         let (new_expr, _env) = self.analyse_expr(expr);
         let mut named: NamedSignatureTable = self
             .named_signatures
@@ -1727,6 +1745,26 @@ mod tests {
         match &*result.inner {
             Expr::Let(_, scope, _) => {
                 assert_eq!(scope.pattern[0].demand.strictness, Strictness::Strict);
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn nested_value_block_body_fields_are_lazy() {
+        // eu-oaz72.175: a prelude body analysed on its own is not the
+        // rendered root, so `let b = 1 in { b: b }` keeps `b` lazy under
+        // `as_nested_value` (and strict under the default, as above).
+        let b = free("b");
+        let expr = let_(
+            vec![(b.clone(), num(1))],
+            block([("b".to_string(), var(b))]),
+        );
+        let (result, _sigs, _named) = DemandAnalyser::new().as_nested_value().analyse(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(scope.pattern[0].demand.strictness, Strictness::Lazy);
             }
             other => panic!("expected Let, got: {other:?}"),
         }

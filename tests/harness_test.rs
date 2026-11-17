@@ -3458,6 +3458,28 @@ pub fn test_235_prelude_loops_inline_if() {
     run_test(&opts("235_prelude_loops_inline_if.eu"));
 }
 
+/// eu-oaz72.175: the pre-compiled prelude runs the demand analysis over each
+/// body, so `range` forces its counter and a streaming fold keeps constant
+/// heap. Without it the counter's alias chain pins every cell (about 12,900
+/// blocks at 400k). Blob mode only: the source prelude never had the defect.
+#[cfg(prelude_blob_ok)]
+#[test]
+pub fn test_235_blob_range_does_not_retain_list() {
+    let file = "235_prelude_loops_inline_if.eu";
+    let small = stat(file, "retention-small", &[], "Peak Blocks");
+    let large = stat(file, "retention-large", &[], "Peak Blocks");
+    assert!(
+        large <= 1100,
+        "range(0, 400000) foldl-strict peaked at {large} heap blocks: the list is \
+         retained (eu-oaz72.175)"
+    );
+    assert!(
+        large <= small + 16,
+        "peak heap grew with the list: {small} blocks at 100k, {large} at 400k \
+         (eu-oaz72.175)"
+    );
+}
+
 /// Reformat `source` as `eu fmt --reformat` does and check the result
 /// parses and is a fixed point. Returns the reformatted text.
 fn reformat_round_trip(label: &str, source: &str) -> String {
