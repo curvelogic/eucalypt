@@ -1175,18 +1175,17 @@ impl RcExpr {
     /// Substitute expressions for free variables by name.
     ///
     /// **Not scope-aware**: replaces every `Var::Free(name)` that matches,
-    /// regardless of where it appears in the expression tree. This is
-    /// correct when used via the open/close pattern in the inline pass:
+    /// regardless of where it appears in the expression tree, and neither
+    /// shifts the replacement's bound variables nor avoids capture of its
+    /// free names. It is only correct when the replacements are closed
+    /// (or the occurrences are all at the replacements' own scope). The
+    /// inline pass does **not** use it: it needs the depth-aware,
+    /// capture-avoiding `substs_depth` in `core::inline::reduce`.
     ///
-    /// 1. `open_let_scope_full` converts `Var::Bound(scope=0)` → `Var::Free(name)`
-    /// 2. `substs` replaces those Free names with inlined bodies
-    /// 3. `close_let_scope` converts remaining Free names → `Var::Bound(scope=0)`
-    ///
-    /// The open/close pairing ensures that only the current scope's bindings
-    /// are Free at substitution time. Any pre-existing `Var::Free` with the
-    /// same name is also replaced — this is correct when those Free vars
-    /// refer to the same definition (e.g. prelude names injected as a
-    /// wrapping Let scope). Callers must maintain this invariant.
+    /// Remaining caller: `instantiate_lets`, whose result is only ever
+    /// read for literal metadata values and never re-closed into a scope,
+    /// so a mis-scoped or captured reference there yields a non-literal
+    /// that extraction rejects.
     ///
     /// Uses optimised `try_walk` to avoid unnecessary allocations.
     pub fn substs(&self, mappings: &[(String, RcExpr)]) -> RcExpr {
@@ -1240,6 +1239,8 @@ impl RcExpr {
     pub fn instantiate_lets(self) -> RcExpr {
         if let Some((_, scope, _)) = self.top_let() {
             let (open_bindings, open_body) = open_let_scope_full(scope);
+            // Scope-blind on purpose: see `substs`. The instantiated body is
+            // read for literal values and never re-closed.
             open_body.substs(&open_bindings)
         } else {
             self.clone()
