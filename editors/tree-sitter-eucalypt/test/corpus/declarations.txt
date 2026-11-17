@@ -1703,3 +1703,257 @@ h[{x y}, z]: x
     (soup
       (name
         (identifier)))))
+
+================================================================================
+Juxtaposed list-parameter definitions are separate declarations (eu-oaz72.14:
+g[h, t]: following another declaration must not be absorbed into its body)
+================================================================================
+
+a: 1
+g[h, t]: h
+b: f(x)
+k[p, q]: p
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (identifier)
+        (identifier)))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (application
+        (name
+          (identifier))
+        (argument_list
+          (soup
+            (name
+              (identifier)))))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (identifier)
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Chained calls with more than one argument (eu-oaz72.14: f(a)(1, 3) gave ERROR)
+================================================================================
+
+a: f(a)(1, 3)
+b: flip(__SUB)(1, 3) = 2
+c: f(a)(b)(c) + 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (application
+        (application
+          (name
+            (identifier))
+          (argument_list
+            (soup
+              (name
+                (identifier)))))
+        (argument_list
+          (soup
+            (literal
+              (number)))
+          (soup
+            (literal
+              (number)))))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (application
+        (application
+          (name
+            (identifier))
+          (argument_list
+            (soup
+              (name
+                (identifier)))))
+        (argument_list
+          (soup
+            (literal
+              (number)))
+          (soup
+            (literal
+              (number)))))
+      (operator)
+      (literal
+        (number))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (application
+        (application
+          (application
+            (name
+              (identifier))
+            (argument_list
+              (soup
+                (name
+                  (identifier)))))
+          (argument_list
+            (soup
+              (name
+                (identifier)))))
+        (argument_list
+          (soup
+            (name
+              (identifier)))))
+      (operator)
+      (literal
+        (number)))))
+
+================================================================================
+Chained calls mixing call forms (eu-oaz72.14)
+================================================================================
+
+a: f{x: 1}(2)
+b: f[1](2, 3)
+c: f(1){y: 2}[4]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (application
+        (block_application
+          (name
+            (identifier))
+          (block_argument
+            (declaration
+              (declaration_head
+                (identifier))
+              (soup
+                (literal
+                  (number))))))
+        (argument_list
+          (soup
+            (literal
+              (number)))))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (application
+        (list_application
+          (name
+            (identifier))
+          (list_argument
+            (soup
+              (literal
+                (number)))))
+        (argument_list
+          (soup
+            (literal
+              (number)))
+          (soup
+            (literal
+              (number)))))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (list_application
+        (block_application
+          (application
+            (name
+              (identifier))
+            (argument_list
+              (soup
+                (literal
+                  (number)))))
+          (block_argument
+            (declaration
+              (declaration_head
+                (identifier))
+              (soup
+                (literal
+                  (number))))))
+        (list_argument
+          (soup
+            (literal
+              (number))))))))
+
+================================================================================
+Bare intrinsic names as call arguments (eu-oaz72.14: __EQ argument)
+================================================================================
+
+a: apply(__EQ, [2, 2]) = true
+b: uncurry(__EQ)([1, 0])
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (application
+        (name
+          (identifier))
+        (argument_list
+          (soup
+            (name
+              (identifier)))
+          (soup
+            (list
+              (soup
+                (literal
+                  (number)))
+              (soup
+                (literal
+                  (number)))))))
+      (operator)
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (application
+        (application
+          (name
+            (identifier))
+          (argument_list
+            (soup
+              (name
+                (identifier)))))
+        (argument_list
+          (soup
+            (list
+              (soup
+                (literal
+                  (number)))
+              (soup
+                (literal
+                  (number))))))))))
