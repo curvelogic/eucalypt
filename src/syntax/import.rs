@@ -10,7 +10,6 @@ use petgraph::algo;
 use petgraph::graph::Graph;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{Bfs, Walker};
-#[cfg(not(target_arch = "wasm32"))]
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -148,36 +147,61 @@ pub enum ImportError {
 /// Read all imports specified in the Rowan AST and add them to imports
 #[cfg(not(target_arch = "wasm32"))]
 fn read_rowan_ast_imports(ast: &ParsedAst, imports: &mut Vec<Input>) -> Result<(), ImportError> {
+    match ast {
+        ParsedAst::Unit(unit) => read_rowan_unit_imports(unit, imports),
+        ParsedAst::Soup(soup) => read_rowan_soup_imports(soup, imports),
+    }
+}
+
+/// Scrape the imports a parsed unit declares, without registering them
+/// in any graph. Available on every target: the WASM pipeline, which has
+/// no `ParsedAst`, uses it to find the embedded libraries a unit imports.
+pub fn scrape_unit_imports(
+    unit: &crate::syntax::rowan::ast::Unit,
+) -> Result<Vec<Input>, ImportError> {
+    let mut imports = Vec::new();
+    read_rowan_unit_imports(unit, &mut imports)?;
+    Ok(imports)
+}
+
+/// Scrape the imports a parsed expression declares (as
+/// [`scrape_unit_imports`] does for a unit).
+pub fn scrape_soup_imports(
+    soup: &crate::syntax::rowan::ast::Soup,
+) -> Result<Vec<Input>, ImportError> {
+    let mut imports = Vec::new();
+    read_rowan_soup_imports(soup, &mut imports)?;
+    Ok(imports)
+}
+
+/// Read all imports specified in a Rowan unit and add them to imports
+fn read_rowan_unit_imports(
+    unit: &crate::syntax::rowan::ast::Unit,
+    imports: &mut Vec<Input>,
+) -> Result<(), ImportError> {
     use crate::syntax::rowan::ast::HasSoup;
 
-    match ast {
-        ParsedAst::Unit(unit) => {
-            // Check unit metadata for imports
-            if let Some(meta) = unit.meta() {
-                if let Some(meta_soup) = meta.soup() {
-                    read_rowan_soup_imports(&meta_soup, imports)?;
-                }
-            }
+    // Check unit metadata for imports
+    if let Some(meta) = unit.meta() {
+        if let Some(meta_soup) = meta.soup() {
+            read_rowan_soup_imports(&meta_soup, imports)?;
+        }
+    }
 
-            // Check each declaration for imports
-            for decl in unit.declarations() {
-                // Check declaration metadata
-                if let Some(meta) = decl.meta() {
-                    if let Some(meta_soup) = meta.soup() {
-                        read_rowan_soup_imports(&meta_soup, imports)?;
-                    }
-                }
-
-                // Check declaration body for imports
-                if let Some(body) = decl.body() {
-                    if let Some(body_soup) = body.soup() {
-                        read_rowan_soup_imports(&body_soup, imports)?;
-                    }
-                }
+    // Check each declaration for imports
+    for decl in unit.declarations() {
+        // Check declaration metadata
+        if let Some(meta) = decl.meta() {
+            if let Some(meta_soup) = meta.soup() {
+                read_rowan_soup_imports(&meta_soup, imports)?;
             }
         }
-        ParsedAst::Soup(soup) => {
-            read_rowan_soup_imports(soup, imports)?;
+
+        // Check declaration body for imports
+        if let Some(body) = decl.body() {
+            if let Some(body_soup) = body.soup() {
+                read_rowan_soup_imports(&body_soup, imports)?;
+            }
         }
     }
 
@@ -185,7 +209,6 @@ fn read_rowan_ast_imports(ast: &ParsedAst, imports: &mut Vec<Input>) -> Result<(
 }
 
 /// Read imports from a Rowan Soup expression
-#[cfg(not(target_arch = "wasm32"))]
 fn read_rowan_soup_imports(
     soup: &crate::syntax::rowan::ast::Soup,
     imports: &mut Vec<Input>,
@@ -285,7 +308,6 @@ fn read_rowan_soup_imports(
 }
 
 /// Extract import values from a Rowan soup
-#[cfg(not(target_arch = "wasm32"))]
 fn scrape_rowan_imports(
     soup: &crate::syntax::rowan::ast::Soup,
     imports: &mut Vec<Input>,
@@ -334,7 +356,6 @@ fn scrape_rowan_imports(
 /// `None` if the block does not contain a `git` key (so it is not a git
 /// import). Returns an error if the block has a `git` key but is missing
 /// the mandatory `commit` field.
-#[cfg(not(target_arch = "wasm32"))]
 fn parse_git_import_block(
     block: &crate::syntax::rowan::ast::Block,
 ) -> Result<Option<Input>, ImportError> {
@@ -396,7 +417,6 @@ fn parse_git_import_block(
 }
 
 /// Extract the text value of the first string literal found in a soup.
-#[cfg(not(target_arch = "wasm32"))]
 fn extract_first_string_from_soup(soup: &crate::syntax::rowan::ast::Soup) -> Option<String> {
     use crate::syntax::rowan::ast::Element;
 
