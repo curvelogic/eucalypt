@@ -444,20 +444,6 @@ fn cmd_prelude_compile() -> Result<()> {
         // instead of branching on an inlined case.
         let body = &inline_intrinsic_aliases(name, body, &inlinable_bindings)
             .with_context(|| format!("inline intrinsic aliases into '{name}'"))?;
-        // Compile with the binding's own name as the self-recursion context
-        // (eu-e3c3i). After peeling, a binding's recursive self-reference is
-        // `Var::Free(<own name>)` — invisible to demand analysis, which can
-        // only mark `demand.recursive` on bindings inside a Let/LetRec scope.
-        // Passing the name here lets the STG compiler detect self-recursive
-        // call sites and set `eager_args` on them, so the VM resolves their
-        // `Ref::L` arguments via `create_arg_array_eager` instead of building
-        // a fresh `Atom{Ref::L}` indirection per iteration. Without this,
-        // every lazily-threaded parameter of a self-recursive prelude
-        // combinator (e.g. `foldl`'s `op`) accumulates an unmemoised
-        // indirection chain that is re-walked on every recursive step —
-        // the O(N²) behind eu-e3c3i (`count`/`sum`/`filter`/`str.len`).
-        // This supplies exactly the `demand.recursive`-derived context that
-        // source-mode whole-unit compilation gives these same bindings.
         // Run the demand analysis and re-flatten over this body, as
         // `driver/eval.rs` does for user code and source mode does for the
         // whole prelude (eu-oaz72.175). Without it the body's inner
@@ -475,6 +461,20 @@ fn cmd_prelude_compile() -> Result<()> {
         let annotated = eucalypt::core::reflatten::reflatten(&annotated);
         let mut body_settings = stg_settings.clone();
         body_settings.user_demand_sigs = named_sigs;
+        // Compile with the binding's own name as the self-recursion context
+        // (eu-e3c3i). After peeling, a binding's recursive self-reference is
+        // `Var::Free(<own name>)` — invisible to demand analysis, which can
+        // only mark `demand.recursive` on bindings inside a Let/LetRec scope.
+        // Passing the name here lets the STG compiler detect self-recursive
+        // call sites and set `eager_args` on them, so the VM resolves their
+        // `Ref::L` arguments via `create_arg_array_eager` instead of building
+        // a fresh `Atom{Ref::L}` indirection per iteration. Without this,
+        // every lazily-threaded parameter of a self-recursive prelude
+        // combinator (e.g. `foldl`'s `op`) accumulates an unmemoised
+        // indirection chain that is re-walked on every recursive step —
+        // the O(N²) behind eu-e3c3i (`count`/`sum`/`filter`/`str.len`).
+        // This supplies exactly the `demand.recursive`-derived context that
+        // source-mode whole-unit compilation gives these same bindings.
         let stg = eucalypt::eval::stg::compile_named(
             &body_settings,
             annotated,
