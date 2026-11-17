@@ -76,13 +76,14 @@ impl Resources {
 
     /// The baked-in library a filesystem import path names, if it names
     /// one: the path must be exactly a library's canonical file name — a
-    /// single component, with the `.eu` extension, whose stem is the
-    /// prelude or an embedded eucalypt library (`lens.eu`, `test.eu`).
+    /// single component, with the `.eu` extension or none, whose stem is
+    /// the prelude or an embedded eucalypt library (`lens.eu`, `test.eu`,
+    /// or `prelude` as `{ import: "[prelude]" }` spells it).
     ///
     /// This is the only spelling that may fall back to the shipped library
     /// when no such file exists on disk (eu-7tlbg). Any other path that
     /// merely shares a library's stem — `lib/test.eu`, `./lens.eu`,
-    /// `test.yaml`, `lens` — means the user's own file, and a missing one
+    /// `test.yaml` — means the user's own file, and a missing one
     /// is an error rather than a silent substitution. The data resources
     /// (`package`, `build-meta`) are reachable only as `resource:` locators.
     pub fn library_for_import_path(path: &std::path::Path) -> Option<&'static str> {
@@ -92,7 +93,7 @@ impl Resources {
             return None;
         };
         let file = std::path::Path::new(file);
-        if file.extension()? != "eu" {
+        if file.extension().is_some_and(|ext| ext != "eu") {
             return None;
         }
         let stem = file.file_stem()?.to_str()?;

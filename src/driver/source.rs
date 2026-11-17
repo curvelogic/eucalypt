@@ -1636,7 +1636,7 @@ pub mod tests {
             "/no/such/dir/state.eu",
             "test.yaml",
             "lens.txt",
-            "lens",
+            "sub/lens",
             "package.eu",
             "build-meta.eu",
         ] {
@@ -1648,7 +1648,14 @@ pub mod tests {
                 "a missing '{path}' must not resolve to a baked-in resource"
             );
         }
-        for path in ["test.eu", "lens.eu", "prelude.eu", "markup.eu"] {
+        for path in [
+            "test.eu",
+            "lens.eu",
+            "prelude.eu",
+            "markup.eu",
+            "prelude",
+            "lens",
+        ] {
             assert!(
                 matches!(
                     loader.read_fs_input(Path::new(path)),
