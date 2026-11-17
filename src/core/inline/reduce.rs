@@ -788,6 +788,90 @@ pub mod tests {
         assert_eq!(alpha_norm(inlined), alpha_norm(expected));
     }
 
+    /// The open destructuring lambda used by the eu-oaz72.179 tests: it
+    /// refers to the enclosing function's parameter `x` (and so is not
+    /// closed).
+    fn open_hit_def(x: &str) -> RcExpr {
+        let y = free("y");
+        let p0 = free("__p0");
+        let destr_let = RcExpr::from(Expr::Let(
+            Smid::default(),
+            close_let_scope(
+                vec![(
+                    y.clone(),
+                    app(bif("HEAD"), vec![app(bif("TAIL"), vec![var(p0.clone())])]),
+                )],
+                app(bif("EQ"), vec![var(y.clone()), var(free(x))]),
+            ),
+            LetType::DestructureListLet,
+        ));
+        inline(vec![p0], destr_let)
+    }
+
+    /// eu-oaz72.179: the open lambda is also copied into a *sibling
+    /// binding's* value (not just the let body), one scope deeper.
+    #[test]
+    pub fn test_distribute_open_lambda_into_sibling_binding_shifts_scope() {
+        let (x, hit, b, r) = (free("x"), free("hit?"), free("b"), free("r"));
+        let build = |use_hit: &dyn Fn() -> RcExpr| {
+            lam(
+                vec![x.clone()],
+                let_(
+                    vec![
+                        (hit.clone(), open_hit_def("x")),
+                        (
+                            b.clone(),
+                            let_(
+                                vec![(r.clone(), app(bif("MAP"), vec![use_hit()]))],
+                                var(r.clone()),
+                            ),
+                        ),
+                    ],
+                    app(bif("MAP"), vec![var(b.clone())]),
+                ),
+            )
+        };
+        let original = build(&|| var(hit.clone()));
+        let expected = build(&|| open_hit_def("x"));
+
+        let inlined = inline_pass(&original).unwrap();
+        binding::verify(&inlined).unwrap();
+        assert_eq!(alpha_norm(inlined), alpha_norm(expected));
+    }
+
+    /// eu-oaz72.179: pre-expansion copies one open inlinable sibling into
+    /// another's body (here under the second lambda's own scope).
+    #[test]
+    pub fn test_pre_expand_open_inlinable_sibling_shifts_scope() {
+        let (x, hit, c, q) = (free("x"), free("hit?"), free("c"), free("q"));
+        let c_def = |h: RcExpr| inline(vec![q.clone()], app(bif("MAP"), vec![h, var(q.clone())]));
+        let build = |h: &dyn Fn() -> RcExpr| {
+            lam(
+                vec![x.clone()],
+                let_(
+                    vec![(hit.clone(), open_hit_def("x")), (c.clone(), c_def(h()))],
+                    app(bif("MAP"), vec![var(c.clone())]),
+                ),
+            )
+        };
+        let original = build(&|| var(hit.clone()));
+        // Both `c`'s binding and the use in the body get the expanded `c`.
+        let expected = lam(
+            vec![x.clone()],
+            let_(
+                vec![
+                    (hit.clone(), open_hit_def("x")),
+                    (c.clone(), c_def(open_hit_def("x"))),
+                ],
+                app(bif("MAP"), vec![c_def(open_hit_def("x"))]),
+            ),
+        );
+
+        let inlined = inline_pass(&original).unwrap();
+        binding::verify(&inlined).unwrap();
+        assert_eq!(alpha_norm(inlined), alpha_norm(expected));
+    }
+
     /// Regression test for eu-5pe9: beta-reducing a destructuring
     /// lambda (one whose body is a `DestructureListLet`) must
     /// correctly adjust scope indices in the replacement when it is
