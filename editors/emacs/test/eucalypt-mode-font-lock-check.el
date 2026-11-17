@@ -22,7 +22,11 @@
 ;;      structure the grammar lacks raises `treesit-query-error');
 ;;   2. fontifies each FILE at `treesit-font-lock-level' 1 to 4, failing on
 ;;      any error, and checks that the level-3 and level-4 features
-;;      actually apply faces somewhere in the files given.
+;;      actually apply faces somewhere in the files given;
+;;   3. checks faces of literals, anaphora, juxtaposed calls and bracket
+;;      delimiters, imenu names, the input method's rules, and that
+;;      `indent-region' is idempotent on each FILE and leaves its string
+;;      literals unchanged.
 ;;
 ;; Exits 0 when everything passes, 1 otherwise.
 
@@ -30,6 +34,8 @@
 
 (require 'cl-lib)
 (require 'treesit)
+(require 'imenu)
+(require 'quail)
 (require 'eucalypt-mode)
 
 (defvar eucalypt-check--failures 0
@@ -62,6 +68,20 @@
     (dolist (f listed)
       (unless (memq f used)
         (eucalypt-check--fail "feature `%s' is in a level but has no rules" f)))))
+
+(defun eucalypt-check--highlights-lookup ()
+  "Check `highlights.scm' is found from a buffer visiting a file elsewhere.
+The mode looked next to `buffer-file-name' (the `.eu' file), not next to
+itself, when a buffer first entered it (eu-oaz72.8)."
+  (let ((eucalypt-highlights-file nil)
+        (load-file-name nil))
+    (with-temp-buffer
+      (setq buffer-file-name (expand-file-name "x.eu" temporary-file-directory))
+      (condition-case err
+          (eucalypt-mode--highlights-file)
+        (error (eucalypt-check--fail "highlights.scm not found from %s: %S"
+                                     buffer-file-name err)))
+      (setq buffer-file-name nil))))
 
 (defun eucalypt-check--compile-queries ()
   "Check that every query the mode uses compiles against the grammar."
@@ -147,7 +167,16 @@
     ("` \"hello\"\nx: 1\n" "hello" font-lock-doc-face)
     ("x: \"a{b}\"\n" "b" font-lock-variable-use-face)
     ;; Emacs-specific addition, and markdown layered on docstrings.
-    ("x: \u27e6 a \u27e7\n" "\u27e6 a \u27e7" eucalypt-unicode-bracket-face)
+    ("x: \u27e6 a \u27e7\n" "\u27e6" eucalypt-unicode-bracket-face)
+    ("x: \u27e6 a \u27e7\n" "\u27e7" eucalypt-unicode-bracket-face)
+    ;; Anaphora outside strings lex as identifiers (eu-oaz72.8).
+    ("x: map(_ + 1)\n" "_" font-lock-type-face)
+    ("x: map(_0 + 1)\n" "_0" font-lock-type-face)
+    ("x: map(\u2022 + 1)\n" "\u2022" font-lock-type-face)
+    ("x: map(\u20221 + 1)\n" "\u20221" font-lock-type-face)
+    ;; Juxtaposed calls (eu-oaz72.8).
+    ("x: f[1, 2]\n" "f" font-lock-function-call-face)
+    ("x: g{a: 1}\n" "g" font-lock-function-call-face)
     ("` \"see `code`\"\nx: 1\n" "code" font-lock-constant-face)
     ;; Markdown also applies to doc strings in block-valued metadata.
     ("` {doc: \"see `code`\"}\nx: 1\n" "code" font-lock-constant-face)
@@ -166,16 +195,32 @@
     ("x: map(f, xs)\n" "map" font-lock-keyword-face))
   "Literals and the face each must carry at level 4.")
 
+;; Each entry is (SOURCE TEXT FACE): TEXT, inside SOURCE, must not carry
+;; FACE anywhere.
+(defconst eucalypt-check--absent-faces
+  '(;; The bracket face is for the delimiters, not the contents.
+    ("x: \u27e6 a \u27e7\n" "a" eucalypt-unicode-bracket-face)
+    ("x: \u27e6 a b \u27e7\n" " a b " eucalypt-unicode-bracket-face)
+    ;; An identifier merely starting with _ is not an anaphor.
+    ("x: _x + 1\n" "_x" font-lock-type-face)
+    ;; Nor is the name of a symbol.
+    ("x: :_\n" "_" font-lock-type-face))
+  "Text that must not carry a face at level 4.")
+
+(defun eucalypt-check--fontify-level-4 (source)
+  "Insert SOURCE into the current buffer and fontify it at level 4."
+  (insert source)
+  (eucalypt-mode)
+  (setq-local treesit-font-lock-level 4)
+  (treesit-font-lock-recompute-features)
+  (treesit-font-lock-fontify-region (point-min) (point-max))
+  (eucalypt--fontify-markdown-in-docstrings (point-min) (point-max)))
+
 (defun eucalypt-check--literals ()
   "Check that each literal kind gets its face."
   (pcase-dolist (`(,source ,text ,face) eucalypt-check--literal-faces)
     (with-temp-buffer
-      (insert source)
-      (eucalypt-mode)
-      (setq-local treesit-font-lock-level 4)
-      (treesit-font-lock-recompute-features)
-      (treesit-font-lock-fontify-region (point-min) (point-max))
-      (eucalypt--fontify-markdown-in-docstrings (point-min) (point-max))
+      (eucalypt-check--fontify-level-4 source)
       (goto-char (point-min))
       (search-forward text)
       (let ((pos (match-beginning 0)))
@@ -189,6 +234,142 @@
   (princ (format "checked %d literal faces\n"
                  (length eucalypt-check--literal-faces))))
 
+(defun eucalypt-check--absent ()
+  "Check that no text in `eucalypt-check--absent-faces' carries its face."
+  (pcase-dolist (`(,source ,text ,face) eucalypt-check--absent-faces)
+    (with-temp-buffer
+      (eucalypt-check--fontify-level-4 source)
+      (goto-char (point-min))
+      (search-forward text)
+      (let ((pos (match-beginning 0)))
+        (while (< pos (match-end 0))
+          (let ((f (get-text-property pos 'face)))
+            (when (memq face (if (listp f) f (list f)))
+              (eucalypt-check--fail "%S: %S at %d has face %S"
+                                    source text pos face)
+              (setq pos (match-end 0))))
+          (setq pos (1+ pos))))))
+  (princ (format "checked %d absent faces\n"
+                 (length eucalypt-check--absent-faces))))
+
+;; Imenu and defun names (eu-oaz72.8: every declaration was `Anonymous').
+(defconst eucalypt-check--imenu-source
+  "f(x): x\ny: 2\n(a ++ b): a\n(! x): x\n` \"d\"\nz: 3\n\u27e6 x \u27e7: x\n\
+(\u27e8 x \u27e9): x\n'quoted name': 1\nns: { inner: 1 }\n"
+  "Source whose declarations `eucalypt-check--imenu' names.")
+
+(defconst eucalypt-check--imenu-names
+  '("f" "y" "++" "!" "z" "\u27e6\u27e7" "\u27e8\u27e9" "'quoted name'" "ns" "inner")
+  "The names imenu must list for `eucalypt-check--imenu-source', in order.")
+
+(defun eucalypt-check--imenu-flatten (index)
+  "Return the names in the imenu INDEX, depth first, without placeholders."
+  (let ((names nil))
+    (dolist (entry index)
+      (cond ((imenu--subalist-p entry)
+             (unless (equal (car entry) "Declaration")
+               (push (car entry) names))
+             (setq names (append (reverse (eucalypt-check--imenu-flatten
+                                           (cdr entry)))
+                                 names)))
+            ((not (equal (car entry) " ")) (push (car entry) names))))
+    (nreverse names)))
+
+(defun eucalypt-check--imenu ()
+  "Check that imenu names every declaration."
+  (with-temp-buffer
+    (insert eucalypt-check--imenu-source)
+    (eucalypt-mode)
+    (let ((names (eucalypt-check--imenu-flatten
+                  (funcall imenu-create-index-function))))
+      (unless (equal names eucalypt-check--imenu-names)
+        (eucalypt-check--fail "imenu names %S, not %S"
+                              names eucalypt-check--imenu-names))))
+  (princ "checked imenu names\n"))
+
+;; Indentation (eu-oaz72.8): `indent-region' is idempotent and leaves the
+;; contents of multi-line strings alone.
+(defconst eucalypt-check--indent-cases
+  '(;; A top-level bracket-pair declaration drifted 2 columns per pass.
+    ("` \"d\"\n\u27e6{}\u27e7: { a: 1 }\n" . "` \"d\"\n\u27e6{}\u27e7: { a: 1 }\n")
+    ("m: {\n\u27e6 x \u27e7: x\n    \u27e8 x \u27e9: x\n}\n"
+     . "m: {\n  \u27e6 x \u27e7: x\n  \u27e8 x \u27e9: x\n}\n")
+    ;; A docstring's continuation lines are its contents.
+    ("` \"first\n      second\n third\"\nx: 1\n"
+     . "` \"first\n      second\n third\"\nx: 1\n")
+    ;; Elements align with a first element on the opener's line.
+    ("` { target: :t\nimport: \"a\" }\nx: 1\n"
+     . "` { target: :t\n    import: \"a\" }\nx: 1\n")
+    ("x: [ a\n, b\n]\n" . "x: [ a\n   , b\n   ]\n")
+    ;; A comment between declarations stays with the next one.
+    ("a: 1\n\n  ## c\nb: 2\n" . "a: 1\n\n## c\nb: 2\n")
+    ("` \"d\"\n  # c\nb: 2\n" . "` \"d\"\n# c\nb: 2\n"))
+  "Pairs (SOURCE . INDENTED): `indent-region' must turn SOURCE into INDENTED.")
+
+(defun eucalypt-check--string-texts ()
+  "Return the text of every string literal in the current buffer."
+  (mapcar (lambda (c) (treesit-node-text (cdr c) t))
+          (treesit-query-capture
+           (treesit-buffer-root-node)
+           (mapconcat (lambda (type) (format "(%s) @s" type))
+                      '("string" "c_string" "r_string" "t_string"
+                        "s_string" "docstring")
+                      " "))))
+
+(defun eucalypt-check--indent (files)
+  "Check indentation of `eucalypt-check--indent-cases' and of FILES."
+  (pcase-dolist (`(,source . ,expected) eucalypt-check--indent-cases)
+    (with-temp-buffer
+      (insert source)
+      (eucalypt-mode)
+      (dotimes (pass 2)
+        (indent-region (point-min) (point-max))
+        (unless (equal (buffer-string) expected)
+          (eucalypt-check--fail "indent pass %d of %S gave %S, not %S"
+                                (1+ pass) source (buffer-string) expected)))))
+  (dolist (file files)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (eucalypt-mode)
+      (let ((strings (eucalypt-check--string-texts))
+            (inhibit-message t)
+            once)
+        (indent-region (point-min) (point-max))
+        (setq once (buffer-string))
+        (unless (equal (eucalypt-check--string-texts) strings)
+          (eucalypt-check--fail "%s: indent-region changed a string literal"
+                                file))
+        (indent-region (point-min) (point-max))
+        (unless (equal (buffer-string) once)
+          (eucalypt-check--fail "%s: indent-region is not idempotent" file)))))
+  (princ (format "checked indentation of %d cases and %d files\n"
+                 (length eucalypt-check--indent-cases) (length files))))
+
+;; The input method must not translate ordinary code (eu-oaz72.8).
+(defconst eucalypt-check--quail-untranslated
+  '("in" "ni" "-o" "[[" "]]" "((" "))" "{}" "!!" "<<" ">>" ".." "**" "\\ni")
+  "Key sequences that are eucalypt code and must not translate.")
+
+(defconst eucalypt-check--quail-translated
+  '(("&&" . ?\u2227) ("|||" . ?\u2016) ("\\in" . ?\u2208) ("\\!in" . ?\u2209)
+    ("\\[[" . ?\u27e6) ("\\{}" . ?\u2205) ("\\!!" . ?\u2713) ("\\<<" . ?\u00ab))
+  "Key sequences and the character each must translate to.")
+
+(defun eucalypt-check--quail ()
+  "Check the `eucalypt' input method's rules."
+  (with-temp-buffer
+    (activate-input-method "eucalypt")
+    (dolist (keys eucalypt-check--quail-untranslated)
+      (let ((map (quail-lookup-key keys)))
+        (when (and (consp map) (car map))
+          (eucalypt-check--fail "input method translates %S" keys))))
+    (pcase-dolist (`(,keys . ,char) eucalypt-check--quail-translated)
+      (let ((map (quail-lookup-key keys)))
+        (unless (and (consp map) (eq (car map) char))
+          (eucalypt-check--fail "input method gives %S for %S, not %c"
+                                (and (consp map) (car map)) keys char)))))
+  (princ "checked input method\n"))
+
 (defun eucalypt-check-run ()
   "Entry point: check queries, then fontify `command-line-args-left'."
   (unless (treesit-language-available-p 'eucalypt)
@@ -196,9 +377,14 @@
     (kill-emacs 1))
   (let ((files command-line-args-left))
     (setq command-line-args-left nil)
+    (eucalypt-check--highlights-lookup)
     (eucalypt-check--features)
     (eucalypt-check--compile-queries)
     (eucalypt-check--literals)
+    (eucalypt-check--absent)
+    (eucalypt-check--imenu)
+    (eucalypt-check--indent files)
+    (eucalypt-check--quail)
     (when files (eucalypt-check--fontify files))
     (if (zerop eucalypt-check--failures)
         (progn (princ "PASS\n") (kill-emacs 0))

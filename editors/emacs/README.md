@@ -17,12 +17,16 @@ Full tree-sitter-based font-lock with four levels of detail:
 ### Indentation
 
 Automatic indentation for blocks, lists, parenthesised expressions,
-declaration bodies, and idiot bracket expressions.
+declaration bodies, and idiot bracket expressions. `indent-region` is
+idempotent and leaves the lines of multi-line strings (docstrings) as they
+are; elements of a block or list whose first element follows the opening
+bracket align with that element (`{ a: 1` / `  b: 2 }`).
 
 ### Navigation and Imenu
 
 - `C-M-a` / `C-M-e` — move to beginning/end of declaration
-- Imenu integration lists all declarations in the buffer
+- Imenu integration lists all declarations in the buffer, by name (an
+  operator declaration by its operator, a bracket pair as `⟦⟧`)
 
 ### Command integration
 
@@ -82,17 +86,29 @@ To render text that is not saved to a file:
   | `e` | `∅` | empty |
 
 - **Quail input method** (`eucalypt`) — type ASCII sequences that
-  auto-translate to Unicode:
+  auto-translate to Unicode. Sequences that are never eucalypt code
+  translate as typed:
 
   | Sequence | Result | | Sequence | Result |
   |----------|--------|-|----------|--------|
   | `&&` | `∧` | | `\|\|` | `∨` |
   | `<=` | `≤` | | `>=` | `≥` |
   | `!=` | `≠` | | `/-` | `∸` |
-  | `..` | `∘` | | `**` | `•` |
-  | `[[` | `⟦` | | `]]` | `⟧` |
-  | `((` | `⟨` | | `))` | `⟩` |
-  | `<<` | `«` | | `>>` | `»` |
+  | `\|\|\|` | `‖` | | `~~` | `¬` |
+
+  Sequences that are also ordinary code (`index`, `[[1]]`, `{}`, `!!`
+  indexing, `<<` deep merge) take a leading backslash:
+
+  | Sequence | Result | | Sequence | Result |
+  |----------|--------|-|----------|--------|
+  | `\..` | `∘` | | `\**` | `•` |
+  | `\[[` | `⟦` | | `\]]` | `⟧` |
+  | `\((` | `⟨` | | `\))` | `⟩` |
+  | `\<<` | `«` | | `\>>` | `»` |
+  | `\in` | `∈` | | `\!in` | `∉` |
+  | `\{}` | `∅` | | `\!!` | `✓` |
+
+  `M-x describe-input-method RET eucalypt` lists them all.
 
 - `eucalypt-unicodify` — batch-replace ASCII operator sequences with
   Unicode equivalents in the buffer or region (skips strings and comments)
@@ -232,7 +248,8 @@ by the table `eucalypt-mode--capture-faces`, which also assigns the
 feature (and so the `treesit-font-lock-level`); `#match?`, `#eq?` and
 `#any-of?` are rewritten to Emacs's `#match`/`#equal`. A capture missing
 from the table is reported as a warning and its pattern skipped (the batch check below fails on it). The only Emacs-specific rule is the
-face for Unicode idiot brackets.
+face for the delimiters of Unicode idiot brackets, which `highlights.scm`
+can only capture with the bracket expression's contents.
 When packaging the mode, copy `highlights.scm` beside it.
 
 The derived queries name tree-sitter node types, so a grammar

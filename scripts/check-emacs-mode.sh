@@ -4,14 +4,18 @@
 # 1. the ERT tests of its eu commands (run, target, evaluate, test, check,
 #    render), which drive a stub eu and need no network, grammar or build.
 #    Set EU to a real eu binary to also run the tests tagged `real-eu'.
-# 2. that the mode's tree-sitter queries compile against the current
-#    grammar in editors/tree-sitter-eucalypt, and that the mode fontifies a
-#    corpus at every font-lock level without a query error.
+# 2. that the mode byte-compiles without a warning.
+# 3. that the mode's tree-sitter queries compile against the current
+#    grammar in editors/tree-sitter-eucalypt, that the mode fontifies a
+#    corpus at every font-lock level without a query error, and that
+#    indent-region is idempotent on the corpus (with the face, imenu and
+#    input-method checks in test/eucalypt-mode-font-lock-check.el).
 #
 # Usage: scripts/check-emacs-mode.sh [--require] [FILE.eu...]
 #
-# FILEs default to examples/aoc25/*.eu. Requires Emacs 29+; step 2 also
-# needs tree-sitter support and a C compiler (the grammar is compiled from
+# FILEs default to lib/prelude.eu and examples/aoc25/*.eu. Requires Emacs
+# 29+; step 3 also needs tree-sitter support and a C compiler (the grammar
+# is compiled from
 # the checked-in src/parser.c and src/scanner.c into a temporary
 # directory). When a requirement is missing the remaining checks are
 # skipped with exit 0, or fail with exit 2 under --require (use that in
@@ -42,6 +46,13 @@ EUCALYPT_TEST_EU="${EU:-}" "$EMACS" --batch -Q \
   -l "$root/editors/emacs/test/eucalypt-mode-commands-test.el" \
   -f ert-run-tests-batch-and-exit </dev/null
 
+bytecomp="$(mktemp -d)"
+cp "$root/editors/emacs/eucalypt-mode.el" "$bytecomp/"
+"$EMACS" --batch -Q -L "$bytecomp" \
+  --eval '(setq byte-compile-error-on-warn t)' \
+  -f batch-byte-compile "$bytecomp/eucalypt-mode.el"
+rm -rf "$bytecomp"
+
 command -v "$CC" >/dev/null 2>&1 || skip "C compiler not found (set CC)"
 "$EMACS" --batch -Q --eval '(kill-emacs (if (treesit-available-p) 0 1))' \
   >/dev/null 2>&1 || skip "$EMACS lacks tree-sitter support"
@@ -54,7 +65,7 @@ trap 'rm -rf "$tmp"' EXIT
   -o "$tmp/libtree-sitter-eucalypt.so"
 
 if [[ $# -eq 0 ]]; then
-  set -- "$root"/examples/aoc25/*.eu
+  set -- "$root"/lib/prelude.eu "$root"/examples/aoc25/*.eu
 fi
 
 "$EMACS" --batch -Q \

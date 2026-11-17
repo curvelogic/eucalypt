@@ -31,6 +31,14 @@
   (name
     (identifier) @function.call))
 
+; Juxtaposed calls — f[1, 2] and g{a: 1}
+(list_application
+  (name
+    (identifier) @function.call))
+(block_application
+  (name
+    (identifier) @function.call))
+
 ; Built-in intrinsics (__XXX)
 ((identifier) @function.builtin
   (#match? @function.builtin "^__[A-Z]+$"))
@@ -144,6 +152,11 @@
 
 ; Anaphora (special variables)
 (anaphor) @variable.special
+; Outside strings the lexer reads _, _0, • and •0 as identifiers (see the
+; anaphor rule in grammar.js); as names, not symbols (:_), they are anaphors
+(name
+  ((identifier) @variable.special
+    (#match? @variable.special "^[_•][0-9]*$")))
 
 ; Operators
 (operator) @operator
