@@ -1182,8 +1182,13 @@ impl RcExpr {
     /// inline pass does **not** use it: it needs the depth-aware,
     /// capture-avoiding `substs_depth` in `core::inline::reduce`.
     ///
-    /// Other callers: `xtask` (prelude blob generation), where the replacements
-    /// are closed, and `instantiate_lets`, whose result is only ever
+    /// Other callers: `xtask` (prelude blob generation), which pre-expands
+    /// inlinable bindings once at blob-generation time. Its replacements
+    /// are closed apart from a self-recursive inlinable's free reference to
+    /// itself, which is substituted at the same scope, so scope-blindness
+    /// does not bite there. (This differs from the source-prelude path,
+    /// which pre-expands on every compile with the capture-avoiding
+    /// `substs_depth`; the two are not the same code.) And `instantiate_lets`, whose result is only ever
     /// read for literal metadata values and never re-closed into a scope,
     /// so a mis-scoped or captured reference there yields a non-literal
     /// that extraction rejects.

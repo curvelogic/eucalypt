@@ -10,7 +10,7 @@ k: 3
 
 f([a, b]): a + k
 
-inner: { k: 5 h([x]): x y: f([1, 2]) }.y
+inner: { k: 5 h([x]): x y: f[1, 2] }.y
 
 ` { target: :test }
 test: {
