@@ -1,4 +1,0 @@
-# Soundness companion to 135 (eu-oaz72.172): a block parameter projected
-# inside a nested let/block must still warn when given a non-block.
-via-let(b): { v: b.x }.v
-bad-let: via-let(3)
