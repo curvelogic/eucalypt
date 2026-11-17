@@ -69,14 +69,20 @@ impl Default for EvalOptions {
 #[serde(deny_unknown_fields)]
 struct EvalOptionsJson {
     #[serde(default)]
-    files: BTreeMap<String, String>,
+    files: Option<BTreeMap<String, String>>,
     #[serde(default)]
     max_steps: Option<u64>,
 }
 
-/// The name the evaluated source has in error locations; no supplied
-/// file may take it.
+/// The name the evaluated source has in error locations.
 const SOURCE_NAME: &str = "<input>";
+
+/// Whether a supplied file may not take `path`, because embedded code
+/// uses that name in error locations: the evaluated source, the prelude,
+/// the build metadata and `resource:<name>` for embedded libraries.
+fn is_reserved_name(path: &str) -> bool {
+    matches!(path, SOURCE_NAME | "prelude" | "build-meta.yaml") || path.starts_with("resource:")
+}
 
 fn options_error(message: String) -> PipelineError {
     PipelineError {
@@ -90,8 +96,9 @@ impl EvalOptions {
     /// Options with `files` (path and text) that imports resolve against
     /// and a step limit (`None` for [`DEFAULT_MAX_STEPS`]). Paths are
     /// relative and `/`-separated; `.` and `..` are resolved. A path
-    /// that is absolute, names nothing, climbs above the root or is
-    /// `<input>`, two paths that normalise to one, and a step limit of 0
+    /// that is absolute, names nothing, climbs above the root or is a name
+    /// embedded code uses (`<input>`, `prelude`, `build-meta.yaml`,
+    /// `resource:...`), two paths that normalise to one, and a step limit of 0
     /// or above `usize::MAX` are errors.
     pub fn new(
         files: impl IntoIterator<Item = (String, String)>,
@@ -100,7 +107,7 @@ impl EvalOptions {
         let mut normalised_files = BTreeMap::new();
         for (path, text) in files {
             let normalised = normalise_path(&path)
-                .filter(|p| p != SOURCE_NAME)
+                .filter(|p| !is_reserved_name(p))
                 .ok_or_else(|| options_error(format!("file path {path:?} is not usable")))?;
             if normalised_files.insert(normalised.clone(), text).is_some() {
                 return Err(options_error(format!(
@@ -131,7 +138,7 @@ impl EvalOptions {
         }
         let raw: EvalOptionsJson =
             serde_json::from_str(json).map_err(|e| options_error(e.to_string()))?;
-        EvalOptions::new(raw.files, raw.max_steps)
+        EvalOptions::new(raw.files.unwrap_or_default(), raw.max_steps)
     }
 
     /// The supplied files, by normalised path.
@@ -533,7 +540,7 @@ fn run_pipeline(
 /// Where an import's content came from: a file the caller supplied, or a
 /// library embedded in eucalypt. With the format, this identifies one
 /// parsed and desugared content.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 enum Origin {
     /// A supplied file, by its normalised path.
     File(String),
@@ -580,7 +587,6 @@ impl Parsed {
 /// An import a unit makes, loaded and parsed.
 struct Library {
     origin: Origin,
-    format: String,
     /// The import that loaded it: the desugarer finds its content under
     /// this key; other imports that reach the same content are aliases.
     input: Input,
@@ -606,7 +612,7 @@ fn import_library_name(import: &Input) -> Option<&str> {
 /// components and resolve `..`. `None` for an absolute path, or one
 /// that climbs above its root or names nothing.
 fn normalise_path(path: &str) -> Option<String> {
-    if path.starts_with(['/', '\\']) || path.get(1..2) == Some(":") {
+    if is_absolute(path) {
         return None;
     }
     let mut parts: Vec<&str> = Vec::new();
@@ -626,6 +632,17 @@ fn normalise_path(path: &str) -> Option<String> {
     }
 }
 
+/// Whether `path` is absolute: rooted (`/x`, `\\x`) or a Windows drive
+/// path (`C:`, `C:/x`, `C:\\x`).
+fn is_absolute(path: &str) -> bool {
+    let b = path.as_bytes();
+    path.starts_with(['/', '\\'])
+        || (b.len() >= 2
+            && b[0].is_ascii_alphabetic()
+            && b[1] == b':'
+            && (b.len() == 2 || b[2] == b'/' || b[2] == b'\\'))
+}
+
 /// The directory part of a normalised path (`""` at the root).
 fn directory_of(path: &str) -> &str {
     path.rfind('/').map_or("", |i| &path[..i])
@@ -639,16 +656,12 @@ fn directory_of(path: &str) -> &str {
 struct Libraries {
     loaded: Vec<Library>,
     aliases: Vec<(Input, usize)>,
-}
-
-impl Libraries {
-    /// Every import as written, with the content it reaches.
-    fn imports(&self) -> impl Iterator<Item = (&Input, &Library)> {
-        self.loaded
-            .iter()
-            .map(|l| (&l.input, l))
-            .chain(self.aliases.iter().map(|(i, x)| (i, &self.loaded[*x])))
-    }
+    /// Every import as written that has content.
+    seen: HashSet<Input>,
+    /// What each written locator and format reached.
+    by_written: HashMap<(Locator, String), usize>,
+    /// The content loaded for each origin and format.
+    by_origin: HashMap<(Origin, String), usize>,
 }
 
 /// Load what `root` imports, and what those import in turn. An import
@@ -686,18 +699,21 @@ fn load_libraries(
             let format = import.format().to_string();
             let origin = resolve_import(&import, &dirs, resources, supplied)
                 .ok_or_else(|| cannot_import(&import, supplied))?;
-            targets.push(origin.graph_node(&format));
+            // Only an eucalypt import can lead back to its importer; a
+            // file may read itself as data.
+            if format == "eu" {
+                targets.push(origin.graph_node(&format));
+            }
 
-            if let Some((_, seen)) = libraries
-                .imports()
-                .find(|(i, _)| i.locator() == import.locator() && i.format() == import.format())
-            {
-                if seen.origin != origin {
+            let written = (import.locator().clone(), format.clone());
+            if let Some(&index) = libraries.by_written.get(&written) {
+                let seen = &libraries.loaded[index].origin;
+                if *seen != origin {
                     return Err(PipelineError {
                         message: format!(
                             "{} names two different files: {} and {}",
                             import.locator(),
-                            seen.origin.file_name(),
+                            seen.file_name(),
                             origin.file_name()
                         ),
                         location: None,
@@ -708,16 +724,23 @@ fn load_libraries(
                     });
                 }
             }
-            if libraries.imports().any(|(i, _)| *i == import) {
+            if libraries.seen.contains(&import) {
                 continue;
             }
-            if let Some(index) = libraries
-                .loaded
-                .iter()
-                .position(|l| l.origin == origin && l.format == format)
-            {
+            if let Some(&index) = libraries.by_origin.get(&(origin.clone(), format.clone())) {
+                libraries.seen.insert(import.clone());
+                libraries.by_written.insert(written, index);
                 libraries.aliases.push((import, index));
                 continue;
+            }
+            if format.ends_with("-stream") {
+                return Err(PipelineError {
+                    message: format!("cannot import {}", import.locator()),
+                    location: None,
+                    notes: Some(vec![format!(
+                        "The streaming format {format} is not available here."
+                    )]),
+                });
             }
 
             let file_name = origin.file_name();
@@ -762,15 +785,6 @@ fn load_libraries(
                     pending.push((origin.graph_node(&format), nested, nested_dirs));
                     Parsed::Unit(ast)
                 }
-                _ if format.ends_with("-stream") => {
-                    return Err(PipelineError {
-                        message: format!("cannot import {}", import.locator()),
-                        location: None,
-                        notes: Some(vec![format!(
-                            "The streaming format {format} is not available here."
-                        )]),
-                    });
-                }
                 _ => {
                     let core =
                         import::read_to_core(&format, files, source_map, file_id).map_err(|e| {
@@ -787,9 +801,14 @@ fn load_libraries(
             if let Origin::Library(_) = origin {
                 source_map.mark_resource_file(file_id);
             }
+            let index = libraries.loaded.len();
+            libraries.seen.insert(import.clone());
+            libraries.by_written.insert(written, index);
+            libraries
+                .by_origin
+                .insert((origin.clone(), format.clone()), index);
             libraries.loaded.push(Library {
                 origin,
-                format,
                 input: import,
                 file_id,
                 parsed,
@@ -812,7 +831,7 @@ fn resolve_import(
     supplied: &BTreeMap<String, String>,
 ) -> Option<Origin> {
     if let Locator::Fs(path) = import.locator() {
-        if let Some(path) = path.to_str() {
+        if let Some(path) = path.to_str().filter(|p| !is_absolute(p)) {
             let found = std::iter::once(normalise_path(path))
                 .chain(dirs.iter().map(|d| normalise_path(&format!("{d}/{path}"))))
                 .flatten()
@@ -837,7 +856,14 @@ fn cannot_import(import: &Input, supplied: &BTreeMap<String, String>) -> Pipelin
     } else {
         format!(
             "Only the files supplied ({}) and the libraries embedded in eucalypt ({libraries}) can be imported here.",
-            supplied.keys().cloned().collect::<Vec<_>>().join(", ")
+            {
+                const SHOWN: usize = 10;
+                let mut shown = supplied.keys().take(SHOWN).cloned().collect::<Vec<_>>();
+                if supplied.len() > SHOWN {
+                    shown.push(format!("and {} more", supplied.len() - SHOWN));
+                }
+                shown.join(", ")
+            }
         )
     };
     PipelineError {
@@ -1301,6 +1327,51 @@ x: (1"#,
     }
 
     #[test]
+    fn test_absolute_import_in_a_supplied_file_does_not_resolve() {
+        let opts = options(
+            &[
+                ("sub/a.eu", "{ import: \"/h.eu\" }\na: h"),
+                ("sub/h.eu", "h: 1"),
+            ],
+            None,
+        );
+        let err = evaluate_unit_with("{ import: \"sub/a.eu\" }\nx: a", "json", &opts).unwrap_err();
+        assert!(err.message.contains("cannot import"), "{}", err.message);
+    }
+
+    #[test]
+    fn test_a_file_may_read_itself_as_data() {
+        let opts = options(
+            &[("lib/a.eu", "{ import: \"t=text@a.eu\" }\nn: t count")],
+            None,
+        );
+        let v = json(evaluate_unit_with(
+            "{ import: \"lib/a.eu\" }\nx: n",
+            "json",
+            &opts,
+        ));
+        assert_eq!(v["x"], 2);
+    }
+
+    #[test]
+    fn test_missing_import_note_lists_at_most_ten_files() {
+        let names: Vec<String> = (0..15).map(|i| format!("f{i:02}.eu")).collect();
+        let files: Vec<(&str, &str)> = names.iter().map(|n| (n.as_str(), "x: 1")).collect();
+        let err = evaluate_unit_with(
+            "{ import: \"none.eu\" }\nx: 1",
+            "json",
+            &options(&files, None),
+        )
+        .unwrap_err();
+        let note = &err.notes.unwrap()[0];
+        assert!(
+            note.contains("f09.eu") && !note.contains("f10.eu"),
+            "{note}"
+        );
+        assert!(note.contains("and 5 more"), "{note}");
+    }
+
+    #[test]
     fn test_nested_import_resolves_relative_to_importer() {
         let opts = options(
             &[
@@ -1411,6 +1482,10 @@ x: (1"#,
             .unwrap();
         assert_eq!(o.max_steps(), 9);
         assert_eq!(o.files().keys().collect::<Vec<_>>(), vec!["b.eu"]);
+        let o = EvalOptions::from_json(r#"{"files": null, "max_steps": null}"#).unwrap();
+        assert!(o.files().is_empty());
+        let o = EvalOptions::from_json(r#"{"files": {"a:b.txt": "x"}}"#).unwrap();
+        assert_eq!(o.files().keys().collect::<Vec<_>>(), vec!["a:b.txt"]);
     }
 
     #[test]
@@ -1426,6 +1501,9 @@ x: (1"#,
             r#"{"files": {"./<input>": ""}}"#,
             r#"{"files": {"/abs.eu": ""}}"#,
             r#"{"files": {"C:/abs.eu": ""}}"#,
+            r#"{"files": {"resource:lens": ""}}"#,
+            r#"{"files": {"prelude": ""}}"#,
+            r#"{"files": {"./build-meta.yaml": ""}}"#,
             "not json",
         ] {
             let err = EvalOptions::from_json(bad).unwrap_err();

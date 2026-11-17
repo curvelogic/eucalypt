@@ -16,10 +16,14 @@
 //!   ```
 //!
 //!   `files` are files that `import` resolves against, by relative path
-//!   (`.` and `..` resolved; an absolute path or `<input>` is refused),
-//!   before the embedded libraries (`lens.eu`, `state.eu`, ...). As in the
-//!   CLI, an import resolves as written, then relative to the directory of
-//!   each importing file, outermost first. One written import that would
+//!   (`.` and `..` resolved; an absolute path, and the names embedded code
+//!   uses in error locations — `<input>`, `prelude`, `build-meta.yaml`,
+//!   `resource:...` — are refused), before the embedded libraries
+//!   (`lens.eu`, `state.eu`, ...); as in the CLI, a supplied `lens.eu` also
+//!   replaces it where another embedded library imports it. An absolute
+//!   import never reaches a supplied file. As in the CLI, an import
+//!   resolves as written, then relative to the directory of each importing
+//!   file, outermost first. One written import that would
 //!   reach two different files is an error, as is an import cycle. Other
 //!   formats are read as data by extension or by an explicit format
 //!   (`text@input.txt`). `max_steps` is the step limit (default
