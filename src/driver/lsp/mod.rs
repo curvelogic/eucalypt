@@ -1247,7 +1247,6 @@ fn run_pipeline(
     text: &str,
     path: Option<&std::path::Path>,
 ) -> Result<PipelineCacheEntry, PipelineError> {
-    use crate::core::typecheck::check::type_check_full;
     use crate::driver::source::SourceLoader;
     use crate::syntax::input::{Input, Locator};
 
@@ -1368,27 +1367,25 @@ fn run_pipeline(
     // Inline hash: proxy (inline pass runs next; no separate call here).
     let inline_hash = eliminate_hash;
 
-    // Deprecation references must be collected from the pruned core, as the
-    // `eu check` driver does, so that the quick-fix can fire in an editor.
-    // Keep only references located in the open document: diagnostics and
-    // quick-fixes are positioned against its text, so a reference inside an
-    // import (or the prelude) would land on unrelated source.
-    let deprecation_warnings: Vec<_> =
-        crate::core::verify::deprecation::check_deprecated_references(
-            &loader.core().expr,
-            &loader.core().deprecations,
-        )
-        .into_iter()
-        .filter(|w| {
-            loader
-                .source_map()
-                .source_info_for_smid(w.smid)
-                .is_some_and(|info| info.file == doc_file_id)
-        })
-        .collect();
-    let core_expr = loader.core().expr.clone();
-    let mut result = type_check_full(&core_expr);
-    result.warnings.extend(deprecation_warnings);
+    // Deprecation and type warnings through the shared helper `eu check`
+    // also uses (here in `Full` mode, for types, lambda parameters and
+    // aliases), so that the deprecation quick-fix can fire in an editor.
+    let mut result = crate::driver::check::type_check_loaded_core(
+        &loader,
+        crate::driver::check::CoreCheckMode::Full,
+    );
+    // Publish only warnings located in the open document: diagnostics and
+    // quick-fixes are positioned against its text, so a warning inside an
+    // import (or the prelude) would land on unrelated source.  A warning
+    // of either kind with no file location is kept and shown at the
+    // document's start, since it cannot be shown to belong elsewhere.
+    result.warnings.retain(|w| {
+        loader
+            .source_map()
+            .source_info_for_smid(w.smid)
+            .and_then(|info| info.file)
+            .is_none_or(|file| Some(file) == doc_file_id)
+    });
 
     // Type-check hash: derived from the actual output (warnings + binding names)
     // so that a refactoring that preserves types produces the same hash even
@@ -1525,6 +1522,39 @@ mod tests {
                 .all(|w| !w.message.contains("str.fmt")),
             "import-located deprecation leaked: {:?}",
             session.pipeline_warnings()
+        );
+    }
+
+    /// A type warning located in an imported file must not be published on
+    /// the open document, while one in the document itself still is
+    /// (eu-oaz72.166).
+    #[test]
+    fn run_pipeline_ignores_type_warnings_in_imports() {
+        let dir = std::env::temp_dir().join(format!("eu_lsp_type_import_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("lib.eu"), "imported-bad: str.len(5)\n").unwrap();
+        let main = dir.join("main.eu");
+        let mut session = testing::LspTestSession::new();
+        session.set_uri(&format!("file://{}", main.display()));
+        session
+            .run_pipeline("{ import: \"lib.eu\" }\nresult: imported-bad\nlocal-bad: str.len(6)\n");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(session.has_cached(), "pipeline should succeed");
+        let diagnostics = session.type_diagnostics();
+        let mismatches: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.message.contains("does not match"))
+            .collect();
+        assert_eq!(
+            mismatches.len(),
+            1,
+            "expected only the document's own mismatch, got {diagnostics:?}"
+        );
+        let start = mismatches[0].range.start;
+        assert_eq!(
+            (start.line, start.character),
+            (2, 19),
+            "mismatch should sit on `6` in `local-bad`"
         );
     }
 
