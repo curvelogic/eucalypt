@@ -1,0 +1,3 @@
+# Idiomatic code must be clean under `eu check --strict` (eu-oaz72.168).
+# interleave accepts lists of differing element types.
+mixed: interleave([1, 2, 3], [:a, :b])
