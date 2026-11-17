@@ -21,8 +21,8 @@ rust-panic: no
 error: merge-intervals bound 2.5 must be an integer
   ┌─ tests/harness/errors/339_non_integer_merge_intervals.eu:2:4
   │
-2 │ x: merge-intervals([[1, 2.5], [3, 4]])
-  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2 │ x: merge-intervals[[1, 2.5], [3, 4]]
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
     - x at 339_non_integer_merge_intervals.eu:2:4

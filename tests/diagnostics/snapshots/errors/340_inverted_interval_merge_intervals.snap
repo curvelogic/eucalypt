@@ -21,8 +21,8 @@ rust-panic: no
 error: merge-intervals interval [5, 1] is inverted: lo must not exceed hi
   ┌─ tests/harness/errors/340_inverted_interval_merge_intervals.eu:2:4
   │
-2 │ x: merge-intervals([[5, 1], [2, 3]])
-  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2 │ x: merge-intervals[[5, 1], [2, 3]]
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
     - x at 340_inverted_interval_merge_intervals.eu:2:4

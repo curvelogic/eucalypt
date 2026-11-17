@@ -1,2 +1,2 @@
 ` "merge-intervals: inverted interval is an error"
-x: merge-intervals([[5, 1], [2, 3]])
+x: merge-intervals[[5, 1], [2, 3]]

@@ -5361,6 +5361,12 @@ pub fn test_error_341_non_number_merge_intervals() {
     run_error_test(&error_opts("341_non_number_merge_intervals.eu"));
 }
 
+/// A list bound to `merge-intervals` is an error naming it (eu-oaz72.26, decision 53).
+#[test]
+pub fn test_error_342_list_bound_merge_intervals() {
+    run_error_test(&error_opts("342_list_bound_merge_intervals.eu"));
+}
+
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).
 #[test]
 pub fn test_error_336_non_integer_combinations() {

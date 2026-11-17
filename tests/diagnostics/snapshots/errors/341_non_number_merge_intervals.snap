@@ -19,18 +19,18 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 warning: type mismatch calling 'merge-intervals'
-  ┌─ tests/harness/errors/341_non_number_merge_intervals.eu:2:20
+  ┌─ tests/harness/errors/341_non_number_merge_intervals.eu:2:19
   │
-2 │ x: merge-intervals([["a", 3]])
-  │                    ^^^^^^^^^^ expected [[number]], found [("a", number)]
+2 │ x: merge-intervals[["a", 3]]
+  │                   ^^^^^^^^^^ expected [[number]], found [("a", number)]
 
-error: merge-intervals bound a must be a number
+error: merge-intervals bound must be a number
   ┌─ tests/harness/errors/341_non_number_merge_intervals.eu:2:4
   │
-2 │ x: merge-intervals([["a", 3]])
-  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  │                    │
-  │                    expected [[number]], found [("a", number)]
+2 │ x: merge-intervals[["a", 3]]
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  │                   │
+  │                   expected [[number]], found [("a", number)]
   │
   = while evaluating (outermost first):
     - x at 341_non_number_merge_intervals.eu:2:4

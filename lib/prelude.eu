@@ -1790,7 +1790,7 @@ __check-interval([lo, hi], v): __check-bound(lo, __check-bound(hi, (lo > hi) the
 
 ` { doc: "`__check-bound(b, v)` - internal: `v`, or an error naming `merge-intervals` when `b` is not an integer."
     export: :suppress }
-__check-bound(b, v): (b number?) then(__require-int("merge-intervals bound", b, v), panic("merge-intervals bound {b} must be a number"))
+__check-bound(b, v): (b number?) then(__require-int("merge-intervals bound", b, v), panic("merge-intervals bound must be a number"))
 
 ` { doc: "`__merge-sorted(s)` - internal: merge the intervals `s`, already sorted by `lo`."
     export: :suppress }

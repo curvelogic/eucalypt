@@ -1,2 +1,2 @@
 ` "merge-intervals: non-number bound is an error"
-x: merge-intervals([["a", 3]])
+x: merge-intervals[["a", 3]]
