@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: negative array index or dimension: -9223372036854775808 — array indices and dimensions must be non-negative
+error: arr.slice index -9223372036854775808 must be non-negative
   ┌─ tests/harness/errors/308_array_negative_large.eu:2:40
   │
 2 │ r: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.slice(0, 0 - (2.0 ^ 63))

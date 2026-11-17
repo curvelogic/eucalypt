@@ -791,21 +791,21 @@ impl HeapState {
 
     /// Create and return a new large object block able to store data
     /// of the specified size. Tries to reuse recycled blocks first.
-    pub fn lob(&mut self, size: usize) -> &mut LargeObjectBlock {
-        self.lines_since_gc += size.div_ceil(LINE_SIZE_BYTES);
+    ///
+    /// `None` if a new block is needed and the system allocator cannot
+    /// provide it: the caller reports an error rather than the process
+    /// aborting (eu-oaz72.99, eu-oaz72.101).
+    pub fn lob(&mut self, size: usize) -> Option<&mut LargeObjectBlock> {
         // First, try to find a recycled block that can fit this allocation
-        if let Some(recycled_block) = self.find_suitable_recycled_lob(size) {
-            self.lob_bytes_in_use += recycled_block.allocated_size();
-            self.lobs.push(recycled_block);
-        } else {
+        let lob = match self.find_suitable_recycled_lob(size) {
+            Some(recycled_block) => recycled_block,
             // No suitable recycled block, create a new one
-            let lob = LargeObjectBlock::new(size);
-            self.lob_bytes_in_use += lob.allocated_size();
-            self.lobs.push(lob);
-        }
-        self.lobs
-            .last_mut()
-            .expect("lob was just pushed to non-empty list")
+            None => LargeObjectBlock::try_new(size)?,
+        };
+        self.lines_since_gc += size.div_ceil(LINE_SIZE_BYTES);
+        self.lob_bytes_in_use += lob.allocated_size();
+        self.lobs.push(lob);
+        self.lobs.last_mut()
     }
 
     /// Find and remove a suitable recycled large object block for the given size
@@ -3166,10 +3166,10 @@ impl Heap {
         let head = heap_state.head();
 
         let space = match SizeClass::for_size(size_bytes) {
-            SizeClass::Large => {
-                let lob = heap_state.lob(size_bytes);
-                lob.space()
-            }
+            SizeClass::Large => match heap_state.lob(size_bytes) {
+                Some(lob) => lob.space(),
+                None => return Err(self.block_allocation_failed_error(size_bytes)),
+            },
             SizeClass::Medium if size_bytes > head.current_hole_size() => heap_state
                 .overflow()
                 .bump(size_bytes)
@@ -3319,6 +3319,14 @@ impl Heap {
             overflow_utilisation_percent,
             emergency_collections_attempted: emergency_attempted,
             heap_limit: self.limit,
+        }
+    }
+
+    /// Create contextual BlockAllocationFailed error, for when the
+    /// system allocator refuses a block
+    fn block_allocation_failed_error(&self, requested_size: usize) -> HeapError {
+        HeapError::BlockAllocationFailed {
+            context: self.create_heap_context(requested_size, false),
         }
     }
 
@@ -4483,7 +4491,7 @@ pub mod tests {
         let mut state = HeapState::new();
         let mark_state = true;
         let write_header = |state: &mut HeapState, marked: bool| {
-            let lob = state.lob(40 * 1024);
+            let lob = state.lob(40 * 1024).unwrap();
             let mut header = AllocHeader::new_with_mark_state(40 * 1024 - 16, mark_state);
             if marked {
                 header.mark_with_state(mark_state);
@@ -4514,7 +4522,7 @@ pub mod tests {
         assert_eq!(state.recycled_lobs.len(), 0);
 
         // Allocate a large object
-        let _lob1 = state.lob(100 * 1024);
+        let _lob1 = state.lob(100 * 1024).unwrap();
         assert_eq!(state.lobs.len(), 1);
 
         // Simulate recycling (normally done during GC)
@@ -4524,7 +4532,7 @@ pub mod tests {
         assert_eq!(state.recycled_lobs.len(), 1);
 
         // Allocate another large object of similar size - should reuse recycled block
-        let _lob2 = state.lob(90 * 1024);
+        let _lob2 = state.lob(90 * 1024).unwrap();
         assert_eq!(state.lobs.len(), 1);
         assert_eq!(state.recycled_lobs.len(), 0); // Should have consumed recycled block
     }
@@ -4535,9 +4543,9 @@ pub mod tests {
         let state = unsafe { &mut *heap.state.get() };
 
         // Create and recycle blocks of different sizes
-        let small_lob = LargeObjectBlock::new(50 * 1024); // ~64KB allocation
-        let medium_lob = LargeObjectBlock::new(100 * 1024); // ~112KB allocation
-        let large_lob = LargeObjectBlock::new(200 * 1024); // ~256KB allocation
+        let small_lob = LargeObjectBlock::try_new(50 * 1024).unwrap(); // ~64KB allocation
+        let medium_lob = LargeObjectBlock::try_new(100 * 1024).unwrap(); // ~112KB allocation
+        let large_lob = LargeObjectBlock::try_new(200 * 1024).unwrap(); // ~256KB allocation
 
         state.recycle_lob(large_lob);
         state.recycle_lob(small_lob);
@@ -4545,7 +4553,7 @@ pub mod tests {
         assert_eq!(state.recycled_lobs.len(), 3);
 
         // Request 90KB - should get the medium block (best fit)
-        let _allocated = state.lob(90 * 1024);
+        let _allocated = state.lob(90 * 1024).unwrap();
         assert_eq!(state.recycled_lobs.len(), 2); // Medium block should be consumed
 
         // Verify the remaining blocks are small and large
@@ -4647,8 +4655,42 @@ pub mod tests {
         let heap = Heap::new();
         let state = unsafe { &mut *heap.state.get() };
         let before = state.lines_since_gc;
-        state.lob(3 * BLOCK_SIZE_BYTES + 1);
+        state.lob(3 * BLOCK_SIZE_BYTES + 1).unwrap();
         assert_eq!(state.lines_since_gc - before, 3 * LINE_COUNT + 1);
+    }
+
+    /// A large object the system allocator cannot provide is a
+    /// `BlockAllocationFailed` error (an `ExecutionError` once converted),
+    /// not a process abort, and leaves the heap's accounting untouched
+    /// (eu-oaz72.99, eu-oaz72.101). No .eu program can make the allocator
+    /// fail reliably, so a size no layout can describe stands in for it.
+    #[test]
+    fn test_large_object_allocation_failure_is_an_error() {
+        let heap = Heap::new();
+        // Prime the head block, so that only the failed request is measured.
+        heap.try_allocate(16).unwrap();
+        let (lines_before, lobs_before, bytes_before) = {
+            let state = unsafe { &*heap.state.get() };
+            (
+                state.lines_since_gc,
+                state.lobs.len(),
+                state.lob_bytes_in_use,
+            )
+        };
+        let size = isize::MAX as usize;
+        assert!(matches!(
+            heap.try_allocate(size),
+            Err(HeapError::BlockAllocationFailed { .. })
+        ));
+        let state = unsafe { &*heap.state.get() };
+        assert_eq!(state.lines_since_gc, lines_before);
+        assert_eq!(state.lobs.len(), lobs_before);
+        assert_eq!(state.lob_bytes_in_use, bytes_before);
+        let err: crate::eval::error::ExecutionError = heap.try_allocate(size).unwrap_err().into();
+        assert!(matches!(
+            err,
+            crate::eval::error::ExecutionError::AllocationError
+        ));
     }
 
     #[test]
@@ -4658,7 +4700,7 @@ pub mod tests {
 
         // Try to recycle more than the limit (16)
         for _ in 0..20 {
-            let lob = LargeObjectBlock::new(50 * 1024);
+            let lob = LargeObjectBlock::try_new(50 * 1024).unwrap();
             state.recycle_lob(lob);
         }
 

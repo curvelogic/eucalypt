@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/348_array_neighbours_non_integer_offset
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/348_array_neighbours_non_integer_offset.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/348_array_neighbours_non_integer_offset.eu:2:37
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: arr.neighbours offset 0.5 must be an integer
+  ┌─ tests/harness/errors/348_array_neighbours_non_integer_offset.eu:2:37
+  │
+2 │ r: arr.from-flat([3], [10, 20, 30]) arr.neighbours([1], [[0.5]])
+  │                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │                                     │
+  │                                     called from here
+  │
+  = while evaluating (outermost first):
+    - r at 348_array_neighbours_non_integer_offset.eu:2:37

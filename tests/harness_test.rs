@@ -5320,6 +5320,25 @@ pub fn test_error_277_array_slice_non_integer() {
     run_error_test(&error_opts("277_array_slice_non_integer.eu"));
 }
 
+/// `arr.neighbours` offsets are not truncated (eu-oaz72.97).
+#[test]
+pub fn test_error_348_array_neighbours_non_integer_offset() {
+    run_error_test(&error_opts("348_array_neighbours_non_integer_offset.eu"));
+}
+
+/// A negative array coordinate error names the function (eu-oaz72.97).
+#[test]
+pub fn test_error_349_array_get_negative() {
+    run_error_test(&error_opts("349_array_get_negative.eu"));
+}
+
+/// An empty shape with too many sub-arrays is rejected at construction
+/// rather than rendering endlessly (eu-oaz72.99).
+#[test]
+pub fn test_error_350_array_empty_shape_too_large() {
+    run_error_test(&error_opts("350_array_empty_shape_too_large.eu"));
+}
+
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
 pub fn test_error_275_non_integer_take() {
