@@ -1620,6 +1620,26 @@ _0✓ && count(_0) >= 4    # λ(a). a != null && count(a) >= 4
 Without the outer `_0✓`, the `_0` inside `count(_0)` would form a
 separate lambda at the ArgTuple level.
 
+### 5.24 A Loop With a Lazy Accumulator Uses O(n) Stack
+
+When a loop's step is a *parameter*, the accumulator stays lazy and builds a
+chain `f(f(f(x)))` forced at the end: about 2M stack frames at 1e6 steps. A
+named step does not have this problem. Force the accumulator with `seq`, or
+use `iterate`, which is strict:
+
+```eu,notest
+times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))              # O(n) stack
+```
+
+```eu
+times(f, n, x): (n = 0) then(x, seq(x, times(f, n - 1, f(x))))      # constant stack
+
+a: times(+ 3, 1000, 0) //=> 3000
+b: iterate(+ 3, 0) nth(1000) //=> 3000                              # constant stack
+```
+
+See the [Advent of Code cookbook](../guide/advent-of-code.md#loops-with-a-lazy-accumulator).
+
 ---
 
 ## 6. Quick CLI Reference
