@@ -4740,6 +4740,19 @@ pub fn test_typecheck_134_identity_monad_derived_no_warning() {
     run_typecheck_test("134_identity_monad_derived_no_warning.eu");
 }
 
+/// A list-destructuring parameter with a block element is not a block
+/// parameter: the valid call checks clean (eu-oaz72.172).
+#[test]
+pub fn test_typecheck_136_list_block_param_no_warning() {
+    run_typecheck_test("136_list_block_param_no_warning.eu");
+}
+
+/// Block-param detection through a nested let still warns on a non-block.
+#[test]
+pub fn test_typecheck_137_block_param_nested_projection_warns() {
+    run_typecheck_test("137_block_param_nested_projection_warns.eu");
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]

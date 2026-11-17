@@ -671,6 +671,10 @@ jobs:
 
   prepare-release:
     runs-on: ubuntu-latest
+    # Needed by softprops/action-gh-release to create or update the draft
+    # release; job-scoped so no other job gains write access.
+    permissions:
+      contents: write
     if: github.ref == 'refs/heads/master'
     needs:
       - release-candidate-linux
