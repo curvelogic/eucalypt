@@ -1,27 +1,13 @@
 {
-  title: "336 list split-on: results and linear cost"
+  title: "336 list split-on stays linear"
   doc: "eu-oaz72.192: `split-on(pred, xs)` rebuilt its groups with `++`,
         `butlast` and `last` on every element, so its cost was quadratic in
         the length of `xs` (seconds at a few thousand elements). It now
-        conses onto reversed accumulators. The `test` target pins its
-        results, including the empty groups; `scaling` is held to a tick
-        budget per element that the quadratic version exceeds many times
-        over."
-}
-
-` { target: :test }
-test: {
-  empty: ([] split-on(zero?)) = [[]]
-  no-match: ([1, 2] split-on(zero?)) = [[1, 2]]
-  middle: ([1, 2, 0, 3, 0, 0, 4] split-on(zero?)) = [[1, 2], [3], [], [4]]
-  leading: ([0, 1] split-on(zero?)) = [[], [1]]
-  trailing: ([1, 0] split-on(zero?)) = [[1], []]
-  all-match: ([0, 0] split-on(zero?)) = [[], [], []]
-  lines: (["a", "", "b", "c", ""] split-on(= "")) = [["a"], ["b", "c"], []]
-  order: (range(0, 10) split-on({ i: • }.((i % 4) = 3))) = [[0, 1, 2], [4, 5, 6], [8, 9]]
-
-  RESULT: [empty, no-match, middle, leading, trailing, all-match, lines, order]
-    all-true? then(:PASS, :FAIL)
+        conses onto reversed accumulators. The `scaling` target is held to
+        a tick budget per element that the quadratic version exceeds about
+        100-fold; this needs a target of its own for its stats, so it is
+        not in 010_prelude.eu, where the results are pinned
+        (`split-on-tests`)."
 }
 
 n: 4000
