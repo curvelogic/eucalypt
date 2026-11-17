@@ -78,4 +78,12 @@ impl Resources {
     pub fn get<S: AsRef<str>>(&self, name: S) -> Option<&String> {
         self.content.get(name.as_ref())
     }
+
+    /// Replace the resource `name`, so that a test can load an altered
+    /// copy of an embedded library (the prelude, say) through the same
+    /// path as the real one.
+    #[cfg(test)]
+    pub(crate) fn insert<S: Into<String>>(&mut self, name: S, text: String) {
+        self.content.insert(name.into(), text);
+    }
 }

@@ -13,6 +13,7 @@ use crate::core::simplify::prune;
 use crate::core::transform::fuse;
 use crate::core::transform::hoist;
 use crate::core::unit::TranslationUnit;
+use crate::core::verify::closed::verify_prelude_closed;
 use crate::core::verify::content;
 use crate::driver::error::EucalyptError;
 use crate::driver::resources::Resources;
@@ -839,6 +840,12 @@ impl SourceLoader {
         // Persist any newly registered monad namespaces and types for later units.
         self.unit_interface
             .drain_desugarer_monad_registries(&mut desugarer);
+        // The built-in prelude must not use a name it does not define, as
+        // `cargo xtask prelude-compile` requires: pruning would otherwise
+        // hide one from this source path (eu-oaz72.125).
+        if *input.locator() == Locator::Resource("prelude".to_string()) {
+            verify_prelude_closed(&unit.expr)?;
+        }
         self.translation_units.insert(input.clone(), unit);
         Ok(&self.translation_units[input])
     }
@@ -1527,6 +1534,36 @@ pub mod tests {
         let prelude = Locator::Resource("prelude".to_string());
         let _id = loader.load_tree(&Input::from(prelude.clone())).unwrap();
         let _ast = loader.ast(&prelude);
+    }
+
+    /// Translate the built-in prelude resource, with `extra` appended to
+    /// its source, as the source-prelude path does.
+    fn translate_prelude_with(extra: &str) -> Result<(), EucalyptError> {
+        let mut loader = SourceLoader::default();
+        let source = loader.resources.get("prelude").unwrap().clone();
+        loader
+            .resources
+            .insert("prelude", format!("{source}\n{extra}"));
+        let prelude = Input::from(Locator::Resource("prelude".to_string()));
+        loader.load(&prelude)?;
+        loader.translate(&prelude).map(|_| ())
+    }
+
+    /// A plain string does not process `\"`, so a prelude doc string
+    /// written with it ends at the `\` and leaves stray names behind.
+    /// `cargo xtask prelude-compile` rejects that (see the matching test
+    /// in `xtask/src/main.rs`); the source path must too, rather than
+    /// letting pruning hide it (eu-oaz72.125).
+    #[test]
+    fn source_prelude_rejects_doc_string_with_escaped_quote() {
+        translate_prelude_with("` { doc: \"ok\" }\ndoc-probe: __NULL\n")
+            .expect("a well-formed doc string is accepted");
+        match translate_prelude_with("` { doc: \"say \\\"hi\\\" now\" }\ndoc-probe: __NULL\n") {
+            Err(EucalyptError::Core(CoreError::UnresolvedVariable(_, name))) => {
+                assert_eq!(name, "hi")
+            }
+            other => panic!("expected an unresolved variable error, got {other:?}"),
+        }
     }
 
     /// When `import: "test.eu"` is used and no `test.eu` file exists on disk,
