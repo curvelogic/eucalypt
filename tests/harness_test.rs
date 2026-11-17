@@ -5749,6 +5749,16 @@ pub fn test_error_347_missing_prelude_path() {
 }
 
 #[test]
+pub fn test_error_351_mixed_width_overflow() {
+    run_error_test(&error_opts("351_mixed_width_overflow.eu"));
+}
+
+#[test]
+pub fn test_error_352_dict_update_strict_evaluates() {
+    run_error_test(&error_opts("352_dict_update_strict_evaluates.eu"));
+}
+
+#[test]
 pub fn test_error_332_scanl_applies_op_at_cell() {
     run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
 }

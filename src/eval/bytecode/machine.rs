@@ -6848,6 +6848,19 @@ mod tests {
     /// Build a set, a vec and an n-d array whose storage is spread across
     /// heap blocks (string elements interleaved with unrooted fillers), with
     /// the containers reachable only through a bif frame.
+    /// The `i`th number element of the native-container fixtures: an
+    /// `Int`, a `UInt` (above `i64::MAX`) or a `Float` in turn, so every
+    /// exact-number representation is carried across a collection. All
+    /// distinct.
+    fn fixture_num(i: usize) -> crate::eval::memory::number::ExactNum {
+        use crate::eval::memory::number::ExactNum;
+        match i % 3 {
+            0 => ExactNum::Int(i as i64),
+            1 => ExactNum::UInt(u64::MAX - i as u64),
+            _ => ExactNum::from(i as f64 + 0.5),
+        }
+    }
+
     fn native_containers_fixture(heap: &Heap) -> NativeContainers {
         use crate::eval::memory::dict::Dict;
         use crate::eval::memory::ndarray::HeapNdArray;
@@ -6865,7 +6878,7 @@ mod tests {
                 .unwrap()
                 .as_ptr();
             elems.push(Primitive::Str(s));
-            elems.push(Primitive::Num((i as f64).into()));
+            elems.push(Primitive::Num(fixture_num(i)));
             for _ in 0..128 {
                 view.alloc(HeapString::from_str(&view, "filler-0123456789abcdef"))
                     .unwrap();
@@ -6923,7 +6936,10 @@ mod tests {
                 Some(format!("elem-{i:03}").as_str()),
                 "vec string element {i} lost across GC"
             );
-            assert!(matches!(v.get(2 * i + 1), Some(Primitive::Num(n)) if n.as_f64() == i as f64));
+            assert!(
+                matches!(v.get(2 * i + 1), Some(Primitive::Num(n)) if n == fixture_num(i)),
+                "vec number element {i} lost across GC"
+            );
         }
         let s = view.scoped(set);
         assert_eq!(s.len(), 128);
@@ -6931,6 +6947,25 @@ mod tests {
         let d = crate::eval::memory::dict::Dict::new(view, &pool);
         d.check_invariants(s.root())
             .expect("set tree intact across GC");
+        let mut expected: Vec<_> = (0..64).map(fixture_num).collect();
+        expected.sort();
+        let got: Vec<_> = s.elements(&d)[..64]
+            .iter()
+            .map(|e| match e {
+                crate::eval::memory::dict::DictKey::Num(n) => *n,
+                other => panic!("set element {other:?} should be a number"),
+            })
+            .collect();
+        assert_eq!(got.len(), expected.len());
+        for (g, e) in got.iter().zip(&expected) {
+            // Same value and same representation (Int, UInt or Float).
+            assert_eq!(g, e, "set number element lost across GC");
+            assert_eq!(
+                std::mem::discriminant(g),
+                std::mem::discriminant(e),
+                "set number element changed representation across GC"
+            );
+        }
         for (i, e) in s.elements(&d)[64..].iter().enumerate() {
             assert_eq!(
                 e.str_in(&view),
@@ -7136,9 +7171,7 @@ mod tests {
         let root = {
             let view = MutatorHeapView::new(&heap);
             let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
-            let elems: Vec<Primitive> = (0..1000)
-                .map(|i| Primitive::Num((i as f64).into()))
-                .collect();
+            let elems: Vec<Primitive> = (0..1000).map(|i| Primitive::Num(fixture_num(i))).collect();
             let pool = SymbolPool::new();
             let d = Dict::new(view, &pool);
             for _ in 0..200 {

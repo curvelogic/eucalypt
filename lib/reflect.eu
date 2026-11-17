@@ -55,13 +55,19 @@ type-str(td):
         inner: (rec elements nil?) ∧ open? then("..", "{body}{tail}")
       }."{lbrace}{inner}{rbrace}"
 
+    # `dict(k, v)` projects to [:t-app, [:t-app, [:t-con, :dict], k], v].
+    dict-key-of(f): ((f first) = :t-app) ∧ ((f second) = [:t-con, :dict]) then(f !! 2, null)
+
     app-str(f, x):
       { x-str: to-str(x)
         f-str: to-str(f)
+        k: dict-key-of(f)
+        k-str: to-str(k)
       }.(cond[
           f = [:t-con, :IO]       => "IO({x-str})"
         , f = [:t-con, :Dict]     => "Dict({x-str})"
         , f = [:t-con, :NonEmpty] => "NonEmpty([{x-str}])"
+        , k != null               => "dict({k-str}, {x-str})"
         , "{f-str} {x-str}"
         ])
 

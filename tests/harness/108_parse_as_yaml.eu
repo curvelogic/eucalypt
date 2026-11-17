@@ -4,9 +4,20 @@
 yaml-str: render-as(:yaml, {x: 10, y: 20})
 data: yaml-str parse-as(:yaml)
 
+` "the value of key `a` in YAML text `s`, as a string, so an int and a float differ"
+a-of(s): (s parse-as(:yaml)).a str.of
+
 tests: {
   key-x: data.x //= 10
   key-y: data.y //= 20
+  leading-zero: a-of("a: 07") //= "7"
+  leading-zero-8: a-of("a: 08") //= "8"
+  leading-zero-neg: a-of("a: -07") //= "-7"
+  plus-sign: a-of("a: +7") //= "7"
+  octal: a-of("a: 0o17") //= "15"
+  hex: a-of("a: 0x1F") //= "31"
+  quoted-stays-string: (c"a: \"07\"" parse-as(:yaml)).a //= "07"
+  bare-point: a-of("a: .5") //= "0.5"
 }
 
 RESULT: tests values all-true? then(:PASS, :FAIL)

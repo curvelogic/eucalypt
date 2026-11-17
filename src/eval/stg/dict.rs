@@ -413,7 +413,8 @@ impl StgIntrinsic for DictGetOr {
 impl CallGlobal3 for DictGetOr {}
 
 /// DICT.ASSOC(k, v, d) — `d` with `k` mapped to the (lazy) value `v`. An
-/// equal key already present is kept; only its value is replaced.
+/// equal key already present is kept (unless `k` is its integer form, see
+/// `Dict::canonical_key`); its value is replaced.
 pub struct DictAssoc;
 
 impl StgIntrinsic for DictAssoc {
