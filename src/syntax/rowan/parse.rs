@@ -99,15 +99,21 @@ impl<'text> Parser<'text> {
     /// Used for reporting errors that span two adjacent tokens (e.g. `::` is two COLON tokens).
     fn prev_and_next_range(&self) -> TextRange {
         let mut ch: TextSize = 0.into();
-        let start_token = self.next_token.saturating_sub(1);
+        let len = self.tokens.len();
+        let start_token = self.next_token.saturating_sub(1).min(len);
         for (_, s) in &self.tokens[0..start_token] {
             ch += TextSize::of(*s);
         }
         let start = ch;
-        // span from prev token start to end of next token
-        ch += TextSize::of(self.tokens[start_token].1);
-        if self.next_token < self.tokens.len() {
-            ch += TextSize::of(self.tokens[self.next_token].1);
+        // span from prev token start to end of next token (either may be
+        // absent at the edges of the token stream)
+        if let Some((_, s)) = self.tokens.get(start_token) {
+            ch += TextSize::of(*s);
+        }
+        if let Some((_, s)) = self.tokens.get(self.next_token) {
+            if self.next_token != start_token {
+                ch += TextSize::of(*s);
+            }
         }
         TextRange::new(start, ch)
     }
@@ -123,10 +129,13 @@ impl<'text> Parser<'text> {
 
     /// Return the byte length of the most recently consumed token.
     ///
-    /// Panics if no token has been consumed yet (`next_token == 0`).
+    /// Returns zero if no token has been consumed yet (`next_token == 0`) or
+    /// the cursor is past the end of the token stream.
     fn prev_token_len(&self) -> TextSize {
-        debug_assert!(self.next_token > 0, "no token has been consumed yet");
-        TextSize::of(self.tokens[self.next_token - 1].1)
+        self.next_token
+            .checked_sub(1)
+            .and_then(|i| self.tokens.get(i))
+            .map_or_else(|| 0.into(), |(_, s)| TextSize::of(*s))
     }
 
     /// Operate on the event sink at the top of the stack
@@ -518,6 +527,7 @@ impl<'text> Parser<'text> {
             None
         };
 
+        let open_range = self.next_range();
         let is_block_mode = self.bracket_content_has_top_level_colon();
 
         if is_block_mode {
@@ -527,9 +537,8 @@ impl<'text> Parser<'text> {
             self.parse_block_content_until_bracket_close();
             self.add_trivia();
             if !self.try_accept(BRACKET_CLOSE) {
-                self.errors.push(ParseError::UnclosedBracketExpr {
-                    range: self.next_range(),
-                });
+                self.errors
+                    .push(ParseError::UnclosedBracketExpr { range: open_range });
             }
             self.sink().finish_node();
         } else {
@@ -540,9 +549,8 @@ impl<'text> Parser<'text> {
             self.add_trivia();
             self.parse_soup();
             if !self.try_accept(BRACKET_CLOSE) {
-                self.errors.push(ParseError::UnclosedBracketExpr {
-                    range: self.next_range(),
-                });
+                self.errors
+                    .push(ParseError::UnclosedBracketExpr { range: open_range });
             } else if let Some(expected) = expected_close {
                 let _ = expected; // validation deferred to validate.rs
             }
@@ -3149,26 +3157,54 @@ SOUP@0..8
         );
     }
 
-    /// Regression (eu-oaz72.2): an unclosed unicode bracket at end of file
-    /// reported its error via `next_range`, which indexed past the token
-    /// vector and panicked.  It must report `UnclosedBracketExpr` with an
-    /// empty range at the end of the text instead.
+    /// Regression (eu-oaz72.2, eu-oaz72.42): an unclosed unicode bracket at end
+    /// of file must report `UnclosedBracketExpr` (not panic), pointing at the
+    /// opening bracket, with no stray "empty expression" error.
     #[test]
     pub fn test_unclosed_unicode_bracket_at_eof() {
         use super::ParseError;
         use rowan::{TextRange, TextSize};
 
-        for text in ["«: 1", "x: «", "⟦", "x: 1 ⟦"] {
+        for (text, open) in [("«: 1", 0usize), ("x: «", 3), ("⟦", 0), ("x: 1 ⟦", 5)] {
             let parse = parse_unit(text);
-            let end = TextSize::of(text);
+            let bracket = text[open..].chars().next().unwrap();
+            let want = TextRange::at(TextSize::from(open as u32), TextSize::of(bracket));
             assert!(
                 parse.errors().iter().any(|e| matches!(
                     e,
-                    ParseError::UnclosedBracketExpr { range } if *range == TextRange::empty(end)
+                    ParseError::UnclosedBracketExpr { range } if *range == want
                 )),
-                "expected UnclosedBracketExpr at end of {text:?}, got {:?}",
+                "expected UnclosedBracketExpr at {want:?} in {text:?}, got {:?}",
                 parse.errors()
             );
+            assert!(
+                !parse
+                    .errors()
+                    .iter()
+                    .any(|e| matches!(e, ParseError::EmptyExpression { .. })),
+                "unexpected EmptyExpression in {text:?}: {:?}",
+                parse.errors()
+            );
+        }
+    }
+
+    /// eu-oaz72.42: the range helpers must be total over the token stream.
+    #[test]
+    pub fn test_range_helpers_bounds() {
+        use super::Parser;
+        for text in ["", "a", "a b"] {
+            let mut p = Parser::new(text);
+            let _ = p.prev_token_len(); // nothing consumed
+            let _ = p.prev_and_next_range();
+            let _ = p.next_range();
+            p.next_token = p.tokens.len(); // past the end
+            let _ = p.prev_token_len();
+            let r = p.prev_and_next_range();
+            assert!(u32::from(r.end()) as usize <= text.len());
+            p.next_token = p.tokens.len() + 3; // beyond the end
+            let _ = p.prev_token_len();
+            let _ = p.prev_and_next_range();
+            let _ = p.next_range();
         }
     }
 }
