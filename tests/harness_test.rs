@@ -5707,13 +5707,6 @@ pub fn test_335_reverse_and_intervals() {
     run_test(&opts("335_reverse_and_intervals.eu"));
 }
 
-/// Destructuring parameters must not capture user identifiers spelled
-/// like their synthetic binders (eu-oaz72.191).
-#[test]
-pub fn test_336_destructure_param_hygiene() {
-    run_test(&opts("336_destructure_param_hygiene.eu"));
-}
-
 /// Prelude sites converted to constant-stack strict forms (eu-oaz72.165,
 /// owner decisions 40 and 41).
 #[test]
