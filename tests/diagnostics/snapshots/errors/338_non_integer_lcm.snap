@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/336_non_integer_gcd
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/336_non_integer_gcd.eu
+fixture: errors/338_non_integer_lcm
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/338_non_integer_lcm.eu
 prelude-modes: identical
 
 === both prelude modes ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/336_non_integer_gcd.eu:2:4
+primary: user tests/harness/errors/338_non_integer_lcm.eu:2:4
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -18,11 +18,11 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: gcd argument 1.5 must be an integer
-  ┌─ tests/harness/errors/336_non_integer_gcd.eu:2:4
+error: lcm argument 2.5 must be an integer
+  ┌─ tests/harness/errors/338_non_integer_lcm.eu:2:4
   │
-2 │ x: gcd(1.5, 4)
+2 │ x: lcm(4, 2.5)
   │    ^^^^^^^^^^^
   │
   = while evaluating (outermost first):
-    - x at 336_non_integer_gcd.eu:2:4
+    - x at 338_non_integer_lcm.eu:2:4

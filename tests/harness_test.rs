@@ -4748,6 +4748,13 @@ pub fn test_typecheck_132_union_callback_param_rejects() {
     run_typecheck_test("132_union_callback_param_rejects.eu");
 }
 
+/// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
+/// must accept a mixed-type list.
+#[test]
+pub fn test_typecheck_133_aoc_helpers_strict_clean() {
+    run_typecheck_test("133_aoc_helpers_strict_clean.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).
@@ -5312,20 +5319,20 @@ pub fn test_error_275_non_integer_take() {
 
 /// A non-integer argument to `gcd` is an error (eu-oaz72.26).
 #[test]
-pub fn test_error_336_non_integer_gcd() {
-    run_error_test(&error_opts("336_non_integer_gcd.eu"));
+pub fn test_error_337_non_integer_gcd() {
+    run_error_test(&error_opts("337_non_integer_gcd.eu"));
 }
 
 /// A non-integer argument to `lcm` is an error (eu-oaz72.26).
 #[test]
-pub fn test_error_336_non_integer_lcm() {
-    run_error_test(&error_opts("336_non_integer_lcm.eu"));
+pub fn test_error_338_non_integer_lcm() {
+    run_error_test(&error_opts("338_non_integer_lcm.eu"));
 }
 
 /// A non-integer bound to `merge-intervals` is an error (eu-oaz72.26).
 #[test]
-pub fn test_error_336_non_integer_merge_intervals() {
-    run_error_test(&error_opts("336_non_integer_merge_intervals.eu"));
+pub fn test_error_339_non_integer_merge_intervals() {
+    run_error_test(&error_opts("339_non_integer_merge_intervals.eu"));
 }
 
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).
