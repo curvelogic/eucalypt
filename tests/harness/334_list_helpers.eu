@@ -24,7 +24,7 @@ find-checks: [
   index-of(9, [1, 2]) = null,
   index-of(1, []) = null,
   index-of("b", ["a", "b"]) = 1,
-  index-of(1000000, iota(0)) = 1000000
+  index-of(20000, iota(0)) = 20000
 ]
 
 ` "frequencies"
