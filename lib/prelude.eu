@@ -1900,12 +1900,13 @@ nub-by(key, xs): {
 ` "`split-on(pred, xs)` - split list `xs` into sublists, breaking on
 elements that satisfy `pred`. Matching elements are discarded."
 split-on(pred, xs): {
-  step(acc, x):
-    pred(x) then(acc ++ [[]], {
-      groups: butlast(acc)
-      current: last(acc)
-    }.(groups ++ [current ++ [x]]))
-}.(foldl(step, [[]], xs))
+  aux(ys, current, groups):
+    if(ys nil?,
+       cons(current reverse, groups) reverse,
+       if(ys head pred,
+          aux(ys tail, [], cons(current reverse, groups)),
+          aux(ys tail, cons(ys head, current), groups)))
+}.aux(xs, [], [])
 
 ` { doc: "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`."
     type: s"(a → a → bool) → [a] → [a]" }
