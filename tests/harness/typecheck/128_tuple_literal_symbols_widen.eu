@@ -1,0 +1,5 @@
+# Literal symbols inside tuples are widened when a type variable is bound
+# (eu-oaz72.127): both calls are valid and must be clean under --strict.
+xs: cons([2, :d], [[3, :c]])
+d: dict.from-pairs([[[1, :a], 1]])
+e: d dict.assoc([2, :b], 2)

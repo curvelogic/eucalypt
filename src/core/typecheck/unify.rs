@@ -530,11 +530,17 @@ fn bind_var(
     // different literal values of the same base type — e.g. `min("a", "b")`
     // would otherwise bind the type variable to `"a"` and then fail to
     // unify the second argument `"b"` against it.
-    let rhs = match rhs {
-        Type::LiteralString(_) => Type::String,
-        Type::LiteralSymbol(_) => Type::Symbol,
-        other => other,
-    };
+    // Tuples are widened component-wise, so `cons([2, :d], [[3, :c]])` does
+    // not bind the variable to `(number, :d)` (eu-oaz72.127).
+    fn widen_bound(t: Type) -> Type {
+        match t {
+            Type::LiteralString(_) => Type::String,
+            Type::LiteralSymbol(_) => Type::Symbol,
+            Type::Tuple(ts) => Type::Tuple(ts.into_iter().map(widen_bound).collect()),
+            other => other,
+        }
+    }
+    let rhs = widen_bound(rhs);
     // Kind check: the rhs must have the same kind as the variable.
     let rhs_kind = kind_of(&rhs);
     if rhs_kind != kind {
