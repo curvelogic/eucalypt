@@ -21,7 +21,7 @@ closed-thunk(n): { k: 40 + 2, r: n + k }.r
 ` "A letrec: a self-referencing and a sibling-referencing binding are not closed."
 letrec-mix(n): { go(i, acc): (i = 0) then(acc, go(i - 1, acc + i)), twice(i): go(i, 0) + go(i, 0) }.twice(n)
 
-` "A closed lambda whose body cases on a list: branch fields are local."
+` "A self-recursive lambda (so not itself closed) whose body cases on a list: exercises branch-field slots alongside a LetRec self-reference."
 sum-list(xs): { s(l, a): l nil? then(a, s(tail(l), a + head(l))) }.s(xs, 0)
 
 ` "Inlined `head` expands to a case with Cons/Nil branches and a fallback inside a closed lambda."
@@ -45,7 +45,7 @@ nested-outer(n): { outer(a): { inner(b): a + b }.inner(10) }.outer(n)
 ` "A nested closed lambda inside a closed lambda inside a lambda that captures."
 deep(n): { g(a): { h(b): { k(c): c + 1 }.k(b) + a }.h(a) }.g(n)
 
-` "Outer locals read from inside case branches, the fallback and a block pattern."
+` "An outer local read from inside case branches (the list case and its fallback)."
 branch-outer(a): { f(l): l nil? then(a, head(l) + a) }.f[1]
 
 ` "A fallback (non-list scrutinee) referencing an outer local."
@@ -57,7 +57,7 @@ block-outer(n): { blk: { x: 1, y: 2 }, f(v): v.x + v.y + n, r: f(blk) }.r
 ` "List destructuring parameter whose body reads an outer local."
 list-outer(a): { f[h : t]: h + a }.f[1, 2]
 
-` "Metadata read inside a closed lambda that also reads an outer local."
+` "Metadata read inside a lambda that also reads an outer local (so not closed)."
 meta-outer(a): { f(v): (meta(v) = {}) then(a, 0) }.f{ z: 1 }
 
 ` { target: :test-values }
