@@ -5322,6 +5322,12 @@ pub fn test_error_301_non_integer_lcm() {
     run_error_test(&error_opts("301_non_integer_lcm.eu"));
 }
 
+/// A non-integer bound to `merge-intervals` is an error (eu-oaz72.26).
+#[test]
+pub fn test_error_301_non_integer_merge_intervals() {
+    run_error_test(&error_opts("301_non_integer_merge_intervals.eu"));
+}
+
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).
 #[test]
 pub fn test_error_301_non_integer_combinations() {

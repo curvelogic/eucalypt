@@ -1761,13 +1761,21 @@ permutations(xs): {
     export: :suppress }
 __picks(front, xs): if(xs nil?, [], cons([head(xs), front ++ tail(xs)], __picks(front ++ [head(xs)], tail(xs))))
 
-` { doc: "`merge-intervals(is)` - sort closed intervals `[lo, hi]` by `lo` and merge those that overlap. Intervals merge when `hi1 >= lo2` (a shared endpoint merges: `[1, 3]` and `[3, 5]` give `[1, 5]`); intervals that merely abut, such as `[1, 3]` and `[4, 6]`, stay separate. Nested intervals are absorbed. Empty input gives `[]`."
+` { doc: "`merge-intervals(is)` - merge closed integer intervals `[lo, hi]`: sort by `lo`, then merge those that overlap or are adjacent. Sorted intervals `[lo1, hi1]` and `[lo2, hi2]` merge when `lo2 <= hi1 + 1`, so `[1, 3]` and `[3, 5]` give `[1, 5]`, `[1, 3]` and `[4, 6]` give `[1, 6]`, and `[1, 3]` and `[5, 6]` stay separate. Nested intervals are absorbed. Empty input gives `[]`. A non-integer bound is an error."
     type: s"[[number]] → [[number]]" }
-merge-intervals(is): { s: is sort-by-num(first) }.(s nil? then([], __merge-from(s head, s tail)))
+merge-intervals(is): {
+  bad: is mapcat(identity) filter(__non-integer?)
+  s: is sort-by-num(first)
+  culprit: bad head
+}.(bad nil? then(s nil? then([], __merge-from(s head, s tail)), panic("merge-intervals bound {culprit} must be an integer")))
 
-` { doc: "`__merge-from(cur, rest)` - internal: merge the sorted intervals `rest` into the running interval `cur`."
+` { doc: "`__non-integer?(n)` - internal: true when `n` is a number that is not an integer."
     export: :suppress }
-__merge-from(cur, rest): if(rest nil?, [cur], if(first(head(rest)) <= second(cur), __merge-from([first(cur), max(second(cur), second(head(rest)))], tail(rest)), cons(cur, __merge-from(head(rest), tail(rest)))))
+__non-integer?(n): (n number?) ∧ (floor(n) != n)
+
+` { doc: "`__merge-from(cur, rest)` - internal: merge the sorted intervals `rest` into the running interval `cur`; an interval whose `lo` is at most one past the running `hi` joins it."
+    export: :suppress }
+__merge-from(cur, rest): if(rest nil?, [cur], if(first(head(rest)) <= (second(cur) + 1), __merge-from([first(cur), max(second(cur), second(head(rest)))], tail(rest)), cons(cur, __merge-from(head(rest), tail(rest)))))
 
 ` { doc: "`reverse(l)` - reverse list `l`."
     type: s"[a] → [a]" }
