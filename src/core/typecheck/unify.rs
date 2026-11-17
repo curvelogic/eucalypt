@@ -190,6 +190,14 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             if occurs(&m, &rhs) {
                 return Err(UnifyError::OccursCheck(m, rhs));
             }
+            // A constant functor (`x` absent from `rhs`) is only one of many
+            // solutions — `m a ~ number` is equally solved by `m = identity`
+            // with `a = number`, as for identity-like monads such as `let`.
+            // Leave `m` unsolved (the application stays abstract, and is
+            // treated gradually) rather than guessing a constant functor.
+            if !occurs(&x, &rhs) {
+                return Ok(());
+            }
             let lam = Type::Lam(x, Box::new(rhs));
             subst.insert(m, lam);
             Ok(())
@@ -208,6 +216,10 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             let lhs = lhs.clone();
             if occurs(&m, &lhs) {
                 return Err(UnifyError::OccursCheck(m, lhs));
+            }
+            // See the symmetric case above: do not guess a constant functor.
+            if !occurs(&x, &lhs) {
+                return Ok(());
             }
             let lam = Type::Lam(x, Box::new(lhs));
             subst.insert(m, lam);
@@ -1328,15 +1340,15 @@ mod tests {
 
     #[test]
     fn ho_rule_fires_app_hk_var_vs_con() {
-        // App(Var(m, * → *), Var(a, *)) unified with Type::Number
-        // The HO rule should fire and bind m = Lam(a, number).
+        // App(Var(m, * → *), Var(a, *)) unified with a type mentioning `a`
+        // (here `a → number`): the HO rule binds m = Lam(a, a → number).
         let m = TypeVarId("m".to_string());
         let a = TypeVarId("a".to_string());
         let lhs = Type::App(
             Box::new(Type::hk_var(m.clone(), Kind::star_to_star())),
             Box::new(Type::var(a.clone())),
         );
-        let rhs = Type::Number;
+        let rhs = Type::Function(Box::new(Type::var(a.clone())), Box::new(Type::Number));
         let mut s = Substitution::new();
         assert!(unify(&lhs, &rhs, &mut s).is_ok(), "HO rule should succeed");
         let bound = s.get(&m).expect("m should be bound");
@@ -1344,13 +1356,21 @@ mod tests {
             matches!(bound, Type::Lam(x, _) if x == &a),
             "m should be Lam(a, ...), got {bound:?}"
         );
-        // beta reduce: (Lam(a, number)) applied to anything should give number
-        let result = apply_subst(&lhs, &s);
-        assert_eq!(
-            result,
-            Type::Number,
-            "App after substitution should beta-reduce to number"
+    }
+
+    #[test]
+    fn ho_rule_does_not_guess_constant_functor() {
+        // `m a ~ number` is also solved by `m = identity`, so `m` stays
+        // unsolved rather than being bound to the constant functor.
+        let m = TypeVarId("m".to_string());
+        let a = TypeVarId("a".to_string());
+        let lhs = Type::App(
+            Box::new(Type::hk_var(m.clone(), Kind::star_to_star())),
+            Box::new(Type::var(a)),
         );
+        let mut s = Substitution::new();
+        assert!(unify(&lhs, &Type::Number, &mut s).is_ok());
+        assert!(!s.contains_key(&m), "m must not be bound");
     }
 
     #[test]

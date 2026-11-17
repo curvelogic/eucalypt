@@ -6,3 +6,12 @@ id-monad: monad{bind: id-bind, return: id}
 mapped: id-monad.map(inc, 41)
 joined: id-monad.join(42)
 random-mapped: random.map(inc, random.int(10))
+
+# Monadic blocks and monad `return`/`bind` results used as blocks (eu-oaz72.171)
+let-chain: { :let x: 1 }.{ a: x }.(a)
+let-sum: { :let x: 1, y: 2 }.{ s: x + y }.(s)
+let-nested: { :let x: 1 }.{ :let y: x + 10 }.(y)
+ret-block: let.return({ a: 1 }).(a)
+bind-block: let.bind(1, λx. let.return({ a: x })).(a)
+id-implicit: { :id _: 99 r: 7 }
+id-has: id-implicit has(:_)

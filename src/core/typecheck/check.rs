@@ -1779,6 +1779,11 @@ impl Checker {
                         if !is_subtype(&arg_type, &param_applied)
                             && !(is_abstract_hkt_app(&param_applied)
                                 && !matches!(arg_type, Type::App(_, _)))
+                            // Symmetrically, an abstract `m a` argument (e.g.
+                            // the result of an identity-like monad's `return`)
+                            // may be any concrete type.
+                            && !(is_abstract_hkt_app(&arg_type)
+                                && !matches!(param_applied, Type::App(_, _)))
                         {
                             let message = build_arg_mismatch_message(func_name);
                             self.emit_arg_mismatch(
