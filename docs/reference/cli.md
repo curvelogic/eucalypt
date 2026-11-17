@@ -737,6 +737,18 @@ Configure your editor to use `eu lsp` as the language server command
 for `.eu` files. A VS Code extension is available in the `editors/vscode/`
 directory of the repository.
 
+`eu lsp` exits with:
+
+- `0` - the client sent `shutdown` then `exit`, or closed stdin
+- `1` - the client sent `exit` without a prior `shutdown`
+- `2` - a server or transport error: the initialise handshake failed, or a
+  reader or writer I/O thread failed (for example a malformed message on
+  stdin, or the client closing its end of the server's output)
+
+A failed send of diagnostics or a refresh request does not end the server
+by itself: it logs the drop to stderr and carries on until the client ends
+the session.
+
 ## Version Assertions
 
 The `eu.requires` function allows eucalypt source files to assert a

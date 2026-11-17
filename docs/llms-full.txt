@@ -6929,8 +6929,8 @@ Because the gate is gone, the caller is the one who should judge whether a
 workload is worth forking. The fixed per-call cost of the fork mechanism
 itself — process fork plus the shared arena, isolated from the
 serialise/deserialise codec both paths already pay — measures **~2–3ms** on
-macOS ARM64 (Apple Silicon, measured-single, moderate background load).
-That is the amount a tiny,
+macOS ARM64 (Apple Silicon, a single measurement session under moderate
+background load, not independently repeated). That is the amount a tiny,
 cheap `par-map` adds over the plain sequential form: worth it for anything
 with real per-element cost, easily lost in noise for a handful of trivial
 elements. `EU_PP_THRESHOLD` (below) remains available to force the
@@ -8979,7 +8979,7 @@ b: { tags: [1, 2] }     match?(spec)   # => false
 
 > **Known limitation**: `as-spec` on a **union** type
 > (`s"number | string"`) currently produces a predicate that never
-> matches — a defect tracked as bead `eu-r9oy`. Until it is fixed, build a
+> matches — a known defect. Until it is fixed, build a
 > union validator directly, e.g. `v number? or v string?`, rather than via
 > `as-spec`.
 
@@ -9199,8 +9199,8 @@ The source location is the `ensure` call site under both prelude modes.
 It briefly was not: a shipped library imported by filename was
 misclassified as user code, so a frame inside `lib/contract.eu` could win
 the "blame user code" ranking and become the primary label under the
-pre-compiled prelude. That was **eu-8a49h**, not specific to contracts,
-and it is fixed. `tests/harness/errors/201_contract_violation.eu`
+pre-compiled prelude. That defect was not specific to contracts, and it
+is fixed. `tests/harness/errors/201_contract_violation.eu`
 anchors the primary label on the `ensure` call site so a regression fails
 the build.
 
@@ -9309,8 +9309,8 @@ specs and deliberately differs on closed ones.
   `validate` checks a literal (`"prod"`, `:ok`) by equality, as you would
   expect. `as-spec` has no arm for literal types, so it falls through to
   "matches anything" — `s"\"prod\"" as-spec` accepts any value at all. That
-  is a defect on the `as-spec` side, tracked as **eu-pub3r**; `validate`
-  does the right thing rather than replicating it. Until the bead lands, do
+  is a known defect on the `as-spec` side; `validate` does the right
+  thing rather than replicating it. Until it is fixed, do
   not expect `data match?(spec as-spec)` and `(data validate(spec)) nil?`
   to agree on a spec containing a literal type.
 - **Data-file blame** — reporting `config.yaml:12` rather than the `ensure`
@@ -15211,7 +15211,8 @@ catenation) — navigate with `(xs nth(2)).port` or a lens.
   different error from a contract violation, so a schema typo cannot
   masquerade as bad data.
 - Literal types (`"prod"`, `:ok`) are checked by equality here but **not**
-  by `as-spec`, which matches anything for them (eu-pub3r).
+  by `as-spec`, which matches anything for them (a known
+  defect).
 
 See [Structural Contracts](../guide/contracts.md).
 
@@ -16542,7 +16543,7 @@ that unconditionally would copy the argument *expression* once per
 occurrence of its binder, and separate copies become separate thunks that
 share nothing — so a callee that uses a parameter twice would evaluate
 that argument twice, and a caller passing its own recursive call would go
-from linear to exponential (eu-gua64).
+from linear to exponential.
 
 An argument is therefore substituted directly only when doing so
 duplicates no work:
@@ -16588,9 +16589,9 @@ Eucalypt originally had a second engine — a HeapSyn tree-walk machine
 (`src/eval/machine/vm.rs`) that walked a materialised STG tree of
 heap-allocated nodes directly, the only engine before 0.12.0 and retained
 afterwards as the performance baseline and differential-testing oracle
-behind an `EU_HEAPSYN=1` opt-out. Once an A/B study (eu-7oshh) confirmed the
+behind an `EU_HEAPSYN=1` opt-out. Once an A/B study confirmed the
 bytecode engine was at parity or ahead everywhere that mattered, the Phase 4
-collapse (eu-oufc) deleted HeapSyn, its `EU_HEAPSYN`/`EU_BYTECODE` selectors,
+collapse deleted HeapSyn, its `EU_HEAPSYN`/`EU_BYTECODE` selectors,
 and the differential-testing infrastructure that compared the two engines
 (what remains under `src/eval/bytecode/differential.rs` compares the
 bytecode engine's two *dispatch* configurations — pre-decoded vs
@@ -16963,7 +16964,7 @@ three hashed inputs are:
 - **`src/eval/intrinsics.rs`** — the intrinsic catalogue. Its length fixes the
   global slot numbering the blob bakes in as `Ref::G(INTRINSIC_COUNT + prelude
   slot)`, so adding or removing an intrinsic shifts *every* prelude global's
-  slot. Hashing the catalogue makes that invalidation automatic (eu-3skeg);
+  slot. Hashing the catalogue makes that invalidation automatic;
   before it did, a stale blob was silently accepted with an off-by-N slot map
   and the binary returned wrong answers with no warning.
 - **`BYTECODE_WIRE_FORMAT_VERSION`** — the serialised code-stream layout, which
@@ -17163,7 +17164,7 @@ The prelude is:
 | `src/core/cook/` | Operator resolution | `shunt.rs`, `fixity.rs` |
 | `src/eval/stg/` | STG syntax, compiler, prelude blob | `syntax.rs`, `compiler.rs`, `blob.rs` |
 | `src/eval/machine/` | Shared runtime infrastructure (env frames, intrinsic ABI, metrics, crash diagnostics) | `env.rs`, `intrinsic.rs`, `metrics.rs` |
-| `src/eval/bytecode/` | Bytecode engine (BV1, the sole engine since eu-oufc) | `machine.rs`, `encode.rs`, `predecode.rs` |
+| `src/eval/bytecode/` | Bytecode engine (BV1, the sole engine since the Phase 4 collapse) | `machine.rs`, `encode.rs`, `predecode.rs` |
 | `src/eval/memory/` | Heap and GC | `heap.rs`, `collect.rs` |
 | `src/driver/` | CLI orchestration | `options.rs`, `eval.rs` |
 | `src/export/` | Output formats | `yaml.rs`, `json.rs` |
