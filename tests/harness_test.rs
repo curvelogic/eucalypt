@@ -5398,6 +5398,13 @@ pub fn test_error_275_non_integer_update_nth() {
     run_error_test(&error_opts("275_non_integer_update_nth.eu"));
 }
 
+/// An index past the end is an out-of-range error from `update-nth`
+/// (eu-oaz72.100), not a destructuring error.
+#[test]
+pub fn test_error_360_update_nth_past_end() {
+    run_error_test(&error_opts("360_update_nth_past_end.eu"));
+}
+
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
 pub fn test_error_275_non_integer_window_size() {

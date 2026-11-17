@@ -675,7 +675,7 @@ or: __OR
     precedence: :sum }
 (l - r): __SUB(l, r)
 
-` { doc: "`l ^ r` - raise `l` to the power `r`."
+` { doc: "`l ^ r` - raise `l` to the power `r`; integer operands give an integer, and a numeric-overflow error when the result is out of range."
     type: s"number → number → number"
     export: :suppress
     associates: :right
@@ -813,7 +813,7 @@ ceiling: __CEILING
 ` "`⌊n⌋` - floor bracket notation, round `n` downwards to nearest integer"
 ⌊[x]⌋: x floor
 
-` { doc: "`pow(b, e)` - raise `b` to the power `e`."
+` { doc: "`pow(b, e)` - raise `b` to the power `e`; integer operands give an integer, and a numeric-overflow error when the result is out of range."
     type: s"number → number → number" }
 pow(b, e): __POW(b, e)
 
@@ -1492,9 +1492,14 @@ drop(n, l): __require-int("drop count", n, __drop(n, l))
     blame: :transparent }
 __drop(n, l): __IF((n <= 0), l, __IF(l nil?, [], __drop(n dec, l tail)))
 
-` { doc: "`rotate(n, l)` - rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error."
+` { doc: "`rotate(n, l)` - rotate list `l` left by `n` positions, wrapping when `n` exceeds the length; `l` unchanged when `n` <= 0; a non-integer `n` is an error."
     type: s"number → [a] → [a]" }
-rotate(n, l): { s: __split-at(n, l) }.(__require-int("rotate count", n, second(s) ++ first(s)))
+rotate(n, l): { s: __split-at(n, l) }.(__require-int("rotate count", n, second(s) nil? then(__rotate-wrap(n, l), second(s) ++ first(s))))
+
+` { doc: "`__rotate-wrap(n, l)` - internal: `rotate` when `n` reaches past the end of `l`."
+    export: :suppress
+    blame: :transparent }
+__rotate-wrap(n, l): { len: l count }.(len zero? then(l, { s: __split-at(n % len, l) }.(second(s) ++ first(s))))
 
 ` { doc: "`split-at(n, l)` - split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0; a non-integer `n` is an error."
     type: s"number → [a] → ([a], [a])" }
@@ -1557,7 +1562,8 @@ nth(n, l): {
 ` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
 An error if `n` is out of range, negative or not an integer."
 update-nth(n, f, l): {
-  rejoin([prefix, [s: suffix]]): prefix ++ (f(s) ‖ suffix)
+  out-of-range(len): panic("index {n} out of range for list of length {len}")
+  rejoin([prefix, rest]): rest nil? then(out-of-range(l count), prefix ++ (f(rest head) ‖ (rest tail)))
 }.(__require-int("update-nth index", n, if((n number?) ∧ (n < 0), panic("index {n} out of range: list indices start at 0"), l __split-at(n) rejoin)))
 
 ` "`update-first(p?, f, l)` - apply `f` to the first element matching `p?` in list `l`.
@@ -2388,11 +2394,11 @@ vec: {
       type: s"vec → number" }
   len: '__VEC.LEN'
 
-  ` { doc: "`vec.nth(n, v)` - return the element at index `n` (0-based) in vec `v`."
+  ` { doc: "`vec.nth(n, v)` - return the element at index `n` (0-based) in vec `v`; an index past the end, negative or not an integer is an error."
       type: s"number → vec → any" }
   nth: '__VEC.NTH'
 
-  ` { doc: "`vec.slice(from, to, v)` - return a new vec with elements in the range `[from, to)` of `v`."
+  ` { doc: "`vec.slice(from, to, v)` - return a new vec with elements in the range `[from, to)` of `v`; indices past the end are clamped to the length, and a negative or non-integer index is an error."
       type: s"number → number → vec → vec" }
   slice: '__VEC.SLICE'
 

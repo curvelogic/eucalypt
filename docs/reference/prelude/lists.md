@@ -145,7 +145,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
+| `rotate(n, l)` | Rotate list `l` left by `n` positions, wrapping when `n` exceeds the length; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`. An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |

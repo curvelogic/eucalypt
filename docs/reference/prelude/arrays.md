@@ -9,8 +9,8 @@
 | `vec.of` | Convert list `xs` of primitive values to a vec for O(1) indexed access |
 | `vec.from-list` | Alias of `vec.of`: convert list `xs` of primitive values to a vec |
 | `vec.len` | Return the number of elements in vec `v` |
-| `vec.nth` | Return the element at index `n` (0-based) in vec `v` |
-| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v` |
+| `vec.nth` | Return the element at index `n` (0-based) in vec `v`; an index past the end, negative or not an integer is an error |
+| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v`; indices past the end are clamped to the length, and a negative or non-integer index is an error |
 | `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement; a negative `n` samples nothing; a non-integer `n` is an error |
 | `vec.shuffle(v, stream)` | Random monad action: return vec `v` in random order |
 | `vec.to-list` | Convert vec `v` back to a cons-list |

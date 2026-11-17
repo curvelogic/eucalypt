@@ -1,0 +1,2 @@
+exit: 1
+stderr: "index 3 out of range for list of length 3"
