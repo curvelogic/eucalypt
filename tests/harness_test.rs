@@ -5638,3 +5638,28 @@ pub fn test_error_331_iterate_applies_f_at_cell() {
 pub fn test_error_332_scanl_applies_op_at_cell() {
     run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
 }
+
+/// `eu check` must honour `prelude:` unit metadata exactly as evaluation
+/// does (eu-oaz72.173): the alternative prelude's bindings are known, so
+/// `--strict` exits 0 with no spurious "assignment-style" error.
+#[test]
+pub fn test_check_honours_prelude_metadata() {
+    let output = std::process::Command::new(eu_binary())
+        .args([
+            "check",
+            "--strict",
+            "tests/harness/163_prelude_selection.eu",
+        ])
+        .output()
+        .expect("failed to run eu check");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "eu check --strict must accept a prelude: override; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("assignment-style"),
+        "spurious assignment-style error:\n{stderr}"
+    );
+}

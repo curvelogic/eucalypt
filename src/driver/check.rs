@@ -477,6 +477,10 @@ pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eu
     let mut loader = SourceLoader::new(opt.lib_path().to_vec());
     let inputs = opt.inputs();
 
+    // Detect a `prelude:` override in the explicit inputs before loading,
+    // as `prepare()` does.
+    loader.detect_and_load_prelude_override(opt.explicit_inputs())?;
+
     // Load all inputs (prelude + user files).
     for input in &inputs {
         loader.load(input)?;
@@ -490,6 +494,33 @@ pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eu
         let diag = e.to_diagnostic(loader.source_map());
         loader.diagnose_to_stderr(&diag);
     }
+
+    // Honour a `prelude:` unit-metadata override found while loading, exactly
+    // as evaluation does (`driver/prepare.rs`): substitute it for the default
+    // prelude, or prepend it under `--no-prelude`.  Without this, `check`
+    // merged the standard prelude and the override's bindings were unknown.
+    let inputs: Vec<Input> = match loader.prelude_override().cloned() {
+        Some(override_input) => {
+            let default_prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
+            let mut replaced = false;
+            let mut result: Vec<Input> = inputs
+                .iter()
+                .map(|i| {
+                    if i == &default_prelude && !replaced {
+                        replaced = true;
+                        override_input.clone()
+                    } else {
+                        i.clone()
+                    }
+                })
+                .collect();
+            if !replaced {
+                result.insert(0, override_input);
+            }
+            result
+        }
+        None => inputs,
+    };
 
     // Translate each input to core.
     for input in &inputs {
