@@ -358,3 +358,116 @@ fn inlay_refresh_only_when_only_inlay_supported() {
         "{methods:?}"
     );
 }
+
+// ── Robustness (eu-oaz72.107) ────────────────────────────────────────────────
+
+/// Decision (eu-oaz72.107): a failed send of diagnostics or a refresh
+/// request is ignored, not fatal.  The client closes its read end of the
+/// server's stdout but keeps the session open; the server must stay up
+/// until stdin closes (reporting the transport failure then), rather than dying with exit 2 on
+/// on the first failed diagnostics send.
+#[test]
+fn failed_diagnostics_send_does_not_end_server() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_eu"))
+        .arg("lsp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn eu lsp");
+    let mut stdin = child.stdin.take().expect("stdin");
+    let stdout = child.stdout.take().expect("stdout");
+    let mut stderr = BufReader::new(child.stderr.take().expect("stderr"));
+
+    let mut reader = BufReader::new(stdout);
+    let init = Request::new(
+        RequestId::from(0),
+        "initialize".to_string(),
+        json!({ "processId": null, "rootUri": null, "capabilities": {} }),
+    );
+    Message::Request(init).write(&mut stdin).unwrap();
+    let _ = Message::read(&mut reader)
+        .expect("read")
+        .expect("init reply");
+    Message::Notification(Notification::new("initialized".to_string(), json!({})))
+        .write(&mut stdin)
+        .unwrap();
+    // The client stops reading the server's output.
+    drop(reader);
+
+    let uri = doc_uri("send-fails.eu");
+    let open = Notification::new(
+        "textDocument/didOpen".to_string(),
+        json!({ "textDocument": {
+            "uri": uri, "languageId": "eucalypt", "version": 1, "text": TYPE_WARNING_SOURCE
+        }}),
+    );
+    Message::Notification(open).write(&mut stdin).unwrap();
+    stdin.flush().unwrap();
+
+    // Wait for the server to report a dropped message (it has tried and
+    // failed to publish), then check it is still running.
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        while std::io::BufRead::read_line(&mut stderr, &mut line).unwrap_or(0) > 0 {
+            if line.contains("dropped message") {
+                let _ = tx.send(());
+            }
+            line.clear();
+        }
+    });
+    rx.recv_timeout(PIPELINE_TIMEOUT)
+        .expect("server never reported a dropped send (did it exit?)");
+    // Give a (wrongly) fatal send time to take the process down.
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(
+        child.try_wait().expect("try_wait").is_none(),
+        "server exited after a failed diagnostics send"
+    );
+
+    drop(stdin);
+    let deadline = Instant::now() + EXIT_TIMEOUT;
+    let status = loop {
+        if let Some(s) = child.try_wait().expect("try_wait") {
+            break s;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "server did not exit on stdin EOF"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    // The writer thread's broken-pipe error surfaces when the I/O threads
+    // are joined, as a transport failure (exit 2, see docs/reference/cli.md).
+    assert_eq!(status.code(), Some(2));
+}
+
+/// Shutdown cancels background checks still debouncing: shutdown then
+/// exit straight after didOpen ends promptly with 0 and publishes no
+/// type diagnostics afterwards.
+#[test]
+fn shutdown_with_pending_check_exits_cleanly() {
+    let mut client = StdioClient::start(json!({}));
+    let uri = doc_uri("pending.eu");
+    client.open(&uri, TYPE_WARNING_SOURCE);
+    client.request(1, "shutdown", Value::Null);
+    let _ = client.response_to(1);
+    client.notify("exit", Value::Null);
+    let status = client.wait_exit(EXIT_TIMEOUT).expect("server did not exit");
+    assert_eq!(status.code(), Some(0));
+}
+
+/// A malformed message makes the stdin reader thread fail; the server
+/// then exits 2 (documented in docs/reference/cli.md).
+#[test]
+fn reader_thread_failure_exits_two() {
+    let mut client = StdioClient::start(json!({}));
+    let stdin = client.stdin.as_mut().expect("stdin");
+    stdin
+        .write_all(b"Content-Length: 5\r\n\r\nnot{}")
+        .expect("write");
+    stdin.flush().expect("flush");
+    let status = client.wait_exit(EXIT_TIMEOUT).expect("server did not exit");
+    assert_eq!(status.code(), Some(2));
+}
