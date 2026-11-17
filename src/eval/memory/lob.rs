@@ -3,7 +3,6 @@
 //! A memory region that contains a single object and header
 
 use std::alloc::{alloc, dealloc, Layout};
-use std::process::abort;
 use std::ptr::NonNull;
 
 /// A memory allocation containing a single large object with its
@@ -19,14 +18,19 @@ pub struct LargeObjectBlock {
 
 impl LargeObjectBlock {
     /// Create a new LargeObjectBlock of size sufficient to contain
-    /// `required_size` bytes. Uses efficient sizing to minimize waste
-    /// while maintaining reasonable allocation granularity.
-    pub fn new(required_size: usize) -> Self {
-        let size = Self::efficient_size_for(required_size);
-        LargeObjectBlock {
-            ptr: Self::alloc_block(size).unwrap_or_else(|_| abort()),
-            size,
-        }
+    /// `required_size` bytes, or `None` if the system allocator cannot
+    /// provide it. Uses efficient sizing to minimise waste while
+    /// maintaining reasonable allocation granularity.
+    ///
+    /// Failure is reported rather than aborting the process (as
+    /// `handle_alloc_error` would): a large object is typically a
+    /// user-sized array or vec, so running out of memory for one is a
+    /// reachable condition that must become an error (eu-oaz72.99,
+    /// eu-oaz72.101).
+    pub fn try_new(required_size: usize) -> Option<Self> {
+        let size = Self::efficient_size_for(required_size)?;
+        let ptr = Self::alloc_block(size).ok()?;
+        Some(LargeObjectBlock { ptr, size })
     }
 
     /// Allocate a block directly from the system allocator
@@ -62,20 +66,23 @@ impl LargeObjectBlock {
     /// - Up to 128KB: round to next 16KB boundary (max 15KB waste = ~12%)
     /// - Up to 1MB: round to next 64KB boundary (max 63KB waste = ~6%)  
     /// - Above 1MB: round to next 256KB boundary (max 255KB waste = ~25% max, but rare)
-    fn efficient_size_for(required_size: usize) -> usize {
+    ///
+    /// `None` if the rounded size does not fit in a `usize`.
+    fn efficient_size_for(required_size: usize) -> Option<usize> {
         const KB: usize = 1024;
         const MB: usize = 1024 * KB;
 
-        if required_size <= 128 * KB {
+        let granule = if required_size <= 128 * KB {
             // Round up to next 16KB boundary
-            required_size.div_ceil(16 * KB) * (16 * KB)
+            16 * KB
         } else if required_size <= MB {
             // Round up to next 64KB boundary
-            required_size.div_ceil(64 * KB) * (64 * KB)
+            64 * KB
         } else {
             // Round up to next 256KB boundary
-            required_size.div_ceil(256 * KB) * (256 * KB)
-        }
+            256 * KB
+        };
+        required_size.div_ceil(granule).checked_mul(granule)
     }
 
     /// Pointer to the writeable memory area
@@ -128,14 +135,32 @@ mod tests {
         // Test 16KB boundaries for sizes up to 128KB
 
         // Exact boundaries should not change
-        assert_eq!(LargeObjectBlock::efficient_size_for(16 * 1024), 16 * 1024);
-        assert_eq!(LargeObjectBlock::efficient_size_for(32 * 1024), 32 * 1024);
-        assert_eq!(LargeObjectBlock::efficient_size_for(128 * 1024), 128 * 1024);
+        assert_eq!(
+            LargeObjectBlock::efficient_size_for(16 * 1024).unwrap(),
+            16 * 1024
+        );
+        assert_eq!(
+            LargeObjectBlock::efficient_size_for(32 * 1024).unwrap(),
+            32 * 1024
+        );
+        assert_eq!(
+            LargeObjectBlock::efficient_size_for(128 * 1024).unwrap(),
+            128 * 1024
+        );
 
         // Values just above boundaries should round up
-        assert_eq!(LargeObjectBlock::efficient_size_for(33 * 1024), 48 * 1024);
-        assert_eq!(LargeObjectBlock::efficient_size_for(50 * 1024), 64 * 1024);
-        assert_eq!(LargeObjectBlock::efficient_size_for(65 * 1024), 80 * 1024);
+        assert_eq!(
+            LargeObjectBlock::efficient_size_for(33 * 1024).unwrap(),
+            48 * 1024
+        );
+        assert_eq!(
+            LargeObjectBlock::efficient_size_for(50 * 1024).unwrap(),
+            64 * 1024
+        );
+        assert_eq!(
+            LargeObjectBlock::efficient_size_for(65 * 1024).unwrap(),
+            80 * 1024
+        );
     }
 
     #[test]
@@ -143,17 +168,32 @@ mod tests {
         // Test 64KB boundaries for 128KB < size <= 1MB
 
         // Exact boundaries
-        assert_eq!(LargeObjectBlock::efficient_size_for(192 * 1024), 192 * 1024);
-        assert_eq!(LargeObjectBlock::efficient_size_for(256 * 1024), 256 * 1024);
         assert_eq!(
-            LargeObjectBlock::efficient_size_for(1024 * 1024),
+            LargeObjectBlock::efficient_size_for(192 * 1024).unwrap(),
+            192 * 1024
+        );
+        assert_eq!(
+            LargeObjectBlock::efficient_size_for(256 * 1024).unwrap(),
+            256 * 1024
+        );
+        assert_eq!(
+            LargeObjectBlock::efficient_size_for(1024 * 1024).unwrap(),
             1024 * 1024
         );
 
         // Round up cases
-        assert_eq!(LargeObjectBlock::efficient_size_for(129 * 1024), 192 * 1024);
-        assert_eq!(LargeObjectBlock::efficient_size_for(200 * 1024), 256 * 1024);
-        assert_eq!(LargeObjectBlock::efficient_size_for(900 * 1024), 960 * 1024);
+        assert_eq!(
+            LargeObjectBlock::efficient_size_for(129 * 1024).unwrap(),
+            192 * 1024
+        );
+        assert_eq!(
+            LargeObjectBlock::efficient_size_for(200 * 1024).unwrap(),
+            256 * 1024
+        );
+        assert_eq!(
+            LargeObjectBlock::efficient_size_for(900 * 1024).unwrap(),
+            960 * 1024
+        );
         // 15 * 64KB
     }
 
@@ -163,28 +203,39 @@ mod tests {
 
         // Exact boundaries
         assert_eq!(
-            LargeObjectBlock::efficient_size_for(1280 * 1024),
+            LargeObjectBlock::efficient_size_for(1280 * 1024).unwrap(),
             1280 * 1024
         );
         assert_eq!(
-            LargeObjectBlock::efficient_size_for(2048 * 1024),
+            LargeObjectBlock::efficient_size_for(2048 * 1024).unwrap(),
             2048 * 1024
         );
 
         // Round up cases
         assert_eq!(
-            LargeObjectBlock::efficient_size_for(1025 * 1024),
+            LargeObjectBlock::efficient_size_for(1025 * 1024).unwrap(),
             1280 * 1024
         );
         assert_eq!(
-            LargeObjectBlock::efficient_size_for(1500 * 1024),
+            LargeObjectBlock::efficient_size_for(1500 * 1024).unwrap(),
             1536 * 1024
         );
     }
 
+    /// An allocation the system allocator refuses is `None`, not a
+    /// process abort (eu-oaz72.99, eu-oaz72.101). A size no layout can
+    /// describe stands in for running out of memory, which a test cannot
+    /// provoke reliably.
+    #[test]
+    fn test_allocation_failure_is_reported_not_aborted() {
+        assert!(LargeObjectBlock::try_new(isize::MAX as usize).is_none());
+        assert!(LargeObjectBlock::try_new(usize::MAX).is_none());
+        assert!(LargeObjectBlock::efficient_size_for(usize::MAX).is_none());
+    }
+
     #[test]
     fn test_waste_percentage_calculation() {
-        let lob = LargeObjectBlock::new(50 * 1024); // Should allocate 64KB
+        let lob = LargeObjectBlock::try_new(50 * 1024).unwrap(); // Should allocate 64KB
 
         // Perfect fit should have some waste due to rounding
         let waste = lob.waste_percentage(50 * 1024);
@@ -201,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_can_fit() {
-        let lob = LargeObjectBlock::new(50 * 1024); // Allocates 64KB
+        let lob = LargeObjectBlock::try_new(50 * 1024).unwrap(); // Allocates 64KB
 
         assert!(lob.can_fit(32 * 1024));
         assert!(lob.can_fit(50 * 1024));
@@ -222,7 +273,7 @@ mod tests {
         ];
 
         for &size in &test_sizes {
-            let efficient = LargeObjectBlock::efficient_size_for(size);
+            let efficient = LargeObjectBlock::efficient_size_for(size).unwrap();
             let power_of_two = size.next_power_of_two();
 
             // Our efficient sizing should always be <= power of two

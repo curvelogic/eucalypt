@@ -1,0 +1,2 @@
+` "An empty array shape with more sub-arrays than any array may have is an error at construction, not an endless render of empty rows (eu-oaz72.99)"
+a: arr.zeros[1000000000000000000, 0]

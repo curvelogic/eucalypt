@@ -717,7 +717,7 @@ impl StgIntrinsic for ArrayNeighbours {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let coords = num_list_to_coords("arr.neighbours", machine, view, &args[0])?;
-        let offsets_flat = num_list_to_i64_vec(machine, view, &args[1])?;
+        let offsets_flat = num_list_to_offsets("arr.neighbours", machine, view, &args[1])?;
         let rank = num_arg(machine, view, &args[2])?.as_f64().unwrap_or(0.0) as usize;
         let arr = ndarray_arg(machine, view, &args[3])?;
 
@@ -737,14 +737,38 @@ impl StgIntrinsic for ArrayNeighbours {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Extract a list of numbers from a cons-list, converting to i64
-fn num_list_to_i64_vec(
+/// Extract a list of coordinate offsets from a cons-list, rejecting a
+/// non-integer offset rather than truncating it. An offset may be
+/// negative; one too large for an `i64` saturates, which leaves the
+/// neighbour it names out of bounds, as it is.
+fn num_list_to_offsets(
+    func: &str,
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<Vec<i64>, ExecutionError> {
+    let smid = machine.annotation();
     let nums = super::support::collect_num_list(machine, view, arg.clone())?;
-    Ok(nums.into_iter().map(|n| n as i64).collect())
+    nums.into_iter()
+        .map(|n| {
+            require_integer(func, "offset", n, smid)?;
+            Ok(n as i64)
+        })
+        .collect()
+}
+
+/// Reject a non-integer (or non-finite) array coordinate, offset, axis,
+/// index or dimension `n`, naming the function and what `n` is.
+fn require_integer(func: &str, what: &str, n: f64, smid: Smid) -> Result<(), ExecutionError> {
+    if n.fract() != 0.0 || !n.is_finite() {
+        Err(ExecutionError::ArrayNonIntegerIndex(
+            smid,
+            format!("{func} {what}"),
+            n,
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 /// Extract a list of array coordinates from a cons-list, rejecting a
@@ -771,14 +795,13 @@ fn array_index(
     smid: Smid,
 ) -> Result<usize, ExecutionError> {
     let n = n.unwrap_or(f64::NAN);
-    if n.fract() != 0.0 || !n.is_finite() {
-        Err(ExecutionError::ArrayNonIntegerIndex(
+    require_integer(func, what, n, smid)?;
+    if n < 0.0 {
+        Err(ExecutionError::ArrayNegativeIndex(
             smid,
             format!("{func} {what}"),
             n,
         ))
-    } else if n < 0.0 {
-        Err(ExecutionError::ArrayNegativeIndex(smid, n))
     } else if n >= usize::MAX as f64 {
         // Converting would saturate and report the wrong number: name
         // the value given (capped for display), not `usize::MAX`.
@@ -830,26 +853,31 @@ fn num_list_to_shape(
 }
 
 /// Check a shape given as numbers: each dimension a non-negative whole
-/// number, and the shape no larger than any array can be. An array with
-/// elements holds at most [`MAX_ARRAY_ELEMENTS`]; an empty one (some
-/// dimension zero) allocates nothing, but `ndarray` still requires the
-/// product of its non-zero dimensions to fit in an `isize`.
+/// number, and the shape no larger than any array can be.
+///
+/// The product of the dimensions, counting a zero dimension as 1, is held
+/// to [`MAX_ARRAY_ELEMENTS`]. For an array with elements that product is
+/// its element count. An empty array (some dimension zero) allocates
+/// nothing, but rendering it emits one empty sequence per sub-array: a
+/// shape such as `[1e18, 0]` would be accepted and then never finish
+/// rendering, so it is rejected here with an error of its own.
 fn validate_shape(smid: Smid, function: &str, dims: &[f64]) -> Result<Vec<usize>, ExecutionError> {
+    let empty = dims.contains(&0.0);
     let too_large = || {
         let rendered: Vec<String> = dims.iter().map(|d| display_f64(*d)).collect();
-        ExecutionError::ArrayTooLarge(
-            smid,
-            function.to_string(),
-            format!("[{}]", rendered.join(", ")),
-            MAX_ARRAY_ELEMENTS,
-        )
+        let shape = format!("[{}]", rendered.join(", "));
+        if empty {
+            ExecutionError::ArrayEmptyShapeTooLarge(
+                smid,
+                function.to_string(),
+                shape,
+                MAX_ARRAY_ELEMENTS,
+            )
+        } else {
+            ExecutionError::ArrayTooLarge(smid, function.to_string(), shape, MAX_ARRAY_ELEMENTS)
+        }
     };
-    let empty = dims.contains(&0.0);
-    let limit = if empty {
-        isize::MAX as usize
-    } else {
-        MAX_ARRAY_ELEMENTS
-    };
+    let limit = MAX_ARRAY_ELEMENTS;
     let mut shape = Vec::with_capacity(dims.len());
     let mut count: usize = 1;
     for &d in dims {
@@ -955,13 +983,12 @@ mod tests {
         assert_eq!(shape_of(&[-0.0]).unwrap(), vec![0]);
         let max = MAX_ARRAY_ELEMENTS as f64;
         assert_eq!(shape_of(&[max]).unwrap(), vec![MAX_ARRAY_ELEMENTS]);
-        // An empty array allocates nothing: its other dimensions are held
-        // only to ndarray's own check, on the product of non-zero axes.
+        // An empty array allocates nothing, but its other dimensions
+        // multiply to the number of empty sub-arrays it renders, which is
+        // held to the same limit.
         assert_eq!(shape_of(&[0.0, max]).unwrap(), vec![0, MAX_ARRAY_ELEMENTS]);
-        assert_eq!(
-            shape_of(&[0.0, 1e5, 1e5]).unwrap(),
-            vec![0, 100_000, 100_000]
-        );
+        assert_eq!(shape_of(&[max, 0.0]).unwrap(), vec![MAX_ARRAY_ELEMENTS, 0]);
+        assert_eq!(shape_of(&[0.0, 1e4, 1e4]).unwrap(), vec![0, 10_000, 10_000]);
     }
 
     #[test]
@@ -989,7 +1016,7 @@ mod tests {
     fn negative_dimensions_are_rejected() {
         assert!(matches!(
             shape_of(&[3.0, -1.0]),
-            Err(ExecutionError::ArrayNegativeIndex(_, _))
+            Err(ExecutionError::ArrayNegativeIndex(_, _, _))
         ));
     }
 
@@ -1018,8 +1045,6 @@ mod tests {
             vec![max + 1.0],
             vec![1e5, 1e5],
             vec![1e5, 1e5, 1e5, 1e5],
-            vec![0.0, 1e10, 1e10],
-            vec![0.0, 1e20],
         ] {
             assert!(
                 matches!(
@@ -1028,6 +1053,30 @@ mod tests {
                 ),
                 "{dims:?} accepted"
             );
+        }
+    }
+
+    #[test]
+    fn empty_shapes_with_too_many_sub_arrays_are_rejected() {
+        // Rendering `[1e18, 0]` would emit 1e18 empty rows (eu-oaz72.99).
+        let max = MAX_ARRAY_ELEMENTS as f64;
+        for dims in [
+            vec![1e18, 0.0],
+            vec![max + 1.0, 0.0],
+            vec![1e5, 1e5, 0.0],
+            vec![0.0, 1e10, 1e10],
+            vec![0.0, 1e20],
+        ] {
+            let Err(err) = shape_of(&dims) else {
+                panic!("{dims:?} accepted");
+            };
+            assert!(
+                matches!(err, ExecutionError::ArrayEmptyShapeTooLarge(_, _, _, _)),
+                "{dims:?}: {err}"
+            );
+            // The message must not claim the empty array has too many
+            // elements: it has none.
+            assert!(!err.to_string().contains("elements"), "{err}");
         }
     }
 }

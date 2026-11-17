@@ -1,0 +1,2 @@
+exit: 1
+stderr: "arr.zeros: empty array shape \[1000000000000000000, 0\] has too many sub-arrays"
