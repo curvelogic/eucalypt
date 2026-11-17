@@ -55,3 +55,31 @@ repro, where `l` IS forced each iteration). Next lane should do that first.
 3. Gating test: harness test with a heap limit (`--heap-limit-mib`) or a stats
    assertion that a 400k-cell fold keeps peak blocks bounded; fault-inject by
    reverting the fix.
+
+## Update (second lane): root cause found (measured-single)
+
+Tracer run on `range(0, 200000) count` (release build, master + tracer):
+the pending `seq` continuation's env reaches 322k frames. Path: loop frame
+slot0 (`op` lambda, arity 2) -> count's let frame (the lambda's env) -> count's
+frame, whose param `l` was evaluated to the list head -> the whole consumed list.
+
+So the pin is **frame capture**: a wrapper frame holding the list head stays
+live because a closure allocated in it (`op`) is threaded through every
+iteration. Peak blocks 10,985 vs 1,026 for the direct call.
+
+Pure user-code repros (peak blocks, 200k cells):
+- `x: range(0,200000) fs(+,0)` (fs = foldl-strict clone): 1,026 (no leak)
+- `x: range(0,200000) fs({n:•el:•}.(n inc),0)`: 1,026 (no leak)
+- `c3(l): fs(+,0,l)`; `x: range(0,200000) c3`: 10,346 (leak, global `+`)
+- `c3(l): fs(+,0,l) + 0` and `fs(+,0,l tail)`: ~10,340 (leak)
+- `count` / `foldl(+,0)` via prelude: ~11,000 (leak)
+
+The earlier "non-update Case closure chain" is the list's own structure seen
+through that root; the AtMostOnce-update-elision suspect is not the cause.
+Side observation: `count`'s signature is `(Strict, AtMostOnce)` for `l`, but the
+inlined body uses `l` three times (stale cardinality; not investigated).
+
+Proposed fix (awaiting coordinator approval): last-use dead-slot clearing in
+the STG compiler for params consumed only by a tail call and not free in any
+closure allocated in the frame. Alternative: avoid wrapper frames in prelude
+hot paths (needs lib/prelude.eu, currently held by another lane).
