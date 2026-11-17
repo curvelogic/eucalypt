@@ -3724,6 +3724,13 @@ pub fn test_error_232_unclosed_bracket_eof() {
 }
 
 #[test]
+/// eu-oaz72.42: an unclosed bracket mid-file is reported at the opening
+/// bracket.
+pub fn test_error_333_unclosed_bracket_open() {
+    run_error_test(&error_opts("333_unclosed_bracket_open.eu"));
+}
+
+#[test]
 /// eu-oaz72.43: a negative index to nth is an error rather than a hang on
 /// an infinite list (checked on a finite one to stay bounded).
 pub fn test_error_233_nth_negative() {

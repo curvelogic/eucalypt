@@ -1,0 +1,4 @@
+` "an unclosed bracket mid-file is reported at the opening bracket (eu-oaz72.42)"
+x: 1
+y: ⟦ 2 + 3
+z: 4
