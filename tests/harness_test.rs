@@ -4712,6 +4712,12 @@ pub fn test_typecheck_131_union_param_rejects_wide_arg() {
     run_typecheck_test("131_union_param_rejects_wide_arg.eu");
 }
 
+/// The union rule stays argument-side inside callback types (eu-oaz72.169).
+#[test]
+pub fn test_typecheck_132_union_callback_param_rejects() {
+    run_typecheck_test("132_union_callback_param_rejects.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).

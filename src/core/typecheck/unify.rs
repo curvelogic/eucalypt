@@ -280,7 +280,10 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
         // Structural: function types.
         (Type::Function(a1, b1), Type::Function(a2, b2)) => {
             let (a1, b1, a2, b2) = (a1.clone(), b1.clone(), a2.clone(), b2.clone());
-            unify(&a1, &a2, subst)?;
+            // Parameters are contravariant: swap, so the union rule below
+            // (which fires only for a union on the right, the argument side)
+            // sees the callback's expected parameter on the right.
+            unify(&a2, &a1, subst)?;
             let b1 = apply_subst(&b1, subst);
             let b2 = apply_subst(&b2, subst);
             unify(&b1, &b2, subst)
