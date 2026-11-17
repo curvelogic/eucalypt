@@ -1,0 +1,4 @@
+# A union with a non-record member must still warn where a Dict is expected.
+mixed: [{title: "a"}, 5]
+
+titles: mixed map(lookup(:title))

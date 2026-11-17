@@ -1,0 +1,6 @@
+# A list of records with differing fields has a union element type; it must
+# be accepted where a Dict is expected (eu-oaz72.169).
+pages: [{title: "a", body: "x"}, {title: "b", body: "y", epilogue: "."}]
+
+titles: pages map(lookup(:title))
+direct: pages head lookup(:body)

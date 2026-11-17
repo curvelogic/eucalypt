@@ -280,7 +280,10 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
         // Structural: function types.
         (Type::Function(a1, b1), Type::Function(a2, b2)) => {
             let (a1, b1, a2, b2) = (a1.clone(), b1.clone(), a2.clone(), b2.clone());
-            unify(&a1, &a2, subst)?;
+            // Parameters are contravariant: swap, so the union rule below
+            // (which fires only for a union on the right, the argument side)
+            // sees the callback's expected parameter on the right.
+            unify(&a2, &a1, subst)?;
             let b1 = apply_subst(&b1, subst);
             let b2 = apply_subst(&b2, subst);
             unify(&b1, &b2, subst)
@@ -498,6 +501,22 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
         {
             let t = t.clone();
             unify(&Type::Any, &t, subst)
+        }
+
+        // A union on the argument (right) side against a concrete non-union
+        // type: every variant must unify with it, under one trial
+        // substitution committed only on success.  This lets a list of
+        // records with differing fields, whose element type is a union of
+        // record types, satisfy `Dict(a)` (eu-oaz72.169).  Deliberately
+        // one-sided: a union *parameter* such as `:asc | :desc` must not
+        // accept an argument merely because each variant widens to it.
+        (other, Type::Union(variants)) if !matches!(other, Type::Union(_) | Type::Var(..)) => {
+            let mut trial = subst.clone();
+            variants
+                .iter()
+                .try_for_each(|v| unify(other, v, &mut trial))?;
+            *subst = trial;
+            Ok(())
         }
 
         // Recursive type (Mu): unfold once and unify.

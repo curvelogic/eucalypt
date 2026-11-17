@@ -4693,6 +4693,31 @@ pub fn test_typecheck_128_tuple_literal_symbols_widen() {
     run_typecheck_test("128_tuple_literal_symbols_widen.eu");
 }
 
+/// A union of record types (list of records with differing fields) is
+/// accepted where a `Dict` is expected (eu-oaz72.169).
+#[test]
+pub fn test_typecheck_129_record_union_lookup() {
+    run_typecheck_test("129_record_union_lookup.eu");
+}
+
+/// A union with a non-record member still warns against `Dict`.
+#[test]
+pub fn test_typecheck_130_record_union_mismatch_warns() {
+    run_typecheck_test("130_record_union_mismatch_warns.eu");
+}
+
+/// A union *parameter* still rejects a wider argument (eu-oaz72.169).
+#[test]
+pub fn test_typecheck_131_union_param_rejects_wide_arg() {
+    run_typecheck_test("131_union_param_rejects_wide_arg.eu");
+}
+
+/// The union rule stays argument-side inside callback types (eu-oaz72.169).
+#[test]
+pub fn test_typecheck_132_union_callback_param_rejects() {
+    run_typecheck_test("132_union_callback_param_rejects.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).

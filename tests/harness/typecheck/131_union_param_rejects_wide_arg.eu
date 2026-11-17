@@ -1,0 +1,7 @@
+# A union parameter must still reject a wider argument: the every-variant
+# rule applies only to a union argument, not a union parameter (eu-oaz72.169).
+` { type: s"(:asc | :desc) → number" }
+dir(d): 1
+
+` { type: s"symbol → number" }
+use-wide(s): dir(s)
