@@ -15,9 +15,12 @@
 //!     "max_steps": 5000000 }
 //!   ```
 //!
-//!   `files` are files that `import` resolves against, by path, before the
-//!   embedded libraries (`lens.eu`, `state.eu`, ...). An `.eu` file's own
-//!   imports resolve as written, then relative to its directory. Other
+//!   `files` are files that `import` resolves against, by relative path
+//!   (`.` and `..` resolved; an absolute path or `<input>` is refused),
+//!   before the embedded libraries (`lens.eu`, `state.eu`, ...). As in the
+//!   CLI, an import resolves as written, then relative to the directory of
+//!   each importing file, outermost first. One written import that would
+//!   reach two different files is an error, as is an import cycle. Other
 //!   formats are read as data by extension or by an explicit format
 //!   (`text@input.txt`). `max_steps` is the step limit (default
 //!   1,000,000): a program that runs longer fails with a "did not
@@ -43,7 +46,7 @@ use crate::wasm_pipeline;
 /// { "success": false, "error": { "message": "...", "location": { ... } } }
 /// ```
 /// A location names its `file`: `<input>` for the source evaluated, else
-/// a supplied file's path or an embedded library's name.
+/// a supplied file's path, or `resource:<name>` for an embedded library.
 #[derive(serde::Serialize)]
 struct EvalResult {
     success: bool,
