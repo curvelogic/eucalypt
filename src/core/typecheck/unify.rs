@@ -500,6 +500,24 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             unify(&Type::Any, &t, subst)
         }
 
+        // A union on either side against a non-union, non-variable type:
+        // every variant must unify with it under one substitution (the
+        // union is only as good as its worst member).  This lets a list of
+        // records with differing fields, whose element type is a union of
+        // record types, satisfy `Dict(a)` (eu-oaz72.169).
+        (Type::Union(variants), other) | (other, Type::Union(variants))
+            if !matches!(other, Type::Union(_) | Type::Var(..)) =>
+        {
+            let (variants, other) = (variants.clone(), other.clone());
+            // Work on a copy so a failing variant leaves `subst` untouched.
+            let mut trial = subst.clone();
+            variants
+                .iter()
+                .try_for_each(|v| unify(v, &other, &mut trial))?;
+            *subst = trial;
+            Ok(())
+        }
+
         // Recursive type (Mu): unfold once and unify.
         (Type::Mu(x, body), other) | (other, Type::Mu(x, body)) => {
             let (x, body) = (x.clone(), body.clone());
