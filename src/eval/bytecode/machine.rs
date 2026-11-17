@@ -2137,6 +2137,52 @@ fn form_info(kind: u8, arity: u8, smid: Smid, body: CodeRef) -> InfoTagged<CodeR
     }
 }
 
+/// The environment a *closed* binding closes over (eu-oaz72.175): a chain
+/// of empty frames mirroring only the annotation spine of the scope the
+/// binding was allocated in. A closed closure never reads its captured
+/// environment, so it must not keep the enclosing frames (and the values in
+/// their slots, e.g. a list head) alive; but `env_trace` walks the closure's
+/// environment chain for error-trace call sites, so the annotations are
+/// kept, in order, on slotless frames. The chain length is the lexical
+/// nesting depth of the binding (not a recursion depth). Allocated lazily,
+/// once per `Let`. `rec` marks a `LetRec`, whose own frame (annotated with
+/// the current annotation) heads the chain the binding would have captured.
+fn closed_env(
+    view: MutatorHeapView<'_>,
+    state: &BcMachineState,
+    cache: &mut Option<RefPtr<BcEnvFrame>>,
+    env: RefPtr<BcEnvFrame>,
+    rec: bool,
+) -> Result<RefPtr<BcEnvFrame>, ExecutionError> {
+    if let Some(f) = *cache {
+        return Ok(f);
+    }
+    let mut trace: SmallVec<[Smid; 8]> = SmallVec::new();
+    if rec && state.annotation != Smid::default() {
+        trace.push(state.annotation);
+    }
+    trace.extend(view.scoped(env).annotation_trace(&view));
+    let mut next: Option<RefPtr<BcEnvFrame>> = None;
+    for smid in trace.iter().rev() {
+        next = Some(
+            view.alloc(BcEnvFrame::new(Array::with_capacity(&view, 0), *smid, next))?
+                .as_ptr(),
+        );
+    }
+    let frame = match next {
+        Some(f) => f,
+        None => view
+            .alloc(BcEnvFrame::new(
+                Array::with_capacity(&view, 0),
+                Smid::default(),
+                None,
+            ))?
+            .as_ptr(),
+    };
+    *cache = Some(frame);
+    Ok(frame)
+}
+
 /// Build the static part of a closure from a decoded form header.
 fn bc_info(h: &FormHeader) -> InfoTagged<CodeRef> {
     form_info(h.kind, h.arity, h.smid, h.body)
@@ -2382,9 +2428,14 @@ pub fn handle_op(
             let count = read_u32(code, &mut pc) as usize;
             state.allocs += count as u64;
             let mut array = Array::with_capacity(&view, count);
+            let mut closed_cache: Option<RefPtr<BcEnvFrame>> = None;
             for _ in 0..count {
                 let h = read_form_header(code, &mut pc);
-                let close_env = if h.closed { state.globals } else { env };
+                let close_env = if h.closed {
+                    closed_env(view, state, &mut closed_cache, env, false)?
+                } else {
+                    env
+                };
                 array.push(
                     &view,
                     BcValue::Closure(BcClosure::close(&bc_info(&h), close_env)),
@@ -2420,8 +2471,13 @@ pub fn handle_op(
             let frame = view
                 .alloc(BcEnvFrame::new(array.clone(), state.annotation, Some(env)))?
                 .as_ptr();
+            let mut closed_cache: Option<RefPtr<BcEnvFrame>> = None;
             for (i, h) in headers.iter().enumerate() {
-                let close_env = if h.closed { state.globals } else { frame };
+                let close_env = if h.closed {
+                    closed_env(view, state, &mut closed_cache, env, true)?
+                } else {
+                    frame
+                };
                 // SAFETY: array was pre-sized to `count` and i < count.
                 unsafe {
                     array.set_unchecked(
@@ -2921,8 +2977,13 @@ pub fn handle_op_predecoded(
             let (start, len) = instr.header_pool();
             state.allocs += len as u64;
             let mut array = Array::with_capacity(&view, len);
+            let mut closed_cache: Option<RefPtr<BcEnvFrame>> = None;
             for h in &decoded.headers[start..start + len] {
-                let close_env = if h.closed { state.globals } else { env };
+                let close_env = if h.closed {
+                    closed_env(view, state, &mut closed_cache, env, false)?
+                } else {
+                    env
+                };
                 array.push(
                     &view,
                     BcValue::Closure(BcClosure::close(&bc_info(h), close_env)),
@@ -2946,8 +3007,13 @@ pub fn handle_op_predecoded(
             let frame = view
                 .alloc(BcEnvFrame::new(array.clone(), state.annotation, Some(env)))?
                 .as_ptr();
+            let mut closed_cache: Option<RefPtr<BcEnvFrame>> = None;
             for (i, h) in decoded.headers[start..start + len].iter().enumerate() {
-                let close_env = if h.closed { state.globals } else { frame };
+                let close_env = if h.closed {
+                    closed_env(view, state, &mut closed_cache, env, true)?
+                } else {
+                    frame
+                };
                 // SAFETY: array was pre-sized to `len` and i < len.
                 unsafe {
                     array.set_unchecked(
