@@ -120,3 +120,43 @@ the last read). Not yet implemented; findings for the next lane (measured-single
 - Cheap validation experiment worth doing first: an unsound prototype that
   clears every local read by a tail-call argument, to confirm peak blocks drop
   to ~1,000 for `count` and the `c3` shape before building the sound analysis.
+
+## Update 3: prototypes and design choice (third lane, measured-single)
+
+Release build, byte-dispatch and predecoded, 200k cells. Baselines reproduce:
+`count` 10,985 peak blocks / 22.6M ticks; `c3` wrapper 10,878 / 23.0M; direct
+(no wrapper) 1,026 / 23.0M. The direct figure is the ceiling any fix can reach.
+
+**(a) Blanket "clear every local read passed by value in an App".** Throwaway,
+reverted. Not usable even as an upper-bound probe: replacing a read slot with a
+tombstone makes `c3` evaluate to `null` (the prelude and the unrolled body read
+the slot again), and peak blocks rose (13.8k). It confirms the clear must be
+proved, not approximated; it confirms nothing about the ceiling.
+
+**(b) Settling/overwriting the alias, or settling a tail-call argument first.**
+Refuted without a new build. The wrapper frame still holds the evaluated head
+after settling (the previous lane measured peak unchanged), and the wrapper frame
+is the thing `op` pins. Whatever form `l` takes, the slot must be dropped or the
+frame must not be captured.
+
+**Why the plan's "last-use" analysis is harder than a single-use rule.** The
+post-inlining STG for `c3` (`eu dump stg`) unrolls `fs` into the wrapper: `l`
+is read by a `nil?` thunk, `head` and `tail` thunks (each `seq`-forced before the
+tail call) and the final call argument. Static single occurrence never holds;
+the clear is only sound if reads inside thunks that are certainly forced (and so
+updated) before the call are treated as already finished. Further constraints
+found in `src/eval/machine/env.rs`: case-branch frames share backing storage with
+the constructor frame (a clear through a branch frame would clobber a live
+constructor field); branch frame sizes are not known statically (only a lower
+bound of 0 is sound); the flag needs a new App/DirectApp bit, so the blob wire
+format changes and both dispatch paths change.
+
+**Candidate designs, smallest first.**
+1. Closed-frame trimming: a `Let`/`LetRec` whose bindings and body have no
+   local ref reaching past the frame gets `next = None` (flag on the Let opcode).
+   Sound with a lower-bound frame-size analysis (unknown branch sizes count as 0).
+   Fixes closed combinators such as `+`, `count`'s `op`, `foldl(+, 0)`; does not
+   fix a wrapper whose `op` genuinely captures a live local. Wire format changes.
+2. Dead-slot clearing with seq-forced-thunk reasoning (the approved direction):
+   general, but needs the happens-before analysis above plus per-arg move flags.
+3. Both: 1 first (smaller), 2 as a follow-up bead.
