@@ -1367,8 +1367,9 @@ fn run_pipeline(
     // Inline hash: proxy (inline pass runs next; no separate call here).
     let inline_hash = eliminate_hash;
 
-    // Deprecation and type warnings, sequenced as `eu check` does, so that
-    // the deprecation quick-fix can fire in an editor.
+    // Deprecation and type warnings through the shared helper `eu check`
+    // also uses (here in `Full` mode, for types, lambda parameters and
+    // aliases), so that the deprecation quick-fix can fire in an editor.
     let mut result = crate::driver::check::type_check_loaded_core(
         &loader,
         crate::driver::check::CoreCheckMode::Full,
@@ -1376,7 +1377,8 @@ fn run_pipeline(
     // Publish only warnings located in the open document: diagnostics and
     // quick-fixes are positioned against its text, so a warning inside an
     // import (or the prelude) would land on unrelated source.  A warning
-    // with no file location is kept; it is shown at the document's start.
+    // of either kind with no file location is kept and shown at the
+    // document's start, since it cannot be shown to belong elsewhere.
     result.warnings.retain(|w| {
         loader
             .source_map()
