@@ -51,13 +51,12 @@ fn dumped_signature_of_f(source_prelude: bool) -> Option<String> {
         .map(str::to_string)
 }
 
-#[test]
-fn dump_demands_uses_prelude_signatures_in_default_mode() {
-    assert_eq!(dumped_signature_of_f(false).as_deref(), Some(EXPECTED));
-}
-
+/// Blob mode (when the binary embeds a blob) and source mode both dump the
+/// signature the executor compiles.
 #[test]
 fn dump_demands_agrees_across_prelude_modes() {
-    assert_eq!(dumped_signature_of_f(true).as_deref(), Some(EXPECTED));
-    assert_eq!(dumped_signature_of_f(false), dumped_signature_of_f(true));
+    let default_mode = dumped_signature_of_f(false);
+    let source_mode = dumped_signature_of_f(true);
+    assert_eq!(default_mode.as_deref(), Some(EXPECTED));
+    assert_eq!(source_mode.as_deref(), Some(EXPECTED));
 }
