@@ -1249,11 +1249,21 @@ backslash escapes the next character in a c-string."
             (cond ((eq c ?{) (setq depth (1+ depth)))
                   ((eq c ?}) (setq depth (1- depth))
                    (when (zerop depth) (setq state 'string)))))
+           ((eq c ?\') ; a 'quoted name' may hold " or #
+            (let ((close (save-excursion
+                           (goto-char (1+ i))
+                           (search-forward "'" (line-end-position) t))))
+              (when close (setq i (1- close)))))
            ((eq c ?\") (setq state 'string
                              escapes (eq (char-before i) ?c)))
            ((eq c ?#) (setq state 'comment))))
         (setq i (1+ i)))
       (and (memq state '(string comment)) state))))
+
+(defun eucalypt--missing-closer-p (node)
+  "Non-nil when the string NODE ends in a closing quote the parser inserted."
+  (let ((last (treesit-node-child node -1)))
+    (and last (treesit-node-check last 'missing))))
 
 (defun eucalypt--in-string-or-comment-p (&optional pos)
   "Non-nil when POS (default point) is inside a string literal or comment.
@@ -1270,7 +1280,11 @@ when the parse has an error, the line is scanned (`eucalypt--line-text-state')."
               ((member type eucalypt-mode--string-types)
                (setq done t
                      found (and (< (treesit-node-start n) pos)
-                                (< pos (treesit-node-end n)))))
+                                (or (< pos (treesit-node-end n))
+                                    ;; At the end of a string the parser
+                                    ;; closed with a missing quote: the
+                                    ;; string is still being typed.
+                                    (eucalypt--missing-closer-p n)))))
               ((equal type "comment")
                (setq done t
                      found (and (< (treesit-node-start n) pos)

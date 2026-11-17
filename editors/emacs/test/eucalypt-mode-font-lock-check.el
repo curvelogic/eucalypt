@@ -384,6 +384,13 @@ ns: { inner: 1 }\n"
                    ("x: { a: \"\\\\( }\n" "\\\\( }" t)
                    ("x: re-match(\"\\\\(" "\\\\(" t)
                    ("x: \"" "\"" nil)
+                   ;; At the end of the buffer the parser closes the string
+                   ;; with a missing quote (round 3).
+                   ("x: \"a" "" t)
+                   ("x: \"\\\\d+" "" t)
+                   ("x: c\"a\\\"b" "" t)
+                   ;; A quoted name holding a quote, on an erroneous line.
+                   ("x: f('a\"b', c && d" "&& d" nil)
                    ;; Code in an interpolation, also while typing.
                    ("x: \"{a && b}\"\n" "&& b" nil)
                    ("x: \"{a && b" "&& b" nil)
@@ -397,9 +404,11 @@ ns: { inner: 1 }\n"
       (unless (eq input-method-function #'eucalypt--input-method)
         (eucalypt-check--fail "input method not wrapped: %S"
                               input-method-function))
-      (goto-char (point-min))
-      (search-forward before)
-      (goto-char (match-beginning 0))
+      (if (string-empty-p before)
+          (goto-char (point-max))
+        (goto-char (point-min))
+        (search-forward before)
+        (goto-char (match-beginning 0)))
       (unless (eq (and (eucalypt--in-string-or-comment-p) t) text-p)
         (eucalypt-check--fail "%S at %S: in string or comment should be %S"
                               source before text-p))
