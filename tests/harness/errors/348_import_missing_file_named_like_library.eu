@@ -1,0 +1,4 @@
+{ import: "sub/lens.eu" }
+
+` { doc: "An import of a missing file that shares a shipped library's stem is an error, not a silent load of the library (eu-7tlbg). Only the bare canonical name `lens.eu` asks for the library." }
+result: 42

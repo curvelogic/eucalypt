@@ -1278,11 +1278,13 @@ impl SourceLoader {
     /// Read text from the filesystem, using lib-path to resolve the
     /// filenames.
     ///
-    /// If the file cannot be found on the filesystem, falls back to checking
-    /// baked-in resources. The stem of the filename (without extension) is
-    /// used as the resource name, so `lens.eu` falls back to the `lens`
-    /// resource if one exists. Filesystem resolution always takes priority,
-    /// allowing users to override baked-in resources with their own files.
+    /// If the file cannot be found on the filesystem and the path is exactly
+    /// a shipped library's canonical file name (`lens.eu`; see
+    /// [`Resources::library_for_import_path`]), falls back to that baked-in
+    /// library. Any other missing path is an error, even one sharing a
+    /// library's stem (eu-7tlbg). Filesystem resolution always takes
+    /// priority, allowing users to override baked-in libraries with their
+    /// own files.
     ///
     /// The result says **which** of the two it was, because that decides
     /// whether the file may be blamed as user code in a diagnostic (eu-8a49h):
@@ -1304,11 +1306,14 @@ impl SourceLoader {
             return Ok(FsInput::UserFile(text));
         }
 
-        // Fall back to baked-in resources using the filename stem.
-        // This allows libraries shipped inside the binary (e.g. `prelude.eu`,
-        // `test.eu`) to be imported by filename without being present on disk.
-        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-            if let Some(resource_text) = self.resources.get(stem) {
+        // Fall back to a library baked into the binary, but only when the
+        // path is exactly that library's canonical file name (`lens.eu`,
+        // `test.eu`): that spelling is how a program asks for the shipped
+        // library. Any other path that merely shares its stem (`lib/test.eu`,
+        // `test.yaml`) names the user's own file, and a missing one must be
+        // an error, not a silent substitution of the library (eu-7tlbg).
+        if let Some(name) = Resources::library_for_import_path(path) {
+            if let Some(resource_text) = self.resources.get(name) {
                 return Ok(FsInput::BakedInResource(resource_text.clone()));
             }
         }
@@ -1617,5 +1622,40 @@ pub mod tests {
             input.into_text().contains("shadowed-marker"),
             "the on-disk copy must take priority over the baked-in resource"
         );
+    }
+
+    /// eu-7tlbg: a missing file that only *shares a shipped library's stem*
+    /// is an error, never a silent load of the library. Only the bare
+    /// canonical name (`test.eu`) asks for the library itself.
+    #[test]
+    fn test_read_fs_input_does_not_substitute_a_library_for_a_missing_file() {
+        let mut loader = SourceLoader::new(vec![]);
+        for path in [
+            "sub/test.eu",
+            "./lens.eu",
+            "/no/such/dir/state.eu",
+            "test.yaml",
+            "lens.txt",
+            "lens",
+            "package.eu",
+            "build-meta.eu",
+        ] {
+            assert!(
+                matches!(
+                    loader.read_fs_input(Path::new(path)),
+                    Err(EucalyptError::FileCouldNotBeRead(..))
+                ),
+                "a missing '{path}' must not resolve to a baked-in resource"
+            );
+        }
+        for path in ["test.eu", "lens.eu", "prelude.eu", "markup.eu"] {
+            assert!(
+                matches!(
+                    loader.read_fs_input(Path::new(path)),
+                    Ok(FsInput::BakedInResource(_))
+                ),
+                "the canonical name '{path}' must still reach the shipped library"
+            );
+        }
     }
 }

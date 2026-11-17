@@ -395,14 +395,14 @@ struct Library {
 }
 
 /// The library name an import gives, if it is a eucalypt import that
-/// could name one: `lens.eu` (the CLI falls back to a baked-in library by
-/// file stem) or `resource:lens`.
+/// could name one: `lens.eu` (the canonical file name, which the CLI
+/// falls back to the baked-in library for) or `resource:lens`.
 fn import_library_name(import: &Input) -> Option<&str> {
     if import.format() != "eu" {
         return None;
     }
     match import.locator() {
-        Locator::Fs(path) => path.file_stem()?.to_str(),
+        Locator::Fs(path) => Resources::library_for_import_path(path),
         Locator::Resource(name) => Some(name.as_str()),
         _ => None,
     }
@@ -757,6 +757,21 @@ x: 1"#,
         .unwrap_err();
         assert!(err.message.contains("cannot import"), "{}", err.message);
         assert!(err.notes.unwrap()[0].contains("lens.eu"));
+    }
+
+    /// eu-7tlbg: only the canonical file name reaches a library; a path
+    /// that merely shares its stem is a file, which cannot be imported here.
+    #[test]
+    fn test_import_of_a_path_sharing_a_library_stem_fails_clearly() {
+        for import in ["sub/lens.eu", "./lens.eu", "lens.yaml"] {
+            let err =
+                evaluate_unit(&format!("{{ import: \"{import}\" }}\nx: 1"), "json").unwrap_err();
+            assert!(
+                err.message.contains("cannot import"),
+                "{import}: {}",
+                err.message
+            );
+        }
     }
 
     #[test]
