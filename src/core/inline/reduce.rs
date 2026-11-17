@@ -33,9 +33,15 @@ fn substs_depth(
                 // If we are now inside `depth` additional scope
                 // boundaries, we must increment all outer BVs in the
                 // replacement by `depth`.
+                //
+                // A replacement with no escaping bound variable (a
+                // closed combinator) needs no adjustment, and is shared
+                // rather than copied.
                 let mut adjusted = replacement.clone();
-                for _ in 0..depth {
-                    adjusted = succ::succ(&adjusted)?;
+                if depth > 0 && escapes_bound_vars(replacement, 0) {
+                    for _ in 0..depth {
+                        adjusted = succ::succ(&adjusted)?;
+                    }
                 }
                 Ok(adjusted)
             }
@@ -53,11 +59,22 @@ fn substs_depth(
                         .map(|v| CoreBinding::with_demand(b.name.clone(), v, b.demand))
                 })
                 .collect();
+            let new_bindings = new_bindings?;
             let new_body = substs_depth(&scope.body, mappings, depth + 1)?;
+            // Preserve sharing when nothing was substituted, so callers
+            // can detect a fixed point with `ptr_eq`.
+            if new_body.ptr_eq(&scope.body)
+                && new_bindings
+                    .iter()
+                    .zip(scope.pattern.iter())
+                    .all(|(n, o)| n.expr.ptr_eq(&o.expr))
+            {
+                return Ok(expr.clone());
+            }
             Ok(RcExpr::from(Expr::Let(
                 *s,
                 Scope {
-                    pattern: new_bindings?,
+                    pattern: new_bindings,
                     body: new_body,
                 },
                 *t,
@@ -66,6 +83,9 @@ fn substs_depth(
         // Descend into Lam body: also a new scope boundary.
         Expr::Lam(s, inl, scope) => {
             let new_body = substs_depth(&scope.body, mappings, depth + 1)?;
+            if new_body.ptr_eq(&scope.body) {
+                return Ok(expr.clone());
+            }
             Ok(RcExpr::from(Expr::Lam(
                 *s,
                 *inl,
@@ -80,6 +100,32 @@ fn substs_depth(
             let children_result: Result<RcExpr, CoreError> =
                 expr.try_walk_safe(&mut |e| substs_depth(e, mappings, depth));
             children_result
+        }
+    }
+}
+
+/// True iff `expr` contains a bound variable that refers to a scope
+/// outside `expr` itself (one that `succ` would shift), `depth` being the
+/// number of scopes already entered within `expr`.
+fn escapes_bound_vars(expr: &RcExpr, depth: u32) -> bool {
+    match &*expr.inner {
+        Expr::Var(_, Var::Bound(bv)) => bv.scope >= depth,
+        Expr::Var(_, _) => false,
+        Expr::Let(..) | Expr::Lam(..) => {
+            let mut found = false;
+            let _ = expr.try_walk_safe::<CoreError, _>(&mut |e| {
+                found = found || escapes_bound_vars(e, depth + 1);
+                Ok(e.clone())
+            });
+            found
+        }
+        _ => {
+            let mut found = false;
+            let _ = expr.try_walk_safe::<CoreError, _>(&mut |e| {
+                found = found || escapes_bound_vars(e, depth);
+                Ok(e.clone())
+            });
+            found
         }
     }
 }
@@ -143,7 +189,9 @@ fn peel_meta(expr: &RcExpr) -> RcExpr {
 /// Bounded to `inlines.len()` rounds: monotonic (each round can only
 /// resolve more references, never fewer), so this is enough for any DAG of
 /// dependencies among the scope's own inlinable members.
-fn pre_expand_inlines(mut inlines: Vec<(String, RcExpr)>) -> Vec<(String, RcExpr)> {
+fn pre_expand_inlines(
+    mut inlines: Vec<(String, RcExpr)>,
+) -> Result<Vec<(String, RcExpr)>, CoreError> {
     for _ in 0..inlines.len() {
         let mut changed = false;
         let next: Vec<(String, RcExpr)> = inlines
@@ -151,19 +199,19 @@ fn pre_expand_inlines(mut inlines: Vec<(String, RcExpr)>) -> Vec<(String, RcExpr
             .map(|(name, v)| {
                 let siblings: Vec<(String, RcExpr)> =
                     inlines.iter().filter(|(n, _)| n != name).cloned().collect();
-                let expanded = v.substs(&siblings);
+                let expanded = substs_depth(v, &siblings, 0)?;
                 if !expanded.ptr_eq(v) {
                     changed = true;
                 }
-                (name.clone(), expanded)
+                Ok((name.clone(), expanded))
             })
-            .collect();
+            .collect::<Result<_, CoreError>>()?;
         inlines = next;
         if !changed {
             break;
         }
     }
-    inlines
+    Ok(inlines)
 }
 
 /// Distribute inline lambdas to call site
@@ -188,7 +236,7 @@ fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                 })
                 .collect();
 
-            let inlines = pre_expand_inlines(inlines);
+            let inlines = pre_expand_inlines(inlines)?;
 
             if inlines.is_empty() {
                 Ok(expr.clone())
@@ -204,7 +252,7 @@ fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                         // recursive call from demand analysis (eu-oaz72.147).
                         let others: Vec<(String, RcExpr)> =
                             inlines.iter().filter(|(n, _)| n != name).cloned().collect();
-                        let substituted = v.substs(&others);
+                        let substituted = substs_depth(v, &others, 0)?;
                         match distribute(&substituted) {
                             Ok(e) => Ok((name.clone(), e)),
                             Err(e) => Err(e),
@@ -212,7 +260,7 @@ fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                     })
                     .collect::<Result<Vec<(String, RcExpr)>, CoreError>>()?;
 
-                let new_body = distribute(&body.substs(&inlines))?;
+                let new_body = distribute(&substs_depth(&body, &inlines, 0)?)?;
 
                 Ok(RcExpr::from(Expr::Let(
                     *s,
@@ -674,6 +722,65 @@ pub mod tests {
                 ),
             ],
             var(a),
+        );
+
+        let inlined = inline_pass(&original).unwrap();
+        binding::verify(&inlined).unwrap();
+        assert_eq!(alpha_norm(inlined), alpha_norm(expected));
+    }
+
+    /// Regression test for eu-oaz72.179: a block-local destructuring
+    /// lambda is tagged inlinable but is *not* closed — it refers to the
+    /// enclosing function's parameter `x`.  Distributing it into the
+    /// right-hand side of a sibling `let` places it one scope deeper, so
+    /// its escaping bound variables must be shifted; before the fix `x`
+    /// resolved to `r` itself ("infinite loop detected: binding refers to
+    /// itself" when the prelude is compiled from source).
+    #[test]
+    pub fn test_distribute_open_destructuring_lambda_shifts_scope() {
+        let x = free("x");
+        let hit = free("hit?");
+        let r = free("r");
+        let p0 = free("__p0");
+        let y = free("y");
+
+        let hit_def = || {
+            let destr_let = RcExpr::from(Expr::Let(
+                Smid::default(),
+                close_let_scope(
+                    vec![(
+                        y.clone(),
+                        app(bif("HEAD"), vec![app(bif("TAIL"), vec![var(p0.clone())])]),
+                    )],
+                    app(bif("EQ"), vec![var(y.clone()), var(x.clone())]),
+                ),
+                LetType::DestructureListLet,
+            ));
+            inline(vec![p0.clone()], destr_let)
+        };
+
+        // λ(x). let hit? = <def> in let r = MAP(hit?) in r
+        let original = lam(
+            vec![x.clone()],
+            let_(
+                vec![(hit.clone(), hit_def())],
+                let_(
+                    vec![(r.clone(), app(bif("MAP"), vec![var(hit.clone())]))],
+                    var(r.clone()),
+                ),
+            ),
+        );
+        // The definition is copied into `r`'s right-hand side, one scope
+        // deeper, with `x` still naming the parameter.
+        let expected = lam(
+            vec![x.clone()],
+            let_(
+                vec![(hit.clone(), hit_def())],
+                let_(
+                    vec![(r.clone(), app(bif("MAP"), vec![hit_def()]))],
+                    var(r.clone()),
+                ),
+            ),
         );
 
         let inlined = inline_pass(&original).unwrap();
