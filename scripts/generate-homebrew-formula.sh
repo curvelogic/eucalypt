@@ -61,7 +61,7 @@ base="https://github.com/curvelogic/eucalypt/releases/download/${version}"
 cat <<EOF
 class Eucalypt < Formula
   desc "Tool for generating, templating and processing YAML, JSON, TOML"
-  homepage "https://curvelogic.github.io/eucalypt/"
+  homepage "https://eucalypt.curvelogic.info/"
   version "${version}"
 
   on_macos do
