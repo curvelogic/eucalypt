@@ -56,8 +56,3 @@ tests/harness/typecheck/024_for_bind_no_warning.eu
 ## (tests/harness/, minus tests/harness/errors/) and doesn't know this
 ## nuance.
 tests/harness/typecheck/112_check_strict_parse_error_exits_nonzero.eu
-
-## Chained multi-arg call f(a)(b, c) where the second call has 2+ args.
-## Audit report §2.8. Not investigated as part of the prelude-parsing pass
-## (doesn't block lib/prelude.eu or lib/lens.eu).
-tests/harness/010_prelude.eu
