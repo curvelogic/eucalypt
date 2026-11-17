@@ -1255,7 +1255,17 @@ fn run_pipeline(
     let mut doc_file_id = None;
     // Detect a `prelude:` override in the open document before loading, as
     // `prepare()` does for evaluation (eu-oaz72.177).
-    if let Err(e) = loader.detect_and_load_prelude_override(&inputs[1..]) {
+    // Detection only reads buffer text, so always present the document as a
+    // buffer, even when its URI did not map to a path (e.g. on Windows).
+    let detect_input = Input::new(
+        Locator::Buffer {
+            path: path.map(|p| p.to_path_buf()).unwrap_or_default(),
+            text: text.to_string(),
+        },
+        None,
+        "eu",
+    );
+    if let Err(e) = loader.detect_and_load_prelude_override(&[detect_input]) {
         return Err(make_pipeline_error(&loader, &e));
     }
     for input in &inputs {
