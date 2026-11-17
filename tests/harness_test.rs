@@ -4739,6 +4739,19 @@ pub fn test_typecheck_134_identity_monad_derived_no_warning() {
     run_typecheck_test("134_identity_monad_derived_no_warning.eu");
 }
 
+/// A list-destructuring parameter with a block element is not a block
+/// parameter: the valid call checks clean (eu-oaz72.172).
+#[test]
+pub fn test_typecheck_136_list_block_param_no_warning() {
+    run_typecheck_test("136_list_block_param_no_warning.eu");
+}
+
+/// Block-param detection through a nested let still warns on a non-block.
+#[test]
+pub fn test_typecheck_137_block_param_nested_projection_warns() {
+    run_typecheck_test("137_block_param_nested_projection_warns.eu");
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]
@@ -4787,6 +4800,24 @@ pub fn test_doc_001_markdown_basic() {
             "A version string.",
         ],
     );
+}
+
+/// `eu doc` documents members of nested namespace blocks, but not scoping
+/// helpers or plain data blocks.
+#[test]
+pub fn test_doc_nested_namespaces() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["doc", "tests/harness/doc/003_nested_namespaces.eu"])
+        .output()
+        .expect("failed to run eu doc");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(0), "{stdout}");
+    for pattern in ["#### `deep(x)`", "Deep function doc."] {
+        assert!(stdout.contains(pattern), "missing {pattern:?}:\n{stdout}");
+    }
+    for hidden in ["helper-hidden", "data-hidden"] {
+        assert!(!stdout.contains(hidden), "leaked {hidden:?}:\n{stdout}");
+    }
 }
 
 /// `eu doc` extracts type annotations and renders them in a code block.

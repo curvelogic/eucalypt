@@ -115,6 +115,40 @@ while an alert is open, a PR that is not its fix waits behind it.
 
 **Language.** UK English in code, comments and docs.
 
+## Findings are finished in the PR
+
+A review finding is fixed in the PR that raised it, not deferred to a
+follow-up bead. Where the reviewer's definition lets an author leave
+non-blocking items for later, this section is the stricter rule.
+
+**Never graded non-blocking.** These block, whatever their size, in code
+the PR adds or changes or in behaviour its tests exercise:
+
+- a correctness defect: a wrong result; behaviour that contradicts its
+  doc string or docs; a hang, abort or panic; a result that differs
+  between source and blob prelude modes; a diagnostic that points at the
+  wrong place;
+- a test that can pass without exercising what it claims to: it does not
+  gate, cannot fail under fault injection, or is never run.
+
+When in doubt whether a finding is one of these, it is.
+
+**Non-blocking findings are fixed before merge.** Every other finding
+(style, wording, a small refactor, an edge case worth a check) is fixed in
+this PR, or answered on the PR with the reason it does not apply. A review
+that finds no blocking items but some non-blocking ones posts the verdict
+`pass after fixes` and does not merge. Once the author has pushed, a
+**fixes check** by a fresh `rig-review` confirms each item is fixed or
+answered and that the new commits add nothing blocking, then merges under
+this file as usual. A fixes check is not a review round (*Review rounds*).
+
+**Follow-up beads are for separate work only.** A finding becomes a new
+bead only when it cannot reasonably be done in this PR: it lies in another
+subsystem, needs a design or an owner decision, or is larger than the PR
+itself. The bead says why, and the PR body lists it. Neither reviewers nor
+coordinators file a bead for each leftover by default, and a finding
+already listed above as never non-blocking cannot be split off this way.
+
 ## Owner review filter
 
 The owner reviews and merges these personally:

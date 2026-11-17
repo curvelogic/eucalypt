@@ -40,11 +40,7 @@ pub fn render_markdown(entries: &[DocEntry], title: &str, unit_doc: Option<&str>
             if let Some(ref doc) = entry.doc {
                 out.push_str(&format!("{doc}\n\n"));
             }
-            for child in &entry.children {
-                if child.is_public() {
-                    render_entry_markdown(child, &mut out, "###");
-                }
-            }
+            render_children_markdown(&entry.children, &mut out, "###");
             continue;
         }
 
@@ -52,6 +48,20 @@ pub fn render_markdown(entries: &[DocEntry], title: &str, unit_doc: Option<&str>
     }
 
     out
+}
+
+/// Render namespace members; a member that is itself a namespace block is
+/// rendered with its own members nested one heading level deeper.
+fn render_children_markdown(children: &[DocEntry], out: &mut String, heading: &str) {
+    for child in children {
+        if !child.is_public() {
+            continue;
+        }
+        render_entry_markdown(child, out, heading);
+        if heading.len() < 6 {
+            render_children_markdown(&child.children, out, &format!("{heading}#"));
+        }
+    }
 }
 
 fn render_entry_markdown(entry: &DocEntry, out: &mut String, heading: &str) {
@@ -113,6 +123,21 @@ fn render_entry_markdown(entry: &DocEntry, out: &mut String, heading: &str) {
 
 // ── JSON Schema rendering ─────────────────────────────────────────────────────
 
+fn collect_child_schemas(children: &[DocEntry], properties: &mut Vec<String>) {
+    for child in children {
+        if !child.is_public() {
+            continue;
+        }
+        if let Some(ref ty_str) = child.type_annotation {
+            if let Some(schema) = type_str_to_json_schema(ty_str) {
+                let name = child.qualified_name();
+                properties.push(format!("    {}: {}", json_str(&name), schema));
+            }
+        }
+        collect_child_schemas(&child.children, properties);
+    }
+}
+
 /// Render a collection of doc entries as a JSON Schema document.
 ///
 /// Only data-typed bindings (properties whose types describe data shapes)
@@ -131,17 +156,7 @@ pub fn render_json_schema(entries: &[DocEntry], title: &str) -> String {
             }
         }
         // Recurse into namespace children
-        for child in &entry.children {
-            if !child.is_public() {
-                continue;
-            }
-            if let Some(ref ty_str) = child.type_annotation {
-                if let Some(schema) = type_str_to_json_schema(ty_str) {
-                    let name = child.qualified_name();
-                    properties.push(format!("    {}: {}", json_str(&name), schema));
-                }
-            }
-        }
+        collect_child_schemas(&entry.children, &mut properties);
     }
 
     let mut out = String::from("{\n");
@@ -303,22 +318,33 @@ pub fn compute_coverage(entries: &[DocEntry]) -> Coverage {
     let mut undocumented = 0;
     let mut undocumented_names = Vec::new();
 
-    let mut check = |entry: &DocEntry| {
+    fn check(
+        entry: &DocEntry,
+        documented: &mut usize,
+        undocumented: &mut usize,
+        names: &mut Vec<String>,
+    ) {
         if !entry.is_public() {
             return;
         }
         if entry.doc.is_some() {
-            documented += 1;
+            *documented += 1;
         } else {
-            undocumented += 1;
-            undocumented_names.push(entry.qualified_name());
+            *undocumented += 1;
+            names.push(entry.qualified_name());
         }
-    };
+    }
 
+    // Coverage counts top-level bindings and their direct namespace members
+    // only; deeper nesting is rendered but not counted.
     for entry in entries {
-        check(entry);
-        for child in &entry.children {
-            check(child);
+        for e in std::iter::once(entry).chain(entry.children.iter()) {
+            check(
+                e,
+                &mut documented,
+                &mut undocumented,
+                &mut undocumented_names,
+            );
         }
     }
 
@@ -333,7 +359,26 @@ pub fn compute_coverage(entries: &[DocEntry]) -> Coverage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::driver::doc::extract_doc_entries;
+    use crate::syntax::rowan::parse_unit;
     use serde_json::Value;
+
+    #[test]
+    fn nested_block_members_are_documented() {
+        let src = "` \"Outer ns\"\nouter: {\n  ` \"Mid ns\"\n  inner: {\n    ` \"Deep doc\"\n    g(x): x\n  }\n}\n";
+        let unit = parse_unit(src).tree();
+        let entries = extract_doc_entries(&unit);
+        let md = render_markdown(&entries, "t", None);
+        assert!(md.contains("#### `g(x)`"), "{md}");
+        assert!(md.contains("Deep doc"), "{md}");
+        let cov = compute_coverage(&entries);
+        assert_eq!(cov.total, 2);
+        assert_eq!(cov.documented, 2);
+        assert_eq!(
+            entries[0].children[0].children[0].qualified_name(),
+            "outer.inner.g"
+        );
+    }
 
     fn schema(ty_str: &str) -> Option<Value> {
         type_str_to_json_schema(ty_str).map(|s| serde_json::from_str(&s).unwrap())

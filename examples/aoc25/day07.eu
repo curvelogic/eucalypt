@@ -6,76 +6,68 @@ stop the beam and emit new beams left and right. Count total splits.
 Part 2: Each split creates a new timeline. Track the count of timelines
 at each position using addition instead of max, and sum for the total.
 
-Approach: represent beam state as a bit-vector (part 1) or count-vector
-(part 2) across each row. Fold downward through the grid: at each row,
-detect hits on splitters, remove hit beams, emit left/right, and merge.
-Swapping `max` for `+` switches from deduplication to timeline counting.
+Approach: represent the beams as a dict from column to the number of
+timelines travelling down it. Fold downward through the grid, visiting
+only each row's splitters: a splitter that meets a beam retires it and
+hands its count to the neighbouring columns. Part 1 counts the hits;
+part 2 sums the counts left at the bottom.
 
 Notable eucalypt techniques:
-- `zip-with(*, beam, sp)` for element-wise hit detection
-- list shifting (`shift-left`, `shift-right`) for beam emission
-- `foldl` over grid rows with `[beam, count]` state
-- same structure, different combiner for parts 1 and 2
-
-Running time: ~2s (part 1), ~4s (part 2)
+- `dict` with `update-strict` as a counting table
+- `str.split-on` plus `running-sum` to find the columns of a character
+- `foldl-strict` over grid rows with `[beams, count]` state
+- one row step shared by both parts
 "
 
-` "1 if the character is a splitter, 0 otherwise."
-split?(c): (c = "^") then(1, 0)
+` "Find the column index of S in a row: the length of what precedes it."
+find-s(row): row str.split-on("[S]") head str.len
 
-` "Convert a row string to a splitter bit-vector."
-to-splitters(row): row str.letters map(split?)
-
-` "Find the column index of S in a row."
-find-s(row): row str.letters take-while(!= "S") count
-
-` "Build a beam vector of width w with a single 1 at column col."
-init-beam(w, col): (repeat(0) take(col)) ++ [1] ++ (repeat(0) take(w - col - 1))
-
-` "Shift a list left by one, filling with 0."
-shift-left(xs): (xs tail) ++ [0]
-
-` "Shift a list right by one, filling with 0."
-shift-right(xs): [0] ++ xs butlast
-
-` "Parse input into [rows, initial-beam]."
+` "Parse input into `[rows, initial-beams]`.  The beams are a dict from
+column to the number of timelines currently travelling down it."
 parse(data): {
   lines: data filter(!= "")
-  w: lines head str.letters count
-  s: lines head find-s
-}.([lines tail, init-beam(w, s)])
+}.([lines tail, dict.of[[lines head find-s, 1]]])
 
-` "Process one row: update beam positions and accumulate split count.
-State is [beam-vector, total-splits]."
-row-step([beam, total], row): {
-  sp: to-splitters(row)
-  ` "Hits: beam positions that coincide with splitters."
-  h: zip-with(*, beam, sp)
-  ` "Pass-through: beam positions minus hits."
-  p: zip-with(-, beam, h)
-  emitted: zip-with(max, shift-left(h), shift-right(h))
-  new-beam: zip-with(max, p, emitted)
-}.([ new-beam, total + (h sum) ])
+` "The columns of the splitters in a row.  Splitting the row on `^` leaves
+the gaps between them; a running sum of the gap lengths (plus one for the
+splitter itself) gives each splitter's column."
+splitter-columns(row):
+  row str.split-on("[\\^]") map(str.len ; inc) running-sum butlast map(dec)
 
-` "Count total splits as the beam propagates down the grid."
-solve(rows, b0): rows foldl(row-step, [b0, 0]) second
+` "The beams entering a splitter column, as `[column, count]`."
+entering(beams, col): [col, beams dict.get-or(col, 0)]
 
-` "Process one row for Part 2: count timelines instead of bits.
-State is just the beam count-vector."
-row-step2(beam, row): {
-  sp: to-splitters(row)
-  h: zip-with(*, beam, sp)
-  p: zip-with(-, beam, h)
-  emitted: zip-with(+, shift-left(h), shift-right(h))
-}.(zip-with(+, p, emitted))
+` "Retire the beams that hit a splitter."
+retire(beams, hit): beams dict.dissoc(hit first)
 
-` "Sum timeline counts after propagating the beam down the grid."
-solve2(rows, b0): rows foldl(row-step2, b0) sum
+` "Emit a retired beam's timelines to both neighbouring columns."
+emit(beams, [col, n]):
+  beams dict.update-strict(col - 1, + n, 0) dict.update-strict(col + 1, + n, 0)
+
+` "Process one row.  State is `[beams, total-splits]`.  Only the splitters
+in the row are visited, and hits are found against the beams entering the
+row, so neighbouring splitters do not feed each other.  Beams pushed off
+either side of the grid are dropped."
+row-step([beams, total], row): {
+  hits: splitter-columns(row) map(entering(beams)) remove(second ; zero?)
+  cleared: hits foldl-strict(retire, beams)
+  w: row str.len
+}.([hits foldl-strict(emit, cleared) dict.range(0, w), total + (hits count)])
+
+` "Count total splits as the beams propagate down the grid."
+solve(rows, b0): rows foldl-strict(row-step, [b0, 0]) second
+
+` "Part 2: the timelines are the beams left at the bottom, summed."
+solve2(rows, b0): rows foldl-strict(row-step, [b0, 0]) first dict.values sum
 
 ` { target: :test
     import: "ex1=inputs/day07-ex1.txt" }
 test: {
   part-1: ex1 parse uncurry(solve) //= 21
   part-2: ex1 parse uncurry(solve2) //= 40
-  RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
+  ` "Splitters at both edges and adjacent splitters in one row."
+  edge-grid: ["S....", "^....", ".^...", "^.^..", ".^.^.", "^^^^^"]
+  edges-1: edge-grid parse uncurry(solve) //= 9
+  edges-2: edge-grid parse uncurry(solve2) //= 9
+  RESULT: (part-1 ∧ part-2 ∧ edges-1 ∧ edges-2) then(:PASS, :FAIL)
 }
