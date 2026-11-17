@@ -1,0 +1,4 @@
+{ import: "cfg=text@lens.eu" }
+
+` { doc: "A data import (here text) of a missing file is an error even under a shipped library's canonical name: only an import read as eucalypt may reach the library (eu-7tlbg)." }
+result: cfg

@@ -134,12 +134,16 @@ the global lib path is not consulted.
 If the file is found in neither place, the import is an error — with one
 exception. The libraries shipped inside eucalypt (`prelude.eu`, `lens.eu`,
 `state.eu`, `do.eu`, `reflect.eu`, `contract.eu`, `markup.eu`, `test.eu`) are
-imported by their bare file name, as in `{ import: "lens.eu" }`, so that exact
-name (or the name without `.eu`) falls back to the shipped library when no such file exists. A file of
-your own with that name, found by the search above, takes priority. Any other
-path is only ever a file: `"lib/lens.eu"`, `"./lens.eu"` or `"lens.yaml"` that
-does not exist is a `could not read` error, never the shipped library. A
-shipped library can also be named directly as a resource: `"resource:lens"`.
+imported by their bare file name, as in `{ import: "lens.eu" }`. That exact
+name, or the name without `.eu`, falls back to the shipped library when no
+such file exists and the import is read as eucalypt. A file of your own with
+that name, found by the search above, takes priority. Any other import is
+only ever a file: `"lib/lens.eu"`, `"./lens.eu"`, `"lens.yaml"` or a data
+import such as `"text@lens.eu"` that does not exist is a `could not read`
+error, never the shipped library. (Inside a file fetched by a git import,
+relative imports are fetched from the same repository instead; see
+[Git Imports](#git-imports).) A shipped library can also be named directly
+as a resource: `"resource:lens"`.
 
 ### Transitive resolution
 

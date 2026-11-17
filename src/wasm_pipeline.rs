@@ -763,7 +763,7 @@ x: 1"#,
     /// that merely shares its stem is a file, which cannot be imported here.
     #[test]
     fn test_import_of_a_path_sharing_a_library_stem_fails_clearly() {
-        for import in ["sub/lens.eu", "./lens.eu", "lens.yaml"] {
+        for import in ["sub/lens.eu", "./lens.eu", "sub/lens"] {
             let err =
                 evaluate_unit(&format!("{{ import: \"{import}\" }}\nx: 1"), "json").unwrap_err();
             assert!(

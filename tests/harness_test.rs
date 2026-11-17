@@ -5728,6 +5728,13 @@ pub fn test_error_348_import_missing_file_named_like_library() {
 }
 
 #[test]
+pub fn test_error_349_data_import_missing_file_named_like_library() {
+    run_error_test(&error_opts(
+        "349_data_import_missing_file_named_like_library.eu",
+    ));
+}
+
+#[test]
 pub fn test_error_332_scanl_applies_op_at_cell() {
     run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
 }

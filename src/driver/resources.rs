@@ -108,3 +108,48 @@ impl Resources {
         self.content.get(name.as_ref())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    /// eu-7tlbg: only a shipped library's bare canonical name (with `.eu`
+    /// or no extension) names it; a path that merely shares its stem does
+    /// not. Pure path classification, independent of the filesystem.
+    #[test]
+    fn test_library_for_import_path_accepts_only_canonical_names() {
+        for (path, library) in [
+            ("lens.eu", "lens"),
+            ("test.eu", "test"),
+            ("prelude.eu", "prelude"),
+            ("prelude", "prelude"),
+            ("markup", "markup"),
+        ] {
+            assert_eq!(
+                Resources::library_for_import_path(Path::new(path)),
+                Some(library),
+                "{path}"
+            );
+        }
+        for path in [
+            "sub/test.eu",
+            "./lens.eu",
+            "/abs/state.eu",
+            "../lens.eu",
+            "test.yaml",
+            "lens.txt",
+            "sub/lens",
+            "package.eu",
+            "build-meta.eu",
+            "helpers.eu",
+            "",
+        ] {
+            assert_eq!(
+                Resources::library_for_import_path(Path::new(path)),
+                None,
+                "{path}"
+            );
+        }
+    }
+}
