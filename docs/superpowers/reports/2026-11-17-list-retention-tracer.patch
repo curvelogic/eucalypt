@@ -1,0 +1,119 @@
+diff --git a/src/eval/bytecode/machine.rs b/src/eval/bytecode/machine.rs
+index 6fbeb8e8..245813a6 100644
+--- a/src/eval/bytecode/machine.rs
++++ b/src/eval/bytecode/machine.rs
+@@ -2243,6 +2243,12 @@ pub fn handle_op(
+     prog: &BytecodeProgram,
+     decoded: &DecodedProgram,
+ ) -> Result<(), ExecutionError> {
++    {
++        static CNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++        if CNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 1_500_000 && std::env::var("EU_DBG").is_ok() {
++            dbg_trace(state, view);
++        }
++    }
+     let code = prog.code.as_slice();
+     let closure = *state.current.as_closure().ok_or_else(|| {
+         ExecutionError::Panic(state.annotation, "handle_op on a native value".to_string())
+@@ -2782,6 +2788,13 @@ pub fn handle_op_predecoded(
+     prog: &BytecodeProgram,
+     decoded: &DecodedProgram,
+ ) -> Result<(), ExecutionError> {
++    {
++        static CNT2: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++        if CNT2.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 6_000_000 && std::env::var("EU_DBG").is_ok() {
++            dbg_trace(state, view);
++            dbg_path(state, view, decoded);
++        }
++    }
+     let closure = *state.current.as_closure().ok_or_else(|| {
+         ExecutionError::Panic(state.annotation, "handle_op on a native value".to_string())
+     })?;
+@@ -7320,3 +7333,87 @@ mod tests {
+         );
+     }
+ }
++
++fn dbg_reach(view: MutatorHeapView<'_>, start: RefPtr<BcEnvFrame>, seen: &mut std::collections::HashSet<usize>) -> usize {
++    let mut n = 0;
++    let mut work = vec![start];
++    while let Some(f) = work.pop() {
++        if f == RefPtr::dangling() || !seen.insert(f.as_ptr() as usize) { continue; }
++        n += 1;
++        let fr = view.scoped(f);
++        if let Some(nx) = fr.next_frame() { work.push(nx); }
++        for v in fr.shared_bindings_full().iter() {
++            if let BcValue::Closure(c) = v { work.push(c.env()); }
++        }
++    }
++    n
++}
++
++fn dbg_trace(state: &BcMachineState, view: MutatorHeapView<'_>) {
++    let mut seen = std::collections::HashSet::new();
++    let g = dbg_reach(view, state.globals, &mut seen);
++    let r = dbg_reach(view, state.root_env, &mut seen);
++    eprintln!("TRACE globals+root frames={} (root extra {})", g, r);
++    for (i, c) in state.stack.iter().enumerate() {
++        let mut t = 0usize;
++        let name;
++        match c {
++            BcContinuation::Update { environment, index, .. } => { name = format!("Update i{index}"); t += dbg_reach(view, *environment, &mut seen); }
++            BcContinuation::Branch { environment, .. } | BcContinuation::BranchPredecoded { environment, .. } => { name = "Branch".into(); t += dbg_reach(view, *environment, &mut seen); }
++            BcContinuation::SeqBind { environment, .. } => { name = "SeqBind".into(); t += dbg_reach(view, *environment, &mut seen); }
++            BcContinuation::ApplyTo { args, .. } => { name = "ApplyTo".into(); for v in args.iter() { if let BcValue::Closure(c) = v { t += dbg_reach(view, c.env(), &mut seen); } } }
++            _ => { name = "other".into(); }
++        }
++        eprintln!("TRACE stack[{i}] {name}: new frames {t}");
++    }
++    if let BcValue::Closure(c) = &state.current { let t = dbg_reach(view, c.env(), &mut seen); eprintln!("TRACE current: new frames {t}"); }
++}
++
++fn dbg_path(state: &BcMachineState, view: MutatorHeapView<'_>, decoded: &DecodedProgram) {
++    use std::collections::HashMap;
++    let BcValue::Closure(c0) = &state.current else { return; };
++    let start = c0.env();
++    let mut parent: HashMap<usize, (usize, String)> = HashMap::new();
++    let mut ptrs: HashMap<usize, RefPtr<BcEnvFrame>> = HashMap::new();
++    let mut depth: HashMap<usize, usize> = HashMap::new();
++    let mut q = std::collections::VecDeque::new();
++    ptrs.insert(start.as_ptr() as usize, start);
++    depth.insert(start.as_ptr() as usize, 0);
++    q.push_back(start);
++    let mut last = start;
++    while let Some(f) = q.pop_front() {
++        last = f;
++        let k = f.as_ptr() as usize;
++        let d = depth[&k];
++        let fr = view.scoped(f);
++        let mut edges: Vec<(RefPtr<BcEnvFrame>, String)> = vec![];
++        if let Some(nx) = fr.next_frame() { edges.push((nx, "next".into())); }
++        for (i, v) in fr.shared_bindings_full().iter().enumerate() {
++            if let BcValue::Closure(c) = v {
++                let op = decoded.instrs.get(c.code() as usize).map(|x| x.op as u8);
++                edges.push((c.env(), format!("slot{} upd={} ar={} op={:?}", i, c.update(), c.arity(), op)));
++            }
++        }
++        for (e, lab) in edges {
++            if e == RefPtr::dangling() { continue; }
++            let ek = e.as_ptr() as usize;
++            if ptrs.contains_key(&ek) { continue; }
++            ptrs.insert(ek, e); depth.insert(ek, d + 1); parent.insert(ek, (k, lab)); q.push_back(e);
++        }
++    }
++    let mut cur = last.as_ptr() as usize;
++    eprintln!("PATH deepest depth {}", depth[&cur]);
++    let mut out = vec![];
++    let mut chain = vec![cur];
++    while let Some((p, lab)) = parent.get(&cur) { out.push(lab.clone()); cur = *p; chain.push(cur); }
++    chain.reverse();
++    for (ci, k) in chain.iter().enumerate().skip(3).take(3) {
++        let fr = view.scoped(ptrs[k]);
++        let desc: Vec<String> = fr.shared_bindings_full().iter().enumerate().map(|(i, v)| match v {
++            BcValue::Native(_) => format!("{i}:native"),
++            BcValue::Closure(c) => format!("{i}:clo(upd={} ar={} op={:?} env={:x})", c.update(), c.arity(), decoded.instrs.get(c.code() as usize).map(|x| x.op as u8), (c.env().as_ptr() as usize) & 0xffffff),
++        }).collect();
++        eprintln!("PATH frame[{ci}] {:x} next={:?}: {}", (*k) & 0xffffff, fr.next_frame().map(|n| (n.as_ptr() as usize) & 0xffffff), desc.join(" "));
++    }
++    for (i, l) in out.iter().rev().enumerate().take(14) { eprintln!("PATH {i}: {l}"); }
++}
