@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/333_unclosed_bracket_open.eu:4:4
+primary: user tests/harness/errors/333_unclosed_bracket_open.eu:3:4
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -19,7 +19,7 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: unclosed bracket expression (missing closing bracket)
-  ┌─ tests/harness/errors/333_unclosed_bracket_open.eu:4:4
+  ┌─ tests/harness/errors/333_unclosed_bracket_open.eu:3:4
   │
-4 │ y: ⟦ 2 + 3
+3 │ y: ⟦ 2 + 3
   │    ^

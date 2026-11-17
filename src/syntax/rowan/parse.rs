@@ -118,6 +118,16 @@ impl<'text> Parser<'text> {
         TextRange::new(start, ch)
     }
 
+    /// Calculate the text range of the token at the given index (empty at the
+    /// end of the text if the index is past the last token).
+    fn token_range_at(&self, idx: usize) -> TextRange {
+        let start = self.token_start_at(idx.min(self.tokens.len()));
+        match self.tokens.get(idx) {
+            Some((_, s)) => TextRange::at(start, TextSize::of(*s)),
+            None => TextRange::empty(start),
+        }
+    }
+
     /// Calculate the start offset of the token at the given index.
     fn token_start_at(&self, idx: usize) -> TextSize {
         let mut ch: TextSize = 0.into();
@@ -527,7 +537,9 @@ impl<'text> Parser<'text> {
             None
         };
 
-        let open_range = self.next_range();
+        // Remember where the opening bracket is; its text range is only
+        // computed (an O(n) scan) if the bracket turns out to be unclosed.
+        let open_token = self.next_token;
         let is_block_mode = self.bracket_content_has_top_level_colon();
 
         if is_block_mode {
@@ -537,8 +549,8 @@ impl<'text> Parser<'text> {
             self.parse_block_content_until_bracket_close();
             self.add_trivia();
             if !self.try_accept(BRACKET_CLOSE) {
-                self.errors
-                    .push(ParseError::UnclosedBracketExpr { range: open_range });
+                let range = self.token_range_at(open_token);
+                self.errors.push(ParseError::UnclosedBracketExpr { range });
             }
             self.sink().finish_node();
         } else {
@@ -549,8 +561,8 @@ impl<'text> Parser<'text> {
             self.add_trivia();
             self.parse_soup();
             if !self.try_accept(BRACKET_CLOSE) {
-                self.errors
-                    .push(ParseError::UnclosedBracketExpr { range: open_range });
+                let range = self.token_range_at(open_token);
+                self.errors.push(ParseError::UnclosedBracketExpr { range });
             } else if let Some(expected) = expected_close {
                 let _ = expected; // validation deferred to validate.rs
             }
