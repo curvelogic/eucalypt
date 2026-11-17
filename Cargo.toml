@@ -8,6 +8,7 @@ version = "0.16.0"
 authors = ["gmorpheme <github@gmorpheme.net>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
+homepage = "https://eucalypt.curvelogic.info/"
 
 [features]
 default = []
