@@ -1494,12 +1494,11 @@ __drop(n, l): __IF((n <= 0), l, __IF(l nil?, [], __drop(n dec, l tail)))
 
 ` { doc: "`rotate(n, l)` - rotate list `l` left by `n` positions, wrapping when `n` exceeds the length; `l` unchanged when `n` <= 0; a non-integer `n` is an error."
     type: s"number → [a] → [a]" }
-rotate(n, l): { s: __split-at(n, l) }.(__require-int("rotate count", n, second(s) nil? then(__rotate-wrap(n, l), second(s) ++ first(s))))
-
-` { doc: "`__rotate-wrap(n, l)` - internal: `rotate` when `n` reaches past the end of `l`."
-    export: :suppress
-    blame: :transparent }
-__rotate-wrap(n, l): { len: l count }.(len zero? then(l, { s: __split-at(n % len, l) }.(second(s) ++ first(s))))
+rotate(n, l): {
+  s: __split-at(n, l)
+  len: l count
+  wrap: len zero? then(l, { w: __split-at(n % len, l) }.(second(w) ++ first(w)))
+}.(__require-int("rotate count", n, second(s) nil? then(wrap, second(s) ++ first(s))))
 
 ` { doc: "`split-at(n, l)` - split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0; a non-integer `n` is an error."
     type: s"number → [a] → ([a], [a])" }
