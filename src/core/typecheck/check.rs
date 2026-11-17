@@ -35,7 +35,7 @@ use crate::{
         typecheck::{
             error::{CallSite, TypeWarning},
             parse,
-            subtype::{is_consistent, is_subtype},
+            subtype::{is_abstract_hkt_app, is_consistent, is_subtype},
             types::{unfold_mu, Constraint, Type, TypeScheme, TypeVarId},
             unify::{
                 apply_subst, freshen, freshen_forall, freshen_with_constraints, infer_scheme,
@@ -1772,7 +1772,14 @@ impl Checker {
                     Ok(()) => apply_subst(&result_type, subst),
                     Err(_) => {
                         // Fall back to subtyping (e.g. Lens <: Traversal)
-                        if !is_subtype(&arg_type, &param_applied) {
+                        // An abstract `m a` parameter (unresolved higher-kinded
+                        // head, e.g. a derived monad combinator on an
+                        // identity-like monad) may be any concrete type, so
+                        // a concrete argument is not a mismatch.
+                        if !is_subtype(&arg_type, &param_applied)
+                            && !(is_abstract_hkt_app(&param_applied)
+                                && !matches!(arg_type, Type::App(_, _)))
+                        {
                             let message = build_arg_mismatch_message(func_name);
                             self.emit_arg_mismatch(
                                 smid,

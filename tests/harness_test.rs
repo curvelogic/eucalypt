@@ -4762,6 +4762,13 @@ pub fn test_typecheck_133_prelude_override_type_mismatch() {
     run_typecheck_test("133_prelude_override_type_mismatch.eu");
 }
 
+/// Derived monad combinators on identity-like monads and `random` check
+/// clean: an abstract `m a` is gradual against a concrete type (eu-oaz72.170).
+#[test]
+pub fn test_typecheck_134_identity_monad_derived_no_warning() {
+    run_typecheck_test("134_identity_monad_derived_no_warning.eu");
+}
+
 /// The dict prelude signatures must not warn on valid dict code: the
 /// dict harness test checks clean under `eu check --strict`
 /// (eu-oaz72.21 round 2).
