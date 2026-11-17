@@ -577,13 +577,39 @@ fn extract_children(decl: &ast::Declaration) -> Vec<DocEntry> {
         if let ast::Element::Block(block) = element {
             for inner_decl in block.declarations() {
                 if let Some(mut child) = entry_from_declaration(&inner_decl) {
-                    child.namespace = Some(namespace.clone());
+                    // A nested member is only a sub-namespace when it is
+                    // documented and its body is exactly one block literal.
+                    // Scoping blocks (`m: { helper: 1 }.result`) and plain
+                    // data blocks stay opaque.
+                    if child.doc.is_none() || !is_bare_block(&inner_decl) {
+                        child.children.clear();
+                    }
+                    qualify_namespace(&mut child, &namespace);
                     children.push(child);
                 }
             }
         }
     }
     children
+}
+
+/// Whether a declaration's body is exactly one block literal.
+fn is_bare_block(decl: &ast::Declaration) -> bool {
+    let Some(soup) = decl.body().and_then(|b| b.soup()) else {
+        return false;
+    };
+    let mut els = soup.elements();
+    matches!(els.next(), Some(ast::Element::Block(_))) && els.next().is_none()
+}
+
+/// Set `entry`'s namespace to `ns`, and its own children's to `ns.entry`,
+/// recursively, so nested blocks carry their full dotted path.
+fn qualify_namespace(entry: &mut DocEntry, ns: &str) {
+    entry.namespace = Some(ns.to_string());
+    let inner = format!("{ns}.{}", entry.name);
+    for child in &mut entry.children {
+        qualify_namespace(child, &inner);
+    }
 }
 
 /// Collapse runs of whitespace (including newlines from wrapped source
