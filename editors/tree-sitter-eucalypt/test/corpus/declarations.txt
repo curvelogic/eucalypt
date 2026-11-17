@@ -1633,3 +1633,73 @@ a: f
       (literal
         (symbol
           (identifier))))))
+
+================================================================================
+Juxtaposed list parameter with nested patterns (eu-ioz21.12: live?[_, [bit, _]]
+and row-entries[r, [bits, sums]] gave ERROR nodes)
+================================================================================
+
+live?[_, [bit, _]]: bit
+row-entries[r, [bits, sums]]: r
+f[[a, b] : rest]: a
+g[a, [b : t]]: a
+h[{x y}, z]: x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (identifier)
+        (list_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (identifier)
+        (list_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (list_pattern
+          (identifier)
+          (identifier))
+        (identifier)))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (identifier)
+        (cons_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (block_pattern
+          (identifier)
+          (identifier))
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
