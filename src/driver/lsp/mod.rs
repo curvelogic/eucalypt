@@ -1265,8 +1265,15 @@ fn run_pipeline(
         None,
         "eu",
     );
-    if let Err(e) = loader.detect_and_load_prelude_override(&[detect_input]) {
-        return Err(make_pipeline_error(&loader, &e));
+    if loader
+        .detect_and_load_prelude_override(&[detect_input])
+        .is_err()
+    {
+        // An override that cannot be loaded (e.g. a relative path that does
+        // not resolve from the server's working directory) must not cost
+        // the document all its diagnostics: discard the half-set override
+        // and check against the default prelude, as before.
+        loader = SourceLoader::new(vec![]);
     }
     for input in &inputs {
         match loader.load(input) {
@@ -1503,6 +1510,20 @@ mod tests {
         assert!(
             titles.iter().any(|t| t == "Replace 'old-fn' with 'new-fn'"),
             "expected deprecation quick-fix, got {titles:?}"
+        );
+    }
+
+    /// An unresolvable `prelude:` path must not discard the document's other
+    /// diagnostics (eu-oaz72.177, review round 1).
+    #[test]
+    fn run_pipeline_survives_unloadable_prelude_override() {
+        let mut session = testing::LspTestSession::new();
+        session.set_uri("file:///tmp/eu_lsp_prelude_unloadable_test.eu");
+        session.run_pipeline("{ prelude: \"tests/fixtures/\" }\nbad: str.fmt(255, \"%x\")\n");
+        assert!(session.has_cached(), "pipeline should still succeed");
+        assert!(
+            !session.pipeline_warnings().is_empty(),
+            "diagnostics against the default prelude were lost"
         );
     }
 

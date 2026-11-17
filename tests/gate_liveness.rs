@@ -165,15 +165,6 @@ const REGISTRY: &[Gate] = &[
                     assert (eu-1tkk.2)",
     },
     Gate {
-        path: "tests/prelude_override_typecheck_test.rs",
-        cfg: "prelude_blob_ok",
-        supplier: Supplier::PreludeBlobJob("diagnostics-blob-mode"),
-        rationale: "asserts the evaluate path's type check honours a \
-                    `prelude:` override; without a blob the eval path \
-                    already uses the source checker and there is nothing \
-                    to assert (eu-oaz72.177)",
-    },
-    Gate {
         path: "tests/wire_format_enforcement_test.rs",
         cfg: "prelude_blob_ok",
         supplier: Supplier::PreludeBlobJob("diagnostics-blob-mode"),
