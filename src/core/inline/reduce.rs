@@ -944,7 +944,13 @@ pub mod tests {
                     (
                         r.clone(),
                         let_(
-                            vec![(k.clone(), num(5))],
+                            // The nested let holds an inlinable of its own, so
+                            // `distribute` re-opens and re-closes it: that is
+                            // what would capture a copied `k`.
+                            vec![
+                                (k.clone(), num(5)),
+                                (free("h"), inline(vec![free("z")], var(free("z")))),
+                            ],
                             app(bif("MAP"), vec![h, var(k.clone())]),
                         ),
                     ),

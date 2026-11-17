@@ -1,0 +1,18 @@
+{ title: "301 inline name capture"
+  doc: "eu-oaz72.182: distributing an inlinable lambda that refers to an outer
+        name must not copy it under a nested block that rebinds that name.
+        `f` is a destructuring lambda (tagged inlinable) whose body uses the
+        top-level `k`. The inner block binds its own `k` and has an inlinable
+        `h`, so the inliner re-closes that block's scope; a copy of `f` there
+        would have its `k` captured by the inner `k` and give 6, not 4." }
+
+k: 3
+
+f([a, b]): a + k
+
+inner: { k: 5 h([x]): x y: f([1, 2]) }.y
+
+` { target: :test }
+test: {
+  RESULT: [inner = 4] all-true? then(:PASS, :FAIL)
+}

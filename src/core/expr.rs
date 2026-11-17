@@ -1182,7 +1182,8 @@ impl RcExpr {
     /// inline pass does **not** use it: it needs the depth-aware,
     /// capture-avoiding `substs_depth` in `core::inline::reduce`.
     ///
-    /// Remaining caller: `instantiate_lets`, whose result is only ever
+    /// Other callers: `xtask` (prelude blob generation), where the replacements
+    /// are closed, and `instantiate_lets`, whose result is only ever
     /// read for literal metadata values and never re-closed into a scope,
     /// so a mis-scoped or captured reference there yields a non-literal
     /// that extraction rejects.
