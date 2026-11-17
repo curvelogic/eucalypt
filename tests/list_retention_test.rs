@@ -13,7 +13,9 @@
 //! when no local reference in its code escapes its own frames (a "closed"
 //! binding), so the closure no longer pins the frame it was allocated in. Peak blocks
 //! are deterministic, so this gate does not depend on wall time. Measured:
-//! 1,026 (source prelude) or ~6,000 (blob) with the fix, ~11,000 without.
+//! 1,026 (source prelude) or 1,031 (blob, with the blob demand-analysis fix
+//! #1278 and the `beta_reduce` body reduction) with the fix, ~10,000-11,000
+//! without closed bindings.
 //!
 //! Both dispatch paths are exercised (`EU_PREDECODE=0` selects byte dispatch).
 
@@ -75,12 +77,12 @@ fn run(fixture: &str, predecode: &str) -> (u64, String) {
 }
 
 /// Peak-block bound for both prelude modes. Unfixed, 200,000 cells peak at
-/// about 11,000 blocks (either mode). With the fix, source-prelude mode peaks
-/// at 1,026 and blob mode at about 6,000: the blob-mode residual is a
-/// separate pin (not closed-binding related) tracked outside this change, so
-/// the bound sits between the fixed blob figure and the unfixed one. It must
-/// tighten to ~2,048 when that is fixed.
-const PEAK_BLOCK_BOUND: u64 = 8192;
+/// about 10,000-11,000 blocks (either mode). With closed bindings, the
+/// blob demand-analysis fix and `beta_reduce`'s body reduction, both modes
+/// and both dispatch paths peak at 1,026-1,031; the bound leaves a little
+/// headroom above that and sits an order of magnitude below the unfixed
+/// figure.
+const PEAK_BLOCK_BOUND: u64 = 1100;
 
 fn assert_bounded_space(fixture: &str, expect: &str) {
     for predecode in ["1", "0"] {
