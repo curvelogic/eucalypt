@@ -450,14 +450,17 @@ fn cmd_prelude_compile() -> Result<()> {
         // let/letrec bindings keep default demands: a local recursive
         // producer such as `range`'s `up` passes its counter unforced, and
         // the alias chain pins the list under a consumer.
+        // Analysed as a nested value: source mode analyses a prelude body
+        // inside the prelude block, never as the rendered root unit, so the
+        // members of a namespace block must stay lazy.
         let (annotated, _signatures, named_sigs) =
-            eucalypt::core::analyse_demand::analyse_demands_with_prelude(
-                body,
-                Some(eucalypt::core::analyse_demand::PreludeSignatures {
+            eucalypt::core::analyse_demand::DemandAnalyser::new()
+                .with_prelude(Some(eucalypt::core::analyse_demand::PreludeSignatures {
                     name_to_slot: &name_to_slot,
                     sigs: &demand_signatures,
-                }),
-            );
+                }))
+                .as_nested_value()
+                .analyse(body);
         let annotated = eucalypt::core::reflatten::reflatten(&annotated);
         let mut body_settings = stg_settings.clone();
         body_settings.user_demand_sigs = named_sigs;
