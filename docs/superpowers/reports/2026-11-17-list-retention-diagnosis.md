@@ -160,3 +160,43 @@ format changes and both dispatch paths change.
 2. Dead-slot clearing with seq-forced-thunk reasoning (the approved direction):
    general, but needs the happens-before analysis above plus per-arg move flags.
 3. Both: 1 first (smaller), 2 as a follow-up bead.
+
+## Update 4: closed-binding prototype (third lane, measured-single)
+
+Prototype diff (throwaway, NOT for merge, unsound across programs because it
+keys a process-global side table by byte offset):
+`2026-11-17-list-retention-closed-binding.patch`. Predecoded path only.
+
+**What pins the head in `c3(l): fs(+, 0, l)`.** `+` is inlined, so there *is* an
+op lambda allocated in c3's frame: a `LetRec` binding `λ{2}` (the `+` body)
+whose closure env is that LetRec frame, whose `next` is c3's frame, whose slot 0
+(`l`) holds the list head. The loop threads `op` through every iteration.
+
+**Prototype.** A `Let`/`LetRec` binding whose code has no local ref escaping
+its own frame (no sibling or outer slot, lower-bound branch frame sizes: tag
+3-5/11/17 = 1 field, 7 = 2, other tags 0, fallback = 1) is closed over
+`state.globals` instead of the let frame. This is a special case of flat
+closures (a closure capturing nothing needs no parent frame), semantics
+preserving; the owner should see it as such (Decision 33 declined general flat
+closures).
+
+| 200k cells | base peak blocks | proto peak blocks | ticks |
+|---|---|---|---|
+| `range count` | 10,985 | 1,026 | 22.6M both |
+| `c3` wrapper | 10,878 | 1,026 | 23.0M both |
+| `foldl(+,0)` / `foldl((_+_),0)` | 11,001 | 11,001 (NOT fixed) | 21.8M both |
+
+Per-frame trimming (frame `next = None` for the bindings' frame) gave the same
+count result but is weaker than per-binding. Benches 015..022: ticks identical
+to baseline in every file; peak blocks within +-1% except 016 (2,171 -> 2,422,
+unexplained, one run); wall times single-run and noisy (e.g. 020 0.33s -> 0.43s)
+so no timing claim is made. 022 (`range foldl(_+_,0)`) is not fixed.
+
+**Open: `foldl(+, 0)` still leaks.** There the inlined `foldl` is a `Let` of
+{fs lambda (self-referencing, not closed), `+` lambda (closed), `Num 0`} in a
+thunk; the pin path was not traced. Next step: run the tracer on `fold.eu`
+(`range(0,200000) foldl(+,0)`) with the closed-binding patch applied.
+
+**Wire format.** The real change needs a per-binding "closed" bit in the form
+header (`kind` high bit is the least invasive carrier) read by encoder,
+predecoder, both dispatch paths and the blob: a blob wire-format change.
