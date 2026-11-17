@@ -115,28 +115,7 @@ pub fn prepare(
     // If no default prelude was present (--no-prelude mode), the override is
     // prepended so it is still available for merging.
     let effective_inputs: Vec<Input> =
-        if let Some(override_input) = loader.prelude_override().cloned() {
-            let default_prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
-            let mut replaced = false;
-            let mut result: Vec<Input> = inputs
-                .iter()
-                .map(|i| {
-                    if i == &default_prelude && !replaced {
-                        replaced = true;
-                        override_input.clone()
-                    } else {
-                        i.clone()
-                    }
-                })
-                .collect();
-            if !replaced {
-                // --no-prelude was in effect; prepend the override so it participates in merge.
-                result.insert(0, override_input);
-            }
-            result
-        } else {
-            inputs.clone()
-        };
+        substitute_prelude_override(&inputs, loader.prelude_override(), true);
 
     // If we're dumping parses, dump every file read during the load
     if opt.parse_only() {
@@ -527,12 +506,25 @@ fn diagnose_additional(loader: &SourceLoader, errors: &[EucalyptError]) {
 /// Apply a prelude override to a slice of inputs, replacing the default
 /// `Resource("prelude")` entry if present.
 fn apply_prelude_override(inputs: &[Input], override_input: Option<&Input>) -> Vec<Input> {
+    substitute_prelude_override(inputs, override_input, false)
+}
+
+/// Substitute a prelude override for the default `Resource("prelude")` entry.
+///
+/// When `prepend_if_absent` is set and no default prelude was present
+/// (`--no-prelude`), the override is prepended so it still participates in
+/// the merge.  Shared by evaluation (`prepare`) and `eu check`.
+pub(crate) fn substitute_prelude_override(
+    inputs: &[Input],
+    override_input: Option<&Input>,
+    prepend_if_absent: bool,
+) -> Vec<Input> {
     let Some(override_input) = override_input else {
         return inputs.to_vec();
     };
     let default_prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
     let mut replaced = false;
-    inputs
+    let mut result: Vec<Input> = inputs
         .iter()
         .map(|i| {
             if i == &default_prelude && !replaced {
@@ -542,7 +534,11 @@ fn apply_prelude_override(inputs: &[Input], override_input: Option<&Input>) -> V
                 i.clone()
             }
         })
-        .collect()
+        .collect();
+    if !replaced && prepend_if_absent {
+        result.insert(0, override_input.clone());
+    }
+    result
 }
 
 /// Format the target list
