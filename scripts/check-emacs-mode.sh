@@ -46,20 +46,19 @@ EUCALYPT_TEST_EU="${EU:-}" "$EMACS" --batch -Q \
   -l "$root/editors/emacs/test/eucalypt-mode-commands-test.el" \
   -f ert-run-tests-batch-and-exit </dev/null
 
-bytecomp="$(mktemp -d)"
-cp "$root/editors/emacs/eucalypt-mode.el" "$bytecomp/"
-"$EMACS" --batch -Q -L "$bytecomp" \
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+cp "$root/editors/emacs/eucalypt-mode.el" "$tmp/"
+"$EMACS" --batch -Q -L "$tmp" \
   --eval '(setq byte-compile-error-on-warn t)' \
-  -f batch-byte-compile "$bytecomp/eucalypt-mode.el"
-rm -rf "$bytecomp"
+  -f batch-byte-compile "$tmp/eucalypt-mode.el"
+rm -f "$tmp"/eucalypt-mode.el*
 
 command -v "$CC" >/dev/null 2>&1 || skip "C compiler not found (set CC)"
 "$EMACS" --batch -Q --eval '(kill-emacs (if (treesit-available-p) 0 1))' \
   >/dev/null 2>&1 || skip "$EMACS lacks tree-sitter support"
 
 grammar="$root/editors/tree-sitter-eucalypt"
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
 "$CC" -shared -fPIC -O1 -I"$grammar/src" \
   "$grammar/src/parser.c" "$grammar/src/scanner.c" \
   -o "$tmp/libtree-sitter-eucalypt.so"

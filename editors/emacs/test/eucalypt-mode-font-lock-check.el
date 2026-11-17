@@ -255,11 +255,13 @@ itself, when a buffer first entered it (eu-oaz72.8)."
 ;; Imenu and defun names (eu-oaz72.8: every declaration was `Anonymous').
 (defconst eucalypt-check--imenu-source
   "f(x): x\ny: 2\n(a ++ b): a\n(! x): x\n` \"d\"\nz: 3\n\u27e6 x \u27e7: x\n\
-(\u27e8 x \u27e9): x\n'quoted name': 1\nns: { inner: 1 }\n"
+(\u27e8 x \u27e9): x\n( \u27ea x \u27eb ): x\n'quoted name': 1\n\
+ns: { inner: 1 }\n"
   "Source whose declarations `eucalypt-check--imenu' names.")
 
 (defconst eucalypt-check--imenu-names
-  '("f" "y" "++" "!" "z" "\u27e6\u27e7" "\u27e8\u27e9" "'quoted name'" "ns" "inner")
+  '("f" "y" "++" "!" "z" "\u27e6\u27e7" "\u27e8\u27e9" "\u27ea\u27eb"
+    "'quoted name'" "ns" "inner")
   "The names imenu must list for `eucalypt-check--imenu-source', in order.")
 
 (defun eucalypt-check--imenu-flatten (index)
@@ -301,6 +303,8 @@ itself, when a buffer first entered it (eu-oaz72.8)."
     ("` { target: :t\nimport: \"a\" }\nx: 1\n"
      . "` { target: :t\n    import: \"a\" }\nx: 1\n")
     ("x: [ a\n, b\n]\n" . "x: [ a\n   , b\n   ]\n")
+    ;; A comment after the opener is not a first element.
+    ("x: { # c\na: 1\nb: 2\n}\n" . "x: { # c\n  a: 1\n  b: 2\n}\n")
     ;; A comment between declarations stays with the next one.
     ("a: 1\n\n  ## c\nb: 2\n" . "a: 1\n\n## c\nb: 2\n")
     ("` \"d\"\n  # c\nb: 2\n" . "` \"d\"\n# c\nb: 2\n"))
@@ -368,6 +372,30 @@ itself, when a buffer first entered it (eu-oaz72.8)."
         (unless (and (consp map) (eq (car map) char))
           (eucalypt-check--fail "input method gives %S for %S, not %c"
                                 (and (consp map) (car map)) keys char)))))
+  ;; Nothing translates inside a string or comment: `eucalypt--input-method'
+  ;; passes the key through there and hands it to quail elsewhere.
+  (pcase-dolist (`(,source ,before ,text-p)
+                 '(("x: \"\\\\((d)\\\\)\"\n" "((d" t)
+                   ("x: c\"a\" # \\\\in\n" "in" t)
+                   ("x: a\n" "a" nil)
+                   ("x: \"s\" \n" " \n" nil)))
+    (with-temp-buffer
+      (insert source)
+      (eucalypt-mode)
+      (activate-input-method "eucalypt")
+      (unless (eq input-method-function #'eucalypt--input-method)
+        (eucalypt-check--fail "input method not wrapped: %S"
+                              input-method-function))
+      (goto-char (point-min))
+      (search-forward before)
+      (goto-char (match-beginning 0))
+      (unless (eq (and (eucalypt--in-string-or-comment-p) t) text-p)
+        (eucalypt-check--fail "%S at %S: in string or comment should be %S"
+                              source before text-p))
+      (when text-p
+        (unless (equal (eucalypt--input-method ?\\) '(?\\))
+          (eucalypt-check--fail "%S: input method translates in text"
+                                source)))))
   (princ "checked input method\n"))
 
 (defun eucalypt-check-run ()

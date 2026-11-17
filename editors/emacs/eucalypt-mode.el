@@ -228,7 +228,8 @@ Only the delimiters are fontified: `highlights.scm' captures the whole
 node, which would paint its contents.")
 
 (defconst eucalypt-mode--directory
-  (file-name-directory (or load-file-name buffer-file-name ""))
+  (and (or load-file-name buffer-file-name)
+       (file-name-directory (or load-file-name buffer-file-name)))
   "The directory `eucalypt-mode' was loaded from.
 Recorded at load time: when a buffer first enters the mode,
 `load-file-name' names whatever is loading then, if anything, and
@@ -236,8 +237,7 @@ Recorded at load time: when a buffer first enters the mode,
 
 (defun eucalypt-mode--highlights-file ()
   "Locate `highlights.scm', or signal an error."
-  (let* ((here (or (and (not (string-empty-p eucalypt-mode--directory))
-                        eucalypt-mode--directory)
+  (let* ((here (or eucalypt-mode--directory
                    (file-name-directory
                     (or (locate-library "eucalypt-mode") ""))))
          (file (or eucalypt-highlights-file
@@ -482,15 +482,20 @@ highlighting, and a warning says how to fix that."
   "Bracketed node types whose elements may align with the first one.")
 
 (defun eucalypt-mode--first-element (parent)
-  "Return the first element of PARENT when it is on the opening bracket's line."
-  (let ((first (treesit-node-child parent 1)))
+  "Return the first element of PARENT when it is on the opening bracket's line.
+A comment is not an element: `{ # note' opens an unaligned block."
+  (let ((first (treesit-node-child parent 1))
+        (opener (treesit-node-start parent)))
     (when (and first
-               (not (member (treesit-node-type first) '(")" "]" "}")))
+               (not (member (treesit-node-type first)
+                            '(")" "]" "}" "comment")))
                (< (treesit-node-start first) (or (treesit-node-start
                                                   (treesit-node-child parent -1))
                                                  (point-max)))
-               (= (line-number-at-pos (treesit-node-start parent))
-                  (line-number-at-pos (treesit-node-start first))))
+               ;; Same line: no newline between opener and element.
+               (not (save-excursion
+                      (goto-char opener)
+                      (search-forward "\n" (treesit-node-start first) t))))
       first)))
 
 (defun eucalypt-mode--aligned-p (node parent _bol)
@@ -538,19 +543,24 @@ Return nil when there is none or BOL is not on such a token."
   "Non-nil when the engine found no NODE at BOL but there is one."
   (and (null node) (eucalypt-mode--hidden-node bol)))
 
-(defun eucalypt-mode--hidden-indent (bol)
-  "Indent BOL by the rules, as the node found there."
-  (let ((n (eucalypt-mode--hidden-node bol)))
-    (treesit-simple-indent n (treesit-node-parent n) bol)))
+(defvar eucalypt-mode--hidden-indent-cache nil
+  "(BOL ANCHOR . OFFSET) for the hidden node last indented.
+The anchor function computes it; the offset function, called next for
+the same line, reads it rather than running the rules again.")
 
 (defun eucalypt-mode--hidden-anchor (_node _parent bol)
   "Anchor for the hidden node at BOL, from the rules that fit it."
-  (car (eucalypt-mode--hidden-indent bol)))
+  (let* ((n (eucalypt-mode--hidden-node bol))
+         (result (treesit-simple-indent n (treesit-node-parent n) bol)))
+    (setq eucalypt-mode--hidden-indent-cache (cons bol result))
+    (car result)))
 
 (defun eucalypt-mode--hidden-offset (_node _parent bol)
-  "Offset for the hidden node at BOL, from the rules that fit it."
-  (let ((offset (cdr (eucalypt-mode--hidden-indent bol))))
-    (if (and offset (symbolp offset)) (symbol-value offset) (or offset 0))))
+  "Offset for the hidden node at BOL, from the rules that fit it.
+`treesit-simple-indent' has already resolved a variable offset."
+  (if (eq (car eucalypt-mode--hidden-indent-cache) bol)
+      (or (cddr eucalypt-mode--hidden-indent-cache) 0)
+    0))
 
 (defun eucalypt-mode--aligned-opener-p (node parent bol)
   "Non-nil when BOL starts a leading `,' or a closer of an aligned PARENT.
@@ -622,6 +632,20 @@ the commas and the closer line up with the opener."
 
 ;;; Defun detection
 
+(defconst eucalypt-mode--bracket-openers
+  (string-to-list "⟦⟨⟪⌈⌊⦃⦇⦉«‹【〔〖〘〚")
+  "Opening delimiters of bracket pairs (the grammar's BRACKET_OPEN_RE).")
+
+(defun eucalypt-mode--bracket-pair (text)
+  "Return the bracket pair delimiting TEXT, as `⟦⟧', or nil.
+TEXT is a bracket expression, perhaps in parentheses and with spaces:
+`⟦ x ⟧', `( ⟦ x ⟧ )'."
+  (let ((open (seq-find (lambda (c) (memq c eucalypt-mode--bracket-openers))
+                        text))
+        (close (seq-find (lambda (c) (memq c eucalypt-mode--bracket-closers))
+                         (reverse text))))
+    (and open close (string open close))))
+
 (defun eucalypt-mode--defun-name (node)
   "Return the name of the declaration NODE, or nil if it has none.
 A property or function declaration is named by its identifier, an
@@ -640,11 +664,9 @@ its delimiters, as `⟦⟧'."
                                                  "operator"))))))
            (if op (treesit-node-text op t)
              ;; (⟦ x ⟧): a bracket pair declared in parentheses
-             (let ((text (treesit-node-text name t)))
-               (string (aref text 1) (aref text (- (length text) 2)))))))
+             (eucalypt-mode--bracket-pair (treesit-node-text name t)))))
         ("bracket_expr"
-         (let ((text (treesit-node-text name t)))
-           (string (aref text 0) (aref text (1- (length text))))))))))
+         (eucalypt-mode--bracket-pair (treesit-node-text name t)))))))
 
 ;;; Syntax propertize — mark string boundaries for syntax-ppss
 ;;
@@ -1115,8 +1137,9 @@ With PREFIX argument, prompt to edit the command first."
  "Eucalypt Unicode operator input method.
 Translates ASCII operator sequences to Unicode equivalents.
 
-These sequences are not otherwise eucalypt code, so they translate as
-typed:
+These translate as typed: each is either the ASCII spelling of the same
+prelude operator (`&&', `||', `<=', `>=', `!=') or not otherwise eucalypt
+code.  Nothing translates inside a string or a comment.
   && → ∧  (logical and)
   || → ∨  (logical or)
   ||| → ‖ (cons operator: a third | turns ∨ into ‖)
@@ -1200,6 +1223,40 @@ that a `\\=\\n' escape followed by `i' in a c-string is left alone.)
  ;; Lens
  ("<."  ?‹)
  (".>"  ?›))
+
+;; Inside a string or comment the sequences are text, not operators: a
+;; regex such as "\\((\\d+)\\)" must keep its escapes.  Quail has no
+;; predicate for that, so in a `eucalypt-mode' buffer the input method's
+;; function is wrapped while the `eucalypt' input method is active.
+
+(defun eucalypt--in-string-or-comment-p (&optional pos)
+  "Non-nil when POS (default point) is inside a string literal or comment."
+  (let* ((pos (or pos (point)))
+         (n (and (treesit-parser-list) (treesit-node-at pos)))
+         (found nil))
+    (while (and n (not found))
+      (let ((type (treesit-node-type n)))
+        (cond ((member type eucalypt-mode--string-types)
+               (setq found (and (< (treesit-node-start n) pos)
+                                (< pos (treesit-node-end n)))))
+              ((equal type "comment")
+               (setq found (and (< (treesit-node-start n) pos)
+                                (<= pos (treesit-node-end n)))))))
+      (setq n (and (not found) (treesit-node-parent n))))
+    found))
+
+(defun eucalypt--input-method (key)
+  "Translate KEY with the `eucalypt' input method, except in text.
+In a string or a comment KEY is inserted as typed."
+  (if (eucalypt--in-string-or-comment-p)
+      (list key)
+    (quail-input-method key)))
+
+(defun eucalypt--wrap-input-method ()
+  "Use `eucalypt--input-method' while the `eucalypt' input method is active."
+  (when (and (derived-mode-p 'eucalypt-mode)
+             (equal current-input-method "eucalypt"))
+    (setq-local input-method-function #'eucalypt--input-method)))
 
 ;;; Transient Unicode menu
 
@@ -1436,6 +1493,10 @@ Key bindings:
 
   ;; Enable tree-sitter features
   (treesit-major-mode-setup)
+
+  ;; The input method leaves strings and comments alone
+  (add-hook 'input-method-activate-hook #'eucalypt--wrap-input-method nil t)
+  (eucalypt--wrap-input-method)
 
   ;; Markdown highlighting within docstrings (layered on top of font-lock)
   (jit-lock-register #'eucalypt--fontify-markdown-in-docstrings))

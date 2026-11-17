@@ -20,7 +20,10 @@ Automatic indentation for blocks, lists, parenthesised expressions,
 declaration bodies, and idiot bracket expressions. `indent-region` is
 idempotent and leaves the lines of multi-line strings (docstrings) as they
 are; elements of a block or list whose first element follows the opening
-bracket align with that element (`{ a: 1` / `  b: 2 }`).
+bracket align with that element (`{ a: 1` / `  b: 2 }`), and a closer or
+leading comma on a line of its own lines up with the opening bracket
+(`[ a` / `, b` / `]`). A comment after the opening bracket is not a first
+element.
 
 ### Navigation and Imenu
 
@@ -86,8 +89,9 @@ To render text that is not saved to a file:
   | `e` | `∅` | empty |
 
 - **Quail input method** (`eucalypt`) — type ASCII sequences that
-  auto-translate to Unicode. Sequences that are never eucalypt code
-  translate as typed:
+  auto-translate to Unicode, except inside strings and comments. These
+  translate as typed (the first five are ASCII spellings of the same
+  prelude operators):
 
   | Sequence | Result | | Sequence | Result |
   |----------|--------|-|----------|--------|
@@ -107,6 +111,7 @@ To render text that is not saved to a file:
   | `\<<` | `«` | | `\>>` | `»` |
   | `\in` | `∈` | | `\!in` | `∉` |
   | `\{}` | `∅` | | `\!!` | `✓` |
+  | `\-o` | `⊝` | | | |
 
   `M-x describe-input-method RET eucalypt` lists them all.
 
