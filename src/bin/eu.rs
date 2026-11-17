@@ -183,10 +183,10 @@ fn run() -> i32 {
     // in-process test runner so the harness exercises the same dispatch
     // (eu-8ke8a; see eu-rb5n for the blob-core path).
     let type_findings = {
-        let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
+        let mut writer = codespan_reporting::term::termcolor::StandardStream::stderr(
             codespan_reporting::term::termcolor::ColorChoice::Auto,
         );
-        let verdict = check::eval_path_type_check(&opt, &loader, &mut writer.lock());
+        let verdict = check::eval_path_type_check(&opt, &loader, &mut writer);
         match verdict {
             check::EvalPathCheck::Proceed(findings) => findings,
             check::EvalPathCheck::StrictFailure => return exit_code(&opt, 1, &statistics),

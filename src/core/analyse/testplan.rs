@@ -269,7 +269,8 @@ fn unquote(value: &str) -> &str {
 /// first `┌─` line after the first line opening an `error` diagnostic,
 /// with ANSI colour codes removed.
 fn primary_label_location(stderr: &str) -> Option<String> {
-    let ansi = Regex::new("\x1b\\[[0-9;]*m").expect("valid ANSI regex");
+    static ANSI: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let ansi = ANSI.get_or_init(|| Regex::new("\x1b\\[[0-9;]*m").expect("valid ANSI regex"));
     let plain = ansi.replace_all(stderr, "");
     plain
         .lines()

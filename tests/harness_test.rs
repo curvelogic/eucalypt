@@ -5800,15 +5800,26 @@ pub fn every_error_fixture_has_a_test() {
             continue;
         }
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        if !this_file.contains(&format!("\"{name}\"")) && !this_file.contains(&format!("/{name}\""))
-        {
+        let quoted = format!("\"{name}\"");
+        let pathed = format!("/{name}\"");
+        // A site counts only if the test it sits in is not `#[ignore]`d:
+        // the attributes between the enclosing `#[test]` and the name.
+        let live = this_file
+            .match_indices(quoted.as_str())
+            .chain(this_file.match_indices(pathed.as_str()))
+            .any(|(i, _)| {
+                let head = &this_file[..i];
+                head.rfind("#[test]")
+                    .is_some_and(|t| !head[t..].contains("#[ignore"))
+            });
+        if !live {
             missing.push(name);
         }
     }
     missing.sort();
     assert!(
         missing.is_empty(),
-        "error fixtures with no test in tests/harness_test.rs: {missing:?}"
+        "error fixtures with no live (un-ignored) test in tests/harness_test.rs: {missing:?}"
     );
 }
 

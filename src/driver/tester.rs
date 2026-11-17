@@ -735,6 +735,13 @@ impl Tester for InProcessTester {
     /// capture outputs in evidence.yaml
     fn run(&self, plan: &TestPlan, opt: &EucalyptOptions) -> Result<(), EucalyptError> {
         let mut results = vec![];
+        // The eval-path type check covers the whole file, so it runs once
+        // per plan, not once per target and format: its rendered warnings
+        // and findings are kept here and given to every run. `None` inside
+        // records a `--strict` failure.
+        let mut plan_check: Option<
+            Option<(Vec<u8>, crate::driver::warning_link::TypeWarningLinks)>,
+        > = None;
 
         for (t, fs) in plan.targets() {
             for f in fs {
@@ -787,25 +794,32 @@ impl Tester for InProcessTester {
                 // the argument-level findings to the executor. Without this
                 // the in-process harness never ran the eval-path checker at
                 // all (eu-8ke8a).
-                let mut errbuf = Vec::new();
-                let type_findings = match crate::driver::check::eval_path_type_check(
-                    &test_opts,
-                    &loader,
-                    &mut codespan_reporting::term::termcolor::NoColor::new(&mut errbuf),
-                ) {
-                    crate::driver::check::EvalPathCheck::Proceed(findings) => findings,
-                    crate::driver::check::EvalPathCheck::StrictFailure => {
-                        results.push(TestResult {
-                            target: t,
-                            format: f.to_string(),
-                            exit_code: None,
-                            stdout: String::new(),
-                            stderr: String::from_utf8_lossy(&errbuf).into_owned(),
-                            statistics,
-                        });
-                        continue;
+                let check = plan_check.get_or_insert_with(|| {
+                    let mut rendered = Vec::new();
+                    match crate::driver::check::eval_path_type_check(
+                        &test_opts,
+                        &loader,
+                        &mut codespan_reporting::term::termcolor::NoColor::new(&mut rendered),
+                    ) {
+                        crate::driver::check::EvalPathCheck::Proceed(findings) => {
+                            Some((rendered, findings))
+                        }
+                        crate::driver::check::EvalPathCheck::StrictFailure => None,
                     }
+                });
+                let Some((rendered, findings)) = check else {
+                    results.push(TestResult {
+                        target: t,
+                        format: f.to_string(),
+                        exit_code: None,
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        statistics,
+                    });
+                    continue;
                 };
+                let mut errbuf = rendered.clone();
+                let type_findings = findings.clone();
 
                 // Resolve type aliases inside TypeData primitives using
                 // the pre-pruning aliases collected during prepare().

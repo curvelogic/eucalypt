@@ -542,14 +542,8 @@ pub fn eval_path_type_check(
         // the override as `eu check` does.
         .filter(|_| loader.prelude_override().is_none())
         .and_then(|b| {
-            b.decode_desugared_unit_cores().map(|units| {
-                (
-                    units,
-                    b.monad_specs.clone(),
-                    b.monad_type_hints.clone(),
-                    b.deprecations.clone(),
-                )
-            })
+            b.decode_desugared_unit_cores()
+                .map(|units| (units, &b.monad_specs, &b.monad_type_hints, &b.deprecations))
         });
 
     let check_result = match &blob_check_seed {
