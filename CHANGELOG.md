@@ -35,6 +35,7 @@ preparation work (eu-oaz72) and editor highlighting consolidation (eu-ioz21).
 - **Upgrade-visible: `str.fmt` is deprecated** — it now warns, so `--strict` fails on any remaining use. Replace `str.fmt(x, spec)` with `str.format(spec, x)`.
 
 ### Fixed
+
 - **Source-compiled prelude: block-local destructuring function (eu-oaz72.179)** — a function defined in a block with a destructuring list parameter (`{ hit?([i, y]): y = x  r: xs filter(hit?) }`) that refers to the enclosing function's parameters failed with `infinite loop detected: binding refers to itself` when the prelude was compiled from source (no `lib/prelude.blob`, or `--source-prelude`); it worked with the blob. The inliner copied the lambda into a sibling binding without shifting its scope indices, so a parameter resolved to the sibling binding itself. The inline pass now shifts the copy as beta reduction already did.
 
 - **A bitwise operand of 2^63 as a float is an error (eu-oaz72.24)** — `&`, `|` and the other bitwise operators read the float `9223372036854775808.0`, one past the largest 64-bit signed integer, as `9223372036854775807`, so `9223372036854775808.0 & 1` was `1`. It is now an error saying the value is out of the i64 range, as it is for `mulmod`, `powmod` and `modinv`, which read integer operands by the same rule.
