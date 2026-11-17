@@ -11,7 +11,7 @@
 //! The WASM module (`wasm.rs`) exposes both as `evaluate` and `evaluate_expr`.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::io;
 use std::rc::Rc;
@@ -37,9 +37,80 @@ use crate::syntax::import::{scrape_soup_imports, scrape_unit_imports, ImportErro
 use crate::syntax::input::{Input, Locator};
 use crate::syntax::rowan;
 
-/// Step limit for evaluation to prevent infinite loops from hanging the
-/// browser tab (or a test runner).
-const MAX_STEPS: usize = 1_000_000;
+/// Default step limit for evaluation, so an infinite loop ends with an
+/// error rather than hanging the browser tab (or a test runner).
+/// [`EvalOptions::max_steps`] overrides it.
+pub const DEFAULT_MAX_STEPS: usize = 1_000_000;
+
+// ── Options ──────────────────────────────────────────────────────────────────
+
+/// Options for [`evaluate_unit_with`] and [`evaluate_expr_with`].
+#[derive(Debug, Clone)]
+pub struct EvalOptions {
+    /// Files that imports resolve against, by path (`helpers.eu`,
+    /// `data/input.txt`). Paths are normalised (`./` and `..`).
+    pub files: BTreeMap<String, String>,
+    /// The machine's step limit: evaluation that runs longer fails with
+    /// a "did not terminate" error.
+    pub max_steps: usize,
+}
+
+impl Default for EvalOptions {
+    fn default() -> Self {
+        EvalOptions {
+            files: BTreeMap::new(),
+            max_steps: DEFAULT_MAX_STEPS,
+        }
+    }
+}
+
+/// The JSON form of [`EvalOptions`] the WASM API accepts.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvalOptionsJson {
+    #[serde(default)]
+    files: BTreeMap<String, String>,
+    #[serde(default)]
+    max_steps: Option<u64>,
+}
+
+impl EvalOptions {
+    /// Read options from JSON:
+    /// `{ "files": { "<path>": "<text>", ... }, "max_steps": <n> }`.
+    /// Every key is optional; an empty string means the defaults. An
+    /// unknown key, a path that names nothing or climbs above the root,
+    /// two paths that normalise to one, and a `max_steps` that is not a
+    /// positive integer are errors.
+    pub fn from_json(json: &str) -> Result<Self, PipelineError> {
+        let options_error = |message: String| PipelineError {
+            message: format!("invalid options: {message}"),
+            location: None,
+            notes: None,
+        };
+        if json.trim().is_empty() {
+            return Ok(EvalOptions::default());
+        }
+        let raw: EvalOptionsJson =
+            serde_json::from_str(json).map_err(|e| options_error(e.to_string()))?;
+        let mut files = BTreeMap::new();
+        for (path, text) in raw.files {
+            let normalised = normalise_path(&path)
+                .ok_or_else(|| options_error(format!("file path {path:?} is not usable")))?;
+            if files.insert(normalised.clone(), text).is_some() {
+                return Err(options_error(format!(
+                    "more than one file has the path {normalised:?}"
+                )));
+            }
+        }
+        let max_steps = match raw.max_steps {
+            None => DEFAULT_MAX_STEPS,
+            Some(0) => return Err(options_error("max_steps must be at least 1".to_string())),
+            Some(n) => usize::try_from(n)
+                .map_err(|_| options_error(format!("max_steps must be at most {}", usize::MAX)))?,
+        };
+        Ok(EvalOptions { files, max_steps })
+    }
+}
 
 /// A `Write` implementation backed by an `Rc<RefCell<Vec<u8>>>`.
 ///
@@ -64,6 +135,9 @@ impl io::Write for SharedWriter {
 /// Source location within the input, expressed as 1-based line/column pairs.
 #[derive(Debug, Clone)]
 pub struct SourceLocation {
+    /// The file the location is in: `<input>` for the source evaluated,
+    /// else the path of a supplied file or an embedded library's name.
+    pub file: String,
     pub line: usize,
     pub column: usize,
     pub end_line: usize,
@@ -91,14 +165,34 @@ impl fmt::Display for PipelineError {
 /// Input is parsed as a unit — the same as a `.eu` file.  This is the
 /// default mode for the playground.
 pub fn evaluate_unit(source: &str, format: &str) -> Result<String, PipelineError> {
-    run_pipeline(source, format, ParseMode::Unit)
+    evaluate_unit_with(source, format, &EvalOptions::default())
+}
+
+/// [`evaluate_unit`] with options: files that imports resolve against,
+/// and a step limit.
+pub fn evaluate_unit_with(
+    source: &str,
+    format: &str,
+    options: &EvalOptions,
+) -> Result<String, PipelineError> {
+    run_pipeline(source, format, ParseMode::Unit, options)
 }
 
 /// Evaluate a eucalypt expression and return the rendered output.
 ///
 /// Input is parsed as a bare expression — the same as CLI `-e`.
 pub fn evaluate_expr(source: &str, format: &str) -> Result<String, PipelineError> {
-    run_pipeline(source, format, ParseMode::Expr)
+    evaluate_expr_with(source, format, &EvalOptions::default())
+}
+
+/// [`evaluate_expr`] with options: files that imports resolve against,
+/// and a step limit.
+pub fn evaluate_expr_with(
+    source: &str,
+    format: &str,
+    options: &EvalOptions,
+) -> Result<String, PipelineError> {
+    run_pipeline(source, format, ParseMode::Expr, options)
 }
 
 enum ParseMode {
@@ -106,7 +200,12 @@ enum ParseMode {
     Expr,
 }
 
-fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, PipelineError> {
+fn run_pipeline(
+    source: &str,
+    format: &str,
+    mode: ParseMode,
+    options: &EvalOptions,
+) -> Result<String, PipelineError> {
     let mut files: SimpleFiles<String, String> = SimpleFiles::new();
     let mut source_map = SourceMap::new();
     let resources = Resources::default();
@@ -198,6 +297,7 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
                 &source_input,
                 imports,
                 &resources,
+                &options.files,
                 &mut files,
                 &mut source_map,
             )
@@ -227,12 +327,15 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
         for library in &libraries.loaded {
             contents.insert(
                 library.input.clone(),
-                Content::new(library.file_id, &library.ast),
+                Content::new(library.file_id, library.parsed.as_desugarable()),
             );
         }
         for (input, index) in &libraries.aliases {
             let library = &libraries.loaded[*index];
-            contents.insert(input.clone(), Content::new(library.file_id, &library.ast));
+            contents.insert(
+                input.clone(),
+                Content::new(library.file_id, library.parsed.as_desugarable()),
+            );
         }
         let mut d = Desugarer::new(&contents, &mut source_map);
         d.translate_unit(&source_input)
@@ -355,14 +458,24 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
     )
     .map_err(|e| execution_error_to_pipeline_error(e, &files, &source_map))?;
 
-    let ret = machine.run(Some(MAX_STEPS));
+    let ret = machine.run(Some(options.max_steps));
     let stream_end = machine.take_emitter().stream_end();
 
     // Drop machine and writer so output_buf becomes the sole Rc owner.
     drop(machine);
     drop(writer);
 
-    ret.map_err(|e| execution_error_to_pipeline_error(e, &files, &source_map))?;
+    ret.map_err(|e| {
+        let step_limit = matches!(e, crate::eval::error::ExecutionError::DidntTerminate(_));
+        let mut pe = execution_error_to_pipeline_error(e, &files, &source_map);
+        if step_limit {
+            pe.notes.get_or_insert_with(Vec::new).push(format!(
+                "The step limit is {}; the max_steps option raises it.",
+                options.max_steps
+            ));
+        }
+        pe
+    })?;
     stream_end.map_err(|e| PipelineError {
         message: format!("Failed writing output: {e}"),
         location: None,
@@ -382,16 +495,43 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
 
 // ── Imports ──────────────────────────────────────────────────────────────────
 
-/// An embedded library a unit imports, parsed.
+/// Where an import's content came from: a file the caller supplied, or a
+/// library embedded in eucalypt. With the format, this identifies one
+/// parsed and desugared content.
+#[derive(Clone, PartialEq, Eq)]
+enum Origin {
+    /// A supplied file, by its normalised path.
+    File(String),
+    /// An embedded library, by name (`lens`).
+    Library(&'static str),
+}
+
+/// An import's parsed content: an eucalypt unit, or data already read to
+/// core.
+enum Parsed {
+    Unit(rowan::ast::Unit),
+    Data(crate::core::expr::RcExpr),
+}
+
+impl Parsed {
+    fn as_desugarable(&self) -> &dyn Desugarable {
+        match self {
+            Parsed::Unit(unit) => unit,
+            Parsed::Data(expr) => expr,
+        }
+    }
+}
+
+/// An import a unit makes, loaded and parsed.
 struct Library {
-    /// The library's resource name (`lens`).
-    name: &'static str,
+    origin: Origin,
+    format: String,
     /// The import that loaded it: the desugarer finds its content under
     /// this key, or by its locator when it is imported again under
     /// another name.
     input: Input,
     file_id: usize,
-    ast: rowan::ast::Unit,
+    parsed: Parsed,
 }
 
 /// The library name an import gives, if it is a eucalypt import that
@@ -408,7 +548,33 @@ fn import_library_name(import: &Input) -> Option<&str> {
     }
 }
 
-/// The libraries loaded for a unit, and every other import that reaches
+/// Normalise a `/`-separated relative path: drop empty and `.`
+/// components and resolve `..`. `None` for a path that climbs above its
+/// root or names nothing.
+fn normalise_path(path: &str) -> Option<String> {
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split(['/', '\\']) {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            p => parts.push(p),
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("/"))
+    }
+}
+
+/// The directory part of a normalised path (`""` at the root).
+fn directory_of(path: &str) -> &str {
+    path.rfind('/').map_or("", |i| &path[..i])
+}
+
+/// The imports loaded for a unit, and every other import that reaches
 /// one of them (for example `lens.eu` and `resource:lens`), so that each
 /// is parsed and desugared once.
 #[derive(Default)]
@@ -417,13 +583,16 @@ struct Libraries {
     aliases: Vec<(Input, usize)>,
 }
 
-/// Load the embedded libraries `root` imports, and those they import in
-/// turn. Any other import fails, as does an import cycle: the browser has
-/// no file system, so the embedded libraries are the only imports.
+/// Load what `root` imports, and what those import in turn. An import
+/// resolves to one of the caller's `files` — by its path as written,
+/// then relative to the importing file's directory, as the CLI resolves
+/// a file import — or else to an embedded library. Anything else fails,
+/// as does an import cycle: the browser has no file system.
 fn load_libraries(
     root: &Input,
     imports: Vec<Input>,
     resources: &Resources,
+    supplied: &BTreeMap<String, String>,
     files: &mut SimpleFiles<String, String>,
     source_map: &mut SourceMap,
 ) -> Result<Libraries, PipelineError> {
@@ -432,60 +601,156 @@ fn load_libraries(
         location: None,
         notes: None,
     };
+    // Look files up by normalised path, whoever built the options.
+    let supplied: &BTreeMap<String, String> = &supplied
+        .iter()
+        .filter_map(|(path, text)| Some((normalise_path(path)?, text.clone())))
+        .collect();
     let mut graph = ImportGraph::default();
     let mut libraries = Libraries::default();
-    let mut pending = vec![(root.clone(), imports)];
+    // Each importer with its imports, and the directory its own relative
+    // imports also resolve against.
+    let mut pending = vec![(root.clone(), imports, String::new())];
 
-    while let Some((importer, imports)) = pending.pop() {
+    while let Some((importer, imports, importer_dir)) = pending.pop() {
         let imports = graph
             .register_imports(importer, imports)
             .map_err(import_error)?;
         graph.check_for_cycles().map_err(import_error)?;
         for import in imports {
-            let known = |i: &Input| i.locator() == import.locator();
+            // Seen before: the desugarer finds content by the import as
+            // written, so one locator and format is one content, even
+            // where relative resolution could have read it differently.
+            let known =
+                |i: &Input| i.locator() == import.locator() && i.format() == import.format();
             if libraries.loaded.iter().any(|l| known(&l.input))
                 || libraries.aliases.iter().any(|(i, _)| known(i))
             {
                 continue;
             }
-            let (name, text) = import_library_name(&import)
-                .and_then(|name| resources.eu_library(name))
-                .ok_or_else(|| PipelineError {
-                    message: format!("cannot import {}", import.locator()),
-                    location: None,
-                    notes: Some(vec![format!(
-                        "Only the libraries embedded in eucalypt can be imported here: {}.",
-                        Resources::eu_library_names()
-                            .map(|l| format!("{l}.eu"))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )]),
-                })?;
-            if let Some(index) = libraries.loaded.iter().position(|l| l.name == name) {
+            let format = import.format().to_string();
+            let origin = resolve_import(&import, &importer_dir, resources, supplied)
+                .ok_or_else(|| cannot_import(&import, supplied))?;
+            if let Some(index) = libraries
+                .loaded
+                .iter()
+                .position(|l| l.origin == origin && l.format == format)
+            {
                 libraries.aliases.push((import, index));
                 continue;
             }
-            let file_id = files.add(format!("{name}.eu"), text.clone());
-            source_map.mark_resource_file(file_id);
-            let (ast, errors) = rowan::parse_unit(text).into_parts();
-            if !errors.is_empty() {
-                return Err(PipelineError {
-                    message: format!("Internal error: {name}.eu parse failed"),
-                    location: None,
-                    notes: Some(format_parse_error_notes(&errors, file_id, files)),
-                });
+            let (file_name, text, embedded) = match &origin {
+                Origin::File(path) => (path.clone(), supplied[path].clone(), false),
+                Origin::Library(name) => {
+                    let (_, text) = resources
+                        .eu_library(name)
+                        .expect("resolved library is embedded");
+                    (format!("{name}.eu"), text.clone(), true)
+                }
+            };
+            let file_id = files.add(file_name.clone(), text.clone());
+            if embedded {
+                source_map.mark_resource_file(file_id);
             }
-            let nested = scrape_unit_imports(&ast).map_err(import_error)?;
-            pending.push((import.clone(), nested));
+            let parsed = if format == "eu" {
+                let (ast, errors) = rowan::parse_unit(&text).into_parts();
+                if !errors.is_empty() {
+                    let message = if embedded {
+                        format!("Internal error: {file_name} parse failed")
+                    } else {
+                        format!("cannot parse {file_name}")
+                    };
+                    return Err(PipelineError {
+                        message,
+                        location: None,
+                        notes: Some(format_parse_error_notes(&errors, file_id, files)),
+                    });
+                }
+                let nested = scrape_unit_imports(&ast).map_err(import_error)?;
+                let dir = match &origin {
+                    Origin::File(path) => directory_of(path).to_string(),
+                    Origin::Library(_) => String::new(),
+                };
+                pending.push((import.clone(), nested, dir));
+                Parsed::Unit(ast)
+            } else if format.ends_with("-stream") {
+                return Err(PipelineError {
+                    message: format!("cannot import {}", import.locator()),
+                    location: None,
+                    notes: Some(vec![format!(
+                        "The streaming format {format} is not available here."
+                    )]),
+                });
+            } else {
+                let core =
+                    import::read_to_core(&format, files, source_map, file_id).map_err(|e| {
+                        PipelineError {
+                            message: format!("cannot import {file_name} as {format}: {e}"),
+                            location: None,
+                            notes: None,
+                        }
+                    })?;
+                Parsed::Data(core)
+            };
             libraries.loaded.push(Library {
-                name,
+                origin,
+                format,
                 input: import,
                 file_id,
-                ast,
+                parsed,
             });
         }
     }
     Ok(libraries)
+}
+
+/// Where `import` resolves: a supplied file (as written, then relative to
+/// `importer_dir`), else an embedded library.
+fn resolve_import(
+    import: &Input,
+    importer_dir: &str,
+    resources: &Resources,
+    supplied: &BTreeMap<String, String>,
+) -> Option<Origin> {
+    if let Locator::Fs(path) = import.locator() {
+        let path = path.to_str()?;
+        let as_written = normalise_path(path);
+        let relative = if importer_dir.is_empty() {
+            None
+        } else {
+            normalise_path(&format!("{importer_dir}/{path}"))
+        };
+        if let Some(found) = [as_written, relative]
+            .into_iter()
+            .flatten()
+            .find(|p| supplied.contains_key(p))
+        {
+            return Some(Origin::File(found));
+        }
+    }
+    import_library_name(import)
+        .and_then(|name| resources.eu_library(name))
+        .map(|(name, _)| Origin::Library(name))
+}
+
+fn cannot_import(import: &Input, supplied: &BTreeMap<String, String>) -> PipelineError {
+    let libraries = Resources::eu_library_names()
+        .map(|l| format!("{l}.eu"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let note = if supplied.is_empty() {
+        format!("Only the libraries embedded in eucalypt can be imported here: {libraries}.")
+    } else {
+        format!(
+            "Only the files supplied ({}) and the libraries embedded in eucalypt ({libraries}) can be imported here.",
+            supplied.keys().cloned().collect::<Vec<_>>().join(", ")
+        )
+    };
+    PipelineError {
+        message: format!("cannot import {}", import.locator()),
+        location: None,
+        notes: Some(vec![note]),
+    }
 }
 
 // ── Error conversion helpers ─────────────────────────────────────────────────
@@ -532,6 +797,7 @@ fn extract_diagnostic_location(
     let start = files.location(label.file_id, label.range.start).ok()?;
     let end = files.location(label.file_id, label.range.end).ok()?;
     Some(SourceLocation {
+        file: files.name(label.file_id).ok()?,
         line: start.line_number,
         column: start.column_number,
         end_line: end.line_number,
@@ -549,7 +815,11 @@ fn format_parse_error_notes(
         .iter()
         .map(|e| {
             if let Some(loc) = extract_parse_error_location(e, file_id, files) {
-                format!("{}:{}: parse error: {e}", loc.line, loc.column)
+                if loc.file == "<input>" {
+                    format!("{}:{}: parse error: {e}", loc.line, loc.column)
+                } else {
+                    format!("{}:{}:{}: parse error: {e}", loc.file, loc.line, loc.column)
+                }
             } else {
                 format!("parse error: {e}")
             }
@@ -569,6 +839,7 @@ fn extract_parse_error_location(
     let start = files.location(file_id, start_offset).ok()?;
     let end = files.location(file_id, end_offset).ok()?;
     Some(SourceLocation {
+        file: files.name(file_id).ok()?,
         line: start.line_number,
         column: start.column_number,
         end_line: end.line_number,
@@ -781,5 +1052,206 @@ x: (1"#,
         .unwrap_err();
         assert!(err.message.contains("cannot import"), "{}", err.message);
         assert!(err.notes.unwrap().len() > 1);
+    }
+
+    // ── Options: supplied files and the step limit ─────────────────
+
+    fn options(files: &[(&str, &str)], max_steps: Option<usize>) -> EvalOptions {
+        EvalOptions {
+            files: files
+                .iter()
+                .map(|(p, t)| (p.to_string(), t.to_string()))
+                .collect(),
+            max_steps: max_steps.unwrap_or(DEFAULT_MAX_STEPS),
+        }
+    }
+
+    fn json(result: Result<String, PipelineError>) -> serde_json::Value {
+        let output = result.unwrap_or_else(|e| panic!("{e}: {:?}", e.notes));
+        serde_json::from_str(output.trim()).unwrap()
+    }
+
+    #[test]
+    fn test_import_supplied_eu_file() {
+        let opts = options(&[("helpers.eu", "double(x): x * 2")], None);
+        let v = json(evaluate_unit_with(
+            "{ import: \"helpers.eu\" }\nx: double(21)",
+            "json",
+            &opts,
+        ));
+        assert_eq!(v["x"], 42);
+    }
+
+    #[test]
+    fn test_import_supplied_eu_file_from_expression() {
+        let opts = options(&[("helpers.eu", "double(x): x * 2")], None);
+        let v = json(evaluate_expr_with(
+            "{ { import: \"helpers.eu\" } r: double(4) }.r",
+            "json",
+            &opts,
+        ));
+        assert_eq!(v, 8);
+    }
+
+    #[test]
+    fn test_import_supplied_data_files() {
+        let opts = options(
+            &[("cfg.yaml", "port: 80\n"), ("./data/input.txt", "a\nb\n")],
+            None,
+        );
+        let v = json(evaluate_unit_with(
+            "{ import: [\"cfg=cfg.yaml\", \"lines=text@data/input.txt\"] }\n\
+             port: cfg.port\nn: lines count",
+            "json",
+            &opts,
+        ));
+        assert_eq!(v["port"], 80);
+        assert_eq!(v["n"], 2);
+    }
+
+    #[test]
+    fn test_one_file_imported_in_two_formats() {
+        let opts = options(&[("pts.json", "[1, 2, 3]")], None);
+        let v = json(evaluate_unit_with(
+            "{ import: [\"raw=text@pts.json\", \"pts=pts.json\"] }\n\
+             n: raw count\nm: pts count",
+            "json",
+            &opts,
+        ));
+        assert_eq!(v["n"], 1);
+        assert_eq!(v["m"], 3);
+    }
+
+    #[test]
+    fn test_nested_import_resolves_relative_to_importer() {
+        let opts = options(
+            &[
+                ("lib/a.eu", "{ import: \"b.eu\" }\na: b + 1"),
+                ("lib/b.eu", "b: 1"),
+            ],
+            None,
+        );
+        let v = json(evaluate_unit_with(
+            "{ import: \"lib/a.eu\" }\nx: a",
+            "json",
+            &opts,
+        ));
+        assert_eq!(v["x"], 2);
+    }
+
+    #[test]
+    fn test_supplied_file_wins_over_embedded_library() {
+        let opts = options(&[("lens.eu", "marker: 7")], None);
+        let v = json(evaluate_unit_with(
+            "{ import: \"lens.eu\" }\nx: marker",
+            "json",
+            &opts,
+        ));
+        assert_eq!(v["x"], 7);
+    }
+
+    #[test]
+    fn test_embedded_library_still_imports_with_files_supplied() {
+        let opts = options(&[("helpers.eu", "double(x): x * 2")], None);
+        let v = json(evaluate_unit_with(
+            "{ import: [\"helpers.eu\", \"lens.eu\"] }\nx: { a: 3 } view(at(:a)) double",
+            "json",
+            &opts,
+        ));
+        assert_eq!(v["x"], 6);
+    }
+
+    #[test]
+    fn test_missing_import_lists_supplied_files() {
+        let opts = options(&[("helpers.eu", "double(x): x * 2")], None);
+        let err = evaluate_unit_with("{ import: \"other.eu\" }\nx: 1", "json", &opts).unwrap_err();
+        assert!(err.message.contains("cannot import"), "{}", err.message);
+        let note = &err.notes.unwrap()[0];
+        assert!(
+            note.contains("helpers.eu") && note.contains("lens.eu"),
+            "{note}"
+        );
+    }
+
+    #[test]
+    fn test_parse_error_in_supplied_file_names_it() {
+        let opts = options(&[("helpers.eu", "double(x): (x * 2")], None);
+        let err =
+            evaluate_unit_with("{ import: \"helpers.eu\" }\nx: 1", "json", &opts).unwrap_err();
+        assert!(err.message.contains("helpers.eu"), "{}", err.message);
+        assert!(
+            err.notes
+                .unwrap()
+                .iter()
+                .any(|n| n.starts_with("helpers.eu:1:")),
+            "notes should locate the error in helpers.eu"
+        );
+    }
+
+    #[test]
+    fn test_error_location_names_supplied_file() {
+        let opts = options(&[("helpers.eu", "\n\nboom: panic(\"no\")")], None);
+        let err =
+            evaluate_unit_with("{ import: \"helpers.eu\" }\nx: boom", "json", &opts).unwrap_err();
+        let loc = err.location.expect("error should have a location");
+        assert_eq!(loc.file, "helpers.eu");
+        assert_eq!(loc.line, 3);
+    }
+
+    /// A program that needs a few million steps.
+    const LONG_RUNNING: &str = "count(n): if(n = 0, 0, count(n - 1))\nx: count(200000)";
+
+    #[test]
+    fn test_default_step_limit_stops_a_long_program() {
+        let err = evaluate_unit(LONG_RUNNING, "json").unwrap_err();
+        assert!(err.message.contains("did not terminate"), "{}", err.message);
+        assert!(err.notes.unwrap().iter().any(|n| n.contains("max_steps")));
+    }
+
+    #[test]
+    fn test_raised_step_limit_lets_a_long_program_finish() {
+        let v = json(evaluate_unit_with(
+            LONG_RUNNING,
+            "json",
+            &options(&[], Some(100_000_000)),
+        ));
+        assert_eq!(v["x"], 0);
+    }
+
+    #[test]
+    fn test_lowered_step_limit_stops_a_short_program() {
+        let err = evaluate_unit_with("x: 1 + 2", "json", &options(&[], Some(5))).unwrap_err();
+        assert!(err.message.contains("after 5 steps"), "{}", err.message);
+    }
+
+    #[test]
+    fn test_options_from_json() {
+        let o = EvalOptions::from_json("").unwrap();
+        assert_eq!(o.max_steps, DEFAULT_MAX_STEPS);
+        assert!(o.files.is_empty());
+        let o = EvalOptions::from_json(r#"{"files": {"./a/../b.eu": "x: 1"}, "max_steps": 9}"#)
+            .unwrap();
+        assert_eq!(o.max_steps, 9);
+        assert_eq!(o.files.keys().collect::<Vec<_>>(), vec!["b.eu"]);
+    }
+
+    #[test]
+    fn test_options_from_json_rejects_bad_options() {
+        for bad in [
+            r#"{"maxSteps": 5}"#,
+            r#"{"max_steps": 0}"#,
+            r#"{"max_steps": -1}"#,
+            r#"{"files": {"../up.eu": ""}}"#,
+            r#"{"files": {"a.eu": "", "./a.eu": ""}}"#,
+            r#"{"files": ["a.eu"]}"#,
+            "not json",
+        ] {
+            let err = EvalOptions::from_json(bad).unwrap_err();
+            assert!(
+                err.message.starts_with("invalid options"),
+                "{bad}: {}",
+                err.message
+            );
+        }
     }
 }
