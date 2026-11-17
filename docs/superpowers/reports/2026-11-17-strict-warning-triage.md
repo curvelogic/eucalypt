@@ -7,7 +7,8 @@ Fresh release build from master; `eu check --strict` over 325 files
 
 | Category | Files | Outcome |
 |---|---|---|
-| (a) wrong prelude signature | 010 (`interleave`), 110, 111, 113 (`parse-as` returned `any?`, so `head`/`count` on the result warned) | Fixed: `interleave :: [a] → [b] → [a \| b]`, `parse-as` returns `any`. Gated by `typecheck/127`. |
+| (a) wrong prelude signature | 010 (`interleave`) | Fixed: `interleave :: [a] → [b] → [a \| b]`. Gated by `typecheck/127`. |
+| decision | 110, 111, 113 (`parse-as` returns documented partial `any?`, so `head`/`count` on it warns by design) | Owner decision eu-s2ato; signature unchanged |
 | (b) checker false positive | 015, 047, 119, 120, 129, 141, 144, 163 | Beads filed (below) |
 | (c) deliberately ill-typed | 142 (uses deprecated `state.exec`), 217 (`kv-block` with non-symbol keys), `typecheck/*` (49 fixtures, each an intended warning/error) | Left |
 
@@ -25,3 +26,13 @@ Fresh release build from master; `eu check --strict` over 325 files
 Under `--strict`, ordinary code can still fail on: `lookup`/`map` over lists of
 blocks with differing keys, user-defined or `random` monad `map`, and monadic
 (`:let`) blocks used with block operations.
+
+## Allow-list
+
+No allow-list file is needed: the deliberate cases (142, 217 and `typecheck/*`)
+are not run under `--strict` by anything except the `typecheck/` harness, whose
+`.expect` sidecars already state the expected warnings.
+
+## Also fixed
+
+eu-oaz72.127: `bind_var` widens literal symbols inside tuples (fixture 128).
