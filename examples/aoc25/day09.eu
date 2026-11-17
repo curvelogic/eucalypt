@@ -9,27 +9,27 @@ entirely within the red/green region.
 
 Approach: Part 1 is brute-force over all tile pairs via `tails` and
 `foldl` to find the maximum area without intermediate lists. Part 2
-builds polygon 'levels' (cross-sections at each
-y-coordinate), then sweeps all start/end level pairs with corridor
-narrowing and area-based pruning to find the maximum inscribed
-rectangle.
+compresses the coordinates to their ranks (about 250 by 250 cells), marks
+which cells are inside the polygon by scanning each row across its vertical
+edges, builds 2D prefix sums with an `arr` array, and then tests any
+candidate rectangle in constant time. A pair is only tested when its area
+beats the best so far.
 
 Notable eucalypt techniques:
-- `tails` with `foldl` for pairwise maximum without intermediate lists
-- `product` for 2D area from dimension list
-- block-scoped modules (`levels`, `search`) for organising complex logic
-- `cross` for Cartesian product of tile x-coords
-- `foldr` with accumulator for gap-level insertion
-- list destructuring in function parameters: `v-spans?(y, [_, y_lo, y_hi])`,
-  `inner-step(... [left, right, best], [lv-y, lv-l, lv-r, tiles])`
-- juxtaposed list-destructuring syntax `vertical?[p, q]:`, `vert-edge[p, q]:`
+- `dict` for coordinate ranks, `set` for edge crossings, `arr` for prefix sums
+- `scanl` for the inside/outside parity scan and the row accumulation
+- `foldl-strict` with a lazy `fits` argument so the polygon test runs only
+  when the area wins
+- list destructuring in function parameters (extra elements are ignored, so
+  `[x, y, column, row]` points work with `area([x1, y1], [x2, y2])`)
+- `par-max` over per-suffix maxima
 
-Running time: ~3 min (part 1), ~3 min (part 2)
+Running time: ~1.7s (part 1), ~7s sequential / ~6s parallel (part 2)
 "
 
 parse-coord(line): line str.split-on(",") map(num)
 
-area(a, b): zip-with(-, a, b) map(abs ; (+ 1)) product
+area([x1, y1], [x2, y2]): (abs(x1 - x2) + 1) * (abs(y1 - y2) + 1)
 
 ` "Max area from head of a list to any later element."
 best-from(ps): ps tail map(area(ps head)) max-of
@@ -53,145 +53,74 @@ test: {
   RESULT: part-1 then(:PASS, :FAIL)
 }
 
-` "Level-building machinery for the polygon sweep.
-A level is [y, left, right, tile-xs] representing the polygon
-cross-section and red tile positions at a given y-coordinate."
-levels: {
-  INF: 999999
+` "Rank of each distinct value among the sorted distinct values, as a dict."
+ranks(vals): dict.of(zip(vals sort-nums uniq, ℕ))
 
-  ` "Does vertical edge `v` [x, y-lo, y-hi] span y-coordinate `y`?"
-  v-spans?(y, [_, y_lo, y_hi]): y_lo <= y ∧ y < y_hi
-
-  ` "Does horizontal edge `h` [y, x-lo, x-hi] lie at y-coordinate `y`?"
-  has-y?(y, [hy, _, _]): hy = y
-
-  ` "Does point `p` [x, y] lie at y-coordinate `y`?"
-  at-y?(y, [_, py]): py = y
-
-  ` "Build edge list from consecutive vertex pairs, wrapping last to first."
-  make-edges(pts): zip(pts, pts rotate(1))
-
-  ` "Is edge vertical / horizontal?"
+` "Vertical edges of the polygon through `pts`, as `[x, y-lo, y-hi]`."
+vertical-edges(pts): {
   vertical?[p, q]: first(p) = first(q)
-  horizontal?[p, q]: second(p) = second(q)
-
-  ` "Extract vertical edges as [x, y-lo, y-hi]."
   vert-edge[p, q]: [first(p), min(second(p), second(q)), max(second(p), second(q))]
+}.(zip(pts, pts rotate(1)) filter(vertical?) map(vert-edge))
 
-  ` "Extract horizontal edges as [y, x-lo, x-hi]."
-  horiz-edge[p, q]: [second(p), min(first(p), first(q)), max(first(p), first(q))]
+` "Does the vertical edge `[x, y-lo, y-hi]` span the band starting at row `j`?"
+spans?(j, [_, y-lo, y-hi]): y-lo <= j ∧ j < y-hi
 
-  ` "Cross-section at `y`: [left, right] assuming single interval."
-  xsect(y, ves, hes): {
-    vxs: ves filter(v-spans?(y)) map(first)
-    hs: hes filter(has-y?(y))
-    al: vxs ++ (hs map(second))
-    ar: vxs ++ (hs map(!! 2))
-  }.[al min-of-or(INF), ar max-of-or(0)]
+` "Flip the inside/outside state `p` when cell column `i` is crossed."
+toggle(xs, p, i): (i ∈ xs) then(1 - p, p)
 
-  ` "Red tile x-coordinates at a given `y`."
-  tile-xs-at(y, pts): pts filter(at-y?(y)) map(first)
+` "Inside-ness (1 or 0) of each of the `w` cells across the band at row `j`:
+the state flips each time the scan crosses a vertical edge spanning the band."
+inside-row(w, edges, j): {
+  crossings: edges filter(spans?(j)) map(first) set.of
+}.(range(0, w) scanl(toggle(crossings), 0) tail)
 
-  ` "Build a level [y, left, right, tile-xs] at a given `y`."
-  make-level(y, ves, hes, pts):
-    [y] ++ xsect(y, ves, hes) ++ [tile-xs-at(y, pts)]
+` "2D prefix sums over the `[rows, cols]` grid of cells: entry `[j, i]` counts
+the cells above row `j` and left of column `i` that are inside."
+inside-sums(w, edges, h): {
+  rows: range(0, h) map(inside-row(w, edges)) map(scanl(+, 0))
+  zero-row: repeat(0) take(w + 1)
+}.(arr.from-flat([h + 1, w + 1], rows scanl(zip-with(+), zero-row) concat))
 
-  ` "Insert gap levels between non-adjacent levels.
-  Folds right so each level can peek at the next via the accumulator."
-  insert-gaps(ves, lvs): {
-    step(lv, acc): {
-      needs-gap: (acc non-nil?) ∧ (first(head(acc)) > first(lv) + 1)
-      gap: make-level(first(lv) + 1, ves, [], [])
-    }.(needs-gap then(cons(lv, cons(gap, acc)),
-                      cons(lv, acc)))
-  }.(foldr(step, [], lvs))
+` "Is every cell of the compressed rectangle between corners `p` and `q`
+(each `[x, y, column, row]`) inside the polygon? True when its prefix-sum
+total equals its cell count."
+filled?(sums, [_, _, ia, ja], [_, _, ib, jb]): {
+  i1: min(ia, ib)
+  i2: max(ia, ib)
+  j1: min(ja, jb)
+  j2: max(ja, jb)
+  total: arr.get([j2, i2], sums) - arr.get([j1, i2], sums) - arr.get([j2, i1], sums) + arr.get([j1, i1], sums)
+}.(total = (i2 - i1) * (j2 - j1))
 
-  ` "Build level list from polygon vertices."
-  from-points(pts): {
-    es: make-edges(pts)
-    ves: es filter(vertical?) map(vert-edge)
-    hes: es filter(horizontal?) map(horiz-edge)
-    ys: pts map(second) sort-nums uniq
-    level-at(y): make-level(y, ves, hes, pts)
-  }.(ys map(level-at) insert-gaps(ves))
-}
+` "Keep the larger of `best` and area `a`, but only if `fits` (the rectangle
+lies inside the polygon). `fits` is lazy, so it is only tested when `a` wins."
+upgrade(fits, a, best): (a > best ∧ fits) then(a, best)
 
-` "Largest-rectangle search over polygon levels.
+upgrade-with(ok?, p, best, q): upgrade(ok?(p, q), area(p, q), best)
 
-The search considers every pair of levels (start, end) as potential top
-and bottom rows of a rectangle. A 'corridor' tracks the narrowest
-polygon cross-section between start and end; the rectangle must fit
-within this corridor. The outer sweep picks each tile-bearing level as
-a start; the inner sweep folds downward through subsequent levels,
-narrowing the corridor and computing the best rectangle at each step.
-Pruning skips any pair whose maximum possible area cannot beat the
-current best."
-search: {
+` "Largest filled rectangle from the head `p` of `ps` to a later point."
+best-filled-from(ok?, [p : qs]): qs foldl-strict(upgrade-with(ok?, p), 0)
 
-  ` "Filter `xs` to elements within [`lo`, `hi`]."
-  in-range?(lo, hi, x): (x >= lo) ∧ (x <= hi)
-  clamp-to(lo, hi, xs): xs filter(in-range?(lo, hi))
+` "Tile `[x, y]` extended with the ranks of its coordinates."
+rank-point(rx, ry, [x, y]): [x, y, rx dict.get(x), ry dict.get(y)]
 
-  ` "Max rectangle area for a start/end level pair. Clamps each level's
-  tile x-coords to the corridor bounds, then takes the widest pair of
-  tiles (one from each level) times the height."
-  max-rect(sy, st, ey, et, cl, cr): {
-    si: clamp-to(cl, cr, st)
-    ei: clamp-to(cl, cr, et)
-    pair-width(a, b): max(a - b, b - a) + 1
-    w: cross(pair-width, si, ei) max-of-or(0)
-    h: ey - sy + 1
-  }.(w * h)
+` "Part 2 on the red tiles `pts`. Coordinates are compressed to their ranks,
+so the polygon is a grid of at most `n/2` by `n/2` cells; prefix sums over
+it test any candidate rectangle in constant time, and a pair is only tested
+when its area beats the best so far. Each suffix's best is independent, so
+the maxima run under `par-max`."
+solve2(pts): {
+  rx: pts map(first) ranks
+  ry: pts map(second) ranks
+  edges: vertical-edges(pts) map(compress(rx, ry))
+  w: (rx dict.size) - 1
+  h: (ry dict.size) - 1
+  sums: inside-sums(w, edges, h)
+  tls: pts map(rank-point(rx, ry)) tails filter(count ; (> 1))
+}.(tls par-max(best-filled-from(filled?(sums))))
 
-  ` "Inner fold step: process one level as a candidate end row.
-  The corridor `[left, right]` is the narrowest polygon cross-section
-  seen so far between the start level and here; it can only narrow
-  (never widen) as we descend. State is `[left, right, best]`.
-  Pruned when the corridor has closed or the remaining area cannot
-  beat `best`."
-  inner-step(sy, start-tiles, ymax, [left, right, best], [lv-y, lv-l, lv-r, tiles]): {
-    # narrow corridor to this level's bounds
-    new-left: max(left, lv-l)
-    new-right: min(right, lv-r)
-    max-possible: (ymax - sy + 1) * (new-right - new-left + 1)
-    area: tiles nil? then(0, max-rect(sy, start-tiles, lv-y, tiles, new-left, new-right))
-    pruned?: (left > right) ∨ (max-possible <= best)
-  }.(pruned? then([left, right, best],
-    [new-left, new-right, max(best, area)]))
-
-  ` "Inner sweep: fold downward from a fixed start level, narrowing
-  the corridor at each step. Returns the best area found."
-  inner(sy, st, cl, cr, ymax, lvs, best):
-    (lvs foldl(inner-step(sy, st, ymax), [cl, cr, best])) !! 2
-
-  ` "Outer fold step: try a level as the start row. Receives a suffix
-  of the level list so `rest` gives the levels below this one for the
-  inner sweep. Pruned when the level has no tiles or the maximum
-  possible area (full height times full width) cannot beat `best`."
-  outer-step(ymax, maxw, best, suffix): {
-    level: suffix head
-    rest: suffix tail
-    tiles: level !! 3
-    max-possible: (ymax - (level !! 0) + 1) * maxw
-    pruned?: (max-possible <= best) ∨ (tiles nil?)
-  }.(pruned? then(best,
-    inner(level !! 0, tiles, level !! 1, level !! 2, ymax, rest, best)))
-
-  ` "Maximum width spanned by tiles within bounds at a single level."
-  row-width(lv): {
-    ti: lv tail apply(clamp-to)
-  }.((ti count) > 1 then((ti max-of) - (ti min-of) + 1, 0))
-
-  ` "Find the maximum inscribed rectangle area across all level pairs.
-  Seeds `best` with the widest single-level row as a lower bound."
-  find-max(lvs): {
-    ymax: lvs map(!! 0) max-of
-    maxw: lvs map(_0 !! 2 - _0 !! 1 + 1) max-of
-    rm: lvs map(row-width) max-of
-  }.(lvs tails foldl(outer-step(ymax, maxw), rm))
-}
-
-solve2(pts): pts levels.from-points search.find-max
+` "Replace an edge's raw coordinates by their ranks."
+compress(rx, ry, [x, y-lo, y-hi]): [rx dict.get(x), ry dict.get(y-lo), ry dict.get(y-hi)]
 
 ` { target: :test2
     import: "ex1=inputs/day09-ex1.txt" }
