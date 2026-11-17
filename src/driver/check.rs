@@ -215,11 +215,10 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
             (result.warnings.len(), result.core_errors.len())
         }
         Err(e) => {
-            // Pipeline failure is not a type error — log at debug level and
-            // continue with the annotation syntax results only.
-            eprintln!("eu check: pipeline warning: {e}");
-            // Under --strict an unchecked file must not pass silently.
-            pipeline_failed = opt.check_strict();
+            // A file that could not be checked must never pass silently,
+            // strict or not (e.g. an unreadable `prelude:` override).
+            eprintln!("eu check: error: could not check: {e}");
+            pipeline_failed = true;
             (0, 0)
         }
     };
@@ -242,7 +241,7 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
 
     if total_issues == 0 {
         Ok(0)
-    } else if opt.check_strict() || content_error_count > 0 || parse_errors > 0 {
+    } else if opt.check_strict() || content_error_count > 0 || parse_errors > 0 || pipeline_failed {
         // Content verifier errors (e.g. always-divergent bindings) and
         // genuine rowan parse errors (eu-3621) are always hard errors,
         // regardless of --strict. A parse error is a more fundamental

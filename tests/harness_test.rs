@@ -5664,16 +5664,16 @@ pub fn test_check_honours_prelude_metadata() {
     );
 }
 
-/// An unreadable `prelude:` override must fail `eu check --strict` rather
+/// An unreadable `prelude:` override must fail `eu check` (strict or not) rather
 /// than silently skip the check (eu-oaz72.173 review).
 #[test]
-pub fn test_check_strict_fails_on_missing_prelude_override() {
+pub fn test_check_fails_on_missing_prelude_override() {
     let dir = std::env::temp_dir().join(format!("eu-check-prelude-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("bad.eu");
     std::fs::write(&file, "{ prelude: \"nonexistent-prelude.eu\" }\n\nx: 1\n").unwrap();
     let output = std::process::Command::new(eu_binary())
-        .args(["check", "--strict"])
+        .args(["check"])
         .arg(&file)
         .output()
         .expect("failed to run eu check");
