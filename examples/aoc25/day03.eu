@@ -6,33 +6,40 @@ two-digit joltage. Sum the maximums across all banks.
 Part 2: Pick exactly twelve batteries to form the largest twelve-digit
 joltage. Sum across all banks.
 
-Approach: greedy selection — at each step, find the largest digit in
-the window of positions still early enough to leave k-1 picks remaining,
-skip to its first occurrence, take it, and recurse.
+Approach: greedy selection with a monotonic stack — one pass per bank,
+dropping a kept digit whenever a larger one arrives and skips remain.
 
 Notable eucalypt techniques:
 - `;` forward compose for point-free pipelines: `batteries ; pick(2) ; digits-to-num`
-- `drop-while` for scanning to the best digit
-- `foldl` with expression anaphora `_0 * 10 + _1` for digit-to-number conversion
-
-Running time: ~1s (both parts)
+- `str.code-points` to read digits as character codes
+- `foldl-strict` with a tuple accumulator and expression anaphora
+  `_0 * 10 + _1` for digit-to-number conversion
+- a recursive helper whose tail position is a single `then`
 "
 
-batteries(line): line str.letters map(num)
+` "The digits of a bank as numbers, read off the character codes."
+batteries(line): line str.code-points map(- 48)
 
-` "Greedily pick k batteries to maximise the k-digit joltage.  At each
-step, find the largest digit in the window of positions still early
-enough to leave k-1 picks remaining, skip forward to its first
-occurrence, take it, and recurse on the suffix."
+` "Push digit `d` onto the stack of kept digits (most recent first),
+first discarding up to `skips` smaller digits from its top: a smaller
+digit before a larger one can always be dropped to improve the number.
+Returns `[stack, remaining-skips]`."
+push(d, skips, stack): {
+  droppable: (skips > 0) ∧ (stack non-nil?) ∧ ((stack head) < d)
+}.(droppable then(push(d, skips - 1, stack tail), [cons(d, stack), skips]))
+
+` "Fold step: keep `d`, spending the skip budget."
+keep-step([stack, skips], d): push(d, skips, stack)
+
+` "The largest k-digit number formed by k of the digits in order.  One
+pass with a monotonic stack: each of the `n - k` skips is spent on the
+first smaller digit it can improve, and any surplus drops off the end."
 pick(k, ds): {
-
-  best: ds take((ds count) - k + 1) max-of
-  at-best: ds drop-while(!= best)
-
-}.((k = 0) then([], cons(best, pick(k - 1, at-best tail))))
+  kept: ds foldl-strict(keep-step, [[], (ds count) - k]) first
+}.(kept reverse take(k))
 
 ` "Convert a list of digits to a number: [9,8,7] -> 987."
-digits-to-num(ds): ds foldl(_0 * 10 + _1, 0)
+digits-to-num(ds): ds foldl-strict(_0 * 10 + _1, 0)
 
 solve(data, n): data map(batteries ; pick(n) ; digits-to-num) sum
 
