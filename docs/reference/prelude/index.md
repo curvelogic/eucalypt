@@ -4,10 +4,10 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 
 ## Categories
 
-- [Lists](lists.md) -- list construction, transformation, folding, sorting (92 entries)
+- [Lists](lists.md) -- list construction, transformation, folding, sorting (99 entries)
 - [Blocks](blocks.md) -- block construction, access, merging, transformation (66 entries)
-- [Strings](strings.md) -- string manipulation, regex, formatting (43 entries)
-- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (36 entries)
+- [Strings](strings.md) -- string manipulation, regex, formatting (44 entries)
+- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (38 entries)
 - [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (13 entries)
 - [Combinators](combinators.md) -- function composition, application, utilities (14 entries)
 - [Calendar](calendar.md) -- date and time functions (8 entries)
@@ -21,7 +21,7 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
 - [IO](io.md) -- environment, time, argument access, and monad utility (37 entries)
 
-*416 documented entries in total.*
+*426 documented entries in total.*
 
 ## Standard Libraries
 

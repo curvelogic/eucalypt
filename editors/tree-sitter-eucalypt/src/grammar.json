@@ -874,6 +874,18 @@
               {
                 "type": "SYMBOL",
                 "name": "bracket_expr"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "application"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "block_application"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "list_application"
               }
             ]
           },
@@ -969,6 +981,18 @@
               {
                 "type": "SYMBOL",
                 "name": "bracket_expr"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "application"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "block_application"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "list_application"
               }
             ]
           },
@@ -1043,6 +1067,18 @@
               {
                 "type": "SYMBOL",
                 "name": "bracket_expr"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "application"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "block_application"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "list_application"
               }
             ]
           },

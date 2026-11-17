@@ -1,0 +1,2 @@
+` "gcd: non-integer is an error"
+x: gcd(1.5, 4)

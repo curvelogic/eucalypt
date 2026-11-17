@@ -1,0 +1,2 @@
+exit: 1
+stderr: "lcm argument 2.5 must be an integer"

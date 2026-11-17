@@ -314,7 +314,7 @@ module.exports = grammar({
     // Callable targets mirror the Rowan parser's is_callable_terminal():
     // names, parenthesised expressions, blocks, and bracket expressions.
     application: $ => prec(2, seq(
-      choice($.name, $.paren_expr, $.block, $.bracket_expr),
+      choice($.name, $.paren_expr, $.block, $.bracket_expr, $.application, $.block_application, $.list_application),
       $.argument_list,
     )),
 
@@ -334,7 +334,7 @@ module.exports = grammar({
     // Callable targets mirror the Rowan parser's is_callable_terminal():
     // names, parenthesised expressions, and bracket expressions.
     block_application: $ => prec(2, seq(
-      choice($.name, $.paren_expr, $.bracket_expr),
+      choice($.name, $.paren_expr, $.bracket_expr, $.application, $.block_application, $.list_application),
       $.block_argument,
     )),
 
@@ -353,7 +353,7 @@ module.exports = grammar({
     // Callable targets mirror the Rowan parser's is_callable_terminal():
     // names, parenthesised expressions, and bracket expressions.
     list_application: $ => prec(2, seq(
-      choice($.name, $.paren_expr, $.bracket_expr),
+      choice($.name, $.paren_expr, $.bracket_expr, $.application, $.block_application, $.list_application),
       $.list_argument,
     )),
 
