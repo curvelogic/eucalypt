@@ -363,7 +363,19 @@ pub fn prepare(
 
     if opt.dump_demands() {
         let c = loader.core();
-        let (annotated, sigs) = crate::core::analyse_demand::analyse_demands(&c.expr);
+        // In blob mode the program's calls of prelude globals take the
+        // signatures derived for them when the blob was built, as the
+        // executor's analysis does (eu-oaz72.92), so the dump shows what
+        // is compiled (eu-oaz72.105).
+        let prelude =
+            loader
+                .prelude_blob()
+                .map(|b| crate::core::analyse_demand::PreludeSignatures {
+                    name_to_slot: &b.name_to_slot,
+                    sigs: &b.demand_signatures,
+                });
+        let (annotated, sigs) =
+            crate::core::analyse_demand::analyse_demands_with_prelude(&c.expr, prelude);
         dump_core(annotated.clone(), opt)?;
         // Print demand annotations for all let-bound names, with each
         // let-bound lambda's signature.
