@@ -1736,8 +1736,11 @@ find(p?, xs): { r: xs filter(p?) }.(r nil? then(null, r head))
 
 ` { doc: "`index-of(x, xs)` - the 0-based index of the first element of `xs` equal to `x`, or `null` if `x` is absent."
     type: s"any → [any] → (number | null)" }
-index-of(x, xs): { hit?([i, y]): y = x
-  r: enumerate(xs) filter(hit?) }.(r nil? then(null, r head first))
+index-of(x, xs): { r: enumerate(xs) filter(__index-hit?(x)) }.(r nil? then(null, r head first))
+
+` { doc: "`__index-hit?(x, pair)` - internal: true when the element of the `[index, element]` `pair` equals `x`."
+    export: :suppress }
+__index-hit?(x, [_, y]): y = x
 
 ` { doc: "`frequencies(xs)` - a dict mapping each distinct element of `xs` to the number of times it occurs. Elements must be valid dict keys (numbers, strings, symbols or lists of those). Runs in constant stack."
     type: s"[k] → dict(k, number)" }
