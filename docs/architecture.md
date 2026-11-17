@@ -550,12 +550,10 @@ and with pre-decoded dispatch off, behaviour is byte-identical to the
 byte-stream path. Nothing in the pre-decoded structures is a GC pointer, so
 code stays off the collector's scan set just as the byte stream does.
 
-As of Phase 2 of the lever-(a) rollout (eu-vcr8), pre-decoded dispatch is the
-**default** — unset or `EU_PREDECODE=1` selects it; `EU_PREDECODE=0` opts
-out to the byte-dispatch path, which is retained and soaked through this
-release (CI's `test-byte-dispatch-baseline` job keeps it exercised) before
-Phase 3 deletes it, per the design's phased landing plan
-(`docs/superpowers/specs/2026-07-13-predecoded-execution-ir-design.md` §6).
+Pre-decoded dispatch is the **default** — unset or `EU_PREDECODE=1` selects
+it; `EU_PREDECODE=0` opts out to the byte-dispatch path, which is retained
+for now (CI's `test-byte-dispatch-baseline` job keeps it exercised) and is
+due to be removed in a later release.
 
 #### Why bytecode won, and the performance story
 
@@ -567,20 +565,16 @@ from source. On op-dense, allocation-light workloads the byte-stream
 interpreter's per-tick re-decode cost historically left it slower per tick
 than the HeapSyn tree-walk — closing that remaining gap is exactly what the
 pre-decoded IR and the fused-primop superinstructions targeted, and the
-eu-7oshh A/B study that authorised HeapSyn's deletion (eu-oufc) confirmed
-parity or a bytecode win across the canonical suite.
+A/B study that preceded HeapSyn's removal confirmed parity or a bytecode
+win across the canonical suite.
 
 All engine-versus-engine performance numbers in this project are governed by
-a checked-in measurement protocol
-([`docs/superpowers/engine-ab/PROTOCOL.md`](superpowers/engine-ab/PROTOCOL.md)):
-deterministic VM ticks and allocation counts first, interleaved
+a measurement protocol: deterministic VM ticks and allocation counts first, interleaved
 median-of-N wall timings second, a canonical eight-bench suite, and a
 mandatory confidence label (*measured-verified* / *measured-single* /
 *projected*) on every figure. Because those figures are machine- and
 load-sensitive and evolve release to release, this document deliberately
-states the shape of the trade-off rather than quoting ratios; consult the
-protocol's ledger (`results.jsonl`) and the dated transition-review reports
-under `docs/superpowers/reports/` for current, labelled measurements.
+states the shape of the trade-off rather than quoting ratios.
 
 ## Memory Management and Garbage Collection
 
