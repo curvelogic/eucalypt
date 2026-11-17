@@ -426,6 +426,20 @@ impl LspTestSession {
             .unwrap_or_default()
     }
 
+    /// The type-warning diagnostics the server would publish for the
+    /// cached pipeline result, positioned against the document text.
+    pub fn type_diagnostics(&self) -> Vec<lsp_types::Diagnostic> {
+        self.cached_pipeline()
+            .map(|c| {
+                super::diagnostics::diagnostics_from_type_warnings(
+                    &self.content,
+                    &c.warnings,
+                    &c.source_map,
+                )
+            })
+            .unwrap_or_default()
+    }
+
     /// Message of the cached result's `prelude:` override error, if any.
     pub fn prelude_error(&self) -> Option<String> {
         let file_id = FileId::from_url(&self.uri);
