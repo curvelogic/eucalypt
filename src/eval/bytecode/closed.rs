@@ -30,21 +30,30 @@ use crate::eval::stg::{
     tags::{DataConstructor, Tag},
 };
 
-/// True when `lf` can safely be closed over the globals frame.
+/// True when `lf` can safely be closed over the slotless annotation spine.
 pub fn binding_is_closed(lf: &LambdaForm) -> bool {
     closed_in(lf.body(), lf.arity() as usize)
 }
 
-/// Lower bound on the frame a case branch for `tag` pushes.
+/// Slots a case fallback pushes (`Value::from_value`, one on every return).
+pub(crate) const FALLBACK_FRAME: usize = 1;
+/// Slots a `DeMeta` handler frame holds (metadata and body).
+pub(crate) const DEMETA_HANDLER_FRAME: usize = 2;
+/// Slots a `DeMeta` `or_else` frame holds.
+pub(crate) const DEMETA_OR_ELSE_FRAME: usize = 1;
+
+/// Slots a case branch for `tag` pushes: the constructor's arity, except
+/// `BlockKvList`, which is built with a single field although its arity is
+/// 2. `None` for tags that are not data constructors.
 ///
-/// `BlockKvList` is built with a single field although its arity is 2 (see
-/// `free_slots` in the machine), so it counts as 1; tags that are not data
-/// constructors count as 0.
-fn branch_frame_lower_bound(tag: Tag) -> usize {
+/// The single source of truth for branch frame sizes: used by this
+/// analysis and by the machine's `free_slots`, and checked against the
+/// frame `return_data` builds by its `debug_assert`.
+pub(crate) fn branch_frame_size(tag: Tag) -> Option<usize> {
     match DataConstructor::try_from(tag) {
-        Ok(DataConstructor::BlockKvList) => 1,
-        Ok(dc) => dc.arity(),
-        Err(_) => 0,
+        Ok(DataConstructor::BlockKvList) => Some(1),
+        Ok(dc) => Some(dc.arity()),
+        Err(_) => None,
     }
 }
 
@@ -64,8 +73,10 @@ fn closed_in(syn: &StgSyn, s: usize) -> bool {
             closed_in(scrutinee, s)
                 && branches
                     .iter()
-                    .all(|(t, b)| closed_in(b, s + branch_frame_lower_bound(*t)))
-                && fallback.as_ref().is_none_or(|f| closed_in(f, s + 1))
+                    .all(|(t, b)| closed_in(b, s + branch_frame_size(*t).unwrap_or(0)))
+                && fallback
+                    .as_ref()
+                    .is_none_or(|f| closed_in(f, s + FALLBACK_FRAME))
         }
         StgSyn::Cons { args, .. } | StgSyn::Bif { args, .. } => args.iter().all(local_ok),
         StgSyn::App { callable, args, .. } | StgSyn::DirectApp { callable, args, .. } => {
@@ -134,11 +145,10 @@ mod tests {
 
     #[test]
     fn nested_lambda_referencing_outer_local_is_not_closed() {
-        // λ{1}. let g = λ{1}. (✳2)  in g — index 2 inside the inner lambda
-        // (1 inner arg + 1 let slot... 1 arg, 1 let frame = 2 locals, so the
-        // inner lambda's own arg (0), the letrec slot (1), outer arg (2)).
-        // Within the inner lambda s = 1 (inner arg) + 1 (letrec frame) +
-        // 1 (outer arg) = 3, so ✳3 escapes while ✳2 is the outer arg.
+        // Inside the inner lambda the locals are: its arg (0), the letrec
+        // slot (1) and the outer arg (2), so s = 1 + 1 + 1 = 3 slots are
+        // local to the *outer* binding; the inner lambda sees them at
+        // 0..3. Index 3 is beyond the outer binding's frames: it escapes.
         let inner = dsl::lambda(1, dsl::atom(l(3)));
         let outer = dsl::lambda(1, dsl::letrec_(vec![inner], dsl::local(0)));
         assert!(!binding_is_closed(&outer));
@@ -152,6 +162,22 @@ mod tests {
         // A binding mentioning its own LetRec slot (index = arity) escapes.
         let self_ref = dsl::lambda(1, dsl::app(l(1), vec![l(0)]));
         assert!(!binding_is_closed(&self_ref));
+        // Inside a nested letrec, a binding reading a sibling slot of its
+        // own frame is still local to the *outer* binding, but one reading
+        // a slot of the enclosing (outer) frame escapes.
+        let sibling = dsl::lambda(1, dsl::atom(l(1)));
+        let other = dsl::lambda(1, dsl::atom(l(0)));
+        let outer = dsl::lambda(1, dsl::letrec_(vec![sibling, other], dsl::local(0)));
+        assert!(binding_is_closed(&outer));
+        let escaping = dsl::lambda(1, dsl::atom(l(4)));
+        let outer = dsl::lambda(
+            1,
+            dsl::letrec_(
+                vec![escaping, dsl::lambda(1, dsl::atom(l(0)))],
+                dsl::local(0),
+            ),
+        );
+        assert!(!binding_is_closed(&outer));
     }
 
     #[test]

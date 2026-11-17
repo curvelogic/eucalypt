@@ -9,9 +9,9 @@
 //! every iteration. Peak heap blocks grew with the list (about 11,000 at
 //! 200,000 cells) and every collection re-marked the retained prefix.
 //!
-//! The fix closes a `Let`/`LetRec` binding over the globals frame when no
-//! local reference in its code escapes its own frames (a "closed" binding),
-//! so the closure no longer pins the frame it was allocated in. Peak blocks
+//! The fix closes a `Let`/`LetRec` binding over a slotless annotation spine
+//! when no local reference in its code escapes its own frames (a "closed"
+//! binding), so the closure no longer pins the frame it was allocated in. Peak blocks
 //! are deterministic, so this gate does not depend on wall time. Measured:
 //! 1,026 (source prelude) or ~6,000 (blob) with the fix, ~11,000 without.
 //!
@@ -30,13 +30,17 @@ fn run(fixture: &str, predecode: &str) -> (u64, String) {
     use wait_timeout::ChildExt;
     let dir = tempfile::tempdir().unwrap();
     let stats = dir.path().join("stats.json");
+    // Output goes to files, not pipes: an undrained pipe could block the
+    // child while we wait on it.
+    let out_path = dir.path().join("stdout.txt");
+    let err_path = dir.path().join("stderr.txt");
     let mut child = Command::new(eu_binary())
         .arg("--statistics-file")
         .arg(&stats)
         .arg(fixture)
         .env("EU_PREDECODE", predecode)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdout(std::fs::File::create(&out_path).unwrap())
+        .stderr(std::fs::File::create(&err_path).unwrap())
         .spawn()
         .expect("failed to spawn eu");
     let status = child
@@ -46,8 +50,12 @@ fn run(fixture: &str, predecode: &str) -> (u64, String) {
         child.kill().ok();
         panic!("eu timed out on {fixture}");
     };
-    let out = child.wait_with_output().unwrap();
-    assert!(status.success(), "eu failed on {fixture}");
+    let stdout = std::fs::read_to_string(&out_path).unwrap_or_default();
+    let stderr = std::fs::read_to_string(&err_path).unwrap_or_default();
+    assert!(
+        status.success(),
+        "eu failed on {fixture}\nstderr:\n{stderr}"
+    );
     let json: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&stats).unwrap()).unwrap();
     fn walk(v: &serde_json::Value) -> Option<u64> {
@@ -62,7 +70,7 @@ fn run(fixture: &str, predecode: &str) -> (u64, String) {
     }
     (
         walk(&json).expect("no peak_heap_blocks in statistics"),
-        String::from_utf8_lossy(&out.stdout).into_owned(),
+        stdout,
     )
 }
 
@@ -74,11 +82,11 @@ fn run(fixture: &str, predecode: &str) -> (u64, String) {
 /// tighten to ~2,048 when that is fixed.
 const PEAK_BLOCK_BOUND: u64 = 8192;
 
-fn assert_constant_space(fixture: &str, expect: &str) {
+fn assert_bounded_space(fixture: &str, expect: &str) {
     for predecode in ["1", "0"] {
         let (peak, stdout) = run(fixture, predecode);
         assert!(
-            stdout.contains(expect),
+            stdout.lines().any(|l| l == expect),
             "{fixture} (EU_PREDECODE={predecode}): unexpected output {stdout}"
         );
         assert!(
@@ -90,11 +98,11 @@ fn assert_constant_space(fixture: &str, expect: &str) {
 }
 
 #[test]
-fn count_over_range_runs_in_constant_space() {
-    assert_constant_space("tests/fixtures/list_retention_count.eu", "x: 200000");
+fn count_over_range_runs_in_bounded_space() {
+    assert_bounded_space("tests/fixtures/list_retention_count.eu", "x: 200000");
 }
 
 #[test]
 fn wrapper_frame_does_not_pin_consumed_list() {
-    assert_constant_space("tests/fixtures/list_retention_wrapper.eu", "x: 19999900000");
+    assert_bounded_space("tests/fixtures/list_retention_wrapper.eu", "x: 19999900000");
 }

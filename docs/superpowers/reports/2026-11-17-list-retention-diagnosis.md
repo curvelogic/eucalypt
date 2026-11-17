@@ -24,7 +24,7 @@ source prelude, no protocol interleaving). Nothing here is a performance claim.
 2. Global/Value arg atoms capturing the caller env (use `state.globals`).
 3. Memoising Atom-alias callee slots in `enter_local` (fires once).
 
-## Tracer (diff in `2026-11-17-list-retention-tracer.patch`, not for merge)
+## Tracer (the throwaway diff is not kept in the tree)
 `dbg_trace` / `dbg_path` in `machine.rs`: at op N under `EU_DBG=1`, walks
 env frames from each stack continuation and from `state.current`, counting new
 frames per root, then BFS from `current` env to the deepest frame and prints the
@@ -222,3 +222,25 @@ pairs, wall median-of-5, measured-single): ticks identical in all; peak blocks
 016 2,171 -> 2,461, 022 21,315 -> 24,627, 017/018 lower; wall 016 2.20 s ->
 2.66 s (+21%), 022 4.40 -> 4.75 s, others within spread. `gc_004` compaction
 now needs 11 MiB (was 10).
+
+## Update 6: round-1 review fixes (eu-oaz72.175, measured-single)
+
+- `closed_env` shares the longest already-slotless suffix of the captured chain
+  and allocates only the slot-bearing prefix (no heap `Vec`). The head frame
+  carries exactly the original head's annotation (so the `DeMeta` continuation
+  trace and the profiler read what they did before); deeper frames keep only
+  valid annotations, which is all `annotation_trace` ever reads. No
+  `Smid::default()` is allocated.
+- Frame sizes (`branch_frame_size`, fallback, `DeMeta`) now live once in
+  `closed.rs` and are used by `free_slots` too. `tags.rs`/`opcode.rs` are blob
+  freshness inputs.
+- Gating harness tests: `301_closed_bindings`, `errors/333_closed_binding_trace`.
+- Benches, source prelude, interleaved 5 pairs against the merge base, release:
+  016 wall median 1.82 -> 2.12 s (spread 1.52-2.59 vs 1.48-2.33), peak blocks
+  2,171 -> 2,404; 022 wall 3.75 -> 4.03 s (3.38-4.84 vs 3.68-4.76), peak blocks
+  21,315 -> 24,627; ticks identical (5,638,413; 43,600,690). The spine's peak
+  cost is not reduced by sharing: most Lets sit in global lambdas whose chain
+  is a single slot-bearing frame.
+- `gc_004` still needs 11 MiB (10 MiB fails in release and debug; master
+  passes at 9): the one head frame per closed `Let` is the cost.
+- Blob mode residual (about 6,000 blocks) is unchanged and out of scope here.

@@ -1,0 +1,6 @@
+` "eu-oaz72.175: an error raised inside a closed let binding still carries the
+   enclosing call sites in its trace (the closed binding's slotless annotation
+   spine mirrors the chain it would have captured)."
+outer(n): { inner(m): { f(x): panic("boom") }.f(m) }.inner(n)
+
+result: outer([1, 2, 3])

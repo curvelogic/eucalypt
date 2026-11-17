@@ -85,13 +85,14 @@ use sha2::{Digest, Sha256};
 ///
 /// - v11: the high bit of a `Let`/`LetRec` binding's form-header `kind` byte
 ///   is a *closed* flag (`FORM_CLOSED`; eu-oaz72.175): the binding is closed
-///   over the globals frame instead of the enclosing frame. The byte stream
+///   over a slotless annotation spine instead of the enclosing frame. The byte stream
 ///   keeps its shape, but a v10 reader would mask the flag into an unknown
 ///   kind (treated as a value form) and mis-run every flagged binding, and
 ///   a v11 reader of a v10 image would simply never close anything — so the
 ///   bump is what makes either mismatch a *detected* staleness. The
-///   bytecode encoder and the closedness analysis are now freshness inputs
-///   ([`DEMAND_ANALYSIS_PATHS`]), since they decide the flag.
+///   bytecode encoder, the closedness analysis, the opcode flag definitions
+///   and the constructor arities (`stg/tags.rs`) are now freshness inputs
+///   ([`DEMAND_ANALYSIS_PATHS`]), since they decide or encode the flag.
 pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 11;
 
 /// Path, relative to the workspace root, of the prelude source baked into the
@@ -121,8 +122,10 @@ pub const INTRINSIC_TABLE_PATH: &str = "src/eval/intrinsics.rs";
 
 /// Paths, relative to the workspace root, of the demand analysis that derives
 /// the blob's per-slot demand signatures (`PreludeBlob::demand_signatures`,
-/// eu-oaz72.77), and of the STG compiler that turns those signatures, and
-/// every prelude body, into the blob's code.
+/// eu-oaz72.77), of the STG compiler that turns those signatures, and
+/// every prelude body, into the blob's code, and of the bytecode encoder and
+/// closedness analysis (with the opcode and constructor-arity tables they
+/// read) that decide the encoded form flags (eu-oaz72.175).
 ///
 /// A signature is a claim about which arguments a prelude function forces,
 /// and the STG compiler acts on it by evaluating those arguments early. A
@@ -138,6 +141,8 @@ pub const DEMAND_ANALYSIS_PATHS: &[&str] = &[
     "src/eval/stg/compiler.rs",
     "src/eval/bytecode/encode.rs",
     "src/eval/bytecode/closed.rs",
+    "src/eval/bytecode/opcode.rs",
+    "src/eval/stg/tags.rs",
 ];
 
 /// Path, relative to the workspace root, of this very file — which `build.rs`
@@ -168,6 +173,8 @@ pub const BUILD_RERUN_PATHS: &[&str] = &[
     "src/eval/stg/compiler.rs",
     "src/eval/bytecode/encode.rs",
     "src/eval/bytecode/closed.rs",
+    "src/eval/bytecode/opcode.rs",
+    "src/eval/stg/tags.rs",
     // Embedded via `include_bytes!` in `src/driver/resources.rs`; cargo does
     // not track non-Rust files referenced that way.
     "lib/test.eu",

@@ -1,0 +1,32 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/333_closed_binding_trace
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/333_closed_binding_trace.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/333_closed_binding_trace.eu:4:31
+help-lines: 0
+note-lines: 0
+secondary-labels: 3
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: boom
+  ┌─ tests/harness/errors/333_closed_binding_trace.eu:4:31
+  │
+4 │ outer(n): { inner(m): { f(x): panic("boom") }.f(m) }.inner(n)
+  │                         ------^^^^^^^^^^^^^   ----
+  │                         │                     │
+  │                         │                     called from here
+  │                         │                     called from here
+  │                         called from here
+  │
+  = while evaluating (outermost first):
+    - result at 333_closed_binding_trace.eu:6:9

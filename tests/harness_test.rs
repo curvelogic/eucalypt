@@ -5639,6 +5639,18 @@ pub fn test_error_332_scanl_applies_op_at_cell() {
     run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
 }
 
+/// Closed let/letrec bindings (eu-oaz72.175): closed and not-closed shapes.
+#[test]
+pub fn test_301_closed_bindings() {
+    run_test(&opts("301_closed_bindings.eu"));
+}
+
+/// An error inside a closed binding keeps its trace (eu-oaz72.175).
+#[test]
+pub fn test_error_333_closed_binding_trace() {
+    run_error_test(&error_opts("333_closed_binding_trace.eu"));
+}
+
 /// `eu check` must honour `prelude:` unit metadata exactly as evaluation
 /// does (eu-oaz72.173): the alternative prelude's bindings are known, so
 /// `--strict` exits 0 with no spurious "assignment-style" error.

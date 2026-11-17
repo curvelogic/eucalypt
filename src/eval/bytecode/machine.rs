@@ -174,7 +174,8 @@ pub fn read_arg_offsets(code: &[u8], pc: &mut usize) -> ArgOffsets {
 pub struct FormHeader {
     /// Form kind (`FORM_*`), with the `FORM_CLOSED` bit stripped into `closed`.
     pub kind: u8,
-    /// The binding is closed: close it over the globals frame (eu-oaz72.175).
+    /// The binding is closed: close it over a slotless annotation spine
+    /// (eu-oaz72.175).
     pub closed: bool,
     pub arity: u8,
     pub smid: Smid,
@@ -1215,8 +1216,9 @@ pub fn return_data(
     args: &[DecodedRef],
     atoms: &[CodeRef],
 ) -> Result<(), ExecutionError> {
-    // `free_slots` sizes a case branch's frame by the constructor's arity;
-    // the frame built here is `args.len()` wide. They must agree.
+    // `closed::branch_frame_size` (shared by `free_slots` and the closedness
+    // analysis) sizes a case branch's frame by the constructor's arity; the
+    // frame built here is `args.len()` wide. They must agree.
     debug_assert!(
         tag == DataConstructor::BlockKvList.tag()
             || DataConstructor::try_from(tag).map_or(true, |c| c.arity() == args.len()),
@@ -2138,15 +2140,19 @@ fn form_info(kind: u8, arity: u8, smid: Smid, body: CodeRef) -> InfoTagged<CodeR
 }
 
 /// The environment a *closed* binding closes over (eu-oaz72.175): a chain
-/// of empty frames mirroring only the annotation spine of the scope the
-/// binding was allocated in. A closed closure never reads its captured
-/// environment, so it must not keep the enclosing frames (and the values in
-/// their slots, e.g. a list head) alive; but `env_trace` walks the closure's
-/// environment chain for error-trace call sites, so the annotations are
-/// kept, in order, on slotless frames. The chain length is the lexical
-/// nesting depth of the binding (not a recursion depth). Allocated lazily,
-/// once per `Let`. `rec` marks a `LetRec`, whose own frame (annotated with
-/// the current annotation) heads the chain the binding would have captured.
+/// of empty frames mirroring the annotations of the chain the binding would
+/// otherwise have captured: the head frame carries exactly the original
+/// head's annotation, and each deeper frame with a valid annotation is kept
+/// in order (default annotations are invisible to every reader of those). A closed closure never reads
+/// its captured environment, so it must not keep the enclosing frames (and
+/// the values in their slots, e.g. a list head) alive; but `env_trace`, the
+/// `DeMeta` continuation trace and the profiler read the closure's
+/// environment chain, so the annotations are kept, in order, on slotless
+/// frames. The longest slotless suffix of the chain (typically the spine of
+/// an enclosing closed binding) is shared rather than copied, so only the
+/// slot-bearing prefix is allocated. Allocated lazily, once per `Let`. `rec`
+/// marks a `LetRec`, whose own frame (annotated with the current annotation)
+/// heads the chain the binding would have captured.
 fn closed_env(
     view: MutatorHeapView<'_>,
     state: &BcMachineState,
@@ -2157,28 +2163,41 @@ fn closed_env(
     if let Some(f) = *cache {
         return Ok(f);
     }
-    let mut trace: SmallVec<[Smid; 8]> = SmallVec::new();
-    if rec && state.annotation != Smid::default() {
-        trace.push(state.annotation);
+    let mut frames: SmallVec<[(Smid, RefPtr<BcEnvFrame>, bool); 16]> = SmallVec::new();
+    let mut cur = Some(env);
+    while let Some(p) = cur {
+        let f = view.scoped(p);
+        frames.push((f.annotation(), p, f.logical_len() == 0));
+        cur = f.next_frame();
     }
-    trace.extend(view.scoped(env).annotation_trace(&view));
-    let mut next: Option<RefPtr<BcEnvFrame>> = None;
-    for smid in trace.iter().rev() {
-        next = Some(
-            view.alloc(BcEnvFrame::new(Array::with_capacity(&view, 0), *smid, next))?
-                .as_ptr(),
-        );
+    // Everything from `shared` on is already slotless: reuse it as the tail.
+    let mut shared = frames.len();
+    while shared > 0 && frames[shared - 1].2 {
+        shared -= 1;
     }
-    let frame = match next {
-        Some(f) => f,
-        None => view
-            .alloc(BcEnvFrame::new(
-                Array::with_capacity(&view, 0),
-                Smid::default(),
-                None,
-            ))?
-            .as_ptr(),
+    if shared == 0 && !rec {
+        // `env` itself heads a slotless chain.
+        *cache = Some(env);
+        return Ok(env);
+    }
+    let mut next = frames.get(shared).map(|f| f.1);
+    let mk = |smid: Smid, next: Option<RefPtr<BcEnvFrame>>| {
+        view.alloc(BcEnvFrame::new(Array::with_capacity(&view, 0), smid, next))
+            .map(|p| p.as_ptr())
     };
+    // The head frame (read directly by the `DeMeta` continuation trace and
+    // the profiler) keeps its own annotation, default included; deeper
+    // frames matter only through `annotation_trace`, which skips default
+    // annotations, so those are not allocated at all.
+    for (i, (smid, _, _)) in frames[..shared].iter().enumerate().rev() {
+        if (i == 0 && !rec) || smid.is_valid() {
+            next = Some(mk(*smid, next)?);
+        }
+    }
+    if rec {
+        next = Some(mk(state.annotation, next)?);
+    }
+    let frame = next.expect("the chain always has at least `env`");
     *cache = Some(frame);
     Ok(frame)
 }
@@ -5603,12 +5622,15 @@ impl BcBifContext<'_, '_> {
                             if tag == DataConstructor::BlockKvList.tag() {
                                 return None;
                             }
-                            let arity = DataConstructor::try_from(tag).ok()?.arity();
+                            let arity = super::closed::branch_frame_size(tag)?;
                             work.push((entry as usize, depth + arity));
                         }
                     }
                     if read_u8(code, &mut pc) == 1 {
-                        work.push((read_u32(code, &mut pc) as usize, depth + 1));
+                        work.push((
+                            read_u32(code, &mut pc) as usize,
+                            depth + super::closed::FALLBACK_FRAME,
+                        ));
                     }
                 }
                 Op::Cons => {
@@ -5659,8 +5681,14 @@ impl BcBifContext<'_, '_> {
                 }
                 Op::DeMeta => {
                     work.push((read_u32(code, &mut pc) as usize, depth));
-                    work.push((read_u32(code, &mut pc) as usize, depth + 2));
-                    work.push((read_u32(code, &mut pc) as usize, depth + 1));
+                    work.push((
+                        read_u32(code, &mut pc) as usize,
+                        depth + super::closed::DEMETA_HANDLER_FRAME,
+                    ));
+                    work.push((
+                        read_u32(code, &mut pc) as usize,
+                        depth + super::closed::DEMETA_OR_ELSE_FRAME,
+                    ));
                 }
                 Op::Seq => {
                     work.push((read_u32(code, &mut pc) as usize, depth));

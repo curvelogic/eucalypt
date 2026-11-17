@@ -1,0 +1,72 @@
+#!/usr/bin/env eu
+{
+  title: "301 closed bindings"
+  doc: "eu-oaz72.175: a let/letrec binding that references no local outside its
+        own frames is closed over a slotless annotation spine instead of the
+        enclosing frame. These targets cover closed and not-closed shapes:
+        a misclassified binding would read a missing slot and error or return
+        a wrong value."
+}
+
+` "A closed lambda in a let, applied twice."
+closed-lambda(n): { f(x, y): x + y, a: f(n, 1), b: f(a, 2) }.b
+
+` "A closed thunk: reads only a global."
+closed-thunk(n): { k: 40 + 2, r: n + k }.r
+
+` "A letrec: a self-referencing and a sibling-referencing binding are not closed."
+letrec-mix(n): { go(i, acc): (i = 0) then(acc, go(i - 1, acc + i)), twice(i): go(i, 0) + go(i, 0) }.twice(n)
+
+` "A closed lambda whose body cases on a list: branch fields are local."
+sum-list(xs): { s(l, a): l nil? then(a, s(tail(l), a + head(l))) }.s(xs, 0)
+
+` "Case branches and fallback inside a closed lambda."
+branches(x): { f(v): v nil? then(0, v head) }.f(x)
+
+` "Block destructuring (BlockKvList branch) inside a closed lambda."
+block-field(b): { f(blk): blk lookup(:k) }.f(b)
+
+` "DeMeta: metadata is read inside a closed lambda."
+meta-of(x): { m(v): v meta }.m(x)
+
+` "A nested lambda that reads an outer local is not closed."
+nested-outer(n): { outer(a): { inner(b): a + b }.inner(10) }.outer(n)
+
+` "A nested closed lambda inside a closed lambda inside a lambda that captures."
+deep(n): { g(a): { h(b): { k(c): c + 1 }.k(b) + a }.h(a) }.g(n)
+
+` "Outer locals read from inside case branches, the fallback and a block pattern."
+branch-outer(a): { f(l): l nil? then(a, head(l) + a) }.f([1])
+
+` "A fallback (non-list scrutinee) referencing an outer local."
+fallback-outer(a): { f(v): v = 0 then(a, a + 1) }.f(5)
+
+` "Block destructuring parameter whose body reads an outer local."
+block-outer(n): { blk: { x: 1, y: 2 }, f(v): v.x + v.y + n, r: f(blk) }.r
+
+` "List destructuring parameter whose body reads an outer local."
+list-outer(a): { f([h : t]): h + a }.f([1, 2])
+
+` "Metadata read inside a closed lambda that also reads an outer local."
+meta-outer(a): { f(v): (meta(v) = {}) then(a, 0) }.f({ z: 1 })
+
+` { target: :test-values }
+test-values: {
+  lam: closed-lambda(5) = 8
+  thunk: closed-thunk(1) = 43
+  rec: letrec-mix(4) = 20
+  sum: sum-list([1, 2, 3, 4]) = 10
+  branch-nonempty: branches([7, 8]) = 7
+  branch-empty: branches([]) = 0
+  block: block-field({ k: 9 }) = 9
+  meta: ({ a: 1 } meta-of) = {}
+  nested: nested-outer(5) = 15
+  deeper: deep(3) = 7
+  br: branch-outer(5) = 6
+  fb: fallback-outer(5) = 6
+  bo: block-outer(5) = 8
+  lo: list-outer(5) = 6
+  mo: meta-outer(5) = 5
+  RESULT: [br, fb, bo, lo, mo, lam, thunk, rec, sum, branch-nonempty, branch-empty, block, meta, nested, deeper]
+          all-true? then(:PASS, :FAIL)
+}
