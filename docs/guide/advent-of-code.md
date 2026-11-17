@@ -545,19 +545,45 @@ final: run(100000, 1) //=> 940193
 ```
 
 This runs in constant stack: eucalypt can see that `step` uses its
-argument, so each state is computed as the loop goes. A generic loop that
-takes the step as a parameter loses that, such as
-`times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))`: eucalypt cannot
-tell whether an unknown `f` uses its argument, so it builds a chain of
-unevaluated steps that is only worked through at the end, using stack and
-memory in proportion. (`iterate(step, s) nth(n)` evaluates each state to weak
-head normal form as its cell is reached, which is enough for a number state
-but not for the fields of a block state.)
-
-So for a long loop of your own, name the step function in the loop itself. A loop that
-runs until something holds tests the state in the same place, as in
+argument, so each state is computed as the loop goes. So for a long loop of
+your own, name the step function in the loop itself. A loop that runs until
+something holds tests the state in the same place, as in
 `run-until(s): (s done?) then(s, run-until(step(s)))`, and looking at the
 state in the test also keeps it evaluated.
+
+### Loops with a lazy accumulator
+
+A generic loop that takes the step as a parameter loses that. Eucalypt
+cannot tell whether an unknown `f` uses its argument, so the accumulator
+stays lazy and `f(f(f(...)))` is a chain of unevaluated steps, worked through
+only at the end. This is correct lazy semantics, not a bug, but it costs
+stack and memory in proportion to `n` (about two stack frames per step; a
+million steps needs around two million):
+
+```eu,notest
+# Avoid: x is never forced until the loop ends
+times(f, n, x): (n = 0) then(x, times(f, n - 1, f(x)))
+```
+
+Force the accumulator on each step with `seq`, which evaluates its first
+argument and then returns the second:
+
+```eu
+times(f, n, x): (n = 0) then(x, seq(x, times(f, n - 1, f(x))))
+
+final: times(+ 3, 100000, 0) //=> 300000
+```
+
+Or skip the hand-written loop: `iterate` evaluates each element as its cell
+is reached, so `iterate(f, x) nth(n)` runs in constant stack too:
+
+```eu
+final: iterate(+ 3, 0) nth(100000) //=> 300000
+```
+
+Both forms force only to weak head normal form, so a block or list state
+still needs its fields forced if they accumulate chains of their own. Where a
+loop names its step (`run` above), none of this is needed.
 
 ### Cycle detection
 
