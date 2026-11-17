@@ -139,7 +139,8 @@ in their names:
 
 | job | mode |
 |---|---|
-| `Test Suite (source-prelude fallback, no blob)` | no blob — keeps the fallback exercised |
+| `Test Suite (blob mode, shipped path)` | blob — the primary full `cargo test`, on the path releases take |
+| `Test Suite (source-prelude fallback, no blob)` | no blob — the full `cargo test` again, keeping the fallback exercised |
 | `Blob-mode cargo tests (all mode-sensitive targets)` | blob, via `scripts/blob-mode-tests.sh` |
 
 The blob-mode target list is **derived from the tree**, not maintained by

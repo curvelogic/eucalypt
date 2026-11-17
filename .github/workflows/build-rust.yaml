@@ -64,19 +64,26 @@ jobs:
         run: cargo audit
 
   test:
-    # The prelude mode is in the job name deliberately (eu-1tkk.7.43). This job
-    # runs with NO `lib/prelude.blob` — that file is gitignored, so a plain
-    # checkout has none — which keeps the source-prelude fallback exercised and
-    # is the reason the name says so. A `#[cfg(prelude_blob_ok)]` test compiles
-    # to nothing here; its blob-mode counterpart is "Blob-mode cargo tests".
-    # A reader seeing this job red should read the failure as "…without a
-    # prelude blob", without opening the log.
-    name: Test Suite (source-prelude fallback, no blob)
+    # The prelude mode is in the job name deliberately (eu-1tkk.7.43). This is
+    # the PRIMARY full `cargo test` job and it runs in blob mode, the path a
+    # released binary takes (eu-5yn9v): `lib/prelude.blob` is gitignored, so
+    # the job generates one before testing. Its source-prelude counterpart is
+    # "Test Suite (source-prelude fallback, no blob)" below, which must stay
+    # broad: prelude-inlining defects (eu-gua64) are only observable there.
+    # A reader seeing this job red should read the failure as "…on the
+    # shipped blob path", without opening the log.
+    name: Test Suite (blob mode, shipped path)
     strategy:
       fail-fast: false
       matrix:
         os: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/integration/')) && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
+    env:
+      # gate_liveness's `prelude_blob_is_present_when_demanded` turns this into
+      # a runtime assertion that `cfg(prelude_blob_ok)` is actually set, so a
+      # blob that silently failed to reach the build is a red job rather than
+      # a source-prelude run under a blob-mode name.
+      EU_REQUIRE_PRELUDE_BLOB: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -88,6 +95,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
       - uses: dtolnay/rust-toolchain@stable
+      - name: Generate prelude blob
+        run: cargo run --package xtask -- prelude-compile
       - name: Run tests
         run: cargo test
       - name: Run lib unit tests under GC stress (eu-swbz)
@@ -105,6 +114,36 @@ jobs:
         run: |
           cargo build --release
           python3 scripts/test-doc-examples.py --eu ./target/release/eu --timeout 30
+
+  test-source-prelude:
+    # The source-prelude half of the full `cargo test` matrix (eu-5yn9v). No
+    # `lib/prelude.blob` exists here — it is gitignored and this job never
+    # generates one — so every test runs on the source-prelude fallback, and
+    # a `#[cfg(prelude_blob_ok)]` test compiles to nothing. This is not a
+    # token run: it is the only full-suite job where prelude combinators are
+    # compiled and inlined with the user's unit, which is where defects such
+    # as eu-gua64 (2^N inlining, linear under a blob) can be seen at all.
+    name: Test Suite (source-prelude fallback, no blob)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Assert there is no prelude blob
+        run: |
+          if [ -e lib/prelude.blob ]; then
+            echo "::error::lib/prelude.blob exists, so this job would not test the source-prelude fallback."
+            exit 1
+          fi
+      - name: Run tests
+        run: cargo test
 
 
   docs-freshness:
@@ -186,8 +225,10 @@ jobs:
 
   diagnostics-blob-mode:
     # The mode is the first thing in the name (eu-1tkk.7.43): this job is the
-    # blob-mode half of the `cargo test` matrix, and its counterpart is
-    # "Test Suite (source-prelude fallback, no blob)". A reader seeing this
+    # mode-sensitive sweep of the `cargo test` matrix, with the ratchet and
+    # liveness checks below; the full suite runs in blob mode in "Test Suite
+    # (blob mode, shipped path)" and blob-less in "Test Suite (source-prelude
+    # fallback, no blob)". A reader seeing this
     # job red knows the failure is blob-specific without opening the log.
     name: Blob-mode cargo tests (all mode-sensitive targets)
     runs-on: ubuntu-latest
