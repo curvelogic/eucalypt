@@ -30,16 +30,17 @@ wall time of `eu run/dayNN.eu -t part-N`, 3 runs, ranges shown, label
   generation alone, plus sort and Kruskal). Now only pairs within a distance
   bound `d` are generated (walk the x-sorted points while the x gap is at
   most `d`, then keep encoded keys below the `d^2` limit) and Kruskal runs on
-  those. `d` doubles from 20000 until the points are connected and the last
-  merge is no longer than `d`; at that point the merge history equals the
-  true one, so the bridge is exact, not heuristic. `dist2` uses destructured
+  those. `d` doubles from 20000 until the points are connected. The kept pairs
+  are a prefix of the full sorted key order, so connectivity alone makes the
+  merge history, and hence the bridge, exact (not heuristic). `dist2` uses destructured
   arithmetic.
 - **day09 p2**: coordinates are compressed to ranks (about 248 × 248
   cells), inside cells are found by a parity scan across vertical edges
   (`scanl`, a set of crossings), 2D prefix sums go in an `arr`, and a
   rectangle is tested in O(1). A pair is tested only if its area beats the
   suffix best (`foldl-strict` with a lazy `fits` argument). 49,067 pairs have
-  an area above the answer, so about that many tests run; an approach that
+  an area above the answer, and the best-so-far is per suffix rather than
+  global, so tens of thousands of tests run (not a handful); an approach that
   sorted all pairs by area and stopped at the first valid one was slower
   (the same tests plus a 123k-element sort).
 

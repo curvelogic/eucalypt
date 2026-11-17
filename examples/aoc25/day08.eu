@@ -11,8 +11,8 @@ x co-ordinates of its two endpoints.
 Approach: Part 1 uses x-sorted windowing to reduce O(n^2) candidate pairs
 to O(n*w). Part 2 is exact: it keeps only pairs within a distance `d`
 (found by walking the x-sorted points while the x gap is at most `d`),
-runs Kruskal on those, and doubles `d` until the points are connected by an
-edge no longer than `d`.
+runs Kruskal on those, and doubles `d` until the points are connected (the
+pairs kept are a prefix of the full distance order, so the result is exact).
 Encode (distance, i, j) triples as single f64 values so `sort-nums`
 (an intrinsic with no evaluator callbacks) handles distance ordering.
 Union-find and Kruskal are provided by the `graph` prelude module.
@@ -98,9 +98,10 @@ solve(data): solve-n(1000, 150, data)
 near?(d, p, q): first(q) - first(p) <= d
 
 ` "Encoded pairs for the head of ps (index i) against every later point
-within distance `d`. Only points within `d` on the x axis can qualify; the
-encoded value is below `limit` exactly when the squared distance is at most
-`d ^ 2`."
+within distance `d`. Only points within `d` on the x axis can qualify. Keys
+below `limit` are a prefix of the full sorted key order (a key is at least
+`dist2 * 100000`, so every pair with `dist2 <= d ^ 2` is kept, and a few
+slightly further pairs may be too)."
 reach-at(d, i, [h : t]): {
   limit: (d ^ 2 + 1) * 100000
 }.(point-pairs(h, t take-while(near?(d, h)), i, i + 1) filter(< limit))
@@ -111,19 +112,16 @@ reach-batch(d, [i, suffix]): reach-at(d, i, suffix)
 reach-pairs(d, pts): zip(ℕ, tails(pts)) par-concat(reach-batch(d))
 
 ` "The edge that completes the minimum spanning tree: Kruskal over the
-pairs within distance `d`, so the merge history is the true one up to
-distance `d`. If the points
-are connected by then, and the last merge is that close, it is the true
-bridge; if not, widen `d` and go again."
+pairs whose keys are below the limit for `d`. Those are a prefix of the full
+sorted pair order, so the merge history is the true one for that prefix. If
+the points are connected within it, the last merge is the true bridge; if
+not, widen `d` and go again."
 bridge(d, vertices): {
   n: vertices count
   edges: vertices reach-pairs(d) sort-nums map(decode-edge)
   merges: edges graph.kruskal-edges(n)
-  edge: edges !! (merges reverse nth(1))
-  span: edge map(vertices !! _) apply(dist2)
   spanning?: (merges count) = 2 * (n - 1)
-  sound?: spanning? ∧ (span <= d ^ 2)
-}.(sound? then(edge, bridge(2 * d, vertices)))
+}.(spanning? then(edges !! (merges reverse nth(1)), bridge(2 * d, vertices)))
 
 ` "Part 2: product of the x co-ordinates of the bridge edge's endpoints."
 solve2-from(d, data): {
