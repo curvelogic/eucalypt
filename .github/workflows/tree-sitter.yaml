@@ -1,37 +1,15 @@
 name: tree-sitter grammar
 
 on:
+  # No path filters (eu-oxtcq M2). The checks here depend on more than the
+  # grammar — the rowan parser, the LSP's semantic tokens, the Rust crate
+  # they build from (Cargo.toml, Cargo.lock, src/) and every corpus of .eu
+  # files — and a filter that misses one lets a required check drop out of a
+  # PR's rollup unnoticed, since job counts legitimately vary between PRs
+  # while a filter is in place. The jobs are short; the filter bought nothing.
   pull_request:
-    paths:
-      - 'editors/tree-sitter-eucalypt/**'
-      - 'src/syntax/rowan/**'
-      - 'lib/**/*.eu'
-      - 'tests/harness/**/*.eu'
-      - 'examples/aoc25/**/*.eu'
-      - 'scripts/check-tree-sitter-corpus.py'
-      - 'editors/vscode/**'
-      - 'editors/emacs/**'
-      - 'editors/test-fixtures/**'
-      - 'src/driver/lsp/**'
-      - 'scripts/check-highlighting-consistency.js'
-      - 'scripts/check-emacs-mode.sh'
-      - '.github/workflows/tree-sitter.yaml'
   push:
     branches: [master]
-    paths:
-      - 'editors/tree-sitter-eucalypt/**'
-      - 'src/syntax/rowan/**'
-      - 'lib/**/*.eu'
-      - 'tests/harness/**/*.eu'
-      - 'examples/aoc25/**/*.eu'
-      - 'scripts/check-tree-sitter-corpus.py'
-      - 'editors/vscode/**'
-      - 'editors/emacs/**'
-      - 'editors/test-fixtures/**'
-      - 'src/driver/lsp/**'
-      - 'scripts/check-highlighting-consistency.js'
-      - 'scripts/check-emacs-mode.sh'
-      - '.github/workflows/tree-sitter.yaml'
   workflow_dispatch:
 
 permissions:
