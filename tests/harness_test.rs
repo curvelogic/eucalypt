@@ -5792,7 +5792,10 @@ pub fn test_error_092_target_not_found() {
 /// sidecar gates nothing (eu-oxtcq M4 found six such fixtures).
 #[test]
 pub fn every_error_fixture_has_a_test() {
-    let this_file = include_str!("harness_test.rs");
+    // A Windows checkout may give this file CRLF line endings; normalise so
+    // the item boundary below (`}` at column 0) is found on every platform.
+    let this_file = include_str!("harness_test.rs").replace("\r\n", "\n");
+    let this_file = this_file.as_str();
     let mut missing = vec![];
     for entry in std::fs::read_dir("tests/harness/errors").expect("errors dir") {
         let path = entry.expect("dir entry").path();
