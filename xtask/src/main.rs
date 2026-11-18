@@ -26,7 +26,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::Instant,
 };
 
@@ -41,6 +41,7 @@ use eucalypt::{
         },
         transform::fuse,
         typecheck::check::type_check,
+        verify::closed::verify_prelude_closed,
     },
     driver::source::SourceLoader,
     eval::stg::{
@@ -86,7 +87,12 @@ fn main() -> Result<()> {
 // ── prelude-compile ───────────────────────────────────────────────────────────
 
 fn cmd_prelude_compile() -> Result<()> {
-    let workspace_root = workspace_root()?;
+    compile_prelude_in(&workspace_root()?)
+}
+
+/// Compile `lib/prelude.eu` under `workspace_root` and write the blob to
+/// `lib/prelude.blob` there.
+fn compile_prelude_in(workspace_root: &Path) -> Result<()> {
     let prelude_src = workspace_root.join(PRELUDE_SOURCE_PATH);
     let intrinsic_table = workspace_root.join(INTRINSIC_TABLE_PATH);
     let blob_out = workspace_root.join(BLOB_PATH);
@@ -174,6 +180,16 @@ fn cmd_prelude_compile() -> Result<()> {
         let unit = loader
             .translate(inp)
             .with_context(|| format!("translate {inp}"))?;
+        // An unresolved name anywhere in the prelude fails the per-binding
+        // STG compile below; report it here, at its source, with the same
+        // diagnostic the source-prelude path gives (eu-oaz72.125).
+        if *tag == "prelude" {
+            if let Err(e) = verify_prelude_closed(&unit.expr) {
+                let e = eucalypt::driver::error::EucalyptError::from(e);
+                let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
+                bail!("prelude uses a name it does not define\n{diag}");
+            }
+        }
         desugared_unit_cores.push((tag.to_string(), unit.expr.clone()));
     }
     loader.merge_units(&all_inputs).context("merge_units")?;
@@ -366,31 +382,16 @@ fn cmd_prelude_compile() -> Result<()> {
         inlinable_bindings.len()
     );
 
-    // Pre-expand: substitute collected definitions into each other so the blob
-    // carries fully-resolved expressions (no Var::Free). Since the fixed-point
-    // collects in dependency order (round 0 first), a single forward pass
-    // suffices.
-    //
-    // The inlinable_bindings are pre-expanded: all Var::Free references to
-    // other set members are substituted with their definitions at blob
-    // generation time. This means the runtime inline pass sees them as
-    // immediately closed bodies (no multi-pass resolution needed).
-    let mut resolved_map: HashMap<String, RcExpr> = HashMap::new();
-    let mut resolved_bindings: Vec<(String, RcExpr)> = Vec::new();
-    for (name, body) in &inlinable_bindings {
-        let subs: Vec<(String, RcExpr)> = resolved_map
-            .iter()
-            .map(|(n, e)| (n.clone(), e.clone()))
-            .collect();
-        let expanded = if subs.is_empty() {
-            body.clone()
-        } else {
-            body.substs(&subs)
-        };
-        resolved_map.insert(name.clone(), expanded.clone());
-        resolved_bindings.push((name.clone(), expanded));
-    }
-    let inlinable_bindings = resolved_bindings;
+    // Pre-expand: substitute collected definitions into each other so the
+    // runtime inline pass sees them resolved (no multi-pass resolution
+    // needed), apart from references kept by name: a self-recursive
+    // inlinable's reference to itself, and one withheld to avoid capture.
+    // The fixed point collects in dependency order, so a single forward
+    // pass suffices. It substitutes capture-avoidingly, as the source path
+    // does, so the two cannot diverge (eu-oaz72.189).
+    let inlinable_bindings =
+        eucalypt::core::inline::reduce::pre_expand_blob_inlines(inlinable_bindings)
+            .context("pre-expanding inlinable bindings")?;
 
     // ── 5. Build name→slot mapping from peeled bindings ──────────────────────
     let name_to_slot: HashMap<String, usize> = binding_bodies
@@ -453,17 +454,14 @@ fn cmd_prelude_compile() -> Result<()> {
         // Analysed as a nested value: source mode analyses a prelude body
         // inside the prelude block, never as the rendered root unit, so the
         // members of a namespace block must stay lazy.
-        let (annotated, _signatures, named_sigs) =
-            eucalypt::core::analyse_demand::DemandAnalyser::new()
-                .with_prelude(Some(eucalypt::core::analyse_demand::PreludeSignatures {
-                    name_to_slot: &name_to_slot,
-                    sigs: &demand_signatures,
-                }))
-                .as_nested_value()
-                .analyse(body);
+        let (annotated, _signatures) = eucalypt::core::analyse_demand::DemandAnalyser::new()
+            .with_prelude(Some(eucalypt::core::analyse_demand::PreludeSignatures {
+                name_to_slot: &name_to_slot,
+                sigs: &demand_signatures,
+            }))
+            .as_nested_value()
+            .analyse(body);
         let annotated = eucalypt::core::reflatten::reflatten(&annotated);
-        let mut body_settings = stg_settings.clone();
-        body_settings.user_demand_sigs = named_sigs;
         // Compile with the binding's own name as the self-recursion context
         // (eu-e3c3i). After peeling, a binding's recursive self-reference is
         // `Var::Free(<own name>)` — invisible to demand analysis, which can
@@ -479,7 +477,7 @@ fn cmd_prelude_compile() -> Result<()> {
         // This supplies exactly the `demand.recursive`-derived context that
         // source-mode whole-unit compilation gives these same bindings.
         let stg = eucalypt::eval::stg::compile_named(
-            &body_settings,
+            &stg_settings,
             annotated,
             runtime.as_ref(),
             Some(name.as_str()),
@@ -786,4 +784,48 @@ fn flatten_forms_to_arena(
     }
     // arena.forms holds ALL forms (top-level wrappers + inner LetRec forms).
     (arena.nodes, arena.forms, binding_entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A scratch workspace holding the blob's inputs from this one, with
+    /// `extra` appended to its `lib/prelude.eu`.
+    fn scratch_workspace(extra: &str) -> PathBuf {
+        let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let dir = std::env::temp_dir().join(format!("eu-xtask-prelude-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let inputs = ["Cargo.toml", "build-meta.yaml", INTRINSIC_TABLE_PATH]
+            .into_iter()
+            .chain(DEMAND_ANALYSIS_PATHS.iter().copied());
+        for rel in inputs {
+            let to = dir.join(rel);
+            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+            std::fs::copy(real.join(rel), &to).unwrap();
+        }
+        let source = std::fs::read_to_string(real.join(PRELUDE_SOURCE_PATH)).unwrap();
+        let prelude = dir.join(PRELUDE_SOURCE_PATH);
+        std::fs::create_dir_all(prelude.parent().unwrap()).unwrap();
+        std::fs::write(prelude, format!("{source}\n{extra}")).unwrap();
+        dir
+    }
+
+    /// A plain string does not process `\"`, so a prelude doc string
+    /// written with it ends at the `\` and leaves stray names behind. The
+    /// blob compile rejects it, naming the first stray name, exactly as
+    /// the source-prelude path does (the matching test is
+    /// `source_prelude_rejects_doc_string_with_escaped_quote` in
+    /// `src/driver/source.rs`; eu-oaz72.125).
+    #[test]
+    fn blob_compile_rejects_doc_string_with_escaped_quote() {
+        let dir = scratch_workspace("` { doc: \"say \\\"hi\\\" now\" }\ndoc-probe: __NULL\n");
+        let result = compile_prelude_in(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        let message = format!("{:#}", result.expect_err("the blob compile must fail"));
+        assert!(
+            message.contains("unresolved variable: hi"),
+            "unexpected error: {message}"
+        );
+    }
 }

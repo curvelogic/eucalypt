@@ -2368,7 +2368,7 @@ impl Checker {
     /// If no parameter is block-shaped, falls back to `any` immediately,
     /// preserving the existing gradual boundary for non-block lambdas.
     fn synthesise_lam(&mut self, scope: &crate::core::expr::LamScope<RcExpr>) -> Type {
-        let block_flags = detect_block_params(scope);
+        let block_flags = self.detect_block_params(scope);
 
         // Fast path: no block-shaped params → keep `any` (unchanged behaviour).
         if block_flags.iter().all(|&b| !b) {
@@ -2421,11 +2421,20 @@ impl Checker {
     ///
     /// Returns `None` for everything else (not a recognised brancher).
     fn recognise_brancher(&self, func: &RcExpr) -> Option<BranchShape> {
+        self.recognise_brancher_at(func, 0)
+    }
+
+    /// `recognise_brancher` for an expression `offset` binding scopes inside
+    /// the innermost frame of `scope_stack` — used while scanning a lambda
+    /// body whose own frame (and any nested ones) has not been pushed.  A
+    /// bound variable with `scope < offset` belongs to those unpushed scopes
+    /// and is not recognised.
+    fn recognise_brancher_at(&self, func: &RcExpr, offset: usize) -> Option<BranchShape> {
         match &*func.inner {
             Expr::Intrinsic(_, name) => intrinsic_branch_shape(name),
             Expr::Var(_, Var::Bound(bv)) => {
                 let name = bv.name.as_deref()?;
-                let idx = bv.scope as usize;
+                let idx = (bv.scope as usize).checked_sub(offset)?;
                 // Saturating sub: if idx >= scope_stack.len(), the variable
                 // is from an outer scope that we haven't seen (should not
                 // normally happen after varify, but guard anyway).
@@ -2440,6 +2449,131 @@ impl Checker {
             Expr::Var(_, Var::Free(name)) => intrinsic_branch_shape(name)
                 .or_else(|| self.seed_branch_shapes.get(name.as_str()).cloned()),
             _ => None,
+        }
+    }
+
+    // ── B9: use-driven block-parameter detection ──────────────────────────
+
+    /// Scan a lambda scope to determine which parameters are "used as a block"
+    /// — i.e. appear in a projection (`Lookup`) or as arguments to `merge`
+    /// in the body.
+    ///
+    /// A projection inside a branch guarded by `block?` on that parameter
+    /// (`x block? then(x.a, 0)`) is not a use: the branch only runs when the
+    /// parameter is already a block, so it says nothing about what callers
+    /// may pass.
+    ///
+    /// Returns a `Vec<bool>` of length `scope.pattern.len()`.  `true` at index `i`
+    /// means parameter `i` is block-shaped and should receive a fresh row-variable
+    /// record type during synthesis.
+    ///
+    /// Called before the lambda's own frame is pushed, so `scope_stack` is the
+    /// environment enclosing the lambda.
+    fn detect_block_params(&self, scope: &crate::core::expr::LamScope<RcExpr>) -> Vec<bool> {
+        let n = scope.pattern.len();
+        let mut flags = vec![false; n];
+        self.collect_block_uses(&scope.body, 0, &mut flags);
+        flags
+    }
+
+    /// Recursively scan `expr` for block usages of the parameters introduced by
+    /// the lambda that `flags` belongs to.
+    ///
+    /// `depth` is the number of additional binding scopes (lambdas and lets)
+    /// entered since the original lambda boundary.  The original parameters
+    /// are referenced by `Var::Bound { scope: depth, binder: i }`.
+    fn collect_block_uses(&self, expr: &RcExpr, depth: usize, flags: &mut Vec<bool>) {
+        match &*expr.inner {
+            // Projection: the object expression is used as a block.
+            Expr::Lookup(_, obj, _, fallback) => {
+                mark_block_param(obj, depth, flags);
+                self.collect_block_uses(obj, depth, flags);
+                if let Some(f) = fallback {
+                    self.collect_block_uses(f, depth, flags);
+                }
+            }
+
+            // Application: if the function spine resolves to `merge`,
+            // every argument in the full spine is used as a block.  A fully
+            // applied branch combinator whose condition tests `block?` on a
+            // parameter scans its guarded branches without counting that
+            // parameter.
+            Expr::App(_, func, args) => {
+                let (head, prefix_args) = flatten_app_spine(func);
+                if is_merge_expr(head) {
+                    for arg in &prefix_args {
+                        mark_block_param(arg, depth, flags);
+                    }
+                    for arg in args {
+                        mark_block_param(arg, depth, flags);
+                    }
+                }
+                if let Some(shape) = self.recognise_brancher_at(peel_meta(head), depth + 1) {
+                    let spine: Vec<&RcExpr> =
+                        prefix_args.iter().copied().chain(args.iter()).collect();
+                    if let Some((branch, param)) = block_guarded_branch(&shape, &spine, depth) {
+                        // `head` is a variable or intrinsic: nothing in it to scan.
+                        for (i, arg) in spine.iter().enumerate() {
+                            if i != branch {
+                                self.collect_block_uses(arg, depth, flags);
+                                continue;
+                            }
+                            let mut branch_flags = vec![false; flags.len()];
+                            self.collect_block_uses(arg, depth, &mut branch_flags);
+                            for (j, used) in branch_flags.into_iter().enumerate() {
+                                if used && j != param {
+                                    flags[j] = true;
+                                }
+                            }
+                        }
+                        return;
+                    }
+                }
+                self.collect_block_uses(func, depth, flags);
+                for arg in args {
+                    self.collect_block_uses(arg, depth, flags);
+                }
+            }
+
+            // Nested lambda: increase depth so outer parameters are still found.
+            Expr::Lam(_, _, inner_scope) => {
+                self.collect_block_uses(&inner_scope.body, depth + 1, flags);
+            }
+
+            // Let binding: a let is recursive, so both the binding values and the
+            // body sit inside the let's own scope (depth+1).  Scanning the values
+            // at `depth` would mistake references to the let's own binders (e.g.
+            // the `__p'1` introduced by list-destructuring parameters) for the
+            // enclosing lambda's parameters.
+            Expr::Let(_, inner_scope, _) => {
+                for b in &inner_scope.pattern {
+                    self.collect_block_uses(&b.expr, depth + 1, flags);
+                }
+                self.collect_block_uses(&inner_scope.body, depth + 1, flags);
+            }
+
+            // Meta wrappers: recurse through both.
+            Expr::Meta(_, inner, meta) => {
+                self.collect_block_uses(inner, depth, flags);
+                self.collect_block_uses(meta, depth, flags);
+            }
+
+            // Block literal: scan field values.
+            Expr::Block(_, fields) => {
+                for (_, val) in fields.iter() {
+                    self.collect_block_uses(val, depth, flags);
+                }
+            }
+
+            // List literal: scan elements.
+            Expr::List(_, items) => {
+                for item in items {
+                    self.collect_block_uses(item, depth, flags);
+                }
+            }
+
+            // Variables and primitives: nothing to do.
+            _ => {}
         }
     }
 
@@ -2854,94 +2988,57 @@ fn flatten_app_spine(func: &RcExpr) -> (&RcExpr, Vec<&RcExpr>) {
 
 // ── B9: use-driven block-parameter detection ──────────────────────────────────
 
-/// Scan a lambda scope to determine which parameters are "used as a block"
-/// — i.e. appear in a projection (`Lookup`) or as arguments to `merge`
-/// in the body.
+/// For a fully applied branch combinator whose condition is `block?(p)` (or
+/// its negation) on one of the scanned lambda's parameters `p`, return
+/// `(spine index, p)` for the branch that only runs when `p` is a block:
 ///
-/// Returns a `Vec<bool>` of length `scope.pattern.len()`.  `true` at index `i`
-/// means parameter `i` is block-shaped and should receive a fresh row-variable
-/// record type during synthesis.
-fn detect_block_params(scope: &crate::core::expr::LamScope<RcExpr>) -> Vec<bool> {
-    let n = scope.pattern.len();
-    let mut flags = vec![false; n];
-    collect_block_uses(&scope.body, 0, &mut flags);
-    flags
+/// - `if(c, t, f)` and combinators derived from it (`then`): `t` when `c` is
+///   `block?(p)`, `f` when it is `not(block?(p))`;
+/// - `and(c, r)`: `r` when `c` is `block?(p)`;
+/// - `or(c, r)`: `r` when `c` is `not(block?(p))`.
+///
+/// `cond` is not covered.  Returns `None` when the arity is wrong or the
+/// condition is not such a test, so the caller scans as usual.
+fn block_guarded_branch(
+    shape: &BranchShape,
+    spine: &[&RcExpr],
+    depth: usize,
+) -> Option<(usize, usize)> {
+    if spine.len() != shape.arity {
+        return None;
+    }
+    let (param, positive) = block_test_of_param(spine[shape.condition], depth)?;
+    let branch = match (&shape.kind, positive) {
+        (BranchKind::If, true) => shape.branches[0],
+        (BranchKind::If, false) => shape.branches[1],
+        (BranchKind::And, true) | (BranchKind::Or, false) => shape.branches[0],
+        _ => return None,
+    };
+    Some((branch, param))
 }
 
-/// Recursively scan `expr` for block usages of the parameters introduced by
-/// the lambda that `flags` belongs to.
-///
-/// `depth` is the number of additional lambda scopes that have been entered
-/// since the original lambda boundary.  The original parameters are referenced
-/// by `Var::Bound { scope: depth, binder: i }` inside nested lambdas.
-fn collect_block_uses(expr: &RcExpr, depth: usize, flags: &mut Vec<bool>) {
-    match &*expr.inner {
-        // Projection: the object expression is used as a block.
-        Expr::Lookup(_, obj, _, fallback) => {
-            mark_block_param(obj, depth, flags);
-            collect_block_uses(obj, depth, flags);
-            if let Some(f) = fallback {
-                collect_block_uses(f, depth, flags);
-            }
+/// Recognise `block?(p)` or `not(block?(p))` where `p` is a parameter of the
+/// lambda being scanned (`scope == depth`); return `(p's index, polarity)`,
+/// polarity `true` for the un-negated test.
+fn block_test_of_param(condition: &RcExpr, depth: usize) -> Option<(usize, bool)> {
+    let Expr::App(_, func, args) = &*peel_meta(condition).inner else {
+        return None;
+    };
+    let [arg] = args.as_slice() else {
+        return None;
+    };
+    let func = peel_meta(func);
+    if is_not_func(func) {
+        return block_test_of_param(arg, depth).map(|(p, pos)| (p, !pos));
+    }
+    if !matches!(classify_predicate(func), Some(PredicateKind::Block)) {
+        return None;
+    }
+    match &*peel_meta(arg).inner {
+        Expr::Var(_, Var::Bound(bv)) if bv.scope as usize == depth => {
+            Some((bv.binder as usize, true))
         }
-
-        // Application: if the function spine resolves to `merge`,
-        // every argument in the full spine is used as a block.
-        Expr::App(_, func, args) => {
-            let (head, prefix_args) = flatten_app_spine(func);
-            if is_merge_expr(head) {
-                for arg in &prefix_args {
-                    mark_block_param(arg, depth, flags);
-                }
-                for arg in args {
-                    mark_block_param(arg, depth, flags);
-                }
-            }
-            collect_block_uses(func, depth, flags);
-            for arg in args {
-                collect_block_uses(arg, depth, flags);
-            }
-        }
-
-        // Nested lambda: increase depth so outer parameters are still found.
-        Expr::Lam(_, _, inner_scope) => {
-            collect_block_uses(&inner_scope.body, depth + 1, flags);
-        }
-
-        // Let binding: a let is recursive, so both the binding values and the
-        // body sit inside the let's own scope (depth+1).  Scanning the values
-        // at `depth` would mistake references to the let's own binders (e.g.
-        // the `__p'1` introduced by list-destructuring parameters) for the
-        // enclosing lambda's parameters.
-        Expr::Let(_, inner_scope, _) => {
-            for b in &inner_scope.pattern {
-                collect_block_uses(&b.expr, depth + 1, flags);
-            }
-            collect_block_uses(&inner_scope.body, depth + 1, flags);
-        }
-
-        // Meta wrappers: recurse through both.
-        Expr::Meta(_, inner, meta) => {
-            collect_block_uses(inner, depth, flags);
-            collect_block_uses(meta, depth, flags);
-        }
-
-        // Block literal: scan field values.
-        Expr::Block(_, fields) => {
-            for (_, val) in fields.iter() {
-                collect_block_uses(val, depth, flags);
-            }
-        }
-
-        // List literal: scan elements.
-        Expr::List(_, items) => {
-            for item in items {
-                collect_block_uses(item, depth, flags);
-            }
-        }
-
-        // Variables and primitives: nothing to do.
-        _ => {}
+        _ => None,
     }
 }
 
