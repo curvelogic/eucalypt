@@ -14,11 +14,11 @@
 (l <= r): __LTE(l, r)
 
 # Test-only: returns its right operand, at precedence 45, between :cmp (50)
-# and :eq (40). `∣` and `∤` bind at :eq, looser than `⊳`, so `3 ∣ 5 ⊳ 6`
-# is `3 ∣ 6`; were they at :cmp it would be `(3 ∣ 5) ⊳ 6`, i.e. `6`
+# and :eq (40). `∣` and `∤` bind at :eq, looser than `⊢`, so `3 ∣ 5 ⊢ 6`
+# is `3 ∣ 6`; were they at :cmp it would be `(3 ∣ 5) ⊢ 6`, i.e. `6`
 # (eu-oaz72.81).
 ` { associates: :left precedence: 45 }
-(l ⊳ r): r
+(l ⊢ r): r
 
 integer-arithmetic: {
   trues: {
@@ -153,9 +153,9 @@ divisibility: {
     with-and: 2 ∣ 4 ∧ 3 ∤ 4
     with-or: 5 ∣ 4 ∨ 2 ∣ 4
     left-assoc-with-eq: 2 ∣ 4 = true
-    # `⊳` sits between :cmp and :eq, so these hold only at :eq
-    divides-looser-than-cmp: (3 ∣ 5 ⊳ 6) = true
-    not-divides-looser-than-cmp: (5 ∤ 3 ⊳ 10) = false
+    # `⊢` sits between :cmp and :eq, so these hold only at :eq
+    divides-looser-than-cmp: (3 ∣ 5 ⊢ 6) = true
+    not-divides-looser-than-cmp: (5 ∤ 3 ⊢ 10) = false
   }
 
   pipelines: {
