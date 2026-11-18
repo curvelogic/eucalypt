@@ -1249,7 +1249,8 @@ fn start_pipeline(job: PipelineJob) {
         });
     if let Err(error) = spawned {
         // The debounce thread must survive, so a failed spawn loses only
-        // this run: the document's next edit asks for another.
+        // this run. The document (or, for an importer re-run, the edited
+        // dependency) is checked again on its next edit.
         eprintln!("failed to start LSP pipeline thread: {error}");
     }
 }

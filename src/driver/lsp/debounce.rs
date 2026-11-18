@@ -135,9 +135,11 @@ impl<J: Send + 'static> Debouncer<J> {
     pub fn schedule(&self, uri: Url, job: J) {
         if let Some(sender) = &self.sender {
             // The thread only stops once the sender is dropped, so a send
-            // fails only if it has panicked; the run is then lost, as a
-            // run on a failed thread would be.
-            let _ = sender.send((uri, job));
+            // fails only if the thread has panicked. Every run asked for
+            // after that is lost, so say so rather than fail silently.
+            if sender.send((uri, job)).is_err() {
+                eprintln!("LSP debounce thread has stopped: pipeline run dropped");
+            }
         }
     }
 }
@@ -224,9 +226,10 @@ mod tests {
     #[test]
     fn the_debounce_thread_runs_only_the_last_of_a_burst() {
         let (ran_tx, ran_rx) = crossbeam_channel::unbounded();
-        // Long enough that the twenty sends below (microseconds apart)
-        // all land inside one delay.
-        let debouncer = Debouncer::new(Duration::from_millis(500), move |job: String| {
+        // The delay only has to outlast the twenty sends below, which
+        // are plain channel sends microseconds apart; two seconds leaves
+        // room for a heavily loaded runner. The test waits one delay.
+        let debouncer = Debouncer::new(Duration::from_secs(2), move |job: String| {
             let _ = ran_tx.send((job, Instant::now()));
         })
         .unwrap();
@@ -239,7 +242,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(10))
             .expect("the run fires");
         assert_eq!(job, "text 19");
-        assert!(ran_at >= last_sent + Duration::from_millis(500));
+        assert!(ran_at >= last_sent + Duration::from_secs(2));
         // Dropping the debouncer joins its thread, so nothing more can run.
         drop(debouncer);
         assert!(ran_rx.try_recv().is_err(), "only one run");
