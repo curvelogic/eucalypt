@@ -303,12 +303,23 @@ enum PatternRole {
 fn pattern_role(token: &crate::syntax::rowan::kind::SyntaxToken) -> Option<PatternRole> {
     // The first head or body met on the way up decides the role: a head
     // means the token names a pattern declaration's field, a body that it
-    // is the declaration's binding. Declaration metadata inside a pattern
-    // (`f({ `{ doc: "d" } x: a }):`) is left to the metadata check.
+    // is the declaration's binding. Metadata inside a pattern is left to
+    // the metadata check: declaration metadata
+    // (`f({ `{ doc: "d" } x: a }):`) always, and block metadata
+    // (`f({ { doc: "d" } x: a }):`) unless the token is a bare name in it.
+    // A block pattern's shorthand names (`x` and `y` in `f{x y}:`, `x` in
+    // `f({x  y: h}):`) parse as the block's leading metadata soup, so a
+    // name directly in that soup is a binding, not metadata.
     let mut role = None;
+    let mut bare_name = true;
     for node in token.parent_ancestors() {
         match node.kind() {
             SyntaxKind::DECL_META => return None,
+            SyntaxKind::BLOCK_META if !bare_name => return None,
+            SyntaxKind::NAME | SyntaxKind::SOUP => {}
+            _ => bare_name = false,
+        }
+        match node.kind() {
             SyntaxKind::DECL_HEAD if role.is_none() => role = Some(PatternRole::FieldName),
             SyntaxKind::DECL_BODY if role.is_none() => role = Some(PatternRole::Binding),
             SyntaxKind::ARG_TUPLE | SyntaxKind::PAREN_EXPR | SyntaxKind::BRACKET_EXPR
@@ -594,6 +605,28 @@ mod tests {
             vec![(token_type::PARAMETER, 0)]
         );
         assert_eq!(classes_of(&tokens, 0, "a")[0], PARAM_DECL);
+    }
+
+    #[test]
+    fn block_metadata_inside_a_parameter_pattern_is_still_decorator() {
+        let source = "f({ { doc: \"d\" } x: a }): a\nd({x  y: h}): x\n";
+        let tokens = decoded(source);
+        assert_eq!(
+            classes_of(&tokens, 0, "doc"),
+            vec![(token_type::DECORATOR, 0)]
+        );
+        assert_eq!(
+            classes_of(&tokens, 0, "x"),
+            vec![(token_type::PARAMETER, 0)]
+        );
+        assert_eq!(classes_of(&tokens, 0, "a")[0], PARAM_DECL);
+        // Shorthand names before a rename are bindings, not metadata.
+        assert_eq!(classes_of(&tokens, 1, "x")[0], PARAM_DECL);
+        assert_eq!(
+            classes_of(&tokens, 1, "y"),
+            vec![(token_type::PARAMETER, 0)]
+        );
+        assert_eq!(classes_of(&tokens, 1, "h"), vec![PARAM_DECL]);
     }
 
     #[test]
