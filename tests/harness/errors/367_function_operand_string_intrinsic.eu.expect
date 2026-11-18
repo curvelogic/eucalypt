@@ -1,2 +1,3 @@
 exit: 1
 stderr: "(?s)received a function where string was expected.*errors[/\\]367_function_operand_string_intrinsic\.eu:3:17"
+location: 3:17

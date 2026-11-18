@@ -1,2 +1,3 @@
 exit: 1
 stderr: "bad format string"
+location: 2:7

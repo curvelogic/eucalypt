@@ -1,2 +1,3 @@
 exit: 1
 stderr: "date/time literal contains an invalid date"
+location: 2:4

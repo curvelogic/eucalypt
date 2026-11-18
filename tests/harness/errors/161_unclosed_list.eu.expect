@@ -1,2 +1,3 @@
 exit: 1
 stderr: "expected CLOSE_SQUARE"
+location: 3:24

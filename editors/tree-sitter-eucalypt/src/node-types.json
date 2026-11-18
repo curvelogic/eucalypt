@@ -175,7 +175,7 @@
       "required": false,
       "types": [
         {
-          "type": "declaration",
+          "type": "block_pattern_field",
           "named": true
         },
         {

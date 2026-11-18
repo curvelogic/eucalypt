@@ -1,2 +1,3 @@
 exit: 1
 stderr: "EXPECT FAILED"
+location: 1:8

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "par-map: cannot serialise a function across the parallel boundary"
+location: 6:11

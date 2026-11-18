@@ -7,3 +7,4 @@
 # copy 171_yaml_large_uint.eu.expect instead.
 exit: 1
 stderr: "(?s)error\[EU-RENDER-SHAPE\].*a block key is the number 1, but eucalypt block keys must be text"
+no-location: primary label differs by prelude mode (blob: 220_eu_block_key.eu:9:7, source: none)

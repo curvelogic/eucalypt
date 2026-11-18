@@ -238,10 +238,18 @@ fn the_error_test_runner_runs_every_input() {
     let dir = tempfile::tempdir().expect("temp dir");
     // Expects an error that never comes: fails.
     let bad = fixture(dir.path(), "bad.eu", "a: 1\n");
-    fixture(dir.path(), "bad.eu.expect", "exit: 1\n");
+    fixture(
+        dir.path(),
+        "bad.eu.expect",
+        "exit: 1\nno-location: no error is raised\n",
+    );
     // Expects success: passes.
     let ok = fixture(dir.path(), "ok.eu", "a: 1\n");
-    fixture(dir.path(), "ok.eu.expect", "exit: 0\n");
+    fixture(
+        dir.path(),
+        "ok.eu.expect",
+        "exit: 0\nno-location: not an error\n",
+    );
 
     let input = |p: &Path| Input::from_str(&p.to_string_lossy()).expect("input");
     let opts = |files: &[&Path]| {

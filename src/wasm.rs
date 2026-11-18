@@ -3,6 +3,32 @@
 //! This module exposes a minimal JS API via wasm-bindgen:
 //!
 //! - `evaluate(source, format)` — evaluate eucalypt source and return JSON
+//! - `evaluate_expr(source, format)` — the same, parsing the source as an
+//!   expression (like CLI `-e`)
+//! - `evaluate_with_options(source, format, options)` and
+//!   `evaluate_expr_with_options(source, format, options)` — the same, with
+//!   options given as a JSON string; every key is optional and an unknown
+//!   key is an error:
+//!
+//!   ```json
+//!   { "files": { "helpers.eu": "double(x): x * 2", "input.txt": "1\n2\n" },
+//!     "max_steps": 5000000 }
+//!   ```
+//!
+//!   `files` are files that `import` resolves against, by relative path
+//!   (`.` and `..` resolved; an absolute path, and the names embedded code
+//!   uses in error locations — `<input>`, `prelude`, `build-meta.yaml`,
+//!   `resource:...` — are refused), before the embedded libraries
+//!   (`lens.eu`, `state.eu`, ...); as in the CLI, a supplied `lens.eu` also
+//!   replaces it where another embedded library imports it. An absolute
+//!   import never reaches a supplied file. As in the CLI, an import
+//!   resolves as written, then relative to the directory of each importing
+//!   file, outermost first. One written import that would
+//!   reach two different files is an error, as is an import cycle. Other
+//!   formats are read as data by extension or by an explicit format
+//!   (`text@input.txt`). `max_steps` is the step limit (default
+//!   1,000,000): a program that runs longer fails with a "did not
+//!   terminate" error instead of hanging the tab.
 //! - `formats()` — return a JSON array of supported output format names
 //!
 //! The actual evaluation pipeline lives in [`crate::wasm_pipeline`] so it can
@@ -23,6 +49,8 @@ use crate::wasm_pipeline;
 /// ```json
 /// { "success": false, "error": { "message": "...", "location": { ... } } }
 /// ```
+/// A location names its `file`: `<input>` for the source evaluated, else
+/// a supplied file's path, or `resource:<name>` for an embedded library.
 #[derive(serde::Serialize)]
 struct EvalResult {
     success: bool,
@@ -43,6 +71,7 @@ struct ErrorInfo {
 
 #[derive(serde::Serialize)]
 struct WasmSourceLocation {
+    file: String,
     line: usize,
     column: usize,
     end_line: usize,
@@ -73,6 +102,27 @@ pub fn evaluate_expr(source: &str, format: &str) -> String {
     wrap_result(wasm_pipeline::evaluate_expr(source, format))
 }
 
+/// Evaluate a eucalypt unit with options (a JSON string: `files` for
+/// imports and `max_steps`; see the module documentation) and return the
+/// result as JSON. Invalid options give a failure result.
+#[wasm_bindgen]
+pub fn evaluate_with_options(source: &str, format: &str, options: &str) -> String {
+    wrap_result(
+        wasm_pipeline::EvalOptions::from_json(options)
+            .and_then(|o| wasm_pipeline::evaluate_unit_with(source, format, &o)),
+    )
+}
+
+/// Evaluate a eucalypt expression with options, as
+/// [`evaluate_with_options`] does a unit.
+#[wasm_bindgen]
+pub fn evaluate_expr_with_options(source: &str, format: &str, options: &str) -> String {
+    wrap_result(
+        wasm_pipeline::EvalOptions::from_json(options)
+            .and_then(|o| wasm_pipeline::evaluate_expr_with(source, format, &o)),
+    )
+}
+
 fn wrap_result(outcome: Result<String, wasm_pipeline::PipelineError>) -> String {
     let result = match outcome {
         Ok(output) => EvalResult {
@@ -86,6 +136,7 @@ fn wrap_result(outcome: Result<String, wasm_pipeline::PipelineError>) -> String 
             error: Some(ErrorInfo {
                 message: e.message,
                 location: e.location.map(|loc| WasmSourceLocation {
+                    file: loc.file,
                     line: loc.line,
                     column: loc.column,
                     end_line: loc.end_line,
@@ -176,6 +227,36 @@ mod wasm_tests {
             message.contains("too many elements") && message.contains("268435455"),
             "expected the array-too-large error; got: {parsed}"
         );
+    }
+
+    #[wasm_bindgen_test]
+    fn test_evaluate_with_options_imports_a_supplied_file() {
+        let options = r#"{"files": {"helpers.eu": "double(x): x * 2"}, "max_steps": 5000000}"#;
+        let result =
+            evaluate_with_options(r#"{ import: "helpers.eu" } x: double(21)"#, "json", options);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["success"], true, "got: {parsed}");
+        let output: serde_json::Value =
+            serde_json::from_str(parsed["output"].as_str().unwrap().trim()).unwrap();
+        assert_eq!(output["x"], 42);
+    }
+
+    #[wasm_bindgen_test]
+    fn test_evaluate_expr_with_options_step_limit() {
+        let result = evaluate_expr_with_options("1 + 2", "json", r#"{"max_steps": 5}"#);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["success"], false, "got: {parsed}");
+        let message = parsed["error"]["message"].as_str().unwrap_or("");
+        assert!(message.contains("after 5 steps"), "got: {parsed}");
+    }
+
+    #[wasm_bindgen_test]
+    fn test_evaluate_with_options_reports_bad_options() {
+        let result = evaluate_with_options("x: 1", "json", r#"{"maxSteps": 5}"#);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["success"], false, "got: {parsed}");
+        let message = parsed["error"]["message"].as_str().unwrap_or("");
+        assert!(message.starts_with("invalid options"), "got: {parsed}");
     }
 
     #[wasm_bindgen_test]

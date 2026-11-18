@@ -31,6 +31,14 @@
   (name
     (identifier) @function.call))
 
+; Juxtaposed calls — f[1, 2] and g{a: 1}
+(list_application
+  (name
+    (identifier) @function.call))
+(block_application
+  (name
+    (identifier) @function.call))
+
 ; Built-in intrinsics (__XXX)
 ((identifier) @function.builtin
   (#match? @function.builtin "^__[A-Z]+$"))
@@ -144,6 +152,11 @@
 
 ; Anaphora (special variables)
 (anaphor) @variable.special
+; Outside strings the lexer reads _, _0, • and •0 as identifiers (see the
+; anaphor rule in grammar.js); as names, not symbols (:_), they are anaphors
+(name
+  ((identifier) @variable.special
+    (#match? @variable.special "^[_•][0-9]*$")))
 
 ; Operators
 (operator) @operator
@@ -182,12 +195,10 @@
   (identifier) @parameter)
 
 ; Juxtaposed parameters — f{x y}:, f[a, b]: and f[h : t]:
+; (renamed or nested fields, f{x: px}: and f{k: {z}}:, are block_pattern_field
+; nodes, covered by the destructuring rules below)
 (block_param
   (identifier) @parameter)
-; and the bound name of a renamed field, f{x: px}:
-(block_param
-  (declaration
-    (soup . (name (identifier) @parameter) .)))
 (list_param
   (identifier) @parameter)
 

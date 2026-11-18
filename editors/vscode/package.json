@@ -108,7 +108,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "node --test test/*.test.js",
+    "test": "node scripts/run-tests.js",
     "generate-prelude-names": "node scripts/generate-prelude-names.js"
   },
   "dependencies": {

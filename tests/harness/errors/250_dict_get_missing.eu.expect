@@ -1,2 +1,3 @@
 exit: 1
 stderr: "key .1, 3. not found in dict"
+location: 2:31

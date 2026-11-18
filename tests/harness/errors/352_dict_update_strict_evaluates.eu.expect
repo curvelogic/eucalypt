@@ -1,2 +1,3 @@
 exit: 1
 stderr: "update-strict evaluated the new value"
+location: 6:10

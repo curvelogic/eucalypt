@@ -1488,12 +1488,9 @@ m{x: px}: px
     (declaration_head
       (identifier)
       (block_param
-        (declaration
-          (declaration_head
-            (identifier))
-          (soup
-            (name
-              (identifier))))))
+        (block_pattern_field
+          (identifier)
+          (identifier))))
     (soup
       (name
         (identifier)))))
@@ -1985,6 +1982,60 @@ g[h : t]: h
       (list_param
         (identifier)
         (identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Juxtaposed block parameter with nested patterns (eu-ioz21.13)
+================================================================================
+
+f{k: {z}}: z
+g{m, k: [a, b]}: a
+h{p: {q: [r : t]}  s: s2}: r
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (block_param
+        (block_pattern_field
+          (identifier)
+          (block_pattern
+            (identifier)))))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (block_param
+        (identifier)
+        (block_pattern_field
+          (identifier)
+          (list_pattern
+            (identifier)
+            (identifier)))))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (identifier)
+      (block_param
+        (block_pattern_field
+          (identifier)
+          (block_pattern
+            (block_pattern_field
+              (identifier)
+              (cons_pattern
+                (identifier)
+                (identifier)))))
+        (block_pattern_field
+          (identifier)
+          (identifier))))
     (soup
       (name
         (identifier)))))

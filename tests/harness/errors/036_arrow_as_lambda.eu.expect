@@ -1,2 +1,3 @@
 exit: 1
 stderr: "eucalypt has no arrow functions"
+location: 3:16

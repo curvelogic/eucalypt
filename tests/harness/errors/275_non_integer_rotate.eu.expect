@@ -1,2 +1,3 @@
 exit: 1
 stderr: "rotate count 1.5 must be an integer"
+location: 2:14

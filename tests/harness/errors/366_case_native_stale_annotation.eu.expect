@@ -1,2 +1,3 @@
 exit: 1
 stderr: "(?s)received a number where.*errors[/\\]366_case_native_stale_annotation\.eu:2:4"
+location: 2:4

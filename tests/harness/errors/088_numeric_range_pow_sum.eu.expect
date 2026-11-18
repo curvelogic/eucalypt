@@ -1,2 +1,3 @@
 exit: 1
 stderr: "088_numeric_range_pow_sum.eu:3:6"
+location: 3:6

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "nth.*index"
+location: 5:9

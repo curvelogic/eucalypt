@@ -149,11 +149,13 @@ module.exports = grammar({
 
     // Block destructuring parameter in juxtaposed position: f{x y} or f{x, y}
     // Uses token.immediate to require no whitespace (matching Rust parser).
-    // Bare identifiers are allowed as shorthand bindings (like block_pattern).
+    // Fields are the same as block_pattern's: a bare identifier is a
+    // shorthand binding, and `name: param` renames or destructures further,
+    // recursively (f{x: px}:, f{k: {z}}:, f{k: [a, b]}: — eu-ioz21.13).
     block_param: $ => seq(
       token.immediate('{'),
       repeat(seq(
-        choice($.declaration, $.identifier),
+        choice($.block_pattern_field, $.identifier),
         optional(','),
       )),
       '}',

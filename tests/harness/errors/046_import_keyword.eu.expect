@@ -1,2 +1,3 @@
 exit: 1
 stderr: "eucalypt does not have an import statement"
+location: 3:4

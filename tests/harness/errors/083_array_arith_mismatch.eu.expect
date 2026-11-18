@@ -1,2 +1,3 @@
 exit: 1
 stderr: "arrays have incompatible shapes"
+location: 4:4
