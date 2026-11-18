@@ -633,7 +633,9 @@ fn normalise_path(path: &str) -> Option<String> {
 }
 
 /// Whether `path` is absolute: rooted (`/x`, `\\x`) or a Windows drive
-/// path (`C:`, `C:/x`, `C:\\x`).
+/// path (`C:`, `C:/x`, `C:\\x`). A drive-relative path such as `C:h.eu`
+/// is not: it is an ordinary relative name, matching only a supplied
+/// file of exactly that name, so it cannot escape the supplied files.
 fn is_absolute(path: &str) -> bool {
     let b = path.as_bytes();
     path.starts_with(['/', '\\'])
