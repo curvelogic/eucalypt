@@ -774,8 +774,10 @@ jobs:
 
       - name: Check eu is executable in each tarball
         run: |
-          for t in eucalypt-x86_64-linux eucalypt-aarch64-linux eucalypt-aarch64-osx; do
-            mode=$(tar -tvzf "$t.tgz" "$t/eu" | awk '{print $1}')
+          # Globbed, so a tarball added to the packaging step is checked too.
+          for tgz in eucalypt-*.tgz; do
+            t="${tgz%.tgz}"
+            mode=$(tar -tvzf "$tgz" "$t/eu" | awk '{print $1}')
             echo "$t.tgz: $t/eu $mode"
             if [ "$mode" != "-rwxr-xr-x" ]; then
               echo "::error::$t/eu in $t.tgz has mode $mode, expected -rwxr-xr-x"
