@@ -780,10 +780,13 @@ fn catenation_operand_note(
     if !source_map.is_user_file(file) {
         return None;
     }
-    // Only an operand blamed by its own location (eu-oaz72.121) is found
-    // from the step head; every other error is raised at the operator.
+    // Only an operand blamed by its own location (eu-oaz72.121, and
+    // eu-oaz72.151 for case scrutinees) is found from the step head;
+    // every other error is raised at the operator.
     let by_head = || {
-        let ExecutionError::UnexpectedFunction(..) = inner else {
+        let (ExecutionError::UnexpectedFunction(..) | ExecutionError::CannotReturnFunToCase(..)) =
+            inner
+        else {
             return None;
         };
         let source: &str = codespan_reporting::files::Files::source(files, file).ok()?;
