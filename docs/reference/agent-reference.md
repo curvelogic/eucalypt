@@ -1408,7 +1408,7 @@ These **do exist** and are commonly available:
 - `enumerate(xs)` — `[[0, x0], [1, x1], ...]`; `find(p?, xs)` — first match or `null`; `index-of(x, xs)` — 0-based index or `null`
 - `frequencies(xs)` — dict of element → count (elements must be valid dict keys)
 - `combinations(n, xs)`, `permutations(xs)` — lazy lists of lists, in input order; `combinations(0, xs)` is `[[]]`, `permutations([])` is `[[]]`
-- `merge-intervals(is)` — closed integer `[lo, hi]` intervals; overlapping or adjacent ones merge (`lo2 <= hi1 + 1`: `[1, 3]` + `[4, 6]` give `[1, 6]`, `[1, 3]` + `[5, 6]` stay separate); a non-number or non-integer bound, or an inverted interval (`lo > hi`), is an error naming `merge-intervals`
+- `merge-intervals(is)` — closed integer `[lo, hi]` intervals; overlapping or adjacent ones merge (`lo2 <= hi1 + 1`: `[1, 3]` + `[4, 6]` give `[1, 6]`, `[1, 3]` + `[5, 6]` stay separate); an interval list without exactly two elements, a non-number or non-integer bound, or an inverted interval (`lo > hi`), is an error naming `merge-intervals`
 - `str.reverse(s)` — reverse by character
 - `str.to-upper(s)` / `str.to-lower(s)` — case conversion (not `str.upper` / `str.lower`)
 
