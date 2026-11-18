@@ -243,7 +243,9 @@ impl<'text> Parser<'text> {
                     idx += 1;
                 }
                 // flatten_events leaves no splices
-                ParseEvent::Splice(_) => {}
+                ParseEvent::Splice(_) => {
+                    debug_assert!(false, "splice left after flattening")
+                }
             }
         }
         builder.finish()
@@ -1597,6 +1599,10 @@ impl BlockEventSink {
                     // invalid - refuse split
                     return vec![];
                 }
+                // A nested block's content, always inside its BLOCK node.
+                ParseEvent::Splice(_) => {
+                    debug_assert!(depth > 0, "splice outside its block node")
+                }
                 _ => {}
             }
         }
@@ -1659,7 +1665,9 @@ impl BlockEventSink {
                     }
                 }
                 // A nested block's content, always inside its BLOCK node.
-                ParseEvent::Splice(_) => {}
+                ParseEvent::Splice(_) => {
+                    debug_assert!(depth > 0, "splice outside its block node")
+                }
             }
         }
 

@@ -429,34 +429,54 @@ mod tests {
         );
     }
 }
+/// Shared check that a pass over deeply nested blocks is linear in
+/// nesting depth.
 #[cfg(test)]
-mod scaling_tests {
-    /// Best of three parses of `depth` nested blocks.
-    fn best_parse_time(depth: usize) -> std::time::Duration {
-        let src = format!("x: {}1{}\n", "{ a: ".repeat(depth), " }".repeat(depth));
-        (0..3)
+pub(crate) mod scaling {
+    use std::time::{Duration, Instant};
+
+    /// `x: { a: { a: ... 1 } }` nested `depth` blocks deep.
+    fn nested_blocks(depth: usize) -> String {
+        format!("x: {}1{}\n", "{ a: ".repeat(depth), " }".repeat(depth))
+    }
+
+    /// Best of five runs of `pass` over `depth` nested blocks, to damp
+    /// scheduling noise.
+    fn best_time(depth: usize, pass: &impl Fn(&str)) -> Duration {
+        let src = nested_blocks(depth);
+        (0..5)
             .map(|_| {
-                let start = std::time::Instant::now();
-                let parsed = super::parse_unit(&src);
-                assert!(parsed.errors().is_empty());
+                let start = Instant::now();
+                pass(&src);
                 start.elapsed()
             })
             .min()
             .unwrap()
     }
 
+    /// Sixteen times the depth must cost well under the 256 times a
+    /// quadratic pass would: linear passes measure about 16 to 20 times,
+    /// quadratic ones (the parser before eu-oaz72.150) over 50 times even
+    /// at half this spread, so the bound of 64 sits well clear of both.
+    pub(crate) fn assert_linear_in_depth(what: &str, pass: impl Fn(&str)) {
+        let small = best_time(250, &pass);
+        let large = best_time(4000, &pass);
+        assert!(
+            large < small * 64,
+            "{what}: depth 4000 took {large:?} against {small:?} at depth 250: not linear"
+        );
+    }
+}
+
+#[cfg(test)]
+mod scaling_tests {
     #[test]
     fn test_parse_unit_is_linear_in_nesting_depth() {
         // Each block's events were copied into every enclosing block's
         // sink, and each block start summed the lengths of all tokens
-        // before it, so parsing was quadratic in nesting depth (0.8 s at
-        // depth 1600 in a debug build). An eightfold increase in depth
-        // must cost well under the 64-fold a quadratic parse would.
-        let small = best_parse_time(500);
-        let large = best_parse_time(4000);
-        assert!(
-            large < small * 24,
-            "depth 4000 took {large:?} against {small:?} at depth 500: not linear"
-        );
+        // before it, so parsing was quadratic in nesting depth.
+        super::scaling::assert_linear_in_depth("parse_unit", |src| {
+            assert!(super::parse_unit(src).errors().is_empty());
+        });
     }
 }

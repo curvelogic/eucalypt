@@ -708,7 +708,9 @@ impl Formatter {
     /// measured against the room actually left. Only the construct's own
     /// extent is measured (plus a column for a following separator): the
     /// text around it on the line cannot be broken, so breaking the
-    /// construct because of it would not shorten the line.
+    /// construct because of it would not shorten the line. Nor is it
+    /// broken when the indentation of its items would already reach the
+    /// width: that would only add lines that do not fit either.
     ///
     /// `flat` is measured once here; documents are reference counted, so
     /// handing either layout out on each render is cheap. Any single-line
@@ -724,16 +726,20 @@ impl Formatter {
             return multi;
         }
         let limit = self.config.line_width;
+        let indent = self.config.indent_size;
         RcDoc::column(move |col| {
-            if col
+            let fits = col
                 .saturating_add(width)
                 .saturating_add(SINGLE_LINE_RESERVE)
-                <= limit
-            {
-                flat.clone()
-            } else {
-                multi.clone()
-            }
+                <= limit;
+            let (flat, multi) = (flat.clone(), multi.clone());
+            RcDoc::nesting(move |ind| {
+                if fits || ind.saturating_add(indent) >= limit {
+                    flat.clone()
+                } else {
+                    multi.clone()
+                }
+            })
         })
     }
 
@@ -1030,7 +1036,8 @@ impl Formatter {
             return usize::MAX;
         }
         match String::from_utf8(out.buf) {
-            Ok(text) => text.chars().count(),
+            // Display width, as the renderer measures columns.
+            Ok(text) => unicode_width::UnicodeWidthStr::width(text.as_str()),
             _ => usize::MAX,
         }
     }
@@ -1642,9 +1649,9 @@ mod correctness_tests {
         let out = rx
             .recv_timeout(std::time::Duration::from_secs(10))
             .expect("reformatting deeply nested blocks did not finish in 10s");
-        // At this depth the indentation alone passes the width, so the
-        // innermost list breaks too; the point here is that it finishes.
-        assert!(out.contains("a39: ["), "{out}");
+        // Past the width, breaking would not help, so the innermost list
+        // stays on one line.
+        assert!(out.contains("a39: [1]"), "{out}");
     }
 
     #[test]
@@ -1852,6 +1859,31 @@ mod correctness_tests {
     }
 
     #[test]
+    fn test_no_break_once_indentation_passes_width() {
+        // Breaking a list whose items would be indented past the width
+        // only adds lines that do not fit either.
+        let config = FormatterConfig::new(20, 2, true);
+        let src = "a: { b: { c: { d: { e: { f: { g: { h: { i: { k: [1, 2] } } } } } } } } }\n";
+        let once = format_source(src, &config).unwrap();
+        assert!(once.contains("k: [1, 2]"), "{once}");
+        assert_eq!(once, format_source(&once, &config).unwrap());
+    }
+
+    #[test]
+    fn test_wide_characters_measured_by_display_width() {
+        // Columns are display widths, so a list of wide characters that
+        // fits by character count but not by display width breaks.
+        let config = FormatterConfig::new(20, 2, true);
+        let out = format_source("x: [\"漢字漢字\", \"漢字漢字\"]\n", &config).unwrap();
+        assert!(out.starts_with("x: [\n"), "{out}");
+        assert!(
+            out.lines()
+                .all(|l| unicode_width::UnicodeWidthStr::width(l) <= 20),
+            "{out}"
+        );
+    }
+
+    #[test]
     fn test_multi_line_text_breaks_enclosing_group() {
         // A string literal spanning lines is never measured as one line.
         let src = "x: [\"a\nb\", 1]\n";
@@ -1863,26 +1895,10 @@ mod correctness_tests {
     fn test_format_source_scales_linearly_in_nesting_depth() {
         // Parsing and formatting together: parse_unit copied each nested
         // block's events into every enclosing block, so it was quadratic
-        // in depth. An eightfold increase in depth must cost well under the
-        // 64-fold a quadratic pass would (the best of three runs each, to
-        // damp scheduling noise).
-        fn best_time(depth: usize) -> std::time::Duration {
-            let src = format!("x: {}1{}\n", "{ a: ".repeat(depth), " }".repeat(depth));
-            let config = FormatterConfig::new(80, 2, true);
-            (0..3)
-                .map(|_| {
-                    let start = std::time::Instant::now();
-                    format_source(&src, &config).unwrap();
-                    start.elapsed()
-                })
-                .min()
-                .unwrap()
-        }
-        let small = best_time(400);
-        let large = best_time(3200);
-        assert!(
-            large < small * 24,
-            "depth 3200 took {large:?} against {small:?} at depth 400: not linear"
-        );
+        // in depth.
+        let config = FormatterConfig::new(80, 2, true);
+        crate::syntax::rowan::scaling::assert_linear_in_depth("format_source", |src| {
+            format_source(src, &config).unwrap();
+        });
     }
 }

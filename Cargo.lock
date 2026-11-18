@@ -693,6 +693,7 @@ dependencies = [
  "toml",
  "unicode-bidi-mirroring",
  "unicode-general-category",
+ "unicode-width 0.2.3",
  "url",
  "uuid 1.20.0",
  "wait-timeout",
