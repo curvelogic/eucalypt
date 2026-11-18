@@ -1523,7 +1523,9 @@ pub fn compile_boxed_literal(prim: &Primitive) -> Rc<StgSyn> {
         Primitive::Num(n) => dsl::box_num(n.clone()),
         Primitive::Bool(b) => dsl::bool_(*b),
         Primitive::Null => dsl::unit(),
-        Primitive::TypeData(s) => dsl::box_type_data(s),
+        Primitive::TypeData(s) => {
+            dsl::box_type_data(crate::core::typecheck::parse::canonical_type_data(s))
+        }
     }
 }
 
