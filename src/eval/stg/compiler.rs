@@ -1147,7 +1147,7 @@ impl ProtoSyntax for Holder {
     }
 }
 
-/// An unapplied reference to an intrinsic in user code, eta-expanded into
+/// An intrinsic passed as an argument in user code, eta-expanded into
 /// an annotated lambda carrying the reference's own source location
 /// (eu-oaz72.119).
 ///
@@ -1960,7 +1960,11 @@ impl<'rt> Compiler<'rt> {
                 let block = self.compile_block(binder, *s, map)?;
                 binder.add_deferred(Box::new(block))
             }
-            Expr::Intrinsic(s, name) => self.compile_intrinsic_ref(binder, *s, name),
+            Expr::Intrinsic(_, name) => {
+                let index = intrinsics::index(name)
+                    .ok_or_else(|| CompileError::UnknownIntrinsic(name.clone()))?;
+                Ok(dsl::gref(index))
+            }
             Expr::Lookup(s, obj, k, d) => {
                 let lookup = self.compile_lookup(binder, obj, k, d, *s)?;
                 binder.add_deferred(Box::new(lookup))
@@ -2014,17 +2018,17 @@ impl<'rt> Compiler<'rt> {
         }
     }
 
-    /// Compile a lookup to a LookupLit node with LookupOr fallback
+    /// Reference an intrinsic passed as an argument: its global, or, in
+    /// annotated user code with a valid use-site Smid, an annotated
+    /// eta-expansion of it bound in `binder` (see `ProtoIntrinsicRef`).
     ///
-    /// LookupLit tries a fast-path direct lookup when the block's
-    /// cons-list is already navigable.  If the list contains thunks
-    /// (e.g. merged/imported blocks), the default fires — which is
-    /// the original LookupOr wrapper that can force elements lazily
-    /// via Case expressions.
-    /// Reference an unapplied intrinsic: its global, or, in annotated
-    /// user code with a valid use-site Smid, an annotated eta-expansion
-    /// of it bound in `binder` (see `ProtoIntrinsicRef`).
-    pub fn compile_intrinsic_ref(
+    /// Only argument position is expanded. An intrinsic that is the value
+    /// of a binding or block member (`size: __DICT.SIZE` in a prelude
+    /// namespace compiled into the user unit) keeps the bare global: an
+    /// annotated wrapper there would install the prelude definition's
+    /// location whenever the member is called, displacing the user's call
+    /// site from the live annotation.
+    fn compile_intrinsic_ref(
         &self,
         binder: &mut LetBinder,
         smid: Smid,
@@ -2041,6 +2045,13 @@ impl<'rt> Compiler<'rt> {
         }
     }
 
+    /// Compile a lookup to a LookupLit node with LookupOr fallback
+    ///
+    /// LookupLit tries a fast-path direct lookup when the block's
+    /// cons-list is already navigable.  If the list contains thunks
+    /// (e.g. merged/imported blocks), the default fires — which is
+    /// the original LookupOr wrapper that can force elements lazily
+    /// via Case expressions.
     pub fn compile_lookup(
         &self,
         binder: &mut LetBinder,

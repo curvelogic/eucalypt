@@ -88,8 +88,15 @@ fn substs_depth_in(
             // location: the replacement's Smid is the prelude definition
             // (`num: __NUMPARSE`), but the place to blame when an unapplied
             // reference later fails is the user's use site (eu-oaz72.119).
+            // Only a let substitution (`distribute`) retags: in a beta
+            // reduction the occurrence is a parameter inside the inlined
+            // body, and the argument already carries the caller's site.
             Some(m) => {
-                if let (true, Expr::Intrinsic(_, n)) = (s.is_valid(), &*m.replacement.inner) {
+                if let (true, true, Expr::Intrinsic(_, n)) = (
+                    capture == Capture::Avoid,
+                    s.is_valid(),
+                    &*m.replacement.inner,
+                ) {
                     return Ok(RcExpr::from(Expr::Intrinsic(*s, n.clone())));
                 }
                 // Replacement is from the call site (depth == 0).
