@@ -65,6 +65,8 @@ one of these groups.
      clients cannot place on later lines;
    - interpolation braces and the format-spec colon get no token
      (TextMate scopes them inside the string).
+
+   All but the last were fixed on the rowan side by eu-oaz72.115.
 6. **Metadata.** Rowan marks every identifier in a metadata expression
    as `decorator`, including a unit's leading metadata block
    (`{ import: ... }`) and values inside backtick metadata

@@ -85,29 +85,42 @@ pub fn semantic_tokens_full(
             None => continue,
         };
 
-        let start_offset = u32::from(token.text_range().start());
-        let end_offset = u32::from(token.text_range().end());
-        let length = line_index.utf16_text_len(start_offset, end_offset);
+        // LSP clients cannot place a token that spans lines, so a
+        // multi-line token (a string literal, say) is emitted as one token
+        // per line segment. Empty segments (the end of a line ending in
+        // the token) are skipped.
+        let token_start = u32::from(token.text_range().start());
+        let mut segment_start = token_start;
+        for segment in token.text().split_inclusive('\n') {
+            let content = segment.trim_end_matches(['\n', '\r']);
+            let start_offset = segment_start;
+            let end_offset = start_offset + content.len() as u32;
+            segment_start += segment.len() as u32;
+            if content.is_empty() {
+                continue;
+            }
 
-        let (line, col) = line_index.offset_to_line_col(start_offset);
+            let length = line_index.utf16_text_len(start_offset, end_offset);
+            let (line, col) = line_index.offset_to_line_col(start_offset);
 
-        let delta_line = line - prev_line;
-        let delta_start = if delta_line == 0 {
-            col - prev_start
-        } else {
-            col
-        };
+            let delta_line = line - prev_line;
+            let delta_start = if delta_line == 0 {
+                col - prev_start
+            } else {
+                col
+            };
 
-        tokens.push(SemanticToken {
-            delta_line,
-            delta_start,
-            length,
-            token_type,
-            token_modifiers_bitset: modifiers,
-        });
+            tokens.push(SemanticToken {
+                delta_line,
+                delta_start,
+                length,
+                token_type,
+                token_modifiers_bitset: modifiers,
+            });
 
-        prev_line = line;
-        prev_start = col;
+            prev_line = line;
+            prev_start = col;
+        }
     }
 
     SemanticTokens {
@@ -131,6 +144,7 @@ fn classify_token(
         | SyntaxKind::C_STRING
         | SyntaxKind::RAW_STRING
         | SyntaxKind::T_STRING
+        | SyntaxKind::S_STRING
         | SyntaxKind::STRING_LITERAL_CONTENT
         | SyntaxKind::STRING_ESCAPED_OPEN
         | SyntaxKind::STRING_ESCAPED_CLOSE
@@ -202,6 +216,17 @@ fn classify_identifier(
         _ => text,
     };
 
+    // Identifiers in a declaration's parameter pattern bind parameters,
+    // whatever their names and however the pattern is shaped (a block
+    // pattern's leading names parse as block metadata). They are
+    // classified before metadata and symbol-table lookups.
+    if let Some(role) = pattern_role(token) {
+        return Some(match role {
+            PatternRole::Binding => (token_type::PARAMETER, token_modifier::DECLARATION),
+            PatternRole::FieldName => (token_type::PARAMETER, 0),
+        });
+    }
+
     // Check if this is in a declaration head (it's a definition)
     let in_decl_head = token
         .parent()
@@ -242,10 +267,6 @@ fn classify_identifier(
 
     // No symbol table match — use syntactic context
     if in_decl_head {
-        // Check if this is a parameter (appears after the first identifier in the head)
-        if is_parameter(token) {
-            return Some((token_type::PARAMETER, token_modifier::DECLARATION));
-        }
         return Some((token_type::PROPERTY, token_modifier::DECLARATION));
     }
 
@@ -253,14 +274,52 @@ fn classify_identifier(
     Some((token_type::VARIABLE, 0))
 }
 
-/// Check if a token is a parameter in a declaration head.
+/// The role of an identifier inside a declaration's parameter pattern.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PatternRole {
+    /// The identifier binds a parameter: `x` in `f(x):`, `f{x y}:`,
+    /// `f([x : xs]):`, `(l + x):` or `⟦ x ⟧:`, and `a` in `f({x: a}):`.
+    Binding,
+    /// The identifier names a field of a block pattern's argument
+    /// rather than binding it: `x` in the rename pattern `f({x: a}):`.
+    /// It is part of the parameter pattern, so it is a parameter token,
+    /// but without the declaration modifier.
+    FieldName,
+}
+
+/// Find the role of a token inside a declaration's parameter pattern, or
+/// `None` when it is not in one.
 ///
-/// In eucalypt, `f(x, y): body` has `f` as the function name and `x`, `y`
-/// as parameters. Parameters are identifiers inside an ARG_TUPLE node.
-fn is_parameter(token: &crate::syntax::rowan::kind::SyntaxToken) -> bool {
-    token
-        .parent()
-        .is_some_and(|p| is_in_ancestor(p, SyntaxKind::ARG_TUPLE))
+/// A parameter pattern is the argument tuple of a function declaration
+/// (`f(x, y):`, `f{x y}:`) or the operand expression of an operator or
+/// bracket declaration (`(l +++ r):`, `⟦ xs ⟧:`): an `ARG_TUPLE`,
+/// `PAREN_EXPR` or `BRACKET_EXPR` whose parent is a `DECL_HEAD`. An
+/// argument tuple elsewhere (a call such as `merge({ a: 1 })`) is not a
+/// pattern, so the declarations in a block passed to it are ordinary
+/// declarations. Inside a block pattern a rename `{x: a}` parses as a
+/// declaration whose head `x` is the field name and whose body `a` is
+/// the binding.
+fn pattern_role(token: &crate::syntax::rowan::kind::SyntaxToken) -> Option<PatternRole> {
+    // The first head or body met on the way up decides the role: a head
+    // means the token names a pattern declaration's field, a body that it
+    // is the declaration's binding.
+    let mut role = None;
+    let mut node = token.parent()?;
+    loop {
+        match node.kind() {
+            SyntaxKind::DECL_HEAD if role.is_none() => role = Some(PatternRole::FieldName),
+            SyntaxKind::DECL_BODY if role.is_none() => role = Some(PatternRole::Binding),
+            SyntaxKind::ARG_TUPLE | SyntaxKind::PAREN_EXPR | SyntaxKind::BRACKET_EXPR
+                if node
+                    .parent()
+                    .is_some_and(|p| p.kind() == SyntaxKind::DECL_HEAD) =>
+            {
+                return Some(role.unwrap_or(PatternRole::Binding));
+            }
+            _ => {}
+        }
+        node = node.parent()?;
+    }
 }
 
 /// Check if a token is in a metadata annotation context.
@@ -398,6 +457,134 @@ mod tests {
             // First token should have delta_line and delta_start relative to (0,0)
             assert_eq!(tokens.data[0].delta_line, 0, "first token on first line");
         }
+    }
+
+    /// Decode the delta-encoded tokens of `source` into
+    /// `(line, text, type, modifiers)`, taking text from the source line.
+    fn decoded(source: &str) -> Vec<(u32, String, u32, u32)> {
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+        let table = make_table(source);
+        let tokens = semantic_tokens_full(source, &root, &table);
+        let lines: Vec<&str> = source.split('\n').collect();
+        let (mut line, mut col) = (0u32, 0u32);
+        tokens
+            .data
+            .iter()
+            .map(|t| {
+                if t.delta_line == 0 {
+                    col += t.delta_start;
+                } else {
+                    line += t.delta_line;
+                    col = t.delta_start;
+                }
+                let utf16: Vec<u16> = lines[line as usize].encode_utf16().collect();
+                let text =
+                    String::from_utf16(&utf16[col as usize..(col + t.length) as usize]).unwrap();
+                (line, text, t.token_type, t.token_modifiers_bitset)
+            })
+            .collect()
+    }
+
+    /// The classifications of every token on `line` with text `text`.
+    fn classes_of(source: &str, line: u32, text: &str) -> Vec<(u32, u32)> {
+        decoded(source)
+            .into_iter()
+            .filter(|(l, t, _, _)| *l == line && t == text)
+            .map(|(_, _, ty, m)| (ty, m))
+            .collect()
+    }
+
+    const PARAM_DECL: (u32, u32) = (token_type::PARAMETER, token_modifier::DECLARATION);
+    const PROPERTY_DECL: (u32, u32) = (token_type::PROPERTY, token_modifier::DECLARATION);
+
+    #[test]
+    fn block_destructuring_parameters_are_parameters() {
+        let source = "f{x y}: x\ng({a b}): a\n";
+        assert_eq!(classes_of(source, 0, "x")[0], PARAM_DECL);
+        assert_eq!(classes_of(source, 0, "y"), vec![PARAM_DECL]);
+        assert_eq!(classes_of(source, 1, "a")[0], PARAM_DECL);
+        assert_eq!(classes_of(source, 1, "b"), vec![PARAM_DECL]);
+    }
+
+    #[test]
+    fn rename_pattern_field_is_parameter_and_binding_is_declaration() {
+        let source = "f({x: a  y}): a\n";
+        assert_eq!(classes_of(source, 0, "x"), vec![(token_type::PARAMETER, 0)]);
+        assert_eq!(classes_of(source, 0, "a")[0], PARAM_DECL);
+        assert_eq!(classes_of(source, 0, "y"), vec![PARAM_DECL]);
+    }
+
+    #[test]
+    fn list_and_ordinary_parameters_are_parameters() {
+        let source = "k([h : t], n): h\n";
+        assert_eq!(classes_of(source, 0, "h")[0], PARAM_DECL);
+        assert_eq!(classes_of(source, 0, "t"), vec![PARAM_DECL]);
+        assert_eq!(classes_of(source, 0, "n"), vec![PARAM_DECL]);
+    }
+
+    #[test]
+    fn parameter_named_like_prelude_function_is_parameter() {
+        let source = "f(first): first\n";
+        assert_eq!(classes_of(source, 0, "first")[0], PARAM_DECL);
+    }
+
+    #[test]
+    fn declarations_in_block_call_argument_are_properties() {
+        let source = "h: merge({ a: 1 })\n";
+        assert_eq!(classes_of(source, 0, "a"), vec![PROPERTY_DECL]);
+    }
+
+    #[test]
+    fn operator_and_bracket_declaration_operands_are_parameters() {
+        let source = "(l +++ r): l\n⟦ xs ⟧: xs\n(! p): p\n";
+        assert_eq!(classes_of(source, 0, "l")[0], PARAM_DECL);
+        assert_eq!(classes_of(source, 0, "r"), vec![PARAM_DECL]);
+        assert_eq!(classes_of(source, 1, "xs")[0], PARAM_DECL);
+        assert_eq!(classes_of(source, 2, "p")[0], PARAM_DECL);
+    }
+
+    #[test]
+    fn declared_names_are_unchanged() {
+        let source = "f(x): x\nv: 1\n";
+        assert_eq!(
+            classes_of(source, 0, "f"),
+            vec![(token_type::FUNCTION, token_modifier::DECLARATION)]
+        );
+        assert_eq!(classes_of(source, 1, "v"), vec![PROPERTY_DECL]);
+    }
+
+    #[test]
+    fn block_metadata_is_still_decorator() {
+        let source = "b: { { doc: \"d\" } a: 1 }\n";
+        assert_eq!(
+            classes_of(source, 0, "doc"),
+            vec![(token_type::DECORATOR, 0)]
+        );
+    }
+
+    #[test]
+    fn s_string_is_string() {
+        let source = "t: s\"foo\"\n";
+        assert_eq!(
+            classes_of(source, 0, "s\"foo\""),
+            vec![(token_type::STRING, 0)]
+        );
+    }
+
+    #[test]
+    fn multi_line_string_is_one_token_per_line() {
+        let source = "m: \"abc\r\n\ndéf\"\nn: 1\n";
+        let strings: Vec<_> = decoded(source)
+            .into_iter()
+            .filter(|(_, _, ty, _)| *ty == token_type::STRING)
+            .map(|(l, t, _, _)| (l, t))
+            .collect();
+        assert_eq!(
+            strings,
+            vec![(0, "\"abc".to_string()), (2, "déf\"".to_string())]
+        );
+        assert_eq!(classes_of(source, 3, "n"), vec![PROPERTY_DECL]);
     }
 
     #[test]

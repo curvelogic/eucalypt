@@ -1,5 +1,5 @@
 {
-  "about": "Accepted disagreements for scripts/check-highlighting-consistency.js. A rule matches a disagreement when every field matches: highlighter (textmate, tree-sitter or *), kind (mismatch or missing), rowan and other (coarse classes, other joined with + when several, or *), text (an optional regular expression the whole token text must match) and files (optional globs, relative to the repository root). Every rule carries a reason and a reference: a group of docs/superpowers/reports/2026-11-13-textmate-vs-rowan-highlighting.md ('report group N'), a rowan defect filed as eu-oaz72.115, or a follow-up.",
+  "about": "Accepted disagreements for scripts/check-highlighting-consistency.js. A rule matches a disagreement when every field matches: highlighter (textmate, tree-sitter or *), kind (mismatch or missing), rowan and other (coarse classes, other joined with + when several, or *), text (an optional regular expression the whole token text must match) and files (optional globs, relative to the repository root). Every rule carries a reason and a reference: a group of docs/superpowers/reports/2026-11-13-textmate-vs-rowan-highlighting.md ('report group N'), or a follow-up.",
   "rules": [
     {
       "highlighter": "tree-sitter",
@@ -10,37 +10,12 @@
       "ref": "design: tree-sitter references"
     },
     {
-      "highlighter": "*",
+      "highlighter": "tree-sitter",
       "kind": "mismatch",
       "rowan": "parameter",
       "other": "declaration",
-      "reason": "rowan marks declarations in a block passed as a call argument (merge({ a: 1 }), point-x{x: 3 y: 4}, io.return({ RESULT: :PASS })) as parameters",
-      "ref": "eu-oaz72.115 (report group 5)"
-    },
-    {
-      "highlighter": "*",
-      "kind": "mismatch",
-      "rowan": "declaration",
-      "other": "parameter",
-      "reason": "rowan marks the operands of operator and bracket declarations ((l +++ r):, (¬¬ x):, ⟦ xs ⟧:) as property declarations, not parameters",
-      "ref": "eu-oaz72.115 (report group 5)"
-    },
-    {
-      "highlighter": "*",
-      "kind": "mismatch",
-      "rowan": "metadata",
-      "other": "parameter",
-      "reason": "rowan marks block-destructuring parameters (f{x y}:, f({x y}):) as metadata: the leading soup of a block is read as block metadata",
-      "ref": "eu-oaz72.115 (report group 5)"
-    },
-    {
-      "highlighter": "*",
-      "kind": "missing",
-      "rowan": "none",
-      "other": "string",
-      "text": "s?\"[^\"]*\"",
-      "reason": "rowan gives s\"...\" type-data literals no semantic token",
-      "ref": "eu-oaz72.115 (report group 5)"
+      "reason": "highlights.scm marks the field names of a rename pattern in a juxtaposed block-pattern head (magnitude-sq{x: px  y: py}:) as declarations; rowan and TextMate mark them as parameters",
+      "ref": "follow-up: highlights.scm juxtaposed rename-pattern fields"
     },
     {
       "highlighter": "*",
@@ -104,7 +79,7 @@
     {
       "highlighter": "tree-sitter",
       "kind": "mismatch",
-      "rowan": "declaration",
+      "rowan": "parameter",
       "other": "punctuation",
       "text": "[\\p{L}_•$?][\\p{L}\\p{N}_$?!*\\-]*",
       "reason": "uncaptured names inside a bracket expression (⟦ xs ⟧:, ‹element(...) _value›) inherit the whole bracket_expr's @punctuation.special",
