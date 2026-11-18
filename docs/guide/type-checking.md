@@ -428,7 +428,7 @@ remaining fields.
 #### Inference for unannotated block combinators (B9)
 
 When a lambda parameter is **used as a block** — projected (`.field`),
-merged (`merge`/`over`), or passed to a block-typed function — the
+merged (`merge`), or passed to a block-typed function — the
 checker allocates a fresh row variable for it automatically, even
 without an explicit `type:` annotation.
 
@@ -444,6 +444,19 @@ result: base f(ext)   # result : {x: number, y: string}
 The checker uses a **use-driven** approach: only parameters that appear
 in a block position acquire row variables. Parameters used arithmetically
 (`x + y`) stay `any`, avoiding spurious warnings.
+
+A projection that only runs when the parameter is already a block does
+not count. In a branch guarded by `block?` on that parameter (with
+`then`, `if`, `and`, or `not` for the other branch), the parameter is
+left `any`, so other arguments are still accepted:
+
+```eu,notest
+h(x): x block? then(x.a, 0)
+h(3)           # no warning: x.a only runs for a block
+```
+
+A projection on the unguarded side, or of a different parameter inside
+the guarded branch, still counts.
 
 ### Functions
 

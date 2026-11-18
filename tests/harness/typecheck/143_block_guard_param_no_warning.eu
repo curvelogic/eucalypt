@@ -1,0 +1,16 @@
+` "A projection guarded by block? on the same parameter is not a block use: a non-block argument checks clean (eu-oaz72.194)."
+h(x): x block? then(x.a, 0)
+
+` "The guard as the condition of if itself: this fixture covers the if form, which then is defined through."
+h-if(x): if(x block?, x.a, 0)
+
+` "A negated guard protects the else branch."
+h-not(x): x block? not then(0, x.a)
+
+` "and runs its second argument only when the guard holds."
+h-and(x): and(x block?, x.a)
+
+v: h(3)
+v-if: h-if(3)
+v-not: h-not(3)
+v-and: h-and(3)
