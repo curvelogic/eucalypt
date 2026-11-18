@@ -651,19 +651,34 @@ fn parse_yaml_number(text: &str, tag: &Tag) -> Option<serde_json::Number> {
 /// Parse a core-schema int (`[-+]?[0-9]+`, `0o[0-7]+`, `0x[0-9a-fA-F]+`)
 /// exactly: an i64 when it fits, else a u64, else a float. `None` for any
 /// other text.
+/// A float for octal or hex `digits` too large even for u128, as a decimal
+/// int that large gives (the digits are already checked).
+fn radix_digits_to_float(digits: &str, radix: u32) -> Option<serde_json::Number> {
+    let value = digits.chars().fold(0.0_f64, |acc, c| {
+        acc * f64::from(radix) + f64::from(c.to_digit(radix).unwrap_or(0))
+    });
+    serde_json::Number::from_f64(value)
+}
+
 fn parse_yaml_int(text: &str) -> Option<serde_json::Number> {
     // `from_str_radix` accepts a leading sign, which the core schema does
     // not allow after a prefix (`0x+1F`), so check every digit first.
     let (magnitude, negative) = if let Some(oct) = text.strip_prefix("0o") {
-        if !oct.bytes().all(|b| matches!(b, b'0'..=b'7')) {
+        if oct.is_empty() || !oct.bytes().all(|b| matches!(b, b'0'..=b'7')) {
             return None;
         }
-        (u128::from_str_radix(oct, 8).ok()?, false)
+        match u128::from_str_radix(oct, 8) {
+            Ok(m) => (m, false),
+            Err(_) => return radix_digits_to_float(oct, 8),
+        }
     } else if let Some(hex) = text.strip_prefix("0x") {
-        if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if hex.is_empty() || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
         }
-        (u128::from_str_radix(hex, 16).ok()?, false)
+        match u128::from_str_radix(hex, 16) {
+            Ok(m) => (m, false),
+            Err(_) => return radix_digits_to_float(hex, 16),
+        }
     } else {
         let (negative, digits) = match text.as_bytes().first()? {
             b'-' => (true, &text[1..]),
@@ -1334,6 +1349,11 @@ z: !!int 1234232353
         assert_eq!(int("0x+1F"), None);
         assert_eq!(int("0o+17"), None);
         assert_eq!(int("0x-1F"), None);
+        // Above u128 a prefixed int is a float, as a decimal one is.
+        let big_hex = format!("0x1{}", "0".repeat(32));
+        assert_eq!(int(&big_hex), serde_json::Number::from_f64(2f64.powi(128)));
+        let big_oct = format!("0o1{}", "0".repeat(43));
+        assert_eq!(int(&big_oct), serde_json::Number::from_f64(2f64.powi(129)));
         assert_eq!(int("3.5"), serde_json::Number::from_f64(3.5));
         assert_eq!(float(".5"), serde_json::Number::from_f64(0.5));
         assert_eq!(float("1."), serde_json::Number::from_f64(1.0));

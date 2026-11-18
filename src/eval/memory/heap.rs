@@ -799,8 +799,17 @@ impl HeapState {
         // First, try to find a recycled block that can fit this allocation
         let lob = match self.find_suitable_recycled_lob(size) {
             Some(recycled_block) => recycled_block,
-            // No suitable recycled block, create a new one
-            None => LargeObjectBlock::try_new(size)?,
+            // No suitable recycled block, create a new one. If the system
+            // allocator refuses, return the recycled blocks held for reuse
+            // to it and try once more before reporting the refusal.
+            None => match LargeObjectBlock::try_new(size) {
+                Some(block) => block,
+                None if !self.recycled_lobs.is_empty() => {
+                    self.recycled_lobs.clear();
+                    LargeObjectBlock::try_new(size)?
+                }
+                None => return None,
+            },
         };
         self.lines_since_gc += size.div_ceil(LINE_SIZE_BYTES);
         self.lob_bytes_in_use += lob.allocated_size();
@@ -4671,6 +4680,19 @@ pub mod tests {
     /// not a process abort, and leaves the heap's accounting untouched
     /// (eu-oaz72.99, eu-oaz72.101). No .eu program can make the allocator
     /// fail reliably, so a size no layout can describe stands in for it.
+    #[test]
+    fn test_refused_large_object_releases_recycled_blocks() {
+        let heap = Heap::new();
+        let state = unsafe { &mut *heap.state.get() };
+        for _ in 0..3 {
+            state
+                .recycled_lobs
+                .push(LargeObjectBlock::try_new(64 * 1024).unwrap());
+        }
+        assert!(state.lob(isize::MAX as usize).is_none());
+        assert_eq!(state.recycled_lobs.len(), 0);
+    }
+
     #[test]
     fn test_large_object_allocation_failure_is_an_error() {
         let heap = Heap::new();
