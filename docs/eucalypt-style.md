@@ -70,22 +70,32 @@ Fix with parens around the catenation: `(k > 0) ∧ (xs non-nil?)`, `(xs tail) +
 - Use `;` (compose) for point-free function definitions and embedding
   in pipelines: `abs ; (+ 1)`. 
 - `∘` is also acceptable, particularly in mathematical of strongly FP contexts
-- Partial application for pipeline steps: `map(area(p))`, `filter(v-spans(y))`.
+- Partial application for pipeline steps: `map(area(ps head))`, `filter(spans?(j))`.
 
 ## Parameter order
 
 Choose parameter order to support partial application and pipeline style:
 
-- Put the "data" or "collection" parameter **last** so that partially applied functions slot into pipelines: `g remove-node("dac") count-paths("svr")` reads as a pipeline of transformations.
-- Put "configuration" or "small" parameters **first** so they can be fixed early: `map(lookup-count(table))`, `foldl(dp-step(g), {}, order)`.
-- If a function will be used as a `foldl` accumulator, match the `(acc, elem)` signature: `dfs-topo(g, state, node)` allows `foldl(dfs-topo(g), init, nodes)`.
+- Put the "data" or "collection" parameter **last** so that partially applied functions slot into pipelines: `rank-point(rx, ry, [x, y])` takes the point last, so `pts map(rank-point(rx, ry))` reads as a pipeline step.
+- Put "configuration" or "small" parameters **first** so they can be fixed early: `edges filter(spans?(j))`, `forbidden-sets par-map(count-paths(parse-graph(data), "svr"))`.
+- If a function will be used as a `foldl` accumulator, match the `(acc, elem)` signature: `upgrade-with(ok?, p, best, q)` allows `qs foldl-strict(upgrade-with(ok?, p), 0)`.
+
+The examples above are from `examples/aoc25/` (days 9 and 11). In miniature:
+
+```eu
+` "Is row `j` within the half-open span of vertical edge `[x, y-lo, y-hi]`?"
+spans?(j, [_, y-lo, y-hi]): y-lo <= j ∧ j < y-hi
+
+edges: [[0, 0, 4], [3, 2, 6], [5, 5, 9]]
+crossings: edges filter(spans?(3)) map(first) //=> [0, 3]
+```
 
 When in doubt, ask: "how will this function most commonly be called?" and put the varying argument last.
 
 ## Naming
 
-- Predicates end with `?`: `vertical?`, `nil?`, `at-y`.
-- Use descriptive names: `make-edges` not `mk-edges`.
+- Predicates end with `?`: `vertical?`, `nil?`, `spans?`.
+- Use descriptive names: `vertical-edges` not `v-edges`.
 
 ## Recursion
 
@@ -120,7 +130,7 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 
 - Use blocks for local bindings: `{ x: ... y: ... }.(x + y)`, but limit to one block, do not stack this construct
 - Keep block "results"" in `.(...)` concise, preferably simple pipelines or expressions, or even just `{...}.result`
-- **Dynamic generalised lookup**: a function can return a block whose names are then used as a namespace for subsequent pipelines, e.g. `prepare(data).( edges take(k) ... )`. Use very sparingly — it can defeat static analysis. Never nest or stack dynamic lookups.
+- **Dynamic generalised lookup**: a function can return a block whose names are then used as a namespace for subsequent pipelines, e.g. `prepare(w, data).(edges take(k) ...)` (`examples/aoc25/day08.eu`). Use very sparingly — it can defeat static analysis. Never nest or stack dynamic lookups.
 - **Monadic blocks in lookup chains**: a monadic block after `.` gets implicit return and sees the LHS bindings. Use parens if you need an explicit return expression in lookup position: `ctx.(({ :let ... }.(expr)))`.
 - **Capture scope with local bindings**: when helpers share parameters, move them inside a block so they capture from scope rather than threading parameters explicitly:
   ```eu,notest
