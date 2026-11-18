@@ -648,9 +648,6 @@ fn parse_yaml_number(text: &str, tag: &Tag) -> Option<serde_json::Number> {
     None
 }
 
-/// Parse a core-schema int (`[-+]?[0-9]+`, `0o[0-7]+`, `0x[0-9a-fA-F]+`)
-/// exactly: an i64 when it fits, else a u64, else a float. `None` for any
-/// other text.
 /// A float for octal or hex `digits` too large even for u128, as a decimal
 /// int that large gives (the digits are already checked).
 fn radix_digits_to_float(digits: &str, radix: u32) -> Option<serde_json::Number> {
@@ -660,6 +657,9 @@ fn radix_digits_to_float(digits: &str, radix: u32) -> Option<serde_json::Number>
     serde_json::Number::from_f64(value)
 }
 
+/// Parse a core-schema int (`[-+]?[0-9]+`, `0o[0-7]+`, `0x[0-9a-fA-F]+`)
+/// exactly: an i64 when it fits, else a u64, else a float. `None` for any
+/// other text.
 fn parse_yaml_int(text: &str) -> Option<serde_json::Number> {
     // `from_str_radix` accepts a leading sign, which the core schema does
     // not allow after a prefix (`0x+1F`), so check every digit first.

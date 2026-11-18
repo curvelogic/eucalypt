@@ -4675,11 +4675,8 @@ pub mod tests {
         assert_eq!(state.lines_since_gc - before, 3 * LINE_COUNT + 1);
     }
 
-    /// A large object the system allocator cannot provide is a
-    /// `BlockAllocationFailed` error (an `ExecutionError` once converted),
-    /// not a process abort, and leaves the heap's accounting untouched
-    /// (eu-oaz72.99, eu-oaz72.101). No .eu program can make the allocator
-    /// fail reliably, so a size no layout can describe stands in for it.
+    /// When the system allocator refuses a large object block, the recycled
+    /// blocks held for reuse are released before the refusal is reported.
     #[test]
     fn test_refused_large_object_releases_recycled_blocks() {
         let heap = Heap::new();
@@ -4693,6 +4690,11 @@ pub mod tests {
         assert_eq!(state.recycled_lobs.len(), 0);
     }
 
+    /// A large object the system allocator cannot provide is a
+    /// `BlockAllocationFailed` error (an `ExecutionError` once converted),
+    /// not a process abort, and leaves the heap's accounting untouched
+    /// (eu-oaz72.99, eu-oaz72.101). No .eu program can make the allocator
+    /// fail reliably, so a size no layout can describe stands in for it.
     #[test]
     fn test_large_object_allocation_failure_is_an_error() {
         let heap = Heap::new();
