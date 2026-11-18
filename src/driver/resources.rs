@@ -2,6 +2,7 @@
 //!
 //! These are named by Locator::Resource locators.
 use std::collections::HashMap;
+use std::iter;
 
 /// Raw bytes of the pre-compiled prelude blob, embedded at compile time.
 ///
@@ -73,6 +74,34 @@ impl Resources {
         Some((name, self.content.get(name)?))
     }
 
+    /// The baked-in library a filesystem import path names, if it names
+    /// one: the path must be exactly a library's canonical file name — a
+    /// single component, with the `.eu` extension or none, whose stem is
+    /// the prelude or an embedded eucalypt library (`lens.eu`, `test.eu`,
+    /// or `prelude` as `{ import: "[prelude]" }` spells it).
+    ///
+    /// This is the only spelling that may fall back to the shipped library
+    /// when no such file exists on disk (eu-7tlbg). Any other path that
+    /// merely shares a library's stem — `lib/test.eu`, `./lens.eu`,
+    /// `test.yaml` — means the user's own file, and a missing one
+    /// is an error rather than a silent substitution. The data resources
+    /// (`package`, `build-meta`) are reachable only as `resource:` locators.
+    pub fn library_for_import_path(path: &std::path::Path) -> Option<&'static str> {
+        use std::path::Component;
+        let mut components = path.components();
+        let (Some(Component::Normal(file)), None) = (components.next(), components.next()) else {
+            return None;
+        };
+        let file = std::path::Path::new(file);
+        if file.extension().is_some_and(|ext| ext != "eu") {
+            return None;
+        }
+        let stem = file.file_stem()?.to_str()?;
+        iter::once("prelude")
+            .chain(Self::eu_library_names())
+            .find(|name| *name == stem)
+    }
+
     /// Retrieve the resource identified by `name`, None if it doesn't
     /// exist.
     pub fn get<S: AsRef<str>>(&self, name: S) -> Option<&String> {
@@ -85,5 +114,50 @@ impl Resources {
     #[cfg(test)]
     pub(crate) fn insert<S: Into<String>>(&mut self, name: S, text: String) {
         self.content.insert(name.into(), text);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    /// eu-7tlbg: only a shipped library's bare canonical name (with `.eu`
+    /// or no extension) names it; a path that merely shares its stem does
+    /// not. Pure path classification, independent of the filesystem.
+    #[test]
+    fn test_library_for_import_path_accepts_only_canonical_names() {
+        for (path, library) in [
+            ("lens.eu", "lens"),
+            ("test.eu", "test"),
+            ("prelude.eu", "prelude"),
+            ("prelude", "prelude"),
+            ("markup", "markup"),
+        ] {
+            assert_eq!(
+                Resources::library_for_import_path(Path::new(path)),
+                Some(library),
+                "{path}"
+            );
+        }
+        for path in [
+            "sub/test.eu",
+            "./lens.eu",
+            "/abs/state.eu",
+            "../lens.eu",
+            "test.yaml",
+            "lens.txt",
+            "sub/lens",
+            "package.eu",
+            "build-meta.eu",
+            "helpers.eu",
+            "",
+        ] {
+            assert_eq!(
+                Resources::library_for_import_path(Path::new(path)),
+                None,
+                "{path}"
+            );
+        }
     }
 }

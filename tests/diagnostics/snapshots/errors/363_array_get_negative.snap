@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/349_array_get_negative
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/349_array_get_negative.eu
+fixture: errors/363_array_get_negative
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/363_array_get_negative.eu
 prelude-modes: divergent
 
 === blob prelude ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/349_array_get_negative.eu:2:40
+primary: user tests/harness/errors/363_array_get_negative.eu:2:40
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -19,7 +19,7 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: arr.get coordinate -1 must be non-negative
-  ┌─ tests/harness/errors/349_array_get_negative.eu:2:40
+  ┌─ tests/harness/errors/363_array_get_negative.eu:2:40
   │
 2 │ r: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([0, -1])
   │                                        ^^^^^^^^^^^^^^^^
@@ -29,7 +29,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/349_array_get_negative.eu:2:40
+primary: user tests/harness/errors/363_array_get_negative.eu:2:40
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -40,7 +40,7 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: arr.get coordinate -1 must be non-negative
-  ┌─ tests/harness/errors/349_array_get_negative.eu:2:40
+  ┌─ tests/harness/errors/363_array_get_negative.eu:2:40
   │
 2 │ r: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([0, -1])
   │                                        ^^^

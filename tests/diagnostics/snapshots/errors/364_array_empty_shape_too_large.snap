@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/350_array_empty_shape_too_large
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/350_array_empty_shape_too_large.eu
+fixture: errors/364_array_empty_shape_too_large
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/364_array_empty_shape_too_large.eu
 prelude-modes: divergent
 
 === blob prelude ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/350_array_empty_shape_too_large.eu:2:4
+primary: user tests/harness/errors/364_array_empty_shape_too_large.eu:2:4
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -19,20 +19,20 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: arr.zeros: empty array shape [1000000000000000000, 0] has too many sub-arrays — the dimensions of an empty array other than 0 may multiply to at most 536870911
-  ┌─ tests/harness/errors/350_array_empty_shape_too_large.eu:2:4
+  ┌─ tests/harness/errors/364_array_empty_shape_too_large.eu:2:4
   │
 2 │ a: arr.zeros[1000000000000000000, 0]
   │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
-    - a at 350_array_empty_shape_too_large.eu:2:4
+    - a at 364_array_empty_shape_too_large.eu:2:4
 
 === --source-prelude ===
 exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/350_array_empty_shape_too_large.eu:2:4
+primary: user tests/harness/errors/364_array_empty_shape_too_large.eu:2:4
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -43,10 +43,10 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: arr.zeros: empty array shape [1000000000000000000, 0] has too many sub-arrays — the dimensions of an empty array other than 0 may multiply to at most 536870911
-  ┌─ tests/harness/errors/350_array_empty_shape_too_large.eu:2:4
+  ┌─ tests/harness/errors/364_array_empty_shape_too_large.eu:2:4
   │
 2 │ a: arr.zeros[1000000000000000000, 0]
   │    ^^^
   │
   = while evaluating (outermost first):
-    - a at 350_array_empty_shape_too_large.eu:2:4
+    - a at 364_array_empty_shape_too_large.eu:2:4
