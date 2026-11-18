@@ -115,7 +115,7 @@ jobs:
           cargo build --release
           python3 scripts/test-doc-examples.py --eu ./target/release/eu --timeout 30
 
-  test-source-prelude:
+  test-suite-source-prelude:
     # The source-prelude half of the full `cargo test` matrix (eu-5yn9v). No
     # `lib/prelude.blob` exists here — it is gitignored and this job never
     # generates one — so every test runs on the source-prelude fallback, and
