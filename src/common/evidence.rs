@@ -99,13 +99,17 @@ impl<'a> LabelSource<'a> {
 /// The significant tokens of `text` as the eucalypt lexer reads them:
 /// whitespace and comments are dropped.
 pub fn tokens(text: &str) -> Vec<(SyntaxKind, &str)> {
-    Lexer::from_text(text)
+    lexemes(text)
         .filter(|(k, _)| !matches!(k, WHITESPACE | COMMENT))
-        .filter_map(|(k, span)| {
-            text.get(span.start().to_usize()..span.end().to_usize())
-                .map(|t| (k, t))
-        })
         .collect()
+}
+
+/// Every lexeme of `text` with its kind, whitespace and comments included.
+fn lexemes(text: &str) -> impl Iterator<Item = (SyntaxKind, &str)> {
+    Lexer::from_text(text).filter_map(|(k, span)| {
+        text.get(span.start().to_usize()..span.end().to_usize())
+            .map(|t| (k, t))
+    })
 }
 
 /// Whether a pair of tokens is a `.` lookup of a key name: `.name`.
@@ -263,20 +267,17 @@ fn widen_over_parens(source: &str, mut start: usize, mut end: usize) -> Option<(
 /// including one at the start
 /// (eu-oaz72.133). `text` runs between atom boundaries, so it never starts
 /// or ends inside a token.
-fn one_line(text: &str) -> String {
+pub fn one_line(text: &str) -> String {
     if !text.contains('\n') && !text.contains('#') {
         return text.to_string();
     }
     let mut out = String::with_capacity(text.len());
     let mut gap = false;
-    for (kind, span) in Lexer::from_text(text) {
+    for (kind, token) in lexemes(text) {
         if matches!(kind, WHITESPACE | COMMENT) {
             gap = true;
             continue;
         }
-        let Some(token) = text.get(span.start().to_usize()..span.end().to_usize()) else {
-            continue;
-        };
         // A leading gap is kept too: the rest of a step, ` = 1`, starts
         // with one.
         if gap {

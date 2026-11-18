@@ -129,12 +129,13 @@ Literal types are most useful in **discriminated unions** — type aliases
 where a tag field distinguishes variants:
 
 ```eu,notest
-{ types: { Shape: c"{{type: \"circle\", radius: number, ..}} | {{type: \"rect\", w: number, h: number, ..}}" } }
+{ types: { Shape: c"\{type: \"circle\", radius: number, ..\} | \{type: \"rect\", w: number, h: number, ..\}" } }
 ```
 
 Because writing complex union types inline is verbose, defining a `types:`
 alias is the recommended approach. (Note the `c"..."` **c-string** — see
-*Writing literal types in annotation strings* below.)
+*Writing literal types in annotation strings* below. In a c-string a
+literal brace is written `\{` and `\}`: `{{` is not an escape there.)
 
 **Subtyping rules**:
 - `"foo"` is consistent with `string` — a literal satisfies a string parameter
@@ -342,39 +343,46 @@ lookup(:naem, person)   # warning: unknown record key :naem (key typo in closed 
 - **Closed record + known key** → exact field type.
 - **Closed record + absent key** → `any` + a static warning (key typo caught before runtime).
 - **Open record + absent key** → `any`, no warning (the key may be present at runtime).
-- **`Dict(V)` + any literal key** → `V`.
+- **`block(V)` + any literal key** → `V`.
 - **Non-literal key** → `any` (key value unknown at check time; may fail at runtime).
 
-### Dict
+### block(T)
 
-`Dict(T)` represents a homogeneous block — a block where every value has
+`block(T)` represents a homogeneous block — a block where every value has
 the same type `T`. Use this when you know what the values are but not what
 the keys are:
 
 ```eu,notest
-` { type: "Dict(number)" }
+` { type: "block(number)" }
 scores: { alice: 95 bob: 87 carol: 92 }
 ```
 
-Key prelude functions are annotated with `Dict` types:
+Bare `block` means `block(any)`: any block at all, the same as `{..}`.
 
-| Function     | Type                              |
-|--------------|-----------------------------------|
-| `map-values` | `(a -> b) -> Dict(a) -> Dict(b)`  |
-| `values`     | `Dict(a) -> [a]`                  |
-| `keys`       | `Dict(a) -> [symbol]`             |
-| `group-by`   | `(a -> any) -> [a] -> Dict([a])`  |
+Key prelude functions are annotated with `block` types:
 
-A closed record is a subtype of the corresponding `Dict` type when all
-its field values share a common type. An open or annotated-Dict record is
-consistent with `Dict(T)` for gradual typing purposes.
+| Function     | Type                                |
+|--------------|-------------------------------------|
+| `map-values` | `(a -> b) -> block(a) -> block(b)`  |
+| `values`     | `block(a) -> [a]`                   |
+| `keys`       | `block(a) -> [symbol]`              |
+| `group-by`   | `(a -> any) -> [a] -> block([a])`   |
+
+A closed record is a subtype of the corresponding `block(T)` type when
+all its field values share a common type. An open record, or a record
+annotated `block(T)`, is consistent with `block(T)` for gradual typing
+purposes.
+
+`Dict(T)` is the old spelling of `block(T)`. It is still accepted for one
+release and means the same type, but each annotation or alias that uses it
+draws a warning pointing to `block(T)`.
 
 ### dict(k, v)
 
 `dict(k, v)` — lowercase, with two parameters — is the type of a
 [dict](dicts.md), the persistent dictionary ordered by key, with keys of
 type `k` and values of type `v`. It is a different type from the block type
-`Dict(T)` above. Bare `dict` means `dict(any, any)`. A dict is persistent,
+`block(T)` above. Bare `dict` means `dict(any, any)`. A dict is persistent,
 so `dict(k, v)` is covariant in both parameters: a `dict(number, never)` is
 a `dict(number, string)`.
 
@@ -428,7 +436,7 @@ remaining fields.
 #### Inference for unannotated block combinators (B9)
 
 When a lambda parameter is **used as a block** — projected (`.field`),
-merged (`merge`/`over`), or passed to a block-typed function — the
+merged (`merge`), or passed to a block-typed function — the
 checker allocates a fresh row variable for it automatically, even
 without an explicit `type:` annotation.
 
@@ -444,6 +452,22 @@ result: base f(ext)   # result : {x: number, y: string}
 The checker uses a **use-driven** approach: only parameters that appear
 in a block position acquire row variables. Parameters used arithmetically
 (`x + y`) stay `any`, avoiding spurious warnings.
+
+A projection that only runs when the parameter is already a block does
+not count. In a branch guarded by `block?` on that parameter, the
+parameter is left `any`, so other arguments are still accepted. The
+guarded branch is the first arm of `then` or `if` under `x block?` (the
+second under `x block? not`), the second argument of `and(x block?, …)`,
+or the second argument of `or(x block? not, …)`. `cond` clauses are not
+recognised:
+
+```eu,notest
+h(x): x block? then(x.a, 0)
+h(3)           # no warning: x.a only runs for a block
+```
+
+A projection on the unguarded side, or of a different parameter inside
+the guarded branch, still counts.
 
 ### Functions
 
@@ -478,13 +502,13 @@ no special syntax is needed. Define recursive aliases with the `types:`
 metadata key:
 
 ```eu,notest
-{ types: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
+{ types: { Json: "number | string | bool | null | [Json] | block(Json)" } }
 
 ` { type: "Json → string" }
 describe: str.from
 ```
 
-`Json` unfolds to `number | string | bool | null | [Json] | Dict(Json)`,
+`Json` unfolds to `number | string | bool | null | [Json] | block(Json)`,
 and any value whose type is a subtype of any variant passes without
 warning.  The type always *displays* as its alias name (`Json`) — never
 as the (infinite) unfolded form.
@@ -546,7 +570,7 @@ the type string) still works for kind-`*` variables.
 | `forall (m :: * -> *) a. m a -> m a` | Identity for any unary functor |
 | `forall a. a -> a`  | Polymorphic identity                       |
 
-The built-in constructors `List`, `IO`, `Dict`, `NonEmpty`, `Random`,
+The built-in constructors `List`, `IO`, `block`, `NonEmpty`, `Random`,
 and `State` all have kind `* -> *`.  `Lens` and `Traversal` have kind
 `* -> * -> *`.
 
@@ -571,7 +595,7 @@ Partial functions use the postfix `?` sugar in their type signatures:
 ```
 nth      : number → [a] → a?         # may raise an error if index out of range
 parse-as : symbol → string → any?    # may raise an error if string is not valid
-lookup   : symbol → Dict(a) → a?     # may raise an error if key not found
+lookup   : symbol → block(a) → a?     # may raise an error if key not found
 ```
 
 `T?` is display sugar for `T | ExecutionError`.  The two forms are
@@ -1162,7 +1186,7 @@ b: { tags: [1, 2] }     match?(spec)   # => false
 | Closed record            | `{k: T}`                                         |
 | Named row variable       | `{k: T, ..r}` (`{{k: T, ..r}}` in string)       |
 | Row concatenation        | `{..r, ..s}` (`{{..r, ..s}}` in string)          |
-| Homogeneous dict         | `Dict(T)`                                        |
+| Homogeneous block        | `block(T)`; bare `block` = `{..}`                |
 | Ordered dict (`dict.*`)  | `dict(k, v)`; bare `dict` = `dict(any, any)`     |
 | IO action                | `IO(T)`                                          |
 | Lens                     | `Lens(a, b)`                                     |

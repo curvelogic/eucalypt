@@ -1,0 +1,2 @@
+` "Type data is not a string, so it is not a set element (eu-oaz72.144)"
+a: set.of[s"number"]

@@ -374,10 +374,11 @@ pub fn prepare(
                     name_to_slot: &b.name_to_slot,
                     sigs: &b.demand_signatures,
                 });
-        let (annotated, sigs, named_sigs) =
+        let (annotated, sigs) =
             crate::core::analyse_demand::analyse_demands_with_prelude(&c.expr, prelude);
         dump_core(annotated.clone(), opt)?;
-        // Print demand annotations for all let-bound names.
+        // Print demand annotations for all let-bound names, with each
+        // let-bound lambda's signature.
         let mut out = io::stdout().lock();
         writeln!(out, "\n-- demand annotations --")?;
         crate::core::analyse_demand::print_demands(&annotated, &mut out)?;
@@ -389,21 +390,6 @@ pub fn prepare(
                 .map(|d| format!("({:?},{:?})", d.strictness, d.cardinality))
                 .collect();
             writeln!(out, "  {:016x}: [{}]", key, demands.join(", "))?;
-        }
-        // Print named signature table.
-        writeln!(
-            out,
-            "\n-- named signature table ({} entries) --",
-            named_sigs.len()
-        )?;
-        let mut named_sigs: Vec<_> = named_sigs.into_iter().collect();
-        named_sigs.sort_by(|a, b| a.0.cmp(&b.0));
-        for (name, sig) in &named_sigs {
-            let demands: Vec<String> = sig
-                .iter()
-                .map(|d| format!("({:?},{:?})", d.strictness, d.cardinality))
-                .collect();
-            writeln!(out, "  {}: [{}]", name, demands.join(", "))?;
         }
         return Ok(Command::Exit);
     }

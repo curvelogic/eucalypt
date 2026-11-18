@@ -274,9 +274,10 @@ impl<'smap> Receiver<'smap> {
             Tag::Null => Ok(core::null(smid)),
             Tag::Bool => Ok(core::bool_(smid, parse_bool(&text))),
             Tag::Str => Ok(core::str(smid, text)),
-            Tag::Int | Tag::Float => serde_json::Number::from_str(&text)
-                .map_err(|_e| SourceError::InvalidNumber(text, self.file_id, span))
-                .map(|n| core::num(smid, n)),
+            Tag::Int | Tag::Float => match parse_yaml_number(&text, &tag) {
+                Some(n) => Ok(core::num(smid, n)),
+                None => Err(SourceError::InvalidNumber(text, self.file_id, span)),
+            },
             Tag::Timestamp => {
                 if self.data_only {
                     // In data-only mode, return timestamps as plain strings
@@ -567,6 +568,11 @@ impl Tag {
     }
 }
 
+/// A core-schema float with digits (no `.inf` or `.nan`, which a number
+/// cannot hold). Shared by tag inference and `!!float` parsing, so the two
+/// cannot drift apart.
+const YAML_FLOAT_REGEX: &str = r"^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$";
+
 lazy_static! {
     /// Compiled regex set for YAML scalar tag inference.
     /// Compiled once and reused for all plain scalar processing.
@@ -582,11 +588,15 @@ lazy_static! {
         r"^[-+]?[0-9]+$",
         r"^0o[0-7]+$",
         r"^0x[0-9a-fA-F]+$",
-        r"^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$",
+        YAML_FLOAT_REGEX,
         r"^[-+]?(\.inf|\.Inf|\.INF)$",
         r"^\.nan|\.NaN|\.NAN$",
     ])
     .expect("YAML scalar patterns should compile");
+
+    /// [`YAML_FLOAT_REGEX`], compiled for `!!float` parsing.
+    static ref YAML_FLOAT_PATTERN: Regex =
+        Regex::new(YAML_FLOAT_REGEX).expect("YAML float pattern should compile");
 
     /// Compiled regex for YAML timestamp detection.
     /// Compiled once and reused for all plain scalar processing.
@@ -609,6 +619,96 @@ fn infer_tag_for_plain_scalar(text: &str) -> Tag {
         Tag::Timestamp
     } else {
         Tag::Str
+    }
+}
+
+/// Parse a scalar resolved as an int or float, by the YAML 1.2 core
+/// schema: a decimal int may have a sign and leading zeros (`07` and `-07`
+/// are 7 and -7, not octal), `0o` and `0x` prefix octal and hexadecimal
+/// ints, and a float may omit digits either side of its point (`.5`, `1.`)
+/// or carry a `+` sign. Anything else falls back to the JSON number rule,
+/// which an explicit `!!int 3.5` or `!!float 7` still uses. Ints beyond the
+/// u64 range become floats, as JSON numbers do; `None` when the text is not
+/// a finite number.
+fn parse_yaml_number(text: &str, tag: &Tag) -> Option<serde_json::Number> {
+    if *tag == Tag::Int {
+        if let Some(n) = parse_yaml_int(text) {
+            return Some(n);
+        }
+    }
+    if let Ok(n) = serde_json::Number::from_str(text) {
+        return Some(n);
+    }
+    if *tag == Tag::Float && YAML_FLOAT_PATTERN.is_match(text) {
+        return text
+            .parse::<f64>()
+            .ok()
+            .and_then(serde_json::Number::from_f64);
+    }
+    None
+}
+
+/// A float for octal or hex `digits` too large even for u128, as a decimal
+/// int that large gives (the digits are already checked).
+fn radix_digits_to_float(digits: &str, radix: u32) -> Option<serde_json::Number> {
+    let value = digits.chars().fold(0.0_f64, |acc, c| {
+        acc * f64::from(radix) + f64::from(c.to_digit(radix).unwrap_or(0))
+    });
+    serde_json::Number::from_f64(value)
+}
+
+/// Parse a core-schema int (`[-+]?[0-9]+`, `0o[0-7]+`, `0x[0-9a-fA-F]+`)
+/// exactly: an i64 when it fits, else a u64, else a float. `None` for any
+/// other text.
+fn parse_yaml_int(text: &str) -> Option<serde_json::Number> {
+    // `from_str_radix` accepts a leading sign, which the core schema does
+    // not allow after a prefix (`0x+1F`), so check every digit first.
+    let (magnitude, negative) = if let Some(oct) = text.strip_prefix("0o") {
+        if oct.is_empty() || !oct.bytes().all(|b| matches!(b, b'0'..=b'7')) {
+            return None;
+        }
+        match u128::from_str_radix(oct, 8) {
+            Ok(m) => (m, false),
+            Err(_) => return radix_digits_to_float(oct, 8),
+        }
+    } else if let Some(hex) = text.strip_prefix("0x") {
+        if hex.is_empty() || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        match u128::from_str_radix(hex, 16) {
+            Ok(m) => (m, false),
+            Err(_) => return radix_digits_to_float(hex, 16),
+        }
+    } else {
+        let (negative, digits) = match text.as_bytes().first()? {
+            b'-' => (true, &text[1..]),
+            b'+' => (false, &text[1..]),
+            _ => (false, text),
+        };
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        match digits.parse::<u128>() {
+            Ok(m) => (m, negative),
+            // Too many digits even for u128: a float, as JSON gives.
+            Err(_) => {
+                return text
+                    .parse::<f64>()
+                    .ok()
+                    .and_then(serde_json::Number::from_f64)
+            }
+        }
+    };
+    let value = i128::try_from(magnitude)
+        .ok()
+        .map(|m| if negative { -m } else { m });
+    match value {
+        Some(v) if i64::try_from(v).is_ok() => Some((v as i64).into()),
+        Some(v) if u64::try_from(v).is_ok() => Some((v as u64).into()),
+        _ => {
+            let f = magnitude as f64;
+            serde_json::Number::from_f64(if negative { -f } else { f })
+        }
     }
 }
 
@@ -1228,6 +1328,47 @@ z: !!int 1234232353
             }
             _ => panic!("Expected InvalidYaml error, got: {err:?}"),
         }
+    }
+
+    #[test]
+    pub fn test_core_schema_ints_and_floats() {
+        let int = |t: &str| parse_yaml_number(t, &Tag::Int);
+        let float = |t: &str| parse_yaml_number(t, &Tag::Float);
+        assert_eq!(int("07"), Some(7.into()));
+        assert_eq!(int("08"), Some(8.into()));
+        assert_eq!(int("-07"), Some((-7).into()));
+        assert_eq!(int("+7"), Some(7.into()));
+        assert_eq!(int("0o17"), Some(15.into()));
+        assert_eq!(int("0x1F"), Some(31.into()));
+        assert_eq!(int("-9223372036854775808"), Some(i64::MIN.into()));
+        assert_eq!(int("018446744073709551615"), Some(u64::MAX.into()));
+        assert!(int("18446744073709551616").unwrap().is_f64());
+        assert_eq!(int("0x"), None);
+        assert_eq!(int("0o8"), None);
+        // No sign after a prefix (`from_str_radix` alone would accept it).
+        assert_eq!(int("0x+1F"), None);
+        assert_eq!(int("0o+17"), None);
+        assert_eq!(int("0x-1F"), None);
+        // Above u128 a prefixed int is a float, as a decimal one is.
+        let big_hex = format!("0x1{}", "0".repeat(32));
+        assert_eq!(int(&big_hex), serde_json::Number::from_f64(2f64.powi(128)));
+        let big_oct = format!("0o1{}", "0".repeat(43));
+        assert_eq!(int(&big_oct), serde_json::Number::from_f64(2f64.powi(129)));
+        assert_eq!(int("3.5"), serde_json::Number::from_f64(3.5));
+        assert_eq!(float(".5"), serde_json::Number::from_f64(0.5));
+        assert_eq!(float("1."), serde_json::Number::from_f64(1.0));
+        assert_eq!(float("+12e03"), serde_json::Number::from_f64(12000.0));
+        assert_eq!(float(".inf"), None);
+        assert_eq!(float(".nan"), None);
+        // Plain `07` reads as the int 7; quoted it stays a string.
+        assert_eq!(
+            bound(parse("a: 07")),
+            bound(acore::default_let(vec![(free("a"), acore::num(7_u64))]))
+        );
+        assert_eq!(
+            bound(parse("a: \"07\"")),
+            bound(acore::default_let(vec![(free("a"), acore::str("07"))]))
+        );
     }
 
     #[test]

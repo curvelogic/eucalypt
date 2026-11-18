@@ -80,7 +80,7 @@ impl EucalyptError {
     /// wanted, so nothing went wrong.
     pub fn is_broken_pipe(&self) -> bool {
         match self {
-            EucalyptError::Io(e) => e.kind() == io::ErrorKind::BrokenPipe,
+            EucalyptError::Io(e) => crate::common::pipe::is_broken_pipe(e),
             EucalyptError::Execution(e) => e.is_output_stream_closed(),
             _ => false,
         }

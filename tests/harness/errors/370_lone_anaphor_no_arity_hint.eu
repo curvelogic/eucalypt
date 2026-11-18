@@ -1,0 +1,4 @@
+` "A lone anaphor's note replaces the hint about remaining arguments, which does not apply to the identity function; the call is quoted on one line, keeping the spaces inside a string (eu-oaz72.141)"
+f(s, n): n + 1
+x: f("a  b",
+     _)

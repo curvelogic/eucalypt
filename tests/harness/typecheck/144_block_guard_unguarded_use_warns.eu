@@ -1,0 +1,4 @@
+` "A projection on the unguarded side of a block? test is still a block use: a number argument warns (eu-oaz72.194)."
+h(x): x block? then(0, x.a)
+
+bad: h(3)

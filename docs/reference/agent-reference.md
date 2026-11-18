@@ -362,8 +362,8 @@ non-function binding emits a warning and is skipped.
 | `{{k: T, ..r}}`    | named row variable (extra fields in r) |
 | `{{..r, ..s}}`     | row concatenation (union of r and s)   |
 | `{{k: T}}`         | closed record                          |
-| `block`            | any block (no known shape)             |
-| `Dict(T)`          | homogeneous block — all values type T  |
+| `block`            | any block (no known shape), = `{..}`   |
+| `block(T)`         | homogeneous block — all values type T (`Dict(T)` deprecated) |
 | `"value"`          | literal string — subtype of `string`; c-string escapes for the quotes: `c"\"value\""` |
 | `:name`            | literal symbol — subtype of `symbol`   |
 | `A -> B`           | function                               |
@@ -405,7 +405,7 @@ prelude functions are partial by nature:
 ```
 nth      : number → [a] → a?         # out-of-range index
 parse-as : symbol → string → any?    # invalid input format
-lookup   : symbol → Dict(a) → a?     # key not found
+lookup   : symbol → block(a) → a?     # key not found
 ```
 
 A partial result flowing into `any` (unannotated code) is **silent** —
@@ -912,7 +912,7 @@ A dict renders as a mapping in key order (number keys as their rendered
 text, string keys as their text, symbol keys as their name); a list key, or
 two keys with the same text (`1` and `"1"`), is an error, so render
 `dict.to-list` for those. Type: `dict(k, v)`, bare `dict` = `dict(any, any)`;
-not the block type `Dict(T)`.
+not the block type `block(T)`.
 
 ### 3.3 String Functions (str namespace)
 
@@ -1052,9 +1052,8 @@ catenation) — navigate with `(xs nth(2)).port` or a lens.
 - A malformed **spec** raises `panic("validate: not a type spec")` — a
   different error from a contract violation, so a schema typo cannot
   masquerade as bad data.
-- Literal types (`"prod"`, `:ok`) are checked by equality here but **not**
-  by `as-spec`, which matches anything for them (a known
-  defect).
+- Literal types (`"prod"`, `:ok`) are checked by equality, here and by
+  `as-spec` alike.
 
 See [Structural Contracts](../guide/contracts.md).
 

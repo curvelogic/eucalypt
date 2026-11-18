@@ -1,0 +1,6 @@
+# A `types:` alias written as an s-string with the deprecated `Dict(T)`
+# warns (eu-oaz72.129).
+{ types: { Scores: s"Dict(number)" } }
+
+` { type: "Scores" }
+scores: { alice: 95 bob: 87 }

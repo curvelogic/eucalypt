@@ -1,0 +1,54 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/367_function_operand_string_intrinsic
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/367_function_operand_string_intrinsic.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/367_function_operand_string_intrinsic.eu:3:17
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: received a function where string was expected
+  ┌─ tests/harness/errors/367_function_operand_string_intrinsic.eu:3:17
+  │
+3 │ p: str.to-upper(add(1))
+  │                 ^^^^^^
+  │
+  = while evaluating (outermost first):
+    - p at 367_function_operand_string_intrinsic.eu:3:4
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/367_function_operand_string_intrinsic.eu:3:17
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: received a function where string was expected
+  ┌─ tests/harness/errors/367_function_operand_string_intrinsic.eu:3:17
+  │
+3 │ p: str.to-upper(add(1))
+  │    -------------^^^^^^-
+  │    │
+  │    called from here
+  │
+  = while evaluating (outermost first):
+    - p at 367_function_operand_string_intrinsic.eu:3:4
