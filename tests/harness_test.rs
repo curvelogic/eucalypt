@@ -3471,6 +3471,33 @@ pub fn test_242_fmt_leading_docstring() {
 }
 
 #[test]
+/// eu-oaz72.150: `eu fmt --reformat` laid out nested blocks and lists on one
+/// line by their own width, ignoring the column they start at, so nested
+/// lines passed the width. Every line of the reformatted file fits in 80
+/// columns, a second pass changes nothing, and the reformatted copy passes.
+pub fn test_337_fmt_line_width() {
+    let name = "337_fmt_line_width.eu";
+    run_test(&opts(name));
+
+    let source = std::fs::read_to_string(format!("tests/harness/{name}")).unwrap();
+    let formatted = reformat_round_trip(name, &source);
+    for line in formatted.lines() {
+        assert!(
+            line.chars().count() <= 80,
+            "{name}: reformatted line is wider than 80 columns: {line:?}\n{formatted}"
+        );
+    }
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join(name);
+    std::fs::write(&path, formatted).unwrap();
+    let reformatted_opts = EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str(path.to_str().unwrap()).unwrap()])
+        .build();
+    run_test(&reformatted_opts);
+}
+
+#[test]
 /// eu-oaz72.6: every shipped library and AoC 2025 example reformats to
 /// source that parses and reformats to itself.
 pub fn test_235_oaz72_6_reformat_corpus_round_trip() {

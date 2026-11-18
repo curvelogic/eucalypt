@@ -1,0 +1,32 @@
+"`eu fmt --reformat` line width (eu-oaz72.150). The formatter chose a
+single-line layout for a nested block or list by its own width alone, not
+the column it starts at, so lines nested a few levels deep passed the
+width. tests/harness_test.rs reformats this file, checks every line fits
+in 80 columns and that a second pass changes nothing, and runs the
+reformatted copy, so each check below must survive formatting."
+
+config: {
+  service: {
+    primary-endpoint: {
+      scheme: "https"
+      host: "api.service.example.org"
+      port: 8443
+    }
+    service-labels: ["frontend-service", "backend-service", "database-service-x"]
+    request-limits: {
+      retries: 3
+      timeout-seconds: 120
+      backoff-milliseconds: 2500
+    }
+  }
+  matrix-of-values: [[1, 2], ["alpha", "beta-two", "gamma-four-five-six"]]
+}
+
+checks: {
+  endpoint-kept: config.service.primary-endpoint.port = 8443
+  labels-kept: (config.service.service-labels count) = 3
+  limits-kept: config.service.request-limits.backoff-milliseconds = 2500
+  matrix-kept: (config.matrix-of-values last last) = "gamma-four-five-six"
+}
+
+RESULT: checks values all-true? then(:PASS, :FAIL)
