@@ -577,11 +577,12 @@ fn extract_children(decl: &ast::Declaration) -> Vec<DocEntry> {
         if let ast::Element::Block(block) = element {
             for inner_decl in block.declarations() {
                 if let Some(mut child) = entry_from_declaration(&inner_decl) {
-                    // A nested member is only a sub-namespace when it is
-                    // documented and its body is exactly one block literal.
-                    // Scoping blocks (`m: { helper: 1 }.result`) and plain
+                    // A nested member is only a sub-namespace when its body
+                    // is exactly one block literal and it, or some public
+                    // member within it, is documented. Scoping blocks
+                    // (`m: { helper: 1 }.result`) and undocumented plain
                     // data blocks stay opaque.
-                    if child.doc.is_none() || !is_bare_block(&inner_decl) {
+                    if !is_bare_block(&inner_decl) || !has_docs(&child) {
                         child.children.clear();
                     }
                     qualify_namespace(&mut child, &namespace);
@@ -591,6 +592,13 @@ fn extract_children(decl: &ast::Declaration) -> Vec<DocEntry> {
         }
     }
     children
+}
+
+/// Whether `entry` or any of its retained members, at any depth, is public
+/// and carries a doc string. A doc string on a non-public member is never
+/// rendered, so it does not make its block a namespace.
+fn has_docs(entry: &DocEntry) -> bool {
+    entry.is_public() && (entry.doc.is_some() || entry.children.iter().any(has_docs))
 }
 
 /// Whether a declaration's body is exactly one block literal.

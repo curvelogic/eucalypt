@@ -526,13 +526,12 @@ impl<'a> Executor<'a> {
                 });
                 #[cfg(target_arch = "wasm32")]
                 let prelude = None;
-                let (annotated, _signatures, named_signatures) =
+                let (annotated, _signatures) =
                     crate::core::analyse_demand::analyse_demands_with_prelude(
                         &self.evaluand,
                         prelude,
                     );
                 self.evaluand = annotated;
-                stg_settings.user_demand_sigs = named_signatures;
                 stats.timings_mut().record("demand-analysis", t.elapsed());
             }
 

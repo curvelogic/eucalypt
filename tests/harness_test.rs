@@ -3471,6 +3471,33 @@ pub fn test_242_fmt_leading_docstring() {
 }
 
 #[test]
+/// eu-oaz72.150: `eu fmt --reformat` laid out nested blocks and lists on one
+/// line by their own width, ignoring the column they start at, so nested
+/// lines passed the width. Every line of the reformatted file fits in 80
+/// columns, a second pass changes nothing, and the reformatted copy passes.
+pub fn test_337_fmt_line_width() {
+    let name = "337_fmt_line_width.eu";
+    run_test(&opts(name));
+
+    let source = std::fs::read_to_string(format!("tests/harness/{name}")).unwrap();
+    let formatted = reformat_round_trip(name, &source);
+    for line in formatted.lines() {
+        assert!(
+            line.chars().count() <= 80,
+            "{name}: reformatted line is wider than 80 columns: {line:?}\n{formatted}"
+        );
+    }
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join(name);
+    std::fs::write(&path, formatted).unwrap();
+    let reformatted_opts = EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str(path.to_str().unwrap()).unwrap()])
+        .build();
+    run_test(&reformatted_opts);
+}
+
+#[test]
 /// eu-oaz72.6: every shipped library and AoC 2025 example reformats to
 /// source that parses and reformats to itself.
 pub fn test_235_oaz72_6_reformat_corpus_round_trip() {
@@ -4766,6 +4793,39 @@ pub fn test_typecheck_139_block_fn_call_in_block_mismatch_warns() {
     run_typecheck_test("139_block_fn_call_in_block_mismatch_warns.eu");
 }
 
+/// `drop` with a literal count keeps a heterogeneous list's tuple shape, so
+/// mapping, filtering and indexing the suffix checks clean (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_140_tuple_drop_keeps_shape_no_warning() {
+    run_typecheck_test("140_tuple_drop_keeps_shape_no_warning.eu");
+}
+
+/// A genuine non-list left in a dropped tuple suffix still warns
+/// (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_141_tuple_drop_suffix_mismatch_warns() {
+    run_typecheck_test("141_tuple_drop_suffix_mismatch_warns.eu");
+}
+
+/// A precise tuple path that falls through on a non-tuple argument must not
+/// synthesise that argument twice: each of the three warnings appears once
+/// (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_142_tuple_projection_fallthrough_warns_once() {
+    let file = "142_tuple_projection_fallthrough_warns_once.eu";
+    run_typecheck_test(file);
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", &format!("tests/harness/typecheck/{file}")])
+        .output()
+        .expect("failed to run eu check");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let warnings = stderr
+        .lines()
+        .filter(|l| l.contains("expected [string], found [number]"))
+        .count();
+    assert_eq!(warnings, 3, "expected one warning per binding:\n{stderr}");
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]
@@ -4826,12 +4886,47 @@ pub fn test_doc_nested_namespaces() {
         .expect("failed to run eu doc");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(output.status.code(), Some(0), "{stdout}");
-    for pattern in ["#### `deep(x)`", "Deep function doc."] {
+    for pattern in [
+        "#### `deep(x)`",
+        "Deep function doc.",
+        // An undocumented sub-namespace keeps its documented members.
+        "#### `loud(x)`",
+        "Quiet member doc.",
+        // Headings clamp at level six rather than dropping deeper members.
+        "###### `l5`",
+        "###### `l1.l2.l3.l4.l5.l6`",
+        "###### `l1.l2.l3.l4.l5.l6.bottom(x)`\n\nBelow the last heading level.",
+    ] {
         assert!(stdout.contains(pattern), "missing {pattern:?}:\n{stdout}");
     }
-    for hidden in ["helper-hidden", "data-hidden"] {
+    for hidden in ["helper-hidden", "data-hidden", "private-hidden", "#######"] {
         assert!(!stdout.contains(hidden), "leaked {hidden:?}:\n{stdout}");
     }
+}
+
+/// `eu doc --check` counts namespace members at every depth it renders.
+#[test]
+pub fn test_doc_nested_namespaces_coverage() {
+    let output = std::process::Command::new(eu_binary())
+        .args([
+            "doc",
+            "--check",
+            "tests/harness/doc/003_nested_namespaces.eu",
+        ])
+        .output()
+        .expect("failed to run eu doc --check");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(0), "{stdout}");
+    assert!(
+        stdout.contains("12/15 public bindings documented"),
+        "unexpected coverage:\n{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Undocumented:\n  - outer.cfg-undoc\n  - outer.cfg-private\n  - outer.quiet\n"
+        ),
+        "unexpected undocumented list:\n{stdout}"
+    );
 }
 
 /// `eu doc` extracts type annotations and renders them in a code block.

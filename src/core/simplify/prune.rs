@@ -605,6 +605,7 @@ pub mod tests {
                         name: b.name.clone(),
                         expr: strip_demands(&b.expr),
                         demand: Demand::default(),
+                        signature: None,
                     })
                     .collect();
                 let new_body = strip_demands(&scope.body);

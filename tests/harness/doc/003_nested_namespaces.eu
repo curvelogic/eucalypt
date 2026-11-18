@@ -12,4 +12,37 @@ outer: {
   scoped: { helper-hidden: 1, result: helper-hidden }.result
 
   cfg-undoc: { data-hidden: 1 }
+
+  cfg-private: {
+    private-hidden: {
+      ` { doc: "Internal docs do not make a namespace." export: :internal }
+      p: 1
+    }
+  }
+
+  quiet: {
+    ` "Quiet member doc."
+    loud(x): x
+  }
+}
+
+` "Level 1."
+l1: {
+  ` "Level 2."
+  l2: {
+    ` "Level 3."
+    l3: {
+      ` "Level 4."
+      l4: {
+        ` "Level 5."
+        l5: {
+          ` "Level 6."
+          l6: {
+            ` "Below the last heading level."
+            bottom(x): x
+          }
+        }
+      }
+    }
+  }
 }

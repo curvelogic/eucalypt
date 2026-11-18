@@ -133,8 +133,7 @@ fn substs_depth_in(
                 .pattern
                 .iter()
                 .map(|b| {
-                    substs_depth_in(&b.expr, substs, depth + 1, capture)
-                        .map(|v| CoreBinding::with_demand(b.name.clone(), v, b.demand))
+                    substs_depth_in(&b.expr, substs, depth + 1, capture).map(|v| b.with_expr(v))
                 })
                 .collect();
             let new_bindings = new_bindings?;
