@@ -5549,7 +5549,7 @@ pub fn test_error_366_one_element_interval_merge_intervals() {
     run_error_test(&error_opts("366_one_element_interval_merge_intervals.eu"));
 }
 
-/// A empty `merge-intervals` interval is an error naming it (eu-oaz72.190, decision 67).
+/// An empty `merge-intervals` interval is an error naming it (eu-oaz72.190, decision 67).
 #[test]
 pub fn test_error_367_empty_interval_merge_intervals() {
     run_error_test(&error_opts("367_empty_interval_merge_intervals.eu"));
