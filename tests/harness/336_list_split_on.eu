@@ -1,0 +1,25 @@
+{
+  title: "336 list split-on stays linear"
+  doc: "eu-oaz72.192: `split-on(pred, xs)` rebuilt its groups with `++`,
+        `butlast` and `last` on every element, so its cost was quadratic in
+        the length of `xs` (seconds at a few thousand elements). It now
+        conses onto reversed accumulators. The `scaling` target is held to
+        a tick budget per element that the quadratic version exceeds about
+        100-fold; this needs a target of its own for its stats, so it is
+        not in 010_prelude.eu, where the results are pinned
+        (`split-on-tests`)."
+}
+
+n: 4000
+
+blank-every-seventh(i): (i % 7) zero? then("", "x")
+
+` "split-on stays within its tick budget per element"
+budget(context): (context.stats.ticks < 400 * n) then(:PASS, :FAIL)
+
+` "split-on of n lines gives one group per blank line, plus one"
+groups(context): (context.result = 573) then(:PASS, :FAIL)
+
+` { target: :scaling
+    verify: [:groups, :budget] }
+scaling: range(0, n) map(blank-every-seventh) split-on(= "") count

@@ -788,6 +788,31 @@ pub mod tests {
         );
     }
 
+    /// The desugarer names destructuring synthetic binders `__p'N`
+    /// (eu-oaz72.191) on the guarantee that no source identifier can
+    /// contain `'`: unquoted identifiers neither start nor continue with
+    /// it, and single-quoted identifiers are delimited by it with no
+    /// escape.
+    #[test]
+    fn test_no_identifier_contains_single_quote() {
+        assert!(!is_normal_start('\''));
+        assert!(!is_normal_continuation('\''));
+        test_lex(
+            "__p'0'",
+            vec![
+                (UNQUOTED_IDENTIFIER, Span::new(0, 3)),
+                (SINGLE_QUOTE_IDENTIFIER, Span::new(3, 6)),
+            ],
+        );
+        test_lex(
+            "'__p''0'",
+            vec![
+                (SINGLE_QUOTE_IDENTIFIER, Span::new(0, 5)),
+                (SINGLE_QUOTE_IDENTIFIER, Span::new(5, 8)),
+            ],
+        );
+    }
+
     #[test]
     fn test_atoms() {
         test_lex(
