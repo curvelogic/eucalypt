@@ -68,7 +68,7 @@ Every figure is **measured-single**. Deviations from
 1. **No blob on a plain build.** `lib/prelude.blob` is gitignored, so a fresh
    clean build silently takes the source-prelude fallback. A first full run
    made that way was discarded: startup was 0.116 s rather than 0.058 s, and
-   small parts read about 0.06–0.09 s slower. This is documented in
+   small parts read about 0.06–0.10 s slower. This is documented in
    `docs/development/prelude-blob.md`; noted because it is easy to miss when
    re-running this baseline.
 2. **Ticks are higher with the blob than without** on several parts (e.g.
