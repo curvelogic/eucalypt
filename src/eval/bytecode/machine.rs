@@ -7233,8 +7233,9 @@ mod tests {
     /// allocations and bytes move to the thunk); removing `exit_force` fails
     /// the post-force assertion (the intrinsic's later work lands on the
     /// thunk's annotation); moving `Profiler::enter_force`'s byte charge to
-    /// the thunk fails the byte assertions (eu-oaz72.146); sampling `stack_trace_capped` instead of `profile_trace`
-    /// in `profile_tick` fails the folded-stack assertion.
+    /// the thunk fails the byte assertions (eu-oaz72.146); sampling
+    /// `stack_trace_capped` instead of `profile_trace` in `profile_tick`
+    /// fails the folded-stack assertion.
     #[test]
     fn profiled_force_attributes_intrinsic_and_thunk_separately() {
         let intrinsic_site = Smid::fake(7001);
