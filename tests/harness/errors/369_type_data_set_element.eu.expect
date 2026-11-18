@@ -1,2 +1,3 @@
 exit: 1
 stderr: "(?s)type data cannot be a set element.*errors[/\\]369_type_data_set_element\.eu:2:4"
+location: 2:4

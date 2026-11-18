@@ -40,6 +40,7 @@ preparation work (eu-oaz72) and editor highlighting consolidation (eu-ioz21).
 
 ### Fixed
 
+- **`merge-intervals` with a wrong-length interval (eu-oaz72.190, owner decision 67)** — an interval list without exactly two elements, such as `[1, 2, 3]` (silently truncated before) or `[1]` (`head of empty list` before), is now an error naming `merge-intervals`: `merge-intervals interval of length 1 must be a pair [lo, hi]`, or `of length 3 or more` for a longer one, which is checked without walking past the third element.
 - **`as-spec` of a literal type (eu-pub3r)** — `as-spec` of a literal string type (`c"\"prod\""` as type data) or a literal symbol type (`s":ok"`) now matches exactly that value, as `validate` does; both matched any value before.
 - **`rotate` wraps past the length; `update-nth` past the end is an out-of-range error (eu-oaz72.100)** — `[1, 2, 3] rotate(4)` returned the list unchanged instead of `[2, 3, 1]`, contradicting its doc string, and `update-nth` past the end failed with "head of empty list".
 - **Stray dots in string interpolation are errors (eu-oaz72.139)** — `"{.x}"` and `"{x.}"` were read silently as `"{x}"`; they now give the same parse error as `"{ a b }"`.

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "(?s)errors[/\\]372_lone_anaphor_in_map\.eu:3:18.*note: in .nth\(_\)., ._. is the whole argument"
+location: 3:18
