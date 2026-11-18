@@ -675,7 +675,7 @@ or: __OR
     precedence: :sum }
 (l - r): __SUB(l, r)
 
-` { doc: "`l ^ r` - raise `l` to the power `r`; an integer base with a non-negative integer exponent gives an integer, or a numeric-overflow error when the result is out of range; a negative exponent gives a float."
+` { doc: "`l ^ r` - raise `l` to the power `r`; an integer base with a non-negative integer exponent gives an integer, or a numeric-overflow error when the result is out of range; a negative exponent gives a float, and a zero base with a negative exponent is an error."
     type: s"number → number → number"
     export: :suppress
     associates: :right
@@ -813,7 +813,7 @@ ceiling: __CEILING
 ` "`⌊n⌋` - floor bracket notation, round `n` downwards to nearest integer"
 ⌊[x]⌋: x floor
 
-` { doc: "`pow(b, e)` - raise `b` to the power `e`; an integer base with a non-negative integer exponent gives an integer, or a numeric-overflow error when the result is out of range; a negative exponent gives a float."
+` { doc: "`pow(b, e)` - raise `b` to the power `e`; an integer base with a non-negative integer exponent gives an integer, or a numeric-overflow error when the result is out of range; a negative exponent gives a float, and a zero base with a negative exponent is an error."
     type: s"number → number → number" }
 pow(b, e): __POW(b, e)
 
