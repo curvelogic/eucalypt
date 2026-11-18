@@ -5420,6 +5420,21 @@ pub fn test_tester_fails_unrun_checked_target() {
     assert_eq!(exit_code, 1);
 }
 
+/// A checked target nested inside a target that runs is rendered as part
+/// of it, so it is not reported as never running (eu-oaz72.69).
+#[test]
+pub fn test_tester_runs_nested_checked_target() {
+    let exit_code = tester::test(&opts("testdata/nested_checked_target.eu")).unwrap();
+    assert_eq!(exit_code, 0);
+}
+
+/// A `num` that fails inside a user function carets that `num` call,
+/// not the caller (eu-oaz72.118).
+#[test]
+pub fn test_error_377_num_call_site() {
+    run_error_test(&error_opts("377_num_call_site.eu"));
+}
+
 /// The divides operator `∣` inherits `%`'s zero-divisor error.
 #[test]
 pub fn test_error_273_divides_zero_divisor() {

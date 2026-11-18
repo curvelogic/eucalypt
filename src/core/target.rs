@@ -12,7 +12,10 @@ use std::fmt;
 /// evaluand for entering at the target).
 ///
 /// The default target (all blank) is used to represent the whole unit.
-#[derive(Eq, PartialEq, Hash, Clone, Debug, Default)]
+///
+/// Two targets are equal when they are the same declaration: `has_checks`
+/// is derived from the body, so it takes no part in equality or hashing.
+#[derive(Clone, Debug, Default)]
 pub struct Target {
     /// Target name
     name: String,
@@ -28,6 +31,33 @@ pub struct Target {
     /// binding or an inline assertion operator), so the tester must
     /// run it for those checks to gate
     has_checks: bool,
+}
+
+impl Target {
+    /// Everything that identifies the target, which excludes `has_checks`
+    fn key(&self) -> (&str, &str, &Option<String>, &[String], &[String]) {
+        (
+            &self.name,
+            &self.doc,
+            &self.format,
+            &self.path,
+            &self.validations,
+        )
+    }
+}
+
+impl PartialEq for Target {
+    fn eq(&self, other: &Self) -> bool {
+        self.key() == other.key()
+    }
+}
+
+impl Eq for Target {}
+
+impl std::hash::Hash for Target {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.key().hash(state)
+    }
 }
 
 impl fmt::Display for Target {
@@ -111,5 +141,27 @@ impl Target {
             path,
             ..self.clone()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// `has_checks` describes a target's body, not which target it is
+    #[test]
+    fn has_checks_takes_no_part_in_identity() {
+        let target = Target::new(
+            "t".to_string(),
+            String::new(),
+            None,
+            vec!["t".to_string()],
+            vec![],
+        );
+        let checked = target.clone().with_checks(true);
+        assert_eq!(target, checked);
+        let set: HashSet<_> = [target, checked].into_iter().collect();
+        assert_eq!(set.len(), 1);
     }
 }

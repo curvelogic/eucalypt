@@ -1,4 +1,5 @@
 //! Running test scripts
+use crate::common::pipe::{ignore_broken_pipe, is_broken_pipe};
 use crate::core::analyse::testplan::{ErrorExpectation, TestPlan};
 use crate::core::target::Target;
 use crate::driver::error::EucalyptError;
@@ -7,10 +8,9 @@ use crate::driver::options::EucalyptOptions;
 use crate::driver::prepare;
 use crate::driver::source::SourceLoader;
 use crate::syntax::input::{Input, Locator};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::{fmt, fs};
 use uuid::Uuid;
 use webbrowser;
@@ -22,9 +22,11 @@ use super::statistics::{Statistics, Timings};
 /// Every input is tested, in the order given: a directory contributes
 /// each test file in it, a file contributes itself. With no inputs the
 /// current directory is tested. A file reached more than once (named
-/// twice, or named and also inside a directory given) is tested once,
-/// at its first position. All plans run as one suite with one report,
-/// and the exit code is non-zero if any test fails.
+/// twice, named and also inside a directory given, or reached through a
+/// symbolic link) is tested once, at its first position, unless it is
+/// read in a different format each time (`yaml@x.txt json@x.txt`), when
+/// each format is a test of its own. All plans run as one suite with
+/// one report, and the exit code is non-zero if any test fails.
 pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
     let inputs = if opt.explicit_inputs().is_empty() {
@@ -34,56 +36,74 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     };
     let run_id = Uuid::new_v4().hyphenated().to_string();
 
+    let mut progress = Progress::default();
     let mut searched = vec![];
-    // Each test file with the options to analyse it under, in order.
-    let mut files: Vec<(PathBuf, EucalyptOptions)> = vec![];
+    // Each test file with the format to read it in and the options to
+    // analyse it under, in order.
+    let mut files: Vec<(PathBuf, String, EucalyptOptions)> = vec![];
     for input in inputs {
         let path = resolve_input(opt, &input)?;
         searched.push(path.display().to_string());
         if path.is_dir() {
-            files.extend(directory_files(opt, &path)?);
+            files.extend(directory_files(opt, &path, &mut progress)?);
         } else {
             // Analyse each file on its own, not over the merged core of
             // every input.
-            files.push((path, opt.clone().with_explicit_inputs(vec![input])));
+            let format = input.format().to_string();
+            files.push((path, format, opt.clone().with_explicit_inputs(vec![input])));
         }
     }
 
     // Paths are canonical, so a file reached twice compares equal.
     let mut seen = HashSet::new();
-    files.retain(|(path, _)| seen.insert(path.clone()));
+    files.retain(|(path, format, _)| seen.insert((path.clone(), format.clone())));
 
-    let plans = files
+    let mut plans = files
         .iter()
-        .map(|(path, file_opts)| load_plan(file_opts, &run_id, path))
+        .map(|(path, format, file_opts)| {
+            load_plan(file_opts, &run_id, path).map(|plan| plan.with_input_format(format))
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     if plans.is_empty() {
         return Err(EucalyptError::NoTestsFound(searched.join(", ")));
     }
 
-    run_plans(opt, plans.as_slice())
+    disambiguate_titles(&mut plans);
+    run_plans(opt, plans.as_slice(), &mut progress)
 }
 
-/// Entry point for error tests — creates a plan from the `.expect`
-/// sidecar and runs the `eu` binary against it.
+/// Give plans that would share a title (`x.eu` and `x.yaml`, both titled
+/// `x`) titles of their own: the file's name, with the format it is read
+/// in where that is not the one its extension implies. A title set in
+/// the file's metadata is left alone.
+fn disambiguate_titles(plans: &mut [TestPlan]) {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for plan in plans.iter() {
+        *counts.entry(plan.title().clone()).or_default() += 1;
+    }
+    for plan in plans.iter_mut() {
+        if counts[plan.title()] > 1 && plan.has_default_title() {
+            let title = plan.qualified_file_name();
+            plan.set_title(title);
+        }
+    }
+}
+
+/// Run error tests, each an `eu` run of a fixture checked against its
+/// `.expect` sidecar, using the `eu` binary at `eu_binary`.
 ///
 /// Error tests bypass the normal metadata analysis since the test
 /// file itself may have deliberate parse errors. A fixture without an
 /// `.expect` sidecar fails, as does a sidecar that neither pins the
 /// primary label's location (`location:`) nor says why it does not
 /// (`no-location:`).
-pub fn error_test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
-    let eu_binary = std::env::current_exe().expect("cannot determine eu binary path");
-    error_test_with_binary(&eu_binary, opt)
-}
-
-/// Run error tests using the specified eu binary path.
 ///
 /// Every input is run as its own error test, in order (the current
 /// directory if there are none); the exit code is non-zero if any
-/// fails. Called from `harness_test.rs`, which passes
-/// `CARGO_BIN_EXE_eu`.
+/// fails. An input that cannot be run at all (a missing file, an
+/// unreadable sidecar) fails too, and the inputs after it still run.
+/// Called from `harness_test.rs`, which passes `CARGO_BIN_EXE_eu`.
 pub fn error_test_with_binary(
     eu_binary: &Path,
     opt: &EucalyptOptions,
@@ -96,8 +116,13 @@ pub fn error_test_with_binary(
     };
     let mut exit = 0;
     for input in &inputs {
-        if single_error_test(eu_binary, opt, input)? != 0 {
-            exit = 1;
+        match single_error_test(eu_binary, opt, input) {
+            Ok(0) => {}
+            Ok(_) => exit = 1,
+            Err(e) => {
+                ignore_broken_pipe(writeln!(std::io::stdout(), "{input}...FAIL: {e}"))?;
+                exit = 1;
+            }
         }
     }
     Ok(exit)
@@ -116,7 +141,7 @@ fn single_error_test(
         Ok(None) => {
             // An error fixture without a sidecar used to pass here without
             // running at all, so its test could never fail (eu-oxtcq M4).
-            stdout_ok(writeln!(
+            ignore_broken_pipe(writeln!(
                 std::io::stdout(),
                 "{}...FAIL: no .expect sidecar, so nothing is asserted",
                 path.display()
@@ -167,11 +192,11 @@ fn single_error_test(
         .and_then(|()| expectation.validate_location(&fixture, &actual_stderr));
     match verdict {
         Ok(()) => {
-            stdout_ok(writeln!(std::io::stdout(), "{}...PASS", path.display()))?;
+            ignore_broken_pipe(writeln!(std::io::stdout(), "{}...PASS", path.display()))?;
             Ok(0)
         }
         Err(reason) => {
-            stdout_ok(writeln!(
+            ignore_broken_pipe(writeln!(
                 std::io::stdout(),
                 "{}...FAIL: {reason}",
                 path.display()
@@ -181,18 +206,40 @@ fn single_error_test(
     }
 }
 
-/// Pass on a stdout write failure, except a closed pipe.
+/// `eu test`'s progress lines on stdout, which outlive a closed pipe.
 ///
 /// When the reader of our output has gone (`eu test … | head`), the
 /// remaining progress lines have nowhere to go, but the suite must still
 /// run to completion and the exit code must still report its true verdict:
 /// a failing suite exits non-zero whether or not anyone is reading. So a
-/// broken pipe is dropped here rather than propagated, and any other write
-/// failure (a full disk) is still an error.
-fn stdout_ok(result: std::io::Result<()>) -> std::io::Result<()> {
-    match result {
-        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
-        other => other,
+/// broken pipe is dropped here rather than propagated, and remembered, so
+/// that nothing further is written and `--open-browser` does not open a
+/// report for a reader that has gone. Any other write failure (a full
+/// disk) is still an error.
+#[derive(Default)]
+pub struct Progress {
+    closed: bool,
+}
+
+impl Progress {
+    /// Write to stdout unless its reader has gone; `write!` and
+    /// `writeln!` call this.
+    pub fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> std::io::Result<()> {
+        if self.closed {
+            return Ok(());
+        }
+        match std::io::stdout().write_fmt(args) {
+            Err(e) if is_broken_pipe(&e) => {
+                self.closed = true;
+                Ok(())
+            }
+            other => other,
+        }
+    }
+
+    /// Whether stdout's reader has gone.
+    pub fn closed(&self) -> bool {
+        self.closed
     }
 }
 
@@ -245,18 +292,26 @@ fn load_plan(
 }
 
 /// Run the specified plans and generate report
-pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, EucalyptError> {
+///
+/// Progress goes to `stdout` rather than through `print!`, which panics
+/// on a closed pipe (`eu test … | head`).
+pub fn run_plans(
+    opt: &EucalyptOptions,
+    tests: &[TestPlan],
+    stdout: &mut Progress,
+) -> Result<i32, EucalyptError> {
     let tester = InProcessTester {};
     let mut exit: i32 = 0;
-    // Write rather than `print!`, which panics on a closed pipe
-    // (`eu test … | head`). See `stdout_ok`.
-    let mut stdout = std::io::stdout();
 
     for test in tests {
         let mut lib_path = opt.lib_path().to_vec();
         lib_path.push(test.test_directory().to_path_buf());
 
-        let input = Input::from_str(&test.file().to_string_lossy())?;
+        let input = Input::new(
+            Locator::Fs(test.file().to_path_buf()),
+            None,
+            test.input_format(),
+        );
         // `-o` names the report, not the output of the test runs.
         let test_opts = opt
             .clone()
@@ -268,17 +323,13 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
         // Failing here would incorrectly penalise CI environments that do
         // not enable shell execution by default.
         if test.requires_io() && !opt.allow_io() {
-            stdout_ok(writeln!(
-                stdout,
-                "{}...SKIP (requires --allow-io)",
-                test.title()
-            ))?;
+            writeln!(stdout, "{}...SKIP (requires --allow-io)", test.title())?;
             continue;
         }
 
         test.prepare_directory()?;
 
-        stdout_ok(write!(stdout, "{}...", test.title()))?;
+        write!(stdout, "{}...", test.title())?;
 
         let mut execution_opts = test_opts.clone();
         if !test.is_error_test() {
@@ -287,7 +338,7 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
         tester.run(test, &execution_opts)?;
         tester.validate(test)?;
         let summary = tester.summary(test)?.to_string();
-        stdout_ok(write!(stdout, "{summary}"))?;
+        write!(stdout, "{summary}")?;
 
         if !summary.starts_with("PASS") {
             exit = 1;
@@ -295,24 +346,22 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
 
         // A target whose checks never run would pass silently: fail it.
         for target in test.unrun_checked_targets() {
-            stdout_ok(writeln!(
+            writeln!(
                 stdout,
                 "{}...FAIL (target `{}` has checks but never runs: name it `test-…` or give it `verify`)",
                 test.title(),
                 target.name()
-            ))?;
+            )?;
             exit = 1;
         }
     }
 
     let report = tester.report(tests, opt.output().map(PathBuf::as_path))?;
-    stdout_ok(writeln!(
-        stdout,
-        "Report generated at {}",
-        report.to_string_lossy()
-    ))?;
+    // A relative `-o` is reported as the absolute path it names.
+    let report = std::path::absolute(&report).unwrap_or(report);
+    writeln!(stdout, "Report generated at {}", report.to_string_lossy())?;
 
-    if opt.open_browser() {
+    if opt.open_browser() && !stdout.closed() {
         let _ = report.to_str().and_then(|s| webbrowser::open(s).ok());
     }
 
@@ -324,12 +373,9 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
 fn directory_files(
     opt: &EucalyptOptions,
     dir: &Path,
-) -> Result<Vec<(PathBuf, EucalyptOptions)>, EucalyptError> {
-    stdout_ok(writeln!(
-        std::io::stdout(),
-        "Gathering tests in {}",
-        dir.display()
-    ))?;
+    progress: &mut Progress,
+) -> Result<Vec<(PathBuf, String, EucalyptOptions)>, EucalyptError> {
+    writeln!(progress, "Gathering tests in {}", dir.display())?;
     let mut tests: Vec<_> = fs::read_dir(dir)?
         .filter_map(Result::ok)
         .filter(|f| {
@@ -338,7 +384,9 @@ fn directory_files(
                 Some("eu") | Some("yaml") | Some("json") | Some("toml") | Some("edn")
             )
         })
-        .map(|f| f.path())
+        // Canonical, as an input named on the command line is, so a file
+        // reached through a symbolic link is recognised as the same file.
+        .map(|f| fs::canonicalize(f.path()).unwrap_or_else(|_| f.path()))
         .collect();
 
     tests.sort();
@@ -346,11 +394,10 @@ fn directory_files(
     Ok(tests
         .into_iter()
         .map(|t| {
-            let file_opts = opt
-                .clone()
-                .with_explicit_inputs(vec![Input::from(Locator::from(t.as_path()))])
-                .build();
-            (t, file_opts)
+            let input = Input::from(Locator::from(t.as_path()));
+            let format = input.format().to_string();
+            let file_opts = opt.clone().with_explicit_inputs(vec![input]).build();
+            (t, format, file_opts)
         })
         .collect())
 }
@@ -541,6 +588,33 @@ impl InProcessTester {
             }
 
             writeln!(&mut evidence_script, "{test_template}")?;
+        }
+        // A target whose checks never run fails the file: record it as a
+        // failed test, so the HTML report and the summary say so too.
+        for target in plan.unrun_checked_targets() {
+            let name = target.name();
+            let message = Input::new(
+                Locator::Literal(format!(
+                    "target `{name}` has checks but never runs: name it `test-…` or give it `verify`"
+                )),
+                Some(format!("{name}-unrun-message-text")),
+                "text",
+            );
+            writeln!(
+                &mut evidence_script,
+                r#"
+  '{name}-unrun': {{
+    exit: 1
+    stdout: []
+    stderr: '{}'
+    result: {{ RESULT: :FAIL }}
+    expectations: [{{ name: "default" function-key: "default-expectation"}}]
+    stats: {}
+  }}"#,
+                message.name().as_ref().expect("message has a name"),
+                stats_to_eu(&Statistics::default())
+            )?;
+            inputs.push(message);
         }
         writeln!(&mut evidence_script, "}}\n")?;
 

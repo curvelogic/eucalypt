@@ -1,0 +1,11 @@
+{ title: "nested checked target"
+  doc: "Fixture for `test_tester_runs_nested_checked_target`: the `inner`
+  target carries a `RESULT` and is not itself run, but it is nested
+  inside `test-outer`, which renders it, so the file passes (eu-oaz72.69)." }
+
+` { target: :test-outer }
+outer: {
+  ` { target: :inner }
+  inner: { RESULT: :PASS }
+  RESULT: inner.RESULT
+}

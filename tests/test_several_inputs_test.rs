@@ -175,6 +175,70 @@ fn same_stem_files_keep_separate_results() {
         1,
         "x.yaml's result lost:\n{results}"
     );
+    // Each is reported under a title of its own, not both as `x`.
+    assert_eq!(verdicts(&stdout, "x.eu"), 1, "stdout:\n{stdout}");
+    assert_eq!(verdicts(&stdout, "x.yaml"), 1, "stdout:\n{stdout}");
+}
+
+/// A symbolic link to a test file, met in a directory that also holds the
+/// file, is the same test: it runs once (eu-oaz72.143 a).
+#[cfg(unix)]
+#[test]
+fn a_file_reached_through_a_symlink_runs_once() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    fixture(dir.path(), "real.eu", PASSING);
+    std::os::unix::fs::symlink(dir.path().join("real.eu"), dir.path().join("link.eu"))
+        .expect("symlink");
+
+    let (code, stdout) = eu_test_args(dir.path(), &[dir.path().as_os_str()]);
+    assert_eq!(code, Some(0), "stdout:\n{stdout}");
+    assert_eq!(verdicts(&stdout, "real"), 1, "stdout:\n{stdout}");
+    assert_eq!(verdicts(&stdout, "link"), 0, "stdout:\n{stdout}");
+}
+
+/// One file named twice in different formats is two tests, each with its
+/// own title and result (eu-oaz72.143 b, g).
+#[test]
+fn a_file_read_in_two_formats_runs_twice() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    // Valid both as YAML and as JSON; it fails only if read as either.
+    fixture(dir.path(), "x.txt", "{\"RESULT\": \"FAIL\"}\n");
+
+    let (code, stdout) = eu_test_args(dir.path(), &["yaml@x.txt".as_ref(), "json@x.txt".as_ref()]);
+    assert_eq!(code, Some(1), "stdout:\n{stdout}");
+    assert_eq!(verdicts(&stdout, "yaml@x.txt"), 1, "stdout:\n{stdout}");
+    assert_eq!(verdicts(&stdout, "json@x.txt"), 1, "stdout:\n{stdout}");
+    let results =
+        std::fs::read_to_string(run_dir(dir.path()).join("results.yaml")).expect("results.yaml");
+    assert_eq!(
+        results.matches("overall: FAIL").count(),
+        2,
+        "a result was lost:\n{results}"
+    );
+}
+
+/// A relative `-o` is reported as the absolute path of the report
+/// (eu-oaz72.143 c).
+#[test]
+fn a_relative_output_path_is_reported_absolute() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let ok = fixture(dir.path(), "ok.eu", PASSING);
+
+    let (code, stdout) = eu_test_args(
+        dir.path(),
+        &["-o".as_ref(), "rel.html".as_ref(), ok.as_os_str()],
+    );
+    assert_eq!(code, Some(0), "stdout:\n{stdout}");
+    let report = dir
+        .path()
+        .canonicalize()
+        .expect("canonical")
+        .join("rel.html");
+    assert!(report.exists(), "no report at {}", report.display());
+    assert!(
+        stdout.contains(&format!("Report generated at {}\n", report.display())),
+        "stdout:\n{stdout}"
+    );
 }
 
 #[test]
@@ -268,5 +332,40 @@ fn the_error_test_runner_runs_every_input() {
         tester::error_test_with_binary(eu, &opts(&[&bad, &ok])).expect("run"),
         1,
         "a failing first input was not reported"
+    );
+    // An input that cannot be run fails, without ending the run
+    // (eu-oaz72.143 f).
+    let missing = dir.path().join("missing.eu");
+    assert_eq!(
+        tester::error_test_with_binary(eu, &opts(&[&missing, &ok]))
+            .expect("a missing input is a failed test, not an error"),
+        1
+    );
+}
+
+/// A target with checks that never runs fails the file in the results
+/// and the HTML report, not only on the console (eu-oaz72.69).
+#[test]
+fn an_unrun_checked_target_fails_the_report() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let file = fixture(
+        dir.path(),
+        "unrun.eu",
+        "` { target: :test-runs }\nruns: { RESULT: :PASS }\n\n` { target: :semantics }\nsemantics: { RESULT: :PASS }\n",
+    );
+
+    let (code, stdout) = eu_test_args(dir.path(), &[file.as_os_str()]);
+    assert_eq!(code, Some(1), "stdout:\n{stdout}");
+    assert!(stdout.contains("unrun...FAIL"), "stdout:\n{stdout}");
+    let run = run_dir(dir.path());
+    let results = std::fs::read_to_string(run.join("results.yaml")).expect("results.yaml");
+    assert!(
+        results.contains("overall: FAIL"),
+        "results record a pass:\n{results}"
+    );
+    let html = std::fs::read_to_string(run.join("report.html")).expect("report.html");
+    assert!(
+        html.contains("has checks but never runs"),
+        "report does not say why:\n{html}"
     );
 }
