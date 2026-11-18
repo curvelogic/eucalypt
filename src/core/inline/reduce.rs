@@ -825,7 +825,7 @@ pub mod tests {
         let x = free("x");
         let hit = free("hit?");
         let r = free("r");
-        let p0 = free("__p0");
+        let p0 = free("__p'0");
         let y = free("y");
 
         let hit_def = || {
@@ -877,7 +877,7 @@ pub mod tests {
     /// closed).
     fn open_hit_def(x: &str) -> RcExpr {
         let y = free("y");
-        let p0 = free("__p0");
+        let p0 = free("__p'0");
         let destr_let = RcExpr::from(Expr::Let(
             Smid::default(),
             close_let_scope(
@@ -1004,7 +1004,7 @@ pub mod tests {
     #[test]
     pub fn test_beta_reduce_destructuring_lambda_with_bound_arg() {
         let f = free("f");
-        let p0 = free("__p0");
+        let p0 = free("__p'0");
         let a = free("a");
         let b = free("b");
         let x = free("x");
@@ -1012,7 +1012,7 @@ pub mod tests {
         // Destructuring let body: a + b  (simplified as app for test purposes)
         let add_a_b = app(bif("ADD"), vec![var(a.clone()), var(b.clone())]);
 
-        // DestructureListLet: a = HEAD(__p0), b = HEAD(TAIL(__p0))
+        // DestructureListLet: a = HEAD(__p'0), b = HEAD(TAIL(__p'0))
         let destr_let = RcExpr::from(Expr::Let(
             Smid::default(),
             close_let_scope(
@@ -1028,7 +1028,7 @@ pub mod tests {
             LetType::DestructureListLet,
         ));
 
-        // f is an inlinable lambda with single param __p0
+        // f is an inlinable lambda with single param __p'0
         let f_def = inline(vec![p0.clone()], destr_let);
 
         // x = 99

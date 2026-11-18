@@ -1558,6 +1558,47 @@ mod tests {
         );
     }
 
+    /// A deprecation declared in an imported user file must warn on the open
+    /// document's reference to it, with the `replaced-by` quick-fix offered
+    /// (eu-spg3a).
+    #[test]
+    fn run_pipeline_warns_on_deprecation_declared_in_import() {
+        let dir = std::env::temp_dir().join(format!("eu_lsp_dep_decl_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("lib.eu"),
+            "` { replaced-by: \"new-fn\" }\nold-fn(x): x\nnew-fn(x): x\n",
+        )
+        .unwrap();
+        let main = dir.join("main.eu");
+        let mut session = testing::LspTestSession::new();
+        session.set_uri(&format!("file://{}", main.display()));
+        session.run_pipeline("{ import: \"lib.eu\" }\nresult: old-fn(1)\n");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(session.has_cached(), "pipeline should succeed");
+        let diagnostics = session.type_diagnostics();
+        let deprecations: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.message.contains("'old-fn' is deprecated"))
+            .collect();
+        assert_eq!(
+            deprecations.len(),
+            1,
+            "expected one deprecation warning, got {diagnostics:?}"
+        );
+        let range = deprecations[0].range;
+        assert_eq!(
+            (range.start.line, range.start.character, range.end.character),
+            (1, 8, 14),
+            "warning should sit on the document's `old-fn` reference"
+        );
+        let titles = session.code_action_titles(1, 8, 1, 14);
+        assert!(
+            titles.iter().any(|t| t == "Replace 'old-fn' with 'new-fn'"),
+            "expected deprecation quick-fix, got {titles:?}"
+        );
+    }
+
     /// The live pipeline must surface deprecation warnings, so that the
     /// `replaced-by` quick-fix is offered in an editor (eu-oaz72.162).
     #[test]
