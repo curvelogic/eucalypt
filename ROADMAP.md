@@ -3,8 +3,10 @@
 - **Status:** Plan of record
 - **Date:** 2026-06-23 *(amended 2026-11-12: the AoC 2026 preparation work —
   §6.3, Pillar DS, §4.8; amended 2026-11-14: 0.15.0 shipped on 2026-10-17, the
-  AoC work targets 0.16.0 and EF2 moves to 0.17)*
-- **Baseline:** eucalypt 0.15.0
+  AoC work targets 0.16.0 and EF2 moves to 0.17; amended 2026-11-18: 0.16.0
+  is being released, and the work owner decisions 60 and 61 ruled out of it
+  moves to 0.17)*
+- **Baseline:** eucalypt 0.16.0 (being released 2026-11-18)
 
 ---
 
@@ -108,7 +110,7 @@ plan:
 - **Blocks** are cons-lists of key/value pairs with **O(n) lookup**,
   insertion-ordered.
 
-### What 0.7–0.15 shipped (ledger)
+### What 0.7–0.16 shipped (ledger)
 
 | Release | Landed |
 |---|---|
@@ -122,6 +124,7 @@ plan:
 | **0.13** | **Prefix-list type** `[A, B, C…]`; copy-specialised recursive higher-order combinators at every call site (blob and source paths); pre-inline type diagnostics; *0.13.1:* pre-decoded dispatch default (lever a Phase 2); *0.13.2:* XML entity-reference fix. *Phase-4 HeapSyn collapse, BV2/BV3, BV5-cache and type-gated CG all deferred* |
 | **0.14** | **DX diagnostics overhaul** (eu-1tkk.7 — location correctness, curated traces, blame in the blob binary, render/export error hardening, error catalogue); **PP** `par-map`/`par-sum`/… (experimental); **EF1** `do` combined effect monad; **W16/SV3** structural contracts (`validate`/`ensure`); blob-mode CI integrity (all mode-sensitive targets under both prelude modes) |
 | **0.15** *(shipped 2026-10-17)* | **Single engine** — the BV1 Phase-4 collapse (eu-oufc) deleted the HeapSyn tree-walk engine and its `EU_HEAPSYN`/`EU_BYTECODE` selectors, leaving bytecode (default since 0.12) as the only engine; dependency security fix (RUSTSEC-2026-0257); *0.14.1:* `par-*` element-count threshold removed (eu-2obtj). *EF2 native filesystem IO did not ship — carried forward (now 0.17). The AoC 2026 preparation work, eu-oaz72, targets 0.16 — §6.3* |
+| **0.16** *(being released 2026-11-18)* | **AoC 2026 preparation** (eu-oaz72) — **DS3** persistent ordered `dict` doubling as a priority queue, with sets rebuilt on its nodes; GC on allocation volume and all set/vec/array storage in the GC heap (§4.8); constant-stack `then` loops, `foldr`/`filter` sharing, `foldl-strict`, `seq` and constant-stack prelude folds; `mulmod`/`powmod`/`modinv`/`crt`, `str.format`, code points, `str.md5`, `str.matches-with` and general list helpers; `eu run --profile`; evidenced diagnostic notes; parser/LSP panic fixes; editor highlighting consolidation (eu-ioz21); the Advent of Code cookbook. *Out of 0.16, now 0.17 (owner decisions 60 and 61): the DS4/DS5 designs (eu-kc98.1, eu-kc98.2), the persistent vector (eu-oaz72.23), lazy-`foldl` list retention (eu-oaz72.180), and the WASM API's type-check warnings and prelude blob (eu-oaz72.20); its extra import files and step limit stay in 0.16 (eu-oaz72.20.1).* |
 
 ### Where it actually stands now (the empirical picture)
 
@@ -393,8 +396,8 @@ reordered as the cadence dictates.
 | **0.13** *(shipped scope)* | Frames, annotations, type-gated codegen, prefix-lists | **Prefix-list type** + copy-specialised recursive combinators (both prelude paths) + pre-inline type diagnostics; *0.13.1* pre-decoded dispatch default (lever a Phase 2). *Phase-4 collapse (eu-oufc), BV5-cache (eu-lb0r), BV2 side tables, BV3 register frames and type-gated CG did not ship — carried forward* |
 | **0.14** *(shipped scope)* | Polish, parallelism, effects, contracts, **diagnostics** | **DX** diagnostics overhaul — location correctness, curated traces, blame in the blob binary, render/export error hardening (epic eu-1tkk.7); **PP** `par-map`/`par-sum`/… (experimental); **EF1** `do` combined effect monad; **W16/SV3** contracts (`validate`/`ensure`); blob-mode CI integrity. *EF2 native filesystem IO and presence inference did not ship — carried forward* |
 | **0.15** *(shipped 2026-10-17)* | One engine | **BV1 Phase-4 collapse** (eu-oufc) — HeapSyn tree-walk engine deleted, bytecode the sole engine; dependency security fix (RUSTSEC-2026-0257). *EF2 native filesystem IO did not ship — carried forward* |
-| **0.16** *(in progress)* | **AoC 2026 preparation** | The AoC 2026 preparation epic **eu-oaz72** (Advent of Code starts 1 December 2026): GC collection policy and the native-storage leak (§4.8); constant-stack `if`/`then` loops, `foldr` sharing, `foldl-strict`; **DS3** dict (ordered tree, sets and priority queue on it); `vec.of`/`set.of` bulk constructors; `str.format`, code points, `str.md5`; `mulmod`/`powmod`/`modinv`; evidenced diagnostic hints; parser/LSP panics; editor highlighting fixes (eu-ioz21); docs cookbook. Plan: `docs/superpowers/plans/2026-11-12-aoc-2026-preparation.md` |
-| **0.17** | Native filesystem IO | **EF2** native filesystem/IO capabilities — `io.read-file`/`walk`/`ls`/`stat`/`glob`, streamable (bead eu-1tkk.3, epic eu-sks3l) |
+| **0.16** *(being released 2026-11-18)* | **AoC 2026 preparation** | The AoC 2026 preparation epic **eu-oaz72** (Advent of Code starts 1 December 2026): GC collection policy and the native-storage leak (§4.8); constant-stack `if`/`then` loops, `foldr` sharing, `foldl-strict`; **DS3** dict (ordered tree, sets and priority queue on it); `vec.of`/`set.of` bulk constructors; `str.format`, code points, `str.md5`; `mulmod`/`powmod`/`modinv`; evidenced diagnostic hints; parser/LSP panics; editor highlighting fixes (eu-ioz21); docs cookbook. Plan: `docs/superpowers/plans/2026-11-12-aoc-2026-preparation.md` |
+| **0.17** | Native filesystem IO | **EF2** native filesystem/IO capabilities — `io.read-file`/`walk`/`ls`/`stat`/`glob`, streamable (bead eu-1tkk.3, epic eu-sks3l). Also the work ruled out of 0.16 by owner decisions 60 and 61: the DS4 and DS5 designs (eu-kc98.1, eu-kc98.2), the GC-native persistent vector (eu-oaz72.23), lazy-`foldl` list retention (eu-oaz72.180), and the WASM API's type-check warnings and prelude blob (eu-oaz72.20) |
 | **0.17+** | Value model, ecosystem, surface | **DS** persistent blocks (DS1) + persistent `vec` (DS2); DS4 mutable-storage and DS5 bignum designs; **EF1** unified effect context; **W18** modules + **CU1** separate-unit compilation; **W19** watch/REPL + **CU2** per-unit incremental cache; **W17** hermetic; **W22** schema interop |
 | **1.0** *(milestone)* | Decide, prove, freeze | *No features.* Surface complete + **W5** conformance green → ratify and freeze the stable-surface tiers, turn on the version contract (§4.6) |
 | **post-1.0** | Curated bets | EF1.3 algebraic effect-rows; WASM-as-distribution; parallel Model B (maybe-never); a true separate-nursery GC *iff* a workload demands it |
@@ -805,7 +808,7 @@ types reuse one `GcScannable` array impl, so the collector surface is small.
   machinery; otherwise independent. *(2026-11-12: the `Native::Vec` backing leak is
   fixed separately and first, eu-oaz72.5. A GC-native persistent vector — a
   bit-partitioned trie with O(log₃₂ n) get/assoc and cheap append — comes after
-  December, coordinated with DS2: eu-oaz72.23. Until then, Intcode-scale indexed
+  December, coordinated with DS2: eu-oaz72.23, 0.17 by owner decision 61. Until then, Intcode-scale indexed
   memory uses an int-keyed DS3 dict.)*
 - **DS3 `dict` — a GC-native persistent ordered tree** *(0.16, eu-oaz72.21)*. Opt-in
   and independent of blocks. Keys are primitives or lists of primitives (e.g. `[x, y]`)
@@ -818,12 +821,12 @@ types reuse one `GcScannable` array impl, so the collector surface is small.
   `dict.from-list`, as `vec.of`/`set.of`, eu-oaz72.32). A hash structure (CHAMP) may
   follow later as a separate decision, e.g. for DS1.
 - **DS4 Effect-constrained mutable storage, transients or a memo combinator**
-  *(design, eu-kc98.1)*. O(1) in-place update for 1e7+-update workloads that no
+  *(design, eu-kc98.1; 0.17 — out of 0.16 by owner decision 60)*. O(1) in-place update for 1e7+-update workloads that no
   persistent structure reaches, and memoisation over states discovered during
   recursion. Compares ST-style storage confined to `{ :do }`/`{ :state }`,
   Clojure-style transients and a `memo(f)` combinator. Gated on per-step loop cost
   first being brought well below a microsecond (eu-oaz72.4, eu-oaz72.27).
-- **DS5 Arbitrary-precision integers** *(design, eu-kc98.2)*. Exact arithmetic beyond
+- **DS5 Arbitrary-precision integers** *(design, eu-kc98.2; 0.17 — out of 0.16 by owner decision 60)*. Exact arithmetic beyond
   64 bits: automatic promotion versus an explicit bigint type, digit storage under
   §4.8, ordering for dict keys, rendering, and no regression on the i64 path. The
   modular cases are covered sooner by `mulmod`/`powmod`/`modinv` in i128 (eu-oaz72.24).
@@ -1156,13 +1159,13 @@ sequencing.)*
 | **SV — prefix-list type** | Fixed-prefix + variable-tail list type (markup/hiccup) *(shipped — `Type::PrefixList`, eu-2sa6.3, test 187)* | 0.13 |
 | **SV3 (W16)** | Structural contracts & runtime validation | 0.14 |
 | **SV4 (W8/W22)** | `eu doc` schema / schema interop | 0.17+ |
-| **eu-oaz72** | AoC 2026 preparation — plan `docs/superpowers/plans/2026-11-12-aoc-2026-preparation.md` | 0.16 |
+| **eu-oaz72** | AoC 2026 preparation — plan `docs/superpowers/plans/2026-11-12-aoc-2026-preparation.md` | 0.16 *(being released 2026-11-18)* |
 | **§4.8** | Every heap value's storage in the GC heap; native-storage leak fix (eu-oaz72.5, ADR-002) | 0.16 |
 | **DS1** | Persistent O(log n) blocks (GC-native CHAMP+RRB) *(deferred; independent of DS3 — eu-iv2j.1)* | 0.17+ |
-| **DS2 (W14)** | Generalise `vec` to arbitrary values; GC-native persistent vector (eu-oaz72.23, after December) | 0.17+ |
+| **DS2 (W14)** | Generalise `vec` to arbitrary values; GC-native persistent vector (eu-oaz72.23, after December) | 0.17 |
 | **DS3** | `dict`: GC-native persistent ordered tree; sets and priority queue on it (eu-oaz72.21) | 0.16 |
-| **DS4** | Effect-constrained mutable storage / transients / memo combinator — design (eu-kc98.1) | 0.17+ |
-| **DS5** | Arbitrary-precision integers — design (eu-kc98.2) | 0.17+ |
+| **DS4** | Effect-constrained mutable storage / transients / memo combinator — design (eu-kc98.1) | 0.17 |
+| **DS5** | Arbitrary-precision integers — design (eu-kc98.2) | 0.17 |
 | **EC-hl** | Unified syntax highlighting: rowan reference + tree-sitter + TextMate (eu-ioz21) | 0.16 → 0.17+ |
 | **PP** | Process parallelism (`par-map`/`par-fold`, mmap arena) | 0.14+ |
 | **EF1** | Effect composition (combinators → unified context → effect-rows) | 0.14 → post-1.0 |

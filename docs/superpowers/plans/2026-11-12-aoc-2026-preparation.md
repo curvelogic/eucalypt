@@ -1,6 +1,7 @@
 # AoC 2026 preparation — plan
 
-- **Status:** Plan of record (owner decisions to 2026-11-12)
+- **Status:** Plan of record (owner decisions to 2026-11-12); 0.16.0 being
+  released 2026-11-18 — see §7
 - **Date:** 2026-11-12
 - **Epic:** eu-oaz72 (with eu-ioz21 for grammar consolidation)
 - **Roadmap:** [`ROADMAP.md`](../../../ROADMAP.md) §6.3 (0.16) and Pillar DS
@@ -98,7 +99,9 @@ Labelled `post-december` and not on the critical path: eu-oaz72.23
 (persistent vector), eu-kc98.1 (mutable storage / transients / memo
 design), eu-kc98.2 (bignum design), eu-oaz72.8 (Emacs fidelity),
 eu-oaz72.14 (tree-sitter mis-parses), eu-oaz72.20 (WASM API), eu-oaz72.38
-(2025 revisit).
+(2025 revisit). Owner decisions 60 and 61 (2026-11-17) since brought
+eu-oaz72.8, eu-oaz72.14, eu-oaz72.38 and part of eu-oaz72.20 into 0.16.0;
+see §7.
 
 ## 4. Constraints
 
@@ -193,3 +196,38 @@ from public repositories through `#gh=` links are shown highlighted and
 read-only; running those (they need puzzle inputs and imports) is out of
 scope, so the WASM API's extra-file imports (eu-oaz72.20) are
 post-December.
+
+## 7. Status (2026-11-18)
+
+0.16.0 is being released on 2026-11-18; `CHANGELOG.md` has the full list.
+
+**Landed.** The dict with its priority-queue operations and sets on its
+nodes (eu-oaz72.21, eu-oaz72.32); the GC volume trigger, medium-object
+reuse and set/vec/array storage in the GC heap (eu-oaz72.4, eu-oaz72.73,
+eu-oaz72.5); constant-stack `then` loops, `foldr`/`filter` sharing,
+`foldl-strict`, `seq` and the strict prelude folds (eu-oaz72.34,
+eu-oaz72.36, eu-oaz72.78, eu-oaz72.161, eu-oaz72.165); the string, number
+and general helpers (eu-oaz72.31, eu-oaz72.25, eu-oaz72.24, eu-oaz72.26,
+eu-oaz72.12, eu-oaz72.11, eu-oaz72.10); the evidenced diagnostic notes
+(eu-oaz72.28, eu-oaz72.29, eu-oaz72.132, eu-oaz72.133); the parser and LSP
+panic fixes (eu-oaz72.2, eu-oaz72.3, eu-oaz72.6, eu-oaz72.9); the profiler
+(eu-oaz72.37); the cookbook and prelude reference (eu-oaz72.16,
+eu-oaz72.17); the Emacs commands and font-lock from `highlights.scm`
+(eu-oaz72.7, eu-oaz72.19, eu-ioz21.3); the tree-sitter grammar fixes and
+its WASM build (eu-oaz72.18, eu-oaz72.14, eu-ioz21.1, eu-ioz21.5,
+eu-ioz21.2); and the web playground's highlighting (eu-ioz21.6).
+
+**Still open at release.** Strict accumulation in demand analysis
+(eu-oaz72.27), the prelude-body demand analysis follow-through
+(eu-oaz72.175), the 2025 revisit (eu-oaz72.38), Emacs fidelity
+(eu-oaz72.8, eu-oaz72.131), the WASM API's extra import files and step
+limit (eu-oaz72.20.1), `vec`/`set` booleans and null (eu-oaz72.30) and
+the docs highlighting work (eu-ioz21.4), with the P3 follow-ups filed
+from review. These ship in a later release or in the AoC helper library;
+none blocks 0.16.0.
+
+**Out of 0.16, now 0.17.** By owner decision 60: the DS4 and DS5 designs
+(eu-kc98.1, eu-kc98.2) and lazy-`foldl` list retention (eu-oaz72.180). By
+owner decision 61: the persistent vector (eu-oaz72.23), since the dict
+covers integer-keyed updates, and the WASM API's type-check warnings and
+prelude blob (eu-oaz72.20).
