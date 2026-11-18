@@ -4889,6 +4889,24 @@ pub fn test_typecheck_149_block_type_mismatch_warns() {
     run_typecheck_test("149_block_type_mismatch_warns.eu");
 }
 
+/// An s-string `type:` annotation using `Dict(T)` warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_151_dict_sstring_deprecated_warns() {
+    run_typecheck_test("151_dict_sstring_deprecated_warns.eu");
+}
+
+/// An s-string `types:` alias using `Dict(T)` warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_152_dict_sstring_alias_deprecated_warns() {
+    run_typecheck_test("152_dict_sstring_alias_deprecated_warns.eu");
+}
+
+/// `Dict(T)` as a record field's type warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_153_dict_record_field_deprecated_warns() {
+    run_typecheck_test("153_dict_record_field_deprecated_warns.eu");
+}
+
 /// Well-typed `block(T)` and bare `block` code checks clean, with no
 /// deprecation warning (eu-oaz72.129).
 #[test]

@@ -463,16 +463,16 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             Ok(())
         }
 
-        // block unified with a closed record: bind the dict's value type to the
+        // block unified with a closed record: bind the block's value type to the
         // union of the record's field types.
         (
-            Type::App(dict_head, t),
+            Type::App(block_head, t),
             Type::Record {
                 fields,
                 open: false,
                 rows,
             },
-        ) if matches!(dict_head.as_ref(), Type::Con(n) if n == "block") && rows.is_empty() => {
+        ) if matches!(block_head.as_ref(), Type::Con(n) if n == "block") && rows.is_empty() => {
             let t = t.clone();
             let fields = fields.clone();
             let value_union = Type::union(fields.values().map(|fp| fp.ty().clone()));
@@ -484,20 +484,20 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
                 open: false,
                 rows,
             },
-            Type::App(dict_head, t),
-        ) if matches!(dict_head.as_ref(), Type::Con(n) if n == "block") && rows.is_empty() => {
+            Type::App(block_head, t),
+        ) if matches!(block_head.as_ref(), Type::Con(n) if n == "block") && rows.is_empty() => {
             let t = t.clone();
             let fields = fields.clone();
             let value_union = Type::union(fields.values().map(|fp| fp.ty().clone()));
             unify(&value_union, &t, subst)
         }
         // block unified with an open/row-variable record: bind to `any`.
-        (Type::App(dict_head, t), Type::Record { .. }) if matches!(dict_head.as_ref(), Type::Con(n) if n == "block") =>
+        (Type::App(block_head, t), Type::Record { .. }) if matches!(block_head.as_ref(), Type::Con(n) if n == "block") =>
         {
             let t = t.clone();
             unify(&t, &Type::Any, subst)
         }
-        (Type::Record { .. }, Type::App(dict_head, t)) if matches!(dict_head.as_ref(), Type::Con(n) if n == "block") =>
+        (Type::Record { .. }, Type::App(block_head, t)) if matches!(block_head.as_ref(), Type::Con(n) if n == "block") =>
         {
             let t = t.clone();
             unify(&Type::Any, &t, subst)
@@ -1218,7 +1218,7 @@ mod tests {
     }
 
     #[test]
-    fn dict_unifies_with_dict() {
+    fn block_unifies_with_block() {
         let mut s = Substitution::new();
         assert!(unify(
             &Type::block(Type::Number),
@@ -1229,7 +1229,7 @@ mod tests {
     }
 
     #[test]
-    fn dict_unifies_value_types() {
+    fn block_unifies_value_types() {
         let mut s = Substitution::new();
         let lhs = Type::block(var("a"));
         let rhs = Type::block(Type::Number);
@@ -1238,19 +1238,19 @@ mod tests {
     }
 
     #[test]
-    fn closed_record_unifies_with_dict() {
+    fn closed_record_unifies_with_block() {
         let mut s = Substitution::new();
         let record = rec(&[("x", Type::Number), ("y", Type::Number)], false, &[]);
-        let dict = Type::block(Type::Number);
-        assert!(unify(&record, &dict, &mut s).is_ok());
+        let block = Type::block(Type::Number);
+        assert!(unify(&record, &block, &mut s).is_ok());
     }
 
     #[test]
-    fn closed_record_unifies_with_dict_binds_var() {
+    fn closed_record_unifies_with_block_binds_var() {
         let mut s = Substitution::new();
         let record = rec(&[("x", Type::Number)], false, &[]);
-        let dict = Type::block(var("a"));
-        assert!(unify(&record, &dict, &mut s).is_ok());
+        let block = Type::block(var("a"));
+        assert!(unify(&record, &block, &mut s).is_ok());
         assert_eq!(s.get(&vid("a")), Some(&Type::Number));
     }
 

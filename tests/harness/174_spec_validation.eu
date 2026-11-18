@@ -303,8 +303,14 @@ test-type-str: {
          = "[dict(symbol, dict(number, [string]))]"
   t20: (s"dict(string, number)" to-data from-data) = s"dict(string, number)"
 
+  ` "The block type's old constructor name `:Dict` is still accepted for one
+    release and renders in the new spelling (eu-oaz72.129)."
+  t21: ([:t-app, [:t-con, :Dict], s"number" to-data] type-str) = "block(number)"
+  t22: ([:t-app, [:t-con, :Dict], s"number" to-data] from-data) = s"block(number)"
+  t23: (s"block(number)" to-data second) = [:t-con, :block]
+
   RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15,
-           t16, t17, t18, t19, t20]
+           t16, t17, t18, t19, t20, t21, t22, t23]
     all-true? then(:PASS, :FAIL)
 }
 

@@ -1348,40 +1348,40 @@ pub fn parse_type_with_refs(input: &str) -> Result<(Type, Vec<AliasRef>), ParseE
 
 /// Deprecation notes for a type-annotation string.
 ///
-/// Returns one message per deprecated construct used in `input`. Today the
-/// only one is the block type's old spelling `Dict(T)`, an alias for
-/// `block(T)` kept for one release (owner decision 67, eu-oaz72.129). The
-/// check is lexical: it scans the token stream for the `Dict` keyword, so it
-/// works for constrained schemes too (stepping over characters the type
-/// lexer does not know, such as operator names), and skips the literal
-/// symbol type
-/// `:Dict`. Callers emit each note as a type warning at the annotation.
+/// Returns one message per deprecated construct used in `input` (at most
+/// one per construct, however often it appears). Today the only one is the
+/// block type's old spelling `Dict(T)`, an alias for `block(T)` kept for one
+/// release (owner decision 67, eu-oaz72.129). The check is lexical: it
+/// scans the token stream for the `Dict` keyword applied with `(`, so it
+/// works anywhere a type may appear (record fields, unions, constraint
+/// prefixes, stepping over characters the type lexer does not know, such as
+/// operator names) and ignores the literal symbol type `:Dict` and a field
+/// named `Dict`. Callers emit each note as a type warning at the annotation.
 pub fn deprecation_notes(input: &str) -> Vec<String> {
     let mut lexer = Lexer::new(input);
-    let mut notes = Vec::new();
-    let mut after_colon = false;
+    let mut prev_dict = false;
     loop {
         let tok = match lexer.next_token() {
             Ok((tok, _)) => tok,
             Err(_) => {
-                // A character the type lexer does not know, such as an
-                // operator name in a constraint prefix (`<(a, a) => …`):
-                // step over it and keep scanning.
                 let step = lexer.peek_char().map_or(1, char::len_utf8);
                 lexer.pos += step;
-                after_colon = false;
+                prev_dict = false;
                 continue;
             }
         };
         match tok {
             Token::Eof => break,
-            Token::Dict if !after_colon => notes
-                .push("the block type `Dict(T)` is deprecated; use `block(T)` instead".to_string()),
+            Token::LParen if prev_dict => {
+                return vec![
+                    "the block type `Dict(T)` is deprecated; use `block(T)` instead".to_string(),
+                ];
+            }
             _ => {}
         }
-        after_colon = tok == Token::Colon;
+        prev_dict = tok == Token::Dict;
     }
-    notes
+    Vec::new()
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -2287,11 +2287,15 @@ mod tests {
 
     #[test]
     fn deprecation_notes_flag_dict_only() {
-        assert_eq!(deprecation_notes("Dict(number) -> Dict(a)").len(), 2);
+        assert_eq!(deprecation_notes("Dict(number) -> Dict(a)").len(), 1);
         assert_eq!(deprecation_notes("<(a, a) => Dict(a) -> a").len(), 1);
+        assert_eq!(deprecation_notes("{scores: Dict(number)}").len(), 1);
+        assert_eq!(deprecation_notes("{block: Dict(number), ..}").len(), 1);
+        assert_eq!(deprecation_notes("[Dict(number)] | null").len(), 1);
         assert!(deprecation_notes("block(number)").is_empty());
         assert!(deprecation_notes("dict(string, number)").is_empty());
         assert!(deprecation_notes(":Dict").is_empty());
+        assert!(deprecation_notes("{Dict: number}").is_empty());
         assert!(deprecation_notes("\"Dict\"").is_empty());
     }
 

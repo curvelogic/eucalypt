@@ -973,7 +973,7 @@ impl Checker {
 
     /// Emit a warning for each deprecated construct in a successfully
     /// parsed annotation or alias string, such as the block type's old
-    /// spelling `block(T)` (eu-oaz72.129). Deduplicated by `Smid` like
+    /// spelling `Dict(T)` (eu-oaz72.129). Deduplicated by `Smid` like
     /// [`Self::warn_invalid_annotation`]: a string either fails to parse or
     /// parses, so the two never compete for the same `Smid`.
     fn warn_deprecated_syntax(&mut self, smid: Smid, type_str: &str) {
@@ -1709,8 +1709,6 @@ impl Checker {
         let freshened = freshen(&scheme, &mut self.var_counter);
 
         // Extract the inner type variable from the freshened wrapper.
-        // Accepts List, IO, block, and NonEmpty containers — all represented as
-        // App(Con("X"), T) in the new HKT representation.
         // Accepts List, IO, block, and NonEmpty containers — all represented as
         // App(Con("X"), T) in the new HKT representation.
         let inner = freshened

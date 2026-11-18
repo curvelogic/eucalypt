@@ -1,0 +1,4 @@
+# `Dict(T)` as the type of a record field warns: the field's colon is not
+# the literal symbol `:Dict` (eu-oaz72.129).
+` { type: "{{scores: Dict(number)}}" }
+results: { scores: { alice: 95 bob: 87 } }

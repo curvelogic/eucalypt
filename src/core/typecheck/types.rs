@@ -1051,7 +1051,7 @@ mod tests {
     }
 
     #[test]
-    fn display_dict() {
+    fn display_block() {
         assert_eq!(Type::block(Type::Number).to_string(), "block(number)");
     }
 
@@ -1276,12 +1276,12 @@ mod tests {
     }
 
     #[test]
-    fn display_dict_number() {
+    fn display_block_number() {
         assert_eq!(Type::block(Type::Number).to_string(), "block(number)");
     }
 
     #[test]
-    fn display_dict_list() {
+    fn display_block_list() {
         assert_eq!(
             Type::block(Type::list(Type::Number)).to_string(),
             "block([number])"
@@ -1347,7 +1347,7 @@ mod tests {
     }
 
     #[test]
-    fn humanise_dict_with_fresh_var() {
+    fn humanise_block_with_fresh_var() {
         let ty = Type::block(Type::Var(TypeVarId("_t0".into()), Kind::Star));
         let h = humanise(&ty);
         assert_eq!(h.to_string(), "block(a)");

@@ -1336,65 +1336,65 @@ mod tests {
 
     // ── block subtyping ───────────────────────────────────────────────────────
 
-    fn dict(t: Type) -> Type {
+    fn block(t: Type) -> Type {
         Type::block(t)
     }
 
     #[test]
-    fn dict_covariant() {
-        assert!(is_subtype(&dict(Type::Never), &dict(Type::Number)));
-        assert!(is_subtype(&dict(Type::Number), &dict(Type::Number)));
-        assert!(is_subtype(&dict(Type::Number), &dict(Type::Top)));
-        assert!(!is_subtype(&dict(Type::Number), &dict(Type::String)));
+    fn block_covariant() {
+        assert!(is_subtype(&block(Type::Never), &block(Type::Number)));
+        assert!(is_subtype(&block(Type::Number), &block(Type::Number)));
+        assert!(is_subtype(&block(Type::Number), &block(Type::Top)));
+        assert!(!is_subtype(&block(Type::Number), &block(Type::String)));
     }
 
     #[test]
-    fn closed_record_subtype_of_dict() {
+    fn closed_record_subtype_of_block() {
         let r = closed(&[("a", Type::Number), ("b", Type::Number)]);
-        assert!(is_subtype(&r, &dict(Type::Number)));
+        assert!(is_subtype(&r, &block(Type::Number)));
     }
 
     #[test]
-    fn closed_record_not_subtype_of_wrong_dict() {
+    fn closed_record_not_subtype_of_wrong_block() {
         let r = closed(&[("a", Type::Number), ("b", Type::String)]);
-        assert!(!is_subtype(&r, &dict(Type::Number)));
+        assert!(!is_subtype(&r, &block(Type::Number)));
     }
 
     #[test]
-    fn open_record_not_subtype_of_dict() {
+    fn open_record_not_subtype_of_block() {
         let r = open(&[("a", Type::Number)]);
-        assert!(!is_subtype(&r, &dict(Type::Number)));
+        assert!(!is_subtype(&r, &block(Type::Number)));
     }
 
     #[test]
-    fn dict_subtype_of_empty_open_record() {
+    fn block_subtype_of_empty_open_record() {
         let any_block = open(&[]);
-        assert!(is_subtype(&dict(Type::Number), &any_block));
-        assert!(is_subtype(&dict(Type::String), &any_block));
+        assert!(is_subtype(&block(Type::Number), &any_block));
+        assert!(is_subtype(&block(Type::String), &any_block));
     }
 
     #[test]
-    fn dict_not_subtype_of_named_field_record() {
+    fn block_not_subtype_of_named_field_record() {
         let r = closed(&[("x", Type::Number)]);
-        assert!(!is_subtype(&dict(Type::Number), &r));
+        assert!(!is_subtype(&block(Type::Number), &r));
     }
 
     #[test]
-    fn dict_consistent_with_same_dict() {
-        assert!(is_consistent(&dict(Type::Number), &dict(Type::Number)));
+    fn block_consistent_with_same_block() {
+        assert!(is_consistent(&block(Type::Number), &block(Type::Number)));
     }
 
     #[test]
-    fn dict_consistent_with_any_dict() {
-        assert!(is_consistent(&dict(Type::Any), &dict(Type::Number)));
-        assert!(is_consistent(&dict(Type::Number), &dict(Type::Any)));
+    fn block_consistent_with_any_block() {
+        assert!(is_consistent(&block(Type::Any), &block(Type::Number)));
+        assert!(is_consistent(&block(Type::Number), &block(Type::Any)));
     }
 
     #[test]
-    fn dict_consistent_with_empty_open_record() {
+    fn block_consistent_with_empty_open_record() {
         let any_block = open(&[]);
-        assert!(is_consistent(&dict(Type::Number), &any_block));
-        assert!(is_consistent(&any_block, &dict(Type::Number)));
+        assert!(is_consistent(&block(Type::Number), &any_block));
+        assert!(is_consistent(&any_block, &block(Type::Number)));
     }
 
     // ── Row variable subtyping ────────────────────────────────────────────────
