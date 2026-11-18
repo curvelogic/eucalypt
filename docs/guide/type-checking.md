@@ -446,9 +446,12 @@ in a block position acquire row variables. Parameters used arithmetically
 (`x + y`) stay `any`, avoiding spurious warnings.
 
 A projection that only runs when the parameter is already a block does
-not count. In a branch guarded by `block?` on that parameter (with
-`then`, `if`, `and`, or `not` for the other branch), the parameter is
-left `any`, so other arguments are still accepted:
+not count. In a branch guarded by `block?` on that parameter, the
+parameter is left `any`, so other arguments are still accepted. The
+guarded branch is the first arm of `then` or `if` under `x block?` (the
+second under `x block? not`), the second argument of `and(x block?, …)`,
+or the second argument of `or(x block? not, …)`. `cond` clauses are not
+recognised:
 
 ```eu,notest
 h(x): x block? then(x.a, 0)

@@ -2421,11 +2421,20 @@ impl Checker {
     ///
     /// Returns `None` for everything else (not a recognised brancher).
     fn recognise_brancher(&self, func: &RcExpr) -> Option<BranchShape> {
+        self.recognise_brancher_at(func, 0)
+    }
+
+    /// `recognise_brancher` for an expression `offset` binding scopes inside
+    /// the innermost frame of `scope_stack` — used while scanning a lambda
+    /// body whose own frame (and any nested ones) has not been pushed.  A
+    /// bound variable with `scope < offset` belongs to those unpushed scopes
+    /// and is not recognised.
+    fn recognise_brancher_at(&self, func: &RcExpr, offset: usize) -> Option<BranchShape> {
         match &*func.inner {
             Expr::Intrinsic(_, name) => intrinsic_branch_shape(name),
             Expr::Var(_, Var::Bound(bv)) => {
                 let name = bv.name.as_deref()?;
-                let idx = bv.scope as usize;
+                let idx = (bv.scope as usize).checked_sub(offset)?;
                 // Saturating sub: if idx >= scope_stack.len(), the variable
                 // is from an outer scope that we haven't seen (should not
                 // normally happen after varify, but guard anyway).
@@ -2499,24 +2508,26 @@ impl Checker {
                         mark_block_param(arg, depth, flags);
                     }
                 }
-                let spine: Vec<&RcExpr> = prefix_args.iter().copied().chain(args.iter()).collect();
-                if let Some(guarded) = self.block_guarded_branches(head, &spine, depth) {
-                    self.collect_block_uses(head, depth, flags);
-                    for (i, arg) in spine.iter().enumerate() {
-                        match guarded.iter().find(|(branch, _)| *branch == i) {
-                            Some(&(_, param)) => {
-                                let mut branch_flags = vec![false; flags.len()];
-                                self.collect_block_uses(arg, depth, &mut branch_flags);
-                                for (j, used) in branch_flags.into_iter().enumerate() {
-                                    if used && j != param {
-                                        flags[j] = true;
-                                    }
+                if let Some(shape) = self.recognise_brancher_at(peel_meta(head), depth + 1) {
+                    let spine: Vec<&RcExpr> =
+                        prefix_args.iter().copied().chain(args.iter()).collect();
+                    if let Some((branch, param)) = block_guarded_branch(&shape, &spine, depth) {
+                        // `head` is a variable or intrinsic: nothing in it to scan.
+                        for (i, arg) in spine.iter().enumerate() {
+                            if i != branch {
+                                self.collect_block_uses(arg, depth, flags);
+                                continue;
+                            }
+                            let mut branch_flags = vec![false; flags.len()];
+                            self.collect_block_uses(arg, depth, &mut branch_flags);
+                            for (j, used) in branch_flags.into_iter().enumerate() {
+                                if used && j != param {
+                                    flags[j] = true;
                                 }
                             }
-                            None => self.collect_block_uses(arg, depth, flags),
                         }
+                        return;
                     }
-                    return;
                 }
                 self.collect_block_uses(func, depth, flags);
                 for arg in args {
@@ -2532,7 +2543,7 @@ impl Checker {
             // Let binding: a let is recursive, so both the binding values and the
             // body sit inside the let's own scope (depth+1).  Scanning the values
             // at `depth` would mistake references to the let's own binders (e.g.
-            // the `__p1` introduced by list-destructuring parameters) for the
+            // the `__p'1` introduced by list-destructuring parameters) for the
             // enclosing lambda's parameters.
             Expr::Let(_, inner_scope, _) => {
                 for b in &inner_scope.pattern {
@@ -2563,59 +2574,6 @@ impl Checker {
 
             // Variables and primitives: nothing to do.
             _ => {}
-        }
-    }
-
-    /// For a fully applied branch combinator whose condition is `block?(p)`
-    /// (or its negation) on one of the scanned lambda's parameters `p`, return
-    /// `(spine index, p)` for each branch that only runs when `p` is a block.
-    ///
-    /// - `if(c, t, f)` and combinators derived from it (`then`): `t` when `c`
-    ///   is `block?(p)`, `f` when it is `not(block?(p))`;
-    /// - `and(c, r)`: `r` when `c` is `block?(p)`;
-    /// - `or(c, r)`: `r` when `c` is `not(block?(p))`.
-    ///
-    /// Returns `None` when `head` is not a recognised brancher at full arity or
-    /// its condition is not such a test, so the caller scans as usual.
-    fn block_guarded_branches(
-        &self,
-        head: &RcExpr,
-        spine: &[&RcExpr],
-        depth: usize,
-    ) -> Option<Vec<(usize, usize)>> {
-        let shape = self.brancher_in_lambda_body(head, depth)?;
-        if spine.len() != shape.arity {
-            return None;
-        }
-        let (param, positive) = block_test_of_param(spine[shape.condition], depth)?;
-        let guarded = match (shape.kind, positive) {
-            (BranchKind::If, true) => vec![(shape.branches[0], param)],
-            (BranchKind::If, false) => vec![(shape.branches[1], param)],
-            (BranchKind::And, true) | (BranchKind::Or, false) => {
-                vec![(shape.branches[0], param)]
-            }
-            _ => return None,
-        };
-        Some(guarded)
-    }
-
-    /// `recognise_brancher` for an expression `depth` scopes inside a lambda
-    /// body whose own frame has not been pushed yet.
-    ///
-    /// A bound variable with `scope ≤ depth` is the lambda's parameter or a
-    /// binding local to its body, and is not recognised.  Otherwise its frame
-    /// is `scope - depth - 1` from the top of `scope_stack`.
-    fn brancher_in_lambda_body(&self, head: &RcExpr, depth: usize) -> Option<BranchShape> {
-        match &*peel_meta(head).inner {
-            Expr::Var(_, Var::Bound(bv)) => {
-                let name = bv.name.as_deref()?;
-                let outer = (bv.scope as usize).checked_sub(depth + 1)?;
-                let anchored = self.scope_stack.len().checked_sub(1 + outer)?;
-                self.branch_shapes
-                    .get(&(anchored, name.to_string()))
-                    .and_then(|opt| opt.clone())
-            }
-            _ => self.recognise_brancher(peel_meta(head)),
         }
     }
 
@@ -3029,6 +2987,35 @@ fn flatten_app_spine(func: &RcExpr) -> (&RcExpr, Vec<&RcExpr>) {
 }
 
 // ── B9: use-driven block-parameter detection ──────────────────────────────────
+
+/// For a fully applied branch combinator whose condition is `block?(p)` (or
+/// its negation) on one of the scanned lambda's parameters `p`, return
+/// `(spine index, p)` for the branch that only runs when `p` is a block:
+///
+/// - `if(c, t, f)` and combinators derived from it (`then`): `t` when `c` is
+///   `block?(p)`, `f` when it is `not(block?(p))`;
+/// - `and(c, r)`: `r` when `c` is `block?(p)`;
+/// - `or(c, r)`: `r` when `c` is `not(block?(p))`.
+///
+/// `cond` is not covered.  Returns `None` when the arity is wrong or the
+/// condition is not such a test, so the caller scans as usual.
+fn block_guarded_branch(
+    shape: &BranchShape,
+    spine: &[&RcExpr],
+    depth: usize,
+) -> Option<(usize, usize)> {
+    if spine.len() != shape.arity {
+        return None;
+    }
+    let (param, positive) = block_test_of_param(spine[shape.condition], depth)?;
+    let branch = match (&shape.kind, positive) {
+        (BranchKind::If, true) => shape.branches[0],
+        (BranchKind::If, false) => shape.branches[1],
+        (BranchKind::And, true) | (BranchKind::Or, false) => shape.branches[0],
+        _ => return None,
+    };
+    Some((branch, param))
+}
 
 /// Recognise `block?(p)` or `not(block?(p))` where `p` is a parameter of the
 /// lambda being scanned (`scope == depth`); return `(p's index, polarity)`,
