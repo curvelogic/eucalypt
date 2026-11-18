@@ -249,3 +249,57 @@ fn eu_test_with_a_closed_pipe_still_reports_failure() {
         "a failing suite must exit 1 even with its reader gone, stderr:\n{stderr}"
     );
 }
+
+/// `eu test --open` opens no report once stdout's reader has gone
+/// (eu-oaz72.46): whoever piped the output away is not watching for it.
+///
+/// `$BROWSER` names a script that records the page it was asked to open,
+/// so the test sees whether a browser was launched without starting one.
+/// With a reader (the control), the report is opened. Linux only: the
+/// browser crate honours `$BROWSER` there but not on macOS.
+#[cfg(target_os = "linux")]
+#[test]
+fn eu_test_open_skips_the_browser_on_a_closed_pipe() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let test_file = dir.path().join("open_test.eu");
+    std::fs::write(&test_file, PASSING_TEST).expect("write test fixture");
+    let marker = dir.path().join("opened");
+    let browser = dir.path().join("browser.sh");
+    std::fs::write(
+        &browser,
+        format!("#!/bin/sh\necho \"$1\" > '{}'\n", marker.display()),
+    )
+    .expect("write browser script");
+    std::fs::set_permissions(&browser, std::fs::Permissions::from_mode(0o755))
+        .expect("chmod browser script");
+
+    let eu = |stdout: Stdio| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_eu"))
+            .args(["test", "--open", test_file.to_str().unwrap()])
+            .env("BROWSER", &browser)
+            .current_dir(dir.path())
+            .stdout(stdout)
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn eu");
+        drop(child.stdout.take());
+        child.wait_with_output().expect("wait for eu")
+    };
+    // The browser is launched in the background: give it time to write.
+    let opened = || {
+        (0..50).any(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            marker.exists()
+        })
+    };
+
+    let output = eu(Stdio::piped());
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(!opened(), "a report was opened for a reader that had gone");
+
+    let output = eu(Stdio::null());
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(opened(), "control: with a reader, the report is opened");
+}

@@ -1,0 +1,3 @@
+exit: 1
+stderr: "bad number format: 12x"
+location: 2:13
