@@ -2704,22 +2704,17 @@ pub fn test_error_168() {
 /// source position — which clobbered the real user call site that had been
 /// recorded moments earlier.
 ///
-/// **Blob-only, deliberately**: every test below is gated on
-/// `#[cfg(prelude_blob_ok)]` (set by `build.rs` only when a fresh
-/// `lib/prelude.blob` was embedded — see the pattern established in
-/// `src/eval/stg/blob.rs` and `tests/diagnostics_blame_plumbing_test.rs`,
-/// eu-1tkk.7.11). `Smid::global_slot` identities — the thing this fix
-/// corrects for — only exist on the blob path; CI's plain "Test Suite" job
-/// runs `cargo test` without generating a blob first, so `eu` falls back to
-/// compiling the prelude from source at runtime and every prelude Smid is a
-/// real (non-tagged) source position instead. Checked directly against the
-/// released 0.13.2 binary: in `--source-prelude` mode 0.13.2 shows a
-/// **prelude** location (`[prelude]:84:14`), not a user one — and
-/// eu-1tkk.7.8 deliberately suppresses a non-user-file primary label, so
-/// 0.14 showing no location in source-prelude mode is correct behaviour
-/// under that invariant, not a regression. Do not "fix" the source-prelude
-/// path by weakening the suppression rule to make these assertions pass
-/// unconditionally.
+/// **Both prelude modes** (eu-oaz72.202): these tests once carried
+/// `#[cfg(prelude_blob_ok)]`, on the reasoning that source-prelude mode
+/// legitimately showed no location. It did not: in that mode prelude code
+/// carries real prelude locations, which overwrote the user call site in the
+/// machine's fallback register, so the error lost its location in source
+/// mode alone — a source/blob divergence. The machine now keeps the last
+/// *user-file* location as the fallback, so both modes report the call
+/// site. The suppression of non-user primary labels (eu-1tkk.7.8) is
+/// unchanged. Without the cfg gate they run in both CI configurations
+/// (blob, and no blob — the source prelude); they also pass with a blob
+/// present under `EU_SOURCE_PRELUDE=1`, which no CI job runs today.
 ///
 /// `072_io_fail.eu`, `094_io_no_flag.eu`, `106_io_check_fail.eu` and
 /// `168_io_shell_missing_cmd.eu` each already have a `test_error_*` function
@@ -2731,7 +2726,6 @@ pub fn test_error_168() {
 /// assert the primary label names the fixture's own file and the call
 /// site's line:column, matching blob-mode 0.13.2 exactly.
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_072_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/072_io_fail.eu"])
@@ -2751,7 +2745,6 @@ pub fn test_error_072_not_allowed_has_location() {
 }
 
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_094_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/094_io_no_flag.eu", "-t", "result"])
@@ -2771,7 +2764,6 @@ pub fn test_error_094_not_allowed_has_location() {
 }
 
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_106_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/106_io_check_fail.eu"])
@@ -2791,7 +2783,6 @@ pub fn test_error_106_not_allowed_has_location() {
 }
 
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_168_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/168_io_shell_missing_cmd.eu"])
