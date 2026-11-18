@@ -356,6 +356,7 @@ ns: { inner: 1 }\n"
 
 (defconst eucalypt-check--quail-translated
   '(("&&" . ?\u2227) ("|||" . ?\u2016) ("\\in" . ?\u2208) ("\\!in" . ?\u2209)
+    ("\\|" . ?\u2223) ("\\!|" . ?\u2224)
     ("\\[[" . ?\u27e6) ("\\{}" . ?\u2205) ("\\!!" . ?\u2713) ("\\<<" . ?\u00ab))
   "Key sequences and the character each must translate to.")
 
