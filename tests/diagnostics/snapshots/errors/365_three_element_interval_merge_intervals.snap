@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: merge-intervals interval of length 3 must be a pair [lo, hi]
+error: merge-intervals interval of length 3 or more must be a pair [lo, hi]
   ┌─ tests/harness/errors/365_three_element_interval_merge_intervals.eu:2:4
   │
 2 │ x: merge-intervals[[1, 2], [1, 2, 3]]

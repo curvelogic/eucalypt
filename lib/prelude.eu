@@ -1785,17 +1785,25 @@ __picks(front, xs): xs nil? then([], cons([head(xs), front ++ tail(xs)], __picks
     type: s"[[number]] → [[number]]" }
 merge-intervals(is): __require-int-bounds(is, __merge-sorted(is sort-by-num(first)))
 
-` { doc: "`__require-int-bounds(is, v)` - internal: `v`, or an error naming `merge-intervals` when an interval in `is` is not a pair, has a non-number or non-integer bound, or has `lo > hi`."
+` { doc: "`__require-int-bounds(is, v)` - internal: `v`, or an error naming `merge-intervals` when an interval list in `is` does not have exactly two elements, has a non-number or non-integer bound, or has `lo > hi`."
     export: :suppress }
 __require-int-bounds(is, v): is foldr(__check-interval, v)
 
-` { doc: "`__check-interval(i, v)` - internal: `v`, or an error naming `merge-intervals` when the interval list `i` does not have exactly two elements, or its bounds fail `__check-pair`."
+` { doc: "`__check-interval(i, v)` - internal: `v`, or an error naming `merge-intervals` when the interval list `i` does not have exactly two elements, or its bounds fail `__check-pair`. Counts at most three cells of `i`, so it is safe on an infinite interval."
     export: :suppress }
-__check-interval(i, v): (i list?) then(__check-length(i count, i, v), __check-pair(i, v))
+__check-interval(i, v): (i list?) then(__check-length(i take(3) count, i, v), __check-pair(i, v))
 
-` { doc: "`__check-length(n, i, v)` - internal: `__check-pair(i, v)` when the interval `i` has `n = 2` elements, else an error naming `merge-intervals`."
+` { doc: "`__check-length(n, i, v)` - internal: `__check-pair(i, v)` when `n`, the length of the interval `i` capped at 3, is 2, else an error naming `merge-intervals`."
     export: :suppress }
-__check-length(n, i, v): (n = 2) then(__check-pair(i, v), panic("merge-intervals interval of length {n} must be a pair [lo, hi]"))
+__check-length(n, i, v): (n = 2) then(__check-pair(i, v), __wrong-length(__interval-length-text(n)))
+
+` { doc: "`__wrong-length(len)` - internal: the error naming `merge-intervals` for an interval of length `len`, given as text."
+    export: :suppress }
+__wrong-length(len): panic("merge-intervals interval of length {len} must be a pair [lo, hi]")
+
+` { doc: "`__interval-length-text(n)` - internal: `n` as text for a wrong-length interval error, where `n` is a length capped at 3, so 3 reads `3 or more`."
+    export: :suppress }
+__interval-length-text(n): (n < 3) then(str.of(n), "3 or more")
 
 ` { doc: "`__check-pair([lo, hi], v)` - internal: `v`, or an error naming `merge-intervals` when `lo` or `hi` is not an integer, or `lo > hi`."
     export: :suppress }
