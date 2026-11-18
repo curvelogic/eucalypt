@@ -25,8 +25,11 @@ use super::statistics::{Statistics, Timings};
 /// twice, named and also inside a directory given, or reached through a
 /// symbolic link) is tested once, at its first position, unless it is
 /// read in a different format each time (`yaml@x.txt json@x.txt`), when
-/// each format is a test of its own. All plans run as one suite with
-/// one report, and the exit code is non-zero if any test fails.
+/// each format is a test of its own. A file is tested at its canonical
+/// path, so one reached through a symbolic link is tested as the file it
+/// links to: imports, the result directory and the format implied by its
+/// extension all follow the link's target. All plans run as one suite
+/// with one report, and the exit code is non-zero if any test fails.
 pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
     let inputs = if opt.explicit_inputs().is_empty() {
@@ -75,16 +78,31 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
 
 /// Give plans that would share a title (`x.eu` and `x.yaml`, both titled
 /// `x`) titles of their own: the file's name, with the format it is read
-/// in where that is not the one its extension implies. A title set in
-/// the file's metadata is left alone.
+/// in where that is not the one its extension implies, or, where that is
+/// still shared (`a/x.eu` and `b/x.eu`), the file's path with that
+/// format. A title set in the file's metadata is left alone.
 fn disambiguate_titles(plans: &mut [TestPlan]) {
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    for plan in plans.iter() {
-        *counts.entry(plan.title().clone()).or_default() += 1;
-    }
-    for plan in plans.iter_mut() {
-        if counts[plan.title()] > 1 && plan.has_default_title() {
+    let shared = |plans: &[TestPlan]| {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for plan in plans {
+            *counts.entry(plan.title().clone()).or_default() += 1;
+        }
+        plans
+            .iter()
+            .map(|p| p.has_default_title() && counts[p.title()] > 1)
+            .collect::<Vec<_>>()
+    };
+    let flags = shared(plans);
+    for (plan, shared) in plans.iter_mut().zip(flags) {
+        if shared {
             let title = plan.qualified_file_name();
+            plan.set_title(title);
+        }
+    }
+    let flags = shared(plans);
+    for (plan, shared) in plans.iter_mut().zip(flags) {
+        if shared {
+            let title = plan.qualified_path();
             plan.set_title(title);
         }
     }
@@ -976,7 +994,11 @@ impl Tester for InProcessTester {
                 // can reference it. Error tests are handled separately
                 // (validate_error_test) so parse/compile failures here
                 // propagate as test failures, which is correct.
-                Input::from(Locator::Fs(plan.file().to_path_buf())).with_name("subject"),
+                Input::new(
+                    Locator::Fs(plan.file().to_path_buf()),
+                    Some("subject".to_string()),
+                    plan.input_format(),
+                ),
                 Input::from(Locator::Resource("test".to_string())),
             ])
             .with_lib_path(lib_path.clone())

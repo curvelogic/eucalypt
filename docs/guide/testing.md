@@ -32,15 +32,22 @@ test: {
 Several test targets can be embedded in one file. Each is run as a
 separate test.
 
+`eu test` takes files and directories. A file reached more than once is
+tested once; a symbolic link is tested as the file it links to, from
+that file's directory. A format prefix (`yaml@settings.conf`) is kept
+for the run and the validation, and naming one file in two formats tests
+it in each.
+
 The tester runs a file's `test…` and `bench-` targets, its `main`
 target, and any target that names validators with `verify`. Any other
 target is not run. So that its checks are not skipped silently,
 `eu test` fails a file that declares such a target when the target's
 body binds `RESULT` or uses an inline assertion (`//=`, `//=>`, `//!`,
 `//=?`, `//=?>`): name it `test-…` or give it `verify`. The failure
-shows in the console, the exit code and the HTML report. A target
-nested inside one that runs is rendered as part of it, so it is not
-reported. The check reads the target's own body, so checks reached
+shows in the console, the exit code and the HTML report. This applies
+to a target nested inside one that runs too: its `RESULT` is rendered
+as part of the outer target's output, but does not decide the outer
+verdict. The check reads the target's own body, so checks reached
 only through a reference to another declaration are not seen, and nor
 is a target that relies on every value being `true` with no `RESULT`
 (any block of booleans would look like one).

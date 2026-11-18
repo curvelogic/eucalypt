@@ -5420,12 +5420,13 @@ pub fn test_tester_fails_unrun_checked_target() {
     assert_eq!(exit_code, 1);
 }
 
-/// A checked target nested inside a target that runs is rendered as part
-/// of it, so it is not reported as never running (eu-oaz72.69).
+/// A checked target nested inside a target that runs is still reported:
+/// its failing `RESULT` does not decide the outer verdict, so it would
+/// otherwise pass silently (eu-oaz72.69).
 #[test]
-pub fn test_tester_runs_nested_checked_target() {
+pub fn test_tester_reports_nested_checked_target() {
     let exit_code = tester::test(&opts("testdata/nested_checked_target.eu")).unwrap();
-    assert_eq!(exit_code, 0);
+    assert_eq!(exit_code, 1);
 }
 
 /// A `num` that fails inside a user function carets that `num` call,

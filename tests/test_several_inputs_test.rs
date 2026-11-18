@@ -217,6 +217,54 @@ fn a_file_read_in_two_formats_runs_twice() {
     );
 }
 
+/// A format prefix holds through validation as well as the run: a YAML
+/// file with another extension is not re-read as eucalypt
+/// (eu-oaz72.143 b).
+#[test]
+fn a_format_prefix_holds_through_validation() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    fixture(dir.path(), "cfg.conf", "RESULT: PASS\n");
+
+    let (code, stdout) = eu_test_args(dir.path(), &["yaml@cfg.conf".as_ref()]);
+    assert_eq!(code, Some(0), "stdout:\n{stdout}");
+    assert_eq!(verdicts(&stdout, "cfg"), 1, "stdout:\n{stdout}");
+}
+
+/// Same-name files in different directories get their paths as titles,
+/// and a title the file sets is kept even when it equals the stem.
+#[test]
+fn same_name_files_in_two_directories_keep_titles_of_their_own() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    for sub in ["one", "two"] {
+        std::fs::create_dir(dir.path().join(sub)).expect("mkdir");
+        fixture(&dir.path().join(sub), "x.eu", PASSING);
+    }
+    let titled = "{ title: \"t\" }\n` { target: :test-ok }\nok: { RESULT: :PASS }\n";
+    std::fs::create_dir(dir.path().join("three")).expect("mkdir");
+    fixture(&dir.path().join("three"), "t.eu", titled);
+    std::fs::create_dir(dir.path().join("four")).expect("mkdir");
+    fixture(&dir.path().join("four"), "t.eu", titled);
+
+    let (code, stdout) = eu_test_args(
+        dir.path(),
+        &[
+            "one".as_ref(),
+            "two".as_ref(),
+            "three".as_ref(),
+            "four".as_ref(),
+        ],
+    );
+    assert_eq!(code, Some(0), "stdout:\n{stdout}");
+    let x_titles: Vec<&str> = stdout.lines().filter(|l| l.contains("x.eu...")).collect();
+    assert_eq!(x_titles.len(), 2, "stdout:\n{stdout}");
+    assert_ne!(x_titles[0], x_titles[1], "stdout:\n{stdout}");
+    assert_eq!(
+        verdicts(&stdout, "t"),
+        2,
+        "metadata title rewritten:\n{stdout}"
+    );
+}
+
 /// A relative `-o` is reported as the absolute path of the report
 /// (eu-oaz72.143 c).
 #[test]
@@ -229,14 +277,19 @@ fn a_relative_output_path_is_reported_absolute() {
         &["-o".as_ref(), "rel.html".as_ref(), ok.as_os_str()],
     );
     assert_eq!(code, Some(0), "stdout:\n{stdout}");
-    let report = dir
-        .path()
-        .canonicalize()
-        .expect("canonical")
-        .join("rel.html");
+    let report = dir.path().join("rel.html");
     assert!(report.exists(), "no report at {}", report.display());
-    assert!(
-        stdout.contains(&format!("Report generated at {}\n", report.display())),
+    // The reported path may spell the directory differently (a Windows
+    // short name, a symlink), so compare the files it and -o name.
+    let reported = stdout
+        .lines()
+        .find_map(|l| l.strip_prefix("Report generated at "))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| panic!("no report line:\n{stdout}"));
+    assert!(reported.is_absolute(), "reported as given:\n{stdout}");
+    assert_eq!(
+        reported.canonicalize().expect("reported report exists"),
+        report.canonicalize().expect("canonical report"),
         "stdout:\n{stdout}"
     );
 }

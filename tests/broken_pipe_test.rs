@@ -255,8 +255,9 @@ fn eu_test_with_a_closed_pipe_still_reports_failure() {
 ///
 /// `$BROWSER` names a script that records the page it was asked to open,
 /// so the test sees whether a browser was launched without starting one.
-/// With a reader (the control), the report is opened.
-#[cfg(unix)]
+/// With a reader (the control), the report is opened. Linux only: the
+/// browser crate honours `$BROWSER` there but not on macOS.
+#[cfg(target_os = "linux")]
 #[test]
 fn eu_test_open_skips_the_browser_on_a_closed_pipe() {
     use std::os::unix::fs::PermissionsExt;

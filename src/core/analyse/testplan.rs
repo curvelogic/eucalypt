@@ -303,6 +303,9 @@ pub struct TestPlan {
     /// The format the file is read in, when it is not the one its
     /// extension implies (`yaml@x.txt`)
     input_format: Option<String>,
+    /// Whether the title is the default one, derived from the file
+    /// name, rather than one the file sets in its metadata
+    default_title: bool,
 }
 
 impl TestPlan {
@@ -316,15 +319,25 @@ impl TestPlan {
         &self.title
     }
 
-    /// Replace the test title
+    /// Replace the default title (see `has_default_title`)
     pub fn set_title(&mut self, title: String) {
         self.title = title;
     }
 
-    /// Whether the title is the default one, the file's stem, rather
-    /// than one the file sets in its metadata
+    /// Whether the title is the default one, derived from the file
+    /// name, rather than one the file sets in its metadata
     pub fn has_default_title(&self) -> bool {
-        self.file.file_stem().map(|s| s.to_string_lossy()) == Some(self.title.as_str().into())
+        self.default_title
+    }
+
+    /// The file's path, prefixed with the format it is read in where
+    /// that is not the one its extension implies
+    pub fn qualified_path(&self) -> String {
+        let path = self.file.display();
+        match &self.input_format {
+            Some(format) => format!("{format}@{path}"),
+            None => path.to_string(),
+        }
     }
 
     /// The format the file is read in
@@ -389,8 +402,10 @@ impl TestPlan {
 
     /// Targets declared in the file under test whose bodies carry checks
     /// (a `RESULT` binding or an inline assertion) but which the tester
-    /// does not run: not named `test…` or `bench-…`, not `main`, with
-    /// no `verify`, and not nested inside a target that runs. Their checks would never gate, so the tester
+    /// does not run: not named `test…` or `bench-…`, not `main`, and
+    /// with no `verify`. A target nested inside one that runs is
+    /// included: its `RESULT` is rendered as part of the outer output but
+    /// does not decide the outer verdict. Their checks would never gate, so the tester
     /// fails the file.
     pub fn unrun_checked_targets(&self) -> &[Target] {
         &self.unrun_checked_targets
@@ -489,13 +504,6 @@ impl TestPlan {
                 unrun_checked_targets.push(t.clone());
             }
         }
-        // A target nested inside one that runs is rendered, checks and
-        // all, as part of the outer target's output.
-        unrun_checked_targets.retain(|t| {
-            !targets.iter().any(|(run, _)| {
-                run.path().len() < t.path().len() && t.path().starts_with(run.path())
-            })
-        });
         unrun_checked_targets.sort_by(|a, b| a.name().cmp(b.name()));
 
         // default to empty target if there are none
@@ -506,6 +514,7 @@ impl TestPlan {
         Ok(TestPlan {
             run_id: run_id.to_string(),
             file: filename.to_path_buf(),
+            default_title: header.title.is_none(),
             title: header
                 .title
                 .or_else(|| {
@@ -562,6 +571,7 @@ impl TestPlan {
             requires_io: false,
             unrun_checked_targets: vec![],
             input_format: None,
+            default_title: true,
         }
     }
 
@@ -581,6 +591,7 @@ impl TestPlan {
             requires_io: false,
             unrun_checked_targets: vec![],
             input_format: None,
+            default_title: true,
         }
     }
 }
