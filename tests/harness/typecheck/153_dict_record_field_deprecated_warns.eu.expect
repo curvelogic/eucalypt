@@ -1,0 +1,2 @@
+exit: 1
+stderr: "the block type `Dict(T)` is deprecated; use `block(T)` instead"

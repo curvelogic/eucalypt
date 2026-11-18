@@ -19,7 +19,7 @@ use crate::{
         expr::*,
         rt,
         transform::dynamise,
-        typecheck::parse::{parse_scheme, render_scheme},
+        typecheck::parse::{deprecation_notes, parse_scheme, render_scheme},
     },
     syntax::rowan::{
         ast::{self as rowan_ast, AstToken, Element, HasSoup},
@@ -676,6 +676,14 @@ impl Desugarable for rowan_ast::Literal {
                         // Uses parse_scheme to handle the full type-DSL including
                         // operator constraints (e.g. `>(a, a) => a → a → a`).
                         match parse_scheme(text) {
+                            // A string using a deprecated spelling (the block
+                            // type's old `Dict(T)`) keeps its source text, so
+                            // that the type checker still sees the old
+                            // spelling and warns (eu-oaz72.129); it parses to
+                            // the same type either way.
+                            Ok(_) if !deprecation_notes(text).is_empty() => {
+                                Primitive::TypeData(text.trim().to_string())
+                            }
                             Ok((ty, constraints)) => {
                                 Primitive::TypeData(render_scheme(&ty, &constraints))
                             }

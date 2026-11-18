@@ -1,0 +1,6 @@
+# `Dict(T)` is the deprecated spelling of the block type `block(T)`
+# (eu-oaz72.129): it still means the same type, but each annotation using it
+# warns, pointing to `block(T)`. The value is a well-typed `block(number)`,
+# so the deprecation is the only warning.
+` { type: "Dict(number)" }
+scores: { alice: 95 bob: 87 }

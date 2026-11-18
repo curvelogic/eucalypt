@@ -693,8 +693,8 @@ origin: { x: 0, y: 0 }
 | `{k: T, ..}`       | open record (at least k: T)            |
 | `{k: T, ..r}`      | named row variable (in string: `{{k: T, ..r}}`) |
 | `{..r, ..s}`       | row concatenation (in string: `{{..r, ..s}}`)   |
-| `block`            | any block (no known shape)             |
-| `Dict(T)`          | homogeneous block — all values type T  |
+| `block`            | any block (no known shape), = `{..}`   |
+| `block(T)`         | homogeneous block — all values type T (`Dict(T)` deprecated) |
 | `Name` (capitalised) | type alias — defined via `types: { Name: "..." }` |
 | `"value"`          | literal string type (subtype of `string`); c-string escapes for the quotes: `c"\"value\""` |
 | `:name`            | literal symbol type (subtype of `symbol`)      |
