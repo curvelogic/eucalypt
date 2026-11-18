@@ -5326,4 +5326,97 @@ mod tests {
         let (hint, _inner) = result.unwrap();
         assert_eq!(hint, "[a]");
     }
+
+    // ── Monad constructor resolution (eu-oaz72.183, eu-oaz72.171) ───────────
+
+    /// A binding value carrying `monad: "<wrapper>"` metadata.
+    fn with_monad_meta(wrapper: &str) -> RcExpr {
+        let meta = core::block(Smid::default(), [("monad".to_string(), str_lit(wrapper))]);
+        RcExpr::from(Expr::Meta(Smid::default(), num_lit(0), meta))
+    }
+
+    /// `{f: m number, g: n number}` for the given higher-kinded variables.
+    fn record_of_hk_apps(vars: &[&str]) -> Type {
+        let fields = vars
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let app = Type::App(
+                    Box::new(Type::hk_var(TypeVarId(v.to_string()), Kind::star_to_star())),
+                    Box::new(Type::Number),
+                );
+                (format!("f{i}"), FieldPresence::Required(app))
+            })
+            .collect();
+        Type::Record {
+            fields,
+            open: false,
+            rows: vec![],
+        }
+    }
+
+    fn field(ty: &Type, name: &str) -> Type {
+        match ty {
+            Type::Record { fields, .. } => fields[name].ty().clone(),
+            other => panic!("expected a record, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn monad_metadata_resolves_single_constructor() {
+        let mut c = Checker::new();
+        let ty = c.resolve_monad_constructors(&with_monad_meta("[a]"), record_of_hk_apps(&["m"]));
+        assert_eq!(field(&ty, "f0"), Type::list(Type::Number));
+    }
+
+    #[test]
+    fn monad_metadata_other_vars_become_any() {
+        let mut c = Checker::new();
+        let value = with_monad_meta("stream → {value: a, rest: stream}");
+        let ty = c.resolve_monad_constructors(&value, record_of_hk_apps(&["m"]));
+        let mut fields = BTreeMap::new();
+        fields.insert("value".to_string(), FieldPresence::Required(Type::Number));
+        fields.insert("rest".to_string(), FieldPresence::Required(Type::Any));
+        let expected = Type::Function(
+            Box::new(Type::Any),
+            Box::new(Type::Record {
+                fields,
+                open: false,
+                rows: vec![],
+            }),
+        );
+        assert_eq!(field(&ty, "f0"), expected);
+    }
+
+    #[test]
+    fn monad_metadata_ignored_when_several_constructors_escape() {
+        // One wrapper cannot describe two monads: both become gradual.
+        let mut c = Checker::new();
+        let ty =
+            c.resolve_monad_constructors(&with_monad_meta("[a]"), record_of_hk_apps(&["m", "n"]));
+        assert_eq!(field(&ty, "f0"), Type::Any);
+        assert_eq!(field(&ty, "f1"), Type::Any);
+    }
+
+    #[test]
+    fn monad_without_wrapper_is_gradual() {
+        let mut c = Checker::new();
+        let ty = c.resolve_monad_constructors(&num_lit(0), record_of_hk_apps(&["m"]));
+        assert_eq!(field(&ty, "f0"), Type::Any);
+    }
+
+    #[test]
+    fn non_record_binding_keeps_its_constructor_variables() {
+        let mut c = Checker::new();
+        let app = Type::App(
+            Box::new(Type::hk_var(
+                TypeVarId("m".to_string()),
+                Kind::star_to_star(),
+            )),
+            Box::new(Type::Number),
+        );
+        let fun = Type::Function(Box::new(app.clone()), Box::new(app));
+        let ty = c.resolve_monad_constructors(&with_monad_meta("[a]"), fun.clone());
+        assert_eq!(ty, fun);
+    }
 }
