@@ -238,9 +238,12 @@ impl<'a> CollectorHeapView<'a> {
     /// elements hold heap pointers traces them only then, so a backing
     /// shared by several arrays is traced once, through whichever reaches
     /// it first. That is sound only if every array sharing a backing of
-    /// traced elements has the same length: environment frames guarantee
-    /// it (`EnvironmentFrame::shared_bindings`). A reshaped `HeapNdArray` shares a
-    /// backing of `f64`s, which has nothing to trace.
+    /// traced elements has the same length. Environment frames share a
+    /// backing only at full length (`EnvironmentFrame::shared_bindings_full`
+    /// and `cell`); `EnvironmentFrame::shared_bindings(n)` can return a
+    /// shorter view and must not be used to share traced bindings. A
+    /// reshaped `HeapNdArray` shares a backing of `f64`s, which has nothing
+    /// to trace.
     pub fn scan_backing<B: HeapBacked>(
         &mut self,
         backed: &B,

@@ -207,8 +207,9 @@ outside the roots, or an update that writes a wrong but unforwarded address.
 With `EU_GC_VERIFY` unset (and no `EU_GC_POISON`), the cost is nil beyond a
 flag test: each `CollectorHeapView` computes once whether any debug check
 is on, `mark` tests that flag where it used to test `EU_GC_POISON`, and the
-check bodies are out of line. `mark_raw_bytes` and `mark_array` gain one
-test of whether a forwarding check is on; no extra pass runs.
+check bodies are out of line. `mark_raw_bytes` and `scan_backing` (both
+through `mark_backing`) gain one test of whether a forwarding check is on;
+no extra pass runs.
 
 *Implementation*: `ForwardingCheck`, `CollectorHeapView::debug_mark` and
 `verify_no_forwarded_references` in `src/eval/memory/collect.rs`.
