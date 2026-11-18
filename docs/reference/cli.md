@@ -557,12 +557,13 @@ at least 1 MiB. If two successive
 collections each leave more than the limit plus that tolerance, evaluation
 stops with the same `heap limit exceeded` error.
 
-Whatever the limit, the storage of a single set, vec or n-dimensional
-array is one heap allocation, which holds at most 4 GiB (2³² − 1 bytes).
+Whatever the limit, the storage of a single vec or n-dimensional array is
+one heap allocation, which holds at most 4 GiB (2³² − 1 bytes). (Sets are
+trees of small nodes, so the cap does not apply to them.)
 An n-dimensional array therefore holds at most 536,870,911 elements, and
 building a larger one, such as `arr.zeros([30000, 30000])`, stops with an
-error naming that cap. A set or vec too large for one allocation stops
-with an allocation error rather than crashing. Split such data across
+error naming that cap. A vec too large for one allocation stops with an
+allocation error rather than crashing. Split such data across
 several containers.
 
 ### Error Output Format

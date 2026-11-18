@@ -5,7 +5,7 @@ use std::slice::from_raw_parts;
 use super::{
     alloc::{ScopedAllocator, StgObject},
     array::RawArray,
-    collect::{CollectorHeapView, CollectorScope, GcScannable, OpaqueHeapBytes, ScanPtr},
+    collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr},
 };
 
 /// UTF-8 string data stored in the heap
@@ -34,11 +34,7 @@ impl GcScannable for HeapString {
         marker: &mut CollectorHeapView<'a>,
         out: &mut Vec<ScanPtr<'a>>,
     ) {
-        if let Some(ptr) = self.data.allocated_data() {
-            if marker.mark_raw_bytes(ptr) {
-                out.push(ScanPtr::from_non_null(scope, ptr.cast::<OpaqueHeapBytes>()));
-            }
-        }
+        marker.scan_backing(&self.data, scope, out);
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {

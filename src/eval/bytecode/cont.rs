@@ -188,7 +188,7 @@ impl GcScannable for BcContinuation {
                 // The branch table is a heap `Array`, so its backing is
                 // marked/evacuated — but its entries are inert `CodeRef`s,
                 // so (unlike the HeapSyn continuation) no entry is traced.
-                marker.scan_array_backing(branch_table, scope, out);
+                marker.scan_backing(branch_table, scope, out);
                 // `fallback` is an inert `CodeRef` — not traced.
                 if marker.mark(*environment) {
                     out.push(ScanPtr::from_non_null(scope, *environment));
@@ -208,7 +208,7 @@ impl GcScannable for BcContinuation {
                 }
             }
             BcContinuation::ApplyTo { args, .. } => {
-                if marker.scan_array_backing(args, scope, out) {
+                if marker.scan_backing(args, scope, out) {
                     for arg in args.iter() {
                         out.push(ScanPtr::new(scope, arg));
                     }

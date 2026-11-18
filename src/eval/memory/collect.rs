@@ -230,29 +230,46 @@ impl<'guard> CollectorHeapView<'guard> {
 }
 
 impl<'a> CollectorHeapView<'a> {
-    /// Mark a heap array's backing buffer and, if it was not already
+    /// Mark a container's backing buffer and, if it was not already
     /// marked, queue it as opaque bytes so the evacuating collector can
     /// move it (the backing has its own header but no tracing of its own).
     ///
     /// Returns whether the backing was newly marked. A caller whose
     /// elements hold heap pointers traces them only then: a backing shared
-    /// with another array (`Array::clone_with_length`) is traced once.
-    pub fn scan_array_backing<T: Clone>(
+    /// with another array (`Array::clone_with_length`, a reshaped
+    /// `HeapNdArray`) is traced once.
+    pub fn scan_backing<B: HeapBacked>(
         &mut self,
-        arr: &Array<T>,
+        backed: &B,
         scope: &'a dyn CollectorScope,
         out: &mut Vec<ScanPtr<'a>>,
     ) -> bool {
-        let newly = self.mark_array(arr);
+        let Some(backing) = backed.allocated_data() else {
+            return false;
+        };
+        let newly = self.mark_backing(backing, B::MARK_KIND);
         if newly {
-            if let Some(backing) = arr.allocated_data() {
-                out.push(ScanPtr::from_non_null(
-                    scope,
-                    backing.cast::<OpaqueHeapBytes>(),
-                ));
-            }
+            out.push(ScanPtr::from_non_null(
+                scope,
+                backing.cast::<OpaqueHeapBytes>(),
+            ));
         }
         newly
+    }
+
+    /// Rewrite a container's backing pointer if the collector evacuated
+    /// its buffer: the update-phase half of [`Self::scan_backing`].
+    ///
+    /// Callers that hold traced elements update them after this, so they
+    /// read the elements at the new location.
+    pub fn update_backing<B: HeapBacked>(&self, backed: &mut B) {
+        if let Some(old_ptr) = backed.allocated_data() {
+            if let Some(new_ptr) = self.forwarded_to(old_ptr) {
+                // SAFETY: `new_ptr` is the evacuated copy of the same backing
+                // allocation, with the same capacity and element layout.
+                unsafe { backed.set_backing_bytes(new_ptr) };
+            }
+        }
     }
 }
 
@@ -366,12 +383,25 @@ impl CollectorHeapView<'_> {
     /// Returns `true` if the object was newly marked (i.e. it should be
     /// pushed onto the scan queue as an `OpaqueHeapBytes` object).
     pub fn mark_raw_bytes(&mut self, ptr: NonNull<u8>) -> bool {
+        self.mark_backing(ptr, "raw bytes")
+    }
+
+    /// Mark an array's backing buffer if not already marked and return
+    /// whether it was newly marked (`false` for an unallocated array).
+    pub fn mark_array<T: Clone>(&mut self, arr: &Array<T>) -> bool {
+        arr.allocated_data()
+            .is_some_and(|ptr| self.mark_backing(ptr, "array backing"))
+    }
+
+    /// Mark a separately allocated backing buffer, covering every line its
+    /// bytes span; `kind` names it in forwarding-check panics.
+    fn mark_backing(&mut self, ptr: NonNull<u8>, kind: &'static str) -> bool {
         debug_assert!(ptr != NonNull::dangling());
         debug_assert!(ptr.as_ptr() as usize != usize::MAX);
         // Poison is checked only by `mark`: here only a forwarding check
         // has anything to do.
         if self.forwarding != ForwardingCheck::Off {
-            if let Some(newly) = self.debug_mark(ptr, "raw bytes", false) {
+            if let Some(newly) = self.debug_mark(ptr, kind, false) {
                 return newly;
             }
         }
@@ -385,47 +415,8 @@ impl CollectorHeapView<'_> {
         }
     }
 
-    /// Mark object if not already marked and return whether marked
-    pub fn mark_array<T: Clone>(&mut self, arr: &Array<T>) -> bool {
-        if let Some(ptr) = arr.allocated_data() {
-            debug_assert!(ptr != NonNull::dangling());
-            debug_assert!(ptr.as_ptr() as usize != usize::MAX);
-            if self.forwarding != ForwardingCheck::Off {
-                if let Some(newly) = self.debug_mark(ptr.cast(), "array backing", false) {
-                    return newly;
-                }
-            }
-            if !self.heap.is_marked(ptr) {
-                self.heap.mark_object(ptr);
-                self.heap.mark_lines_for_bytes(ptr);
-                self.heap.note_live_bytes(self.heap.allocation_bytes(ptr));
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
-
     pub fn is_marked<T>(&self, obj: NonNull<T>) -> bool {
         self.heap.is_marked(obj)
-    }
-
-    /// Rewrite a container's backing pointer if the collector evacuated
-    /// its buffer: the update-phase half of [`Self::scan_array_backing`]
-    /// (and of `mark_raw_bytes` for a `RawArray`).
-    ///
-    /// Callers that hold traced elements update them after this, so they
-    /// read the elements at the new location.
-    pub fn update_backing<B: HeapBacked>(&self, backed: &mut B) {
-        if let Some(old_ptr) = backed.allocated_data() {
-            if let Some(new_ptr) = self.forwarded_to(old_ptr) {
-                // SAFETY: `new_ptr` is the evacuated copy of the same backing
-                // allocation, with the same capacity and element layout.
-                unsafe { backed.set_backing_bytes(new_ptr) };
-            }
-        }
     }
 
     pub fn sweep(&mut self) {
@@ -1120,7 +1111,7 @@ pub mod tests {
         marker: &mut CollectorHeapView<'a>,
         out: &mut Vec<ScanPtr<'a>>,
     ) {
-        if marker.scan_array_backing(arr, scope, out) {
+        if marker.scan_backing(arr, scope, out) {
             for p in arr.iter() {
                 if marker.mark(*p) {
                     out.push(ScanPtr::from_non_null(scope, *p));

@@ -17,10 +17,14 @@ use super::{
 /// Storage held in one separately allocated heap buffer, which the
 /// evacuating collector may move: a [`RawArray`] or an [`Array`].
 ///
-/// The collector's update phase rewrites the buffer pointer through this
-/// trait (`CollectorHeapView::update_backing`), so every such container
-/// is fixed up the same way.
+/// The collector marks and forwards the buffer through this trait
+/// (`CollectorHeapView::scan_backing` and `update_backing`), so every such
+/// container is handled the same way.
 pub trait HeapBacked {
+    /// What the buffer is called in the collector's forwarding-check
+    /// diagnostics.
+    const MARK_KIND: &'static str;
+
     /// The backing buffer, or `None` when nothing is allocated.
     fn allocated_data(&self) -> Option<RefPtr<u8>>;
 
@@ -34,6 +38,8 @@ pub trait HeapBacked {
 }
 
 impl<T: Sized> HeapBacked for RawArray<T> {
+    const MARK_KIND: &'static str = "raw bytes";
+
     fn allocated_data(&self) -> Option<RefPtr<u8>> {
         RawArray::allocated_data(self)
     }
@@ -45,6 +51,8 @@ impl<T: Sized> HeapBacked for RawArray<T> {
 }
 
 impl<T: Sized + Clone> HeapBacked for Array<T> {
+    const MARK_KIND: &'static str = "array backing";
+
     fn allocated_data(&self) -> Option<RefPtr<u8>> {
         Array::allocated_data(self)
     }
@@ -564,6 +572,8 @@ pub mod tests {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
         assert!(RawArray::<u64>::try_alloc(&view, usize::MAX / 2).is_err());
+        // Wraps to 8 bytes if the multiplication is not checked.
+        assert!(RawArray::<u64>::try_alloc(&view, usize::MAX / 8 + 2).is_err());
         assert!(RawArray::<u64>::try_alloc(&view, (u32::MAX as usize) / 8 + 1).is_err());
         assert!(RawArray::<u64>::try_alloc(&view, 0).unwrap().is_none());
         assert!(RawArray::<u64>::try_alloc(&view, 4).unwrap().is_some());

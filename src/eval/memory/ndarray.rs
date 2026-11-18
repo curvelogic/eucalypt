@@ -36,8 +36,8 @@ impl GcScannable for HeapNdArray {
         marker: &mut CollectorHeapView<'a>,
         out: &mut Vec<ScanPtr<'a>>,
     ) {
-        marker.scan_array_backing(&self.shape, scope, out);
-        marker.scan_array_backing(&self.data, scope, out);
+        marker.scan_backing(&self.shape, scope, out);
+        marker.scan_backing(&self.data, scope, out);
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {

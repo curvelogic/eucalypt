@@ -112,7 +112,7 @@ pub(crate) fn scan_primitive_array<'a>(
     marker: &mut CollectorHeapView<'a>,
     out: &mut Vec<ScanPtr<'a>>,
 ) {
-    marker.scan_array_backing(elements, scope, out);
+    marker.scan_backing(elements, scope, out);
     if has_strings {
         for elem in elements.as_slice() {
             elem.scan(scope, marker, out);

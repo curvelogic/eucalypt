@@ -657,7 +657,7 @@ impl<C: Clone + GcScannable> GcScannable for EnvironmentFrame<C> {
         // try_evacuate on it.  Without this, the backing stays in the
         // candidate block and is recycled after mark-state flip, leaving the
         // evacuated EnvFrame copy with a dangling data.ptr.
-        if marker.scan_array_backing(bindings, scope, out) {
+        if marker.scan_backing(bindings, scope, out) {
             for binding in bindings.iter() {
                 out.push(ScanPtr::new(scope, binding));
             }
