@@ -1,2 +1,3 @@
 exit: 1
 stderr: "empty expression where a value was expected"
+location: 3:3

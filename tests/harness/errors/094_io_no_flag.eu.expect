@@ -1,2 +1,3 @@
 exit: 1
 stderr: "IO operations are not permitted; use the --allow-io"
+no-location: primary label differs by prelude mode (blob: 094_io_no_flag.eu:4:9, source: none)

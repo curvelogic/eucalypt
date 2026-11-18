@@ -1,2 +1,3 @@
 exit: 1
 stderr: "YAML mapping keys must be string literals"
+location: testdata/complex_key.yaml:1:1

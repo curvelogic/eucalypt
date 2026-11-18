@@ -1,2 +1,3 @@
 exit: 1
 stderr: "035_nested_fn_trace\.eu:[12]:"
+no-location: primary label differs by prelude mode (blob: 035_nested_fn_trace.eu:2:12, source: 035_nested_fn_trace.eu:1:11)

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "(?s)a datetime cannot be a set element: set elements must be numbers, strings or symbols.*errors[/\\]236_set_of_datetime\.eu:2:35"
+location: 2:35

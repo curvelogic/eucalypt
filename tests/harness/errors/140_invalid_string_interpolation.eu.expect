@@ -1,2 +1,3 @@
 exit: 1
 stderr: "invalid string interpolation"
+location: 1:24

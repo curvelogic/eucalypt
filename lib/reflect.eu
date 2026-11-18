@@ -66,7 +66,10 @@ type-str(td):
         k-str: to-str(k)
       }.(cond[
           f = [:t-con, :IO]       => "IO({x-str})"
-        , f = [:t-con, :Dict]     => "Dict({x-str})"
+        , f = [:t-con, :block]    => "block({x-str})"
+        # `:Dict` is the block type's old name, accepted for one release
+        # (eu-oaz72.129); it renders in the new spelling.
+        , f = [:t-con, :Dict]     => "block({x-str})"
         , f = [:t-con, :NonEmpty] => "NonEmpty([{x-str}])"
         , k != null               => "dict({k-str}, {x-str})"
         , "{f-str} {x-str}"

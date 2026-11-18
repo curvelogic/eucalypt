@@ -1,2 +1,3 @@
 exit: 1
 stderr: "bitwise operations require integer arguments"
+location: 3:13

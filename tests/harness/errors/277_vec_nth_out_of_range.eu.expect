@@ -1,2 +1,3 @@
 exit: 1
 stderr: "vec.nth index 5 out of range for vec of length 2"
+location: 2:19

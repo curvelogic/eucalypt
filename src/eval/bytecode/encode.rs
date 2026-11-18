@@ -156,6 +156,12 @@ impl Encoder {
     /// Emit a lambda-form header (kind, arity, annotation, body offset).
     fn emit_form_header(&mut self, lf: &LambdaForm, body_off: CodeRef) {
         let (kind, arity, smid) = classify_lambda_form(lf);
+        // Closed bindings (eu-oaz72.175) are flagged in the kind byte's high bit.
+        let kind = if super::closed::binding_is_closed(lf) {
+            kind | FORM_CLOSED
+        } else {
+            kind
+        };
         self.emit_u8(kind);
         self.emit_u8(arity);
         self.emit_smid(smid);

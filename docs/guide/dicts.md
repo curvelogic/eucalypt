@@ -217,7 +217,7 @@ both are errors; render `d dict.to-list` to output such a dict as
 
 The type checker writes the type of a dict as `dict(k, v)`, with keys of
 type `k` and values of type `v`; bare `dict` is `dict(any, any)`. It is a
-different type from `Dict(T)`, the type of a block whose values all have
+different type from `block(T)`, the type of a block whose values all have
 type `T`. See [Type Checking](type-checking.md#dictk-v).
 
 ## Equality

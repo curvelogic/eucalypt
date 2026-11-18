@@ -1,0 +1,2 @@
+` "merge-intervals: an empty interval is an error naming merge-intervals (owner decision 67)"
+x: merge-intervals[[]]

@@ -1,0 +1,2 @@
+` "merge-intervals: a one-element interval is an error naming merge-intervals (owner decision 67)"
+x: merge-intervals[[1, 2], [1]]

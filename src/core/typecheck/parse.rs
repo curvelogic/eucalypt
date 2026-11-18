@@ -92,9 +92,11 @@ enum Token {
     Io,
     Lens,
     Traversal,
+    /// `Dict` — the deprecated spelling of the block type `block(T)`
+    /// (kept as an alias for one release; see [`deprecation_notes`]).
     Dict,
     /// `dict` — the ordered dict, `dict(k, v)` (distinct from the block
-    /// type `Dict(T)`).
+    /// type `block(T)`).
     OrdDict,
     NonEmpty,
     // Identifiers (type variables and record field names)
@@ -617,17 +619,28 @@ impl<'a> Parser<'a> {
             Token::Set => Ok(Type::Set),
             Token::Vec => Ok(Type::Vec),
             Token::Array => Ok(Type::Array),
-            Token::Block => Ok(Type::Record {
-                fields: BTreeMap::new(),
-                open: true,
-                rows: vec![],
-            }),
+            Token::Block => {
+                if self.peek()? == &Token::LParen {
+                    // `block` `(` type `)` — homogeneous block
+                    self.advance()?;
+                    let inner = self.parse_type()?;
+                    self.expect(&Token::RParen)?;
+                    Ok(Type::block(inner))
+                } else {
+                    // bare `block` — any block, `{..}`
+                    Ok(Type::Record {
+                        fields: BTreeMap::new(),
+                        open: true,
+                        rows: vec![],
+                    })
+                }
+            }
             Token::Dict => {
-                // `Dict` `(` type `)`
+                // `Dict` `(` type `)` — deprecated spelling of `block(T)`
                 self.expect(&Token::LParen)?;
                 let inner = self.parse_type()?;
                 self.expect(&Token::RParen)?;
-                Ok(Type::dict(inner))
+                Ok(Type::block(inner))
             }
             Token::OrdDict => {
                 // `dict` `(` type `,` type `)`, or bare `dict` = `dict(any, any)`
@@ -1333,6 +1346,62 @@ pub fn parse_type_with_refs(input: &str) -> Result<(Type, Vec<AliasRef>), ParseE
     Ok((ty, parser.alias_refs))
 }
 
+/// Deprecation notes for a type-annotation string.
+///
+/// Returns one message per deprecated construct used in `input` (at most
+/// one per construct, however often it appears). Today the only one is the
+/// block type's old spelling `Dict(T)`, an alias for `block(T)` kept for one
+/// release (owner decision 67, eu-oaz72.129). The check is lexical: it
+/// scans the token stream for the `Dict` keyword applied with `(`, so it
+/// works anywhere a type may appear (record fields, unions, constraint
+/// prefixes, stepping over characters the type lexer does not know, such as
+/// operator names) and ignores the literal symbol type `:Dict` and a field
+/// named `Dict`. Callers emit each note as a type warning at the annotation.
+pub fn deprecation_notes(input: &str) -> Vec<String> {
+    let mut lexer = Lexer::new(input);
+    let mut prev_dict = false;
+    loop {
+        let tok = match lexer.next_token() {
+            Ok((tok, _)) => tok,
+            Err(_) => {
+                let step = lexer.peek_char().map_or(1, char::len_utf8);
+                lexer.pos += step;
+                prev_dict = false;
+                continue;
+            }
+        };
+        match tok {
+            Token::Eof => break,
+            Token::LParen if prev_dict => {
+                return vec![
+                    "the block type `Dict(T)` is deprecated; use `block(T)` instead".to_string(),
+                ];
+            }
+            _ => {}
+        }
+        prev_dict = tok == Token::Dict;
+    }
+    Vec::new()
+}
+
+/// The runtime form of a type-data string.
+///
+/// Desugaring keeps the source text of an `s"..."` that uses a deprecated
+/// spelling (the block type's old `Dict(T)`), so that the type checker sees
+/// it and warns (eu-oaz72.129). Once checked, such a string is compiled in
+/// its canonical form, as every other type-data string already is, so that
+/// `s"Dict(number)"` and `s"block(number)"` are the same value at runtime.
+/// Any other string is returned unchanged.
+pub fn canonical_type_data(s: &str) -> std::borrow::Cow<'_, str> {
+    if deprecation_notes(s).is_empty() {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    match parse_scheme(s) {
+        Ok((ty, constraints)) => std::borrow::Cow::Owned(render_scheme(&ty, &constraints)),
+        Err(_) => std::borrow::Cow::Borrowed(s),
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1697,10 +1766,10 @@ mod tests {
                 Box::new(Type::Number)
             )
         );
-        // `dict` and the block type `Dict` stay distinct.
+        // `dict` and the block type `block(T)` stay distinct.
         assert_ne!(
             parse_type("dict(string, number)").unwrap(),
-            parse_type("Dict(number)").unwrap()
+            parse_type("block(number)").unwrap()
         );
         assert!(parse_type("dict(number)").is_err());
     }
@@ -2183,23 +2252,69 @@ mod tests {
     }
 
     #[test]
-    fn parse_dict_type() {
+    fn parse_block_type() {
         assert_eq!(
-            parse_type("Dict(number)").unwrap(),
-            Type::dict(Type::Number)
+            parse_type("block(number)").unwrap(),
+            Type::block(Type::Number)
         );
     }
 
     #[test]
-    fn parse_dict_with_var() {
-        assert_eq!(parse_type("Dict(a)").unwrap(), Type::dict(var("a")));
+    fn parse_block_with_var() {
+        assert_eq!(parse_type("block(a)").unwrap(), Type::block(var("a")));
     }
 
     #[test]
-    fn parse_dict_in_function() {
-        // symbol -> Dict(a) -> a
-        let ty = parse_type("symbol -> Dict(a) -> a").unwrap();
+    fn parse_block_in_function() {
+        // symbol -> block(a) -> a
+        let ty = parse_type("symbol -> block(a) -> a").unwrap();
         assert!(matches!(ty, Type::Function(_, _)));
+    }
+
+    #[test]
+    fn bare_block_is_any_block() {
+        assert_eq!(
+            parse_type("block").unwrap(),
+            Type::Record {
+                fields: BTreeMap::new(),
+                open: true,
+                rows: vec![],
+            }
+        );
+        assert_eq!(parse_type("block").unwrap(), parse_type("{..}").unwrap());
+    }
+
+    #[test]
+    fn block_type_roundtrips() {
+        let ty = parse_type("block([number])").unwrap();
+        assert_eq!(ty.to_string(), "block([number])");
+        assert_eq!(parse_type(&ty.to_string()).unwrap(), ty);
+    }
+
+    #[test]
+    fn deprecated_dict_is_alias_for_block() {
+        assert_eq!(
+            parse_type("Dict(number)").unwrap(),
+            parse_type("block(number)").unwrap()
+        );
+        assert_eq!(
+            parse_type("symbol -> Dict(a) -> a").unwrap(),
+            parse_type("symbol -> block(a) -> a").unwrap()
+        );
+    }
+
+    #[test]
+    fn deprecation_notes_flag_dict_only() {
+        assert_eq!(deprecation_notes("Dict(number) -> Dict(a)").len(), 1);
+        assert_eq!(deprecation_notes("<(a, a) => Dict(a) -> a").len(), 1);
+        assert_eq!(deprecation_notes("{scores: Dict(number)}").len(), 1);
+        assert_eq!(deprecation_notes("{block: Dict(number), ..}").len(), 1);
+        assert_eq!(deprecation_notes("[Dict(number)] | null").len(), 1);
+        assert!(deprecation_notes("block(number)").is_empty());
+        assert!(deprecation_notes("dict(string, number)").is_empty());
+        assert!(deprecation_notes(":Dict").is_empty());
+        assert!(deprecation_notes("{Dict: number}").is_empty());
+        assert!(deprecation_notes("\"Dict\"").is_empty());
     }
 
     // ── Spec examples ───────────────────────────────────────────────────────

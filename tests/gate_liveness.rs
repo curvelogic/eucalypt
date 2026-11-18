@@ -143,6 +143,16 @@ const REGISTRY: &[Gate] = &[
                     tempfile, a non-wasm32 dev-dependency",
     },
     Gate {
+        path: "tests/list_retention_test.rs",
+        cfg: "not(target_arch = \"wasm32\")",
+        supplier: Supplier::NativeTargetsOnly,
+        rationale: "spawns the eu binary to gate constant-space consumption \
+                    of a long list through a wrapper frame \
+                    (eu-oaz72.175); there is no binary to spawn under \
+                    wasm32, and it also needs tempfile, a non-wasm32 \
+                    dev-dependency",
+    },
+    Gate {
         path: "tests/property_test.rs",
         cfg: "not(target_arch = \"wasm32\")",
         supplier: Supplier::NativeTargetsOnly,

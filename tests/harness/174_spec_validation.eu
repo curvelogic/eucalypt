@@ -284,7 +284,7 @@ test-type-str: {
   t9: (s"number?" to-data type-str) = "number?"
   t10: (s"number → string" to-data type-str) = "number → string"
   t11: (s"a" to-data type-str) = "a"
-  t12: (s"Dict(number)" to-data type-str) = "Dict(number)"
+  t12: (s"block(number)" to-data type-str) = "block(number)"
   t13: (s"{a: {b: number}, ..}" to-data type-str) = "{{a: {{b: number}}, ..}}"
 
   ` "type-str is total over the tag vocabulary: an unrecognised tag renders as
@@ -303,8 +303,19 @@ test-type-str: {
          = "[dict(symbol, dict(number, [string]))]"
   t20: (s"dict(string, number)" to-data from-data) = s"dict(string, number)"
 
+  ` "The block type's old constructor name `:Dict` is still accepted for one
+    release and renders in the new spelling (eu-oaz72.129)."
+  t21: ([:t-app, [:t-con, :Dict], s"number" to-data] type-str) = "block(number)"
+  t22: ([:t-app, [:t-con, :Dict], s"number" to-data] from-data) = s"block(number)"
+  t23: (s"block(number)" to-data second) = [:t-con, :block]
+
+  ` "An s-string in the deprecated spelling is the same type-data value as
+    the new one at runtime (eu-oaz72.129)."
+  t24: (s"Dict(number)") = (s"block(number)")
+  t25: (s"[Dict(number)]" to-data type-str) = "[block(number)]"
+
   RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15,
-           t16, t17, t18, t19, t20]
+           t16, t17, t18, t19, t20, t21, t22, t23, t24, t25]
     all-true? then(:PASS, :FAIL)
 }
 

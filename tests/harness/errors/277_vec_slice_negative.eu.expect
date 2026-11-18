@@ -1,2 +1,3 @@
 exit: 1
 stderr: "vec.slice from -1 out of range: vec indices start at 0"
+location: 2:23

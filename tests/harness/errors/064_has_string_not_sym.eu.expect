@@ -1,2 +1,3 @@
 exit: 1
 stderr: "symbol"
+location: 3:13

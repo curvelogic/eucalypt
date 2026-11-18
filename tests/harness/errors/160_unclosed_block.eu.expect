@@ -1,2 +1,3 @@
 exit: 1
 stderr: "unterminated block"
+location: 3:4

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "unexpected content in string interpolation"
+location: 5:16
