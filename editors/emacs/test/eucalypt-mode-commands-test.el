@@ -31,12 +31,20 @@
 log=\"$EUCALYPT_STUB_LOG\"
 { printf 'cwd=%s\\n' \"$(pwd)\"
   printf 'no_color=%s\\n' \"${NO_COLOR-unset}\"
+  printf 'inside=%s\\n' \"${INSIDE_EMACS-unset}\"
   for a in \"$@\"; do printf 'arg=%s\\n' \"$a\"; done
-  if [ \"$1\" = eu@- ]; then printf 'stdin=%s\\n' \"$(tr '\\n' '|')\"; fi
+  case \"$1\" in eu@-|fmt) input=$(cat)
+    printf 'stdin=%s\\n' \"$(printf '%s\\n' \"$input\" | tr '\\n' '|')\" ;; esac
   printf 'end\\n'; } >> \"$log\"
 if [ -n \"$NO_COLOR\" ]; then red=''; off=''; else red=$(printf '\\033[31m'); off=$(printf '\\033[0m'); fi
 case \"$*\" in *slow*) sleep 1; printf 'late\\n'; printf 'late\\n' >&2; exit 0 ;; esac
 case \"$1\" in
+  fmt)
+    case \"$input\" in *bad*) printf 'error: unexpected token\\n' >&2; exit 1 ;; esac
+    case \"$*\" in *silent*) exit 0 ;; esac
+    case \"$input\" in *CASE*) printf '%s\\n' \"$input\" | tr A-Z a-z; exit 0 ;; esac
+    printf '%s\\n' \"$input\" | sed 's/:  */: /'
+    exit 0 ;;
   list-targets)
     if [ \"$2\" = broken.eu ]; then printf 'boom\\n' >&2; exit 1; fi
     printf 'Available targets\\n\\n'
@@ -209,9 +217,9 @@ Fails, rather than prompting, if the location does not resolve to a file."
   "`eucalypt-run-target' lists targets and passes `-t' from the file's directory."
   (eucalypt-test--with-stub
     (with-current-buffer (eucalypt-test--visit dir)
-      (should (equal (mapcar #'car (eucalypt-list-targets buffer-file-name))
-                     '("bar" "foo")))
-      (eucalypt-test--wait (eucalypt-run-target "foo")))
+      (let ((targets (eucalypt-list-targets buffer-file-name)))
+        (should (equal (mapcar #'car targets) '("bar" "foo")))
+        (eucalypt-test--wait (eucalypt-run-target "foo" nil targets))))
     (let ((calls (eucalypt-test--log log)))
       (should (equal (eucalypt-test--args (nth 0 calls)) '("list-targets" "m.eu")))
       (should (equal (cdr (assoc "cwd" (nth 0 calls))) (directory-file-name dir)))
@@ -325,6 +333,112 @@ Fails, rather than prompting, if the location does not resolve to a file."
       (should (derived-mode-p 'eucalypt-compilation-mode))
       (should-not (string-search "\e[" (buffer-string))))))
 
+(ert-deftest eucalypt-test-args-target ()
+  "The selected target is read from the final argument list."
+  (should (equal (eucalypt--args-target '("m.eu" "-t" "foo")) "foo"))
+  (should (equal (eucalypt--args-target '("m.eu" "-tfoo")) "foo"))
+  (should (equal (eucalypt--args-target '("m.eu" "-t=foo")) "foo"))
+  (should (equal (eucalypt--args-target '("--target" "foo" "m.eu")) "foo"))
+  (should (equal (eucalypt--args-target '("--target=foo" "m.eu")) "foo"))
+  (should (equal (eucalypt--args-target '("-t" "bar" "-t" "foo")) "foo"))
+  (should (null (eucalypt--args-target '("m.eu" "-j"))))
+  (should (null (eucalypt--args-target '("m.eu" "-t"))))
+  ;; Clustered short options, and values that look like `-t'.
+  (should (equal (eucalypt--args-target '("-It" "foo")) "foo"))
+  (should (equal (eucalypt--args-target '("-jtfoo")) "foo"))
+  (should (null (eucalypt--args-target '("-e" "-tfoo" "m.eu"))))
+  (should (null (eucalypt--args-target '("--" "-t" "foo"))))
+  ;; The format scanner reads the same forms.
+  (should (eq (eucalypt--infer-output-format-from-args '("-jxtoml")) 'toml))
+  (should (eq (eucalypt--infer-output-format-from-args '("-Ix" "json")) 'json))
+  (should (eq (eucalypt--infer-output-format-from-args '("-x=edn")) 'edn))
+  (should (eq (eucalypt--infer-output-format-from-args '("-Nj")) 'json)))
+
+(ert-deftest eucalypt-test-run-target-format-from-call ()
+  "The output format follows the target this call runs, not an earlier listing."
+  (eucalypt-test--with-stub
+    (with-current-buffer (eucalypt-test--visit dir)
+      ;; A Lisp call, with no listing before it, lists the targets itself.
+      (eucalypt-test--wait (eucalypt-run-target "foo"))
+      (with-current-buffer eucalypt--command-output-buffer
+        (should (eq major-mode 'js-mode)))
+      ;; Completing `bar' and editing it to `-t foo' renders foo's format.
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "bar"))
+                ((symbol-function 'read-shell-command)
+                 (lambda (_prompt initial &rest _)
+                   (should (equal initial "m.eu -t bar"))
+                   "m.eu -t foo")))
+        (let ((current-prefix-arg '(4)))
+          (eucalypt-test--wait (call-interactively #'eucalypt-run-target))))
+      (with-current-buffer eucalypt--command-output-buffer
+        (should (eq major-mode 'js-mode)))
+      ;; Arguments that choose a format need no listing.
+      (let ((eucalypt-eu-global-opts "-x text"))
+        (eucalypt-test--wait (eucalypt-run-target "foo")))
+      (with-current-buffer eucalypt--command-output-buffer
+        (should (eq major-mode 'text-mode)))
+      ;; Given the target list, the call does not list the targets again.
+      (eucalypt-test--wait
+       (eucalypt-run-target "foo" nil '(("foo" :format nil :doc ""))))
+      (with-current-buffer eucalypt--command-output-buffer
+        (should (eq major-mode 'text-mode))))
+    (should (equal (mapcar #'eucalypt-test--args (eucalypt-test--log log))
+                   '(("list-targets" "m.eu") ("m.eu" "-t" "foo")
+                     ("list-targets" "m.eu") ("m.eu" "-t" "foo")
+                     ("-x" "text" "m.eu" "-t" "foo")
+                     ("m.eu" "-t" "foo"))))))
+
+(ert-deftest eucalypt-test-format-buffer ()
+  "`eucalypt-format-buffer' pipes the buffer to `eu fmt' and keeps point."
+  (eucalypt-test--with-stub
+    (with-current-buffer (eucalypt-test--visit dir)
+      (erase-buffer)
+      (insert "a:    1\nb:   nosuch\n")
+      (goto-char (point-min))
+      (forward-line 1)
+      (let ((eucalypt-fmt-args '("--width" "100")))
+        (eucalypt-format-buffer))
+      (should (equal (buffer-string) "a: 1\nb: nosuch\n"))
+      (should (= (line-number-at-pos) 2))
+      (should (buffer-modified-p))
+      ;; Formatting formatted text changes nothing.
+      (set-buffer-modified-p nil)
+      (eucalypt-format-buffer)
+      (should-not (buffer-modified-p)))
+    (let ((call (car (eucalypt-test--log log))))
+      (should (equal (cdr (assoc "cwd" call)) (directory-file-name dir)))
+      (should (equal (cdr (assoc "no_color" call)) "1"))
+      (should (equal (eucalypt-test--args call) '("fmt" "--width" "100")))
+      (should (equal (cdr (assoc "stdin" call)) "a:    1|b:   nosuch|")))))
+
+(ert-deftest eucalypt-test-format-buffer-edge-cases ()
+  "Case-only changes apply, narrowing is ignored, and bad arguments are refused."
+  (eucalypt-test--with-stub
+    (with-current-buffer (eucalypt-test--visit dir)
+      (erase-buffer)
+      (insert "x: 1\nY: CASE\n")
+      (narrow-to-region 1 3)
+      (eucalypt-format-buffer)
+      (widen)
+      (should (equal (buffer-string) "x: 1\ny: case\n"))
+      (let ((eucalypt-fmt-args '("--check")))
+        (should-error (eucalypt-format-buffer) :type 'user-error))
+      (let ((eucalypt-fmt-args '("silent")))
+        (should-error (eucalypt-format-buffer) :type 'user-error))
+      (should (equal (buffer-string) "x: 1\ny: case\n")))))
+
+(ert-deftest eucalypt-test-format-buffer-failure ()
+  "A failing `eu fmt' leaves the buffer alone and shows its errors."
+  (eucalypt-test--with-stub
+    (with-current-buffer (eucalypt-test--visit dir)
+      (erase-buffer)
+      (insert "a: bad\n")
+      (should-error (eucalypt-format-buffer) :type 'user-error)
+      (should (equal (buffer-string) "a: bad\n")))
+    (with-current-buffer eucalypt--command-error-buffer
+      (should (string-search "unexpected token" (buffer-string))))))
+
 (ert-deftest eucalypt-test-commands-repeat ()
   "Commands run again after a run has left the errors buffer read-only."
   (eucalypt-test--with-stub
@@ -392,6 +506,50 @@ Fails, rather than prompting, if the location does not resolve to a file."
         (should (equal (cdr (assoc "no_color" call)) "1"))))
     (with-current-buffer eucalypt--command-output-buffer
       (should (equal (buffer-string) "a: 1\n")))))
+
+(ert-deftest eucalypt-test-remote-render-and-format ()
+  "Over TRAMP, rendering and formatting run `eu' on the remote host."
+  :tags '(tramp)
+  (eucalypt-test--with-stub
+    (eucalypt-test--add-mock-method)
+    (let* ((tramp-verbose 0)
+           (remote (concat "/mock::" dir))
+           (eucalypt-eu-command (file-name-nondirectory stub))
+           (tramp-remote-path (cons (file-name-directory stub)
+                                    tramp-remote-path)))
+      (unwind-protect
+          (with-current-buffer (eucalypt-test--visit remote)
+            (eucalypt-render-buffer nil)
+            (erase-buffer)
+            (insert "a:    1\n")
+            (eucalypt-format-buffer)
+            (should (equal (buffer-string) "a: 1\n"))
+            (set-buffer-modified-p nil))
+        (tramp-cleanup-all-connections)))
+    (let ((calls (eucalypt-test--log log)))
+      (should (equal (mapcar #'eucalypt-test--args calls) '(("eu@-") ("fmt"))))
+      (should (equal (cdr (assoc "stdin" (car calls))) "a: 1|b: nosuch|"))
+      (dolist (call calls)
+        (should (equal (cdr (assoc "cwd" call)) (directory-file-name dir)))
+        (should (equal (cdr (assoc "no_color" call)) "1"))
+        ;; TRAMP marks the processes it starts.
+        (should (string-search "tramp" (cdr (assoc "inside" call))))))
+    (with-current-buffer eucalypt--command-output-buffer
+      (should (equal (buffer-string) "a: 1\n")))))
+
+(ert-deftest eucalypt-test-divides-input ()
+  "The divides operators have input sequences and insert commands."
+  (with-temp-buffer
+    (activate-input-method "eucalypt")
+    (should (eq (car (quail-lookup-key "\\|")) ?\u2223))
+    (should (eq (car (quail-lookup-key "\\!|")) ?\u2224))
+    ;; `\\!in' and `||' are unchanged.
+    (should (eq (car (quail-lookup-key "\\!in")) ?\u2209))
+    (should (eq (car (quail-lookup-key "||")) ?\u2228))
+    (eucalypt-insert-divides)
+    (insert " ")
+    (eucalypt-insert-not-divides)
+    (should (equal (buffer-string) "\u2223 \u2224"))))
 
 (ert-deftest eucalypt-test-requires-file ()
   "The file commands refuse a buffer that visits no file."

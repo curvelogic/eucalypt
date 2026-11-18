@@ -88,6 +88,15 @@ Set via file-local variables, e.g.:
   :group 'eucalypt
   :safe #'listp)
 
+(defcustom eucalypt-fmt-args nil
+  "Extra arguments for `eu fmt' in `eucalypt-format-buffer'.
+For example (\"--width\" \"100\") or (\"--reformat\").  The buffer is
+piped to `eu fmt' and replaced with its output, so these must not name
+a file or include `--check' or `--write'; `eucalypt-format-buffer'
+refuses them."
+  :type '(repeat string)
+  :group 'eucalypt)
+
 ;;; Syntax table
 
 ;; We deliberately do NOT mark \" as a string delimiter because tree-sitter
@@ -133,6 +142,7 @@ Set via file-local variables, e.g.:
     (define-key map "\C-c\C-t" #'eucalypt-test)
     (define-key map "\C-c\C-v" #'eucalypt-check)
     (define-key map "\C-c\C-u" #'eucalypt-unicode-menu)
+    (define-key map "\C-c\C-f" #'eucalypt-format-buffer)
     map)
   "Keymap for `eucalypt-mode'.")
 
@@ -735,9 +745,6 @@ without relying on the buffer syntax table."
 (defvar eucalypt-evaluate-history nil
   "Minibuffer history for `eucalypt-evaluate'.")
 
-(defvar eucalypt--targets nil
-  "The targets `eucalypt-run-target' last listed.")
-
 (defvar eucalypt-target-history nil
   "Minibuffer history for `eucalypt-run-target'.")
 
@@ -761,20 +768,64 @@ its name is returned local to it."
                      (list opts))
              " "))
 
-(defun eucalypt--infer-output-format-from-args (args &optional default)
-  "Infer the output format from the argument list ARGS.
-Recognises `-j', `--json', `-x FMT', `-xFMT', `--export FMT' and
-`--export=FMT'; anything else, file names included, is ignored.
-Without any of these, the format is DEFAULT, or `yaml'."
-  (let ((format (or default 'yaml)))
+(defconst eucalypt--value-short-options "tecoxL"
+  "The `eu' short options that take a value.
+In a cluster such as `-It foo' or `-jxtoml', the rest of the cluster
+after one of these, or else the next argument, is its value.")
+
+(defconst eucalypt--long-options
+  '(("target" . ?t) ("eval" . ?e) ("output" . ?o) ("export" . ?x)
+    ("json" . ?j) ("collect-as" . ?c) ("lib-path" . ?L))
+  "`eu' long options the mode reads, with their short equivalents.
+All of these but `--json' take a value.")
+
+(defun eucalypt--scan-args (args)
+  "Return the options in the `eu' argument list ARGS, in order.
+Each is (CHAR . VALUE): CHAR is the short option character (long
+options are mapped to it through `eucalypt--long-options'); VALUE is
+the option's value, or nil for a flag.  Short options may be clustered
+\(`-jt foo', `-tfoo', `-t=foo'); long ones take `--opt VALUE' or
+`--opt=VALUE'.  Other arguments, file names included, are skipped, and
+nothing after `--' is read."
+  (let (options)
     (while args
       (let ((arg (pop args)))
         (cond
-         ((member arg '("-j" "--json")) (setq format 'json))
-         ((and (member arg '("-x" "--export")) args)
-          (setq format (intern (pop args))))
-         ((string-match "\\`\\(?:-x\\|--export=\\)\\(.+\\)\\'" arg)
-          (setq format (intern (match-string 1 arg)))))))
+         ((equal arg "--") (setq args nil))
+         ((string-match "\\`--\\([^=]+\\)\\(?:=\\(.*\\)\\)?\\'" arg)
+          (let* ((char (cdr (assoc (match-string 1 arg)
+                                   eucalypt--long-options)))
+                 (value (match-string 2 arg)))
+            (when char
+              (if (eq char ?j)
+                  (push (cons char nil) options)
+                (let ((value (or value (pop args))))
+                  (when value (push (cons char value) options)))))))
+         ((string-match "\\`-[^-]" arg)
+          (let ((i 1) (n (length arg)))
+            (while (< i n)
+              (let ((char (aref arg i)))
+                (if (not (memq char (string-to-list
+                                     eucalypt--value-short-options)))
+                    (progn (push (cons char nil) options)
+                           (setq i (1+ i)))
+                  (let* ((rest (substring arg (1+ i)))
+                         (rest (if (string-prefix-p "=" rest) (substring rest 1) rest))
+                         (value (if (string-empty-p rest) (pop args) rest)))
+                    (when value (push (cons char value) options))
+                    (setq i n))))))))))
+    (nreverse options)))
+
+(defun eucalypt--infer-output-format-from-args (args &optional default)
+  "Infer the output format from the argument list ARGS.
+Recognises `-j', `--json', `-x FMT' and `--export FMT', in any of the
+forms `eucalypt--scan-args' reads; anything else, file names included,
+is ignored.  Without any of these, the format is DEFAULT, or `yaml'."
+  (let ((format (or default 'yaml)))
+    (pcase-dolist (`(,char . ,value) (eucalypt--scan-args args))
+      (pcase char
+        (?j (setq format 'json))
+        (?x (setq format (intern value)))))
     format))
 
 (defun eucalypt--infer-output-format (command)
@@ -954,7 +1005,11 @@ first.  DIRECTORY may be remote.  Returns the process."
     (when-let ((pipe (get-buffer-process err)))
       (set-process-sentinel pipe #'ignore))
     ;; Inputs come from the command line, never from standard input.
-    (process-send-eof eucalypt--last-process)
+    ;; A process that has already exited cannot be sent EOF.
+    (when (process-live-p eucalypt--last-process)
+      (condition-case nil
+          (process-send-eof eucalypt--last-process)
+        (error nil)))
     eucalypt--last-process))
 
 (defun eucalypt-run (prefix)
@@ -990,7 +1045,8 @@ Each entry is (NAME . PLIST), with :format and :doc keys."
 
 (defun eucalypt-list-targets (file)
   "Return the targets FILE defines, as `eucalypt--parse-targets' does.
-`eucalypt-eu-global-opts' are run options, so they are not passed."
+`eu list-targets' accepts file names alone, no options, so neither
+`eucalypt-eu-global-opts' nor `eucalypt-eu-file-opts' is passed."
   (let* ((default-directory (eucalypt--file-directory file))
          (process-environment (append eucalypt--command-environment
                                       process-environment))
@@ -1009,13 +1065,23 @@ Each entry is (NAME . PLIST), with :format and :doc keys."
             (eucalypt--parse-targets (buffer-string))))
       (delete-file errfile))))
 
-(defun eucalypt-run-target (target &optional prefix)
+(defun eucalypt--args-target (args)
+  "Return the target the `eu' argument list ARGS selects, or nil.
+Reads `-t NAME' and `--target NAME' in any of the forms
+`eucalypt--scan-args' reads; the last one wins."
+  (cdr (assq ?t (reverse (eucalypt--scan-args args)))))
+
+(defun eucalypt-run-target (target &optional prefix targets)
   "Run `eu' on the visited file, rendering TARGET.
 Interactively, complete TARGET from `eu list-targets'.  With PREFIX
-argument, edit the arguments first."
+argument, edit the arguments first.
+
+TARGETS is the file's target list, as `eucalypt-list-targets' returns
+it; without it, the file's targets are listed afresh.  The output format
+is that of the target the final arguments select (after any edit), from
+TARGETS, unless the arguments choose a format."
   (interactive
-   (let* ((targets (setq eucalypt--targets
-                         (eucalypt-list-targets (eucalypt--file))))
+   (let* ((targets (eucalypt-list-targets (eucalypt--file)))
           (annotate (lambda (name)
                       (let ((doc (plist-get (cdr (assoc name targets)) :doc)))
                         (if (and doc (not (string-empty-p doc)))
@@ -1027,13 +1093,21 @@ argument, edit the arguments first."
                   (list :annotation-function annotate)))
              (completing-read "Target: " targets nil t nil
                               'eucalypt-target-history))
-           current-prefix-arg)))
+           current-prefix-arg
+           targets)))
   (let* ((file (eucalypt--file))
          (args (eucalypt--run-args file "-t" target))
          (args (if prefix (eucalypt--edit-args args) args))
-         ;; A target's own `format' sets its output format unless the
-         ;; arguments choose one.
-         (as (plist-get (cdr (assoc target eucalypt--targets)) :format)))
+         ;; The arguments' own format wins; only without one is the
+         ;; target's `format' needed.
+         (chosen (eucalypt--infer-output-format-from-args args 'none))
+         (targets (and (eq chosen 'none)
+                       (or targets
+                           ;; The run reports its own errors; without a
+                           ;; list the output format is the default.
+                           (ignore-errors (eucalypt-list-targets file)))))
+         (as (plist-get (cdr (assoc (eucalypt--args-target args) targets))
+                        :format)))
     (eucalypt--start args (eucalypt--file-directory file)
                      (eucalypt--infer-output-format-from-args
                       args (and as (intern as))))))
@@ -1082,27 +1156,60 @@ With PREFIX argument, edit the command first."
 
 ;;; Render commands
 
-(defun eucalypt--process-region (min max command)
-  "Process region from MIN to MAX with COMMAND and display output.
-The command runs in the visited file's directory, if any, so imports
-resolve from the file's location."
-  (let* ((directory (if buffer-file-name
-                        (eucalypt--file-directory buffer-file-name)
-                      default-directory))
-         (default-directory directory)
+(defun eucalypt--buffer-directory ()
+  "Return the directory `eu' runs in for the current buffer.
+That is the visited file's directory, if any, so imports resolve from
+the file's location; otherwise `default-directory'."
+  (if buffer-file-name
+      (eucalypt--file-directory buffer-file-name)
+    default-directory))
+
+(defun eucalypt--call-on-region (min max directory output run)
+  "Call RUN with the region MIN to MAX as standard input, in DIRECTORY.
+RUN is called with an input file holding the region and a destination
+for `process-file': OUTPUT for standard output and a file for standard
+error.  Both files are on DIRECTORY's host, so on a remote DIRECTORY
+the process runs there (TRAMP).  Standard error is put in
+`eucalypt--command-error-buffer'.  Returns RUN's exit status."
+  (let* ((default-directory directory)
          (process-environment (append eucalypt--command-environment
                                       process-environment))
-         (output-format (eucalypt--infer-output-format command))
-         (output-mode (eucalypt--select-output-mode output-format)))
-    (eucalypt--reset-buffer eucalypt--command-error-buffer directory)
-    (shell-command-on-region min max command
-                             eucalypt--command-output-buffer
-                             nil
-                             eucalypt--command-error-buffer
-                             t)
-    (when-let ((buf (get-buffer eucalypt--command-output-buffer)))
-      (with-current-buffer buf
-        (funcall output-mode)))
+         (coding-system-for-write 'utf-8-unix)
+         (coding-system-for-read 'utf-8-unix)
+         (infile (make-nearby-temp-file "eu-input"))
+         (errfile (make-nearby-temp-file "eu-errors"))
+         (err (eucalypt--reset-buffer eucalypt--command-error-buffer
+                                      directory)))
+    (unwind-protect
+        (progn
+          (write-region min max infile nil 'silent)
+          (prog1 (funcall run infile (list output errfile))
+            (with-current-buffer err
+              (insert-file-contents errfile))))
+      (delete-file infile)
+      (delete-file errfile))))
+
+(defun eucalypt--process-region (min max command)
+  "Process region from MIN to MAX with COMMAND and display output.
+COMMAND is a shell command line, run in the visited file's directory, if
+any, so imports resolve from the file's location.  On a remote buffer
+\(TRAMP) it runs on the remote host."
+  (let* ((directory (eucalypt--buffer-directory))
+         (output-mode (eucalypt--select-output-mode
+                       (eucalypt--infer-output-format command)))
+         (out (eucalypt--reset-buffer eucalypt--command-output-buffer
+                                      directory)))
+    (let ((status (eucalypt--call-on-region
+                   min max directory out
+                   (lambda (infile destination)
+                     (process-file-shell-command command infile destination)))))
+      (message "eu %s" (if (eql status 0)
+                           "finished"
+                         (format "exited with status %s" status))))
+    (with-current-buffer out
+      (funcall output-mode)
+      (setq default-directory directory))
+    (display-buffer out)
     (eucalypt--show-errors directory)))
 
 (defun eucalypt-render-buffer (prefix)
@@ -1123,6 +1230,56 @@ With PREFIX argument, prompt to edit the command first."
          (cmd (eucalypt--form-command (concat fmt "@-")))
          (command (if prefix (read-shell-command "Command: " cmd) cmd)))
     (eucalypt--process-region (region-beginning) (region-end) command)))
+
+;;; Formatting
+
+(defun eucalypt-format-buffer ()
+  "Format the buffer with `eu fmt', keeping point where it is.
+The buffer's text is piped to `eu fmt' with `eucalypt-fmt-args', so
+unsaved changes are included; on a remote buffer (TRAMP) `eu' runs on
+the remote host.  If `eu fmt' fails, as on a parse error, the buffer
+is left unchanged and its errors are shown in `*Eucalypt Errors*'."
+  (interactive)
+  (when (cl-intersection eucalypt-fmt-args '("--check" "--write")
+                         :test #'equal)
+    (user-error "`eucalypt-fmt-args' must not include --check or --write"))
+  (let* ((source (current-buffer))
+         (directory (eucalypt--buffer-directory))
+         (exe (let ((default-directory directory)) (eucalypt--executable))))
+    (with-temp-buffer
+      (let* ((formatted (current-buffer))
+             (status
+              (with-current-buffer source
+                (save-restriction
+                  (widen)
+                  (eucalypt--call-on-region
+                   (point-min) (point-max) directory formatted
+                   (lambda (infile destination)
+                     (apply #'process-file exe infile destination nil
+                            "fmt" eucalypt-fmt-args)))))))
+        (if (not (eql status 0))
+            (progn
+              (eucalypt--show-errors directory)
+              (user-error "eu fmt failed (status %s); buffer unchanged"
+                          status))
+          (with-current-buffer source
+            (save-restriction
+              (widen)
+              (cond
+               ((zerop (let ((case-fold-search nil))
+                         (compare-buffer-substrings
+                          source nil nil formatted nil nil)))
+                (message "Already formatted"))
+               ;; No output for a non-blank buffer is not a formatting
+               ;; (an argument such as a file name took the input).
+               ((and (zerop (buffer-size formatted))
+                     (save-excursion
+                       (goto-char (point-min))
+                       (re-search-forward "[^ \t\n]" nil t)))
+                (user-error "eu fmt printed nothing; buffer unchanged"))
+               (t
+                (replace-buffer-contents formatted)
+                (message "Formatted"))))))))))
 
 ;;; Eglot LSP integration
 
@@ -1169,6 +1326,8 @@ that a `\\=\\n' escape followed by `i' in a c-string is left alone.)
   \\=\\{} → ∅   (empty set)
   \\=\\in → ∈   (set member)
   \\=\\!in → ∉  (not set member)
+  \\=\\| → ∣    (divides)
+  \\=\\!| → ∤   (does not divide)
   \\=\\-o → ⊝   (bitwise NOT)
   \\=\\(( → ⟨   \\=\\)) → ⟩  (mathematical angle brackets)
   \\=\\[[ → ⟦   \\=\\]] → ⟧  (double square brackets)
@@ -1204,6 +1363,9 @@ that a `\\=\\n' escape followed by `i' in a c-string is left alone.)
  ("\\{}" ?∅)
  ("\\in" ?∈)
  ("\\!in" ?∉)
+ ;; Divisibility
+ ("\\|" ?∣)
+ ("\\!|" ?∤)
  ;; Debug
  ("|="  ?▶)
  ;; Natural numbers
@@ -1331,6 +1493,8 @@ With CLOSE, also insert CLOSE after point, as the other half of a pair."
 (eucalypt--define-insert-command neq "≠")
 (eucalypt--define-insert-command negate "∸")
 (eucalypt--define-insert-command divide "÷")
+(eucalypt--define-insert-command divides "∣")
+(eucalypt--define-insert-command not-divides "∤")
 (eucalypt--define-insert-command xor "⊕")
 (eucalypt--define-insert-command left-shift "≪")
 (eucalypt--define-insert-command right-shift "≫")
@@ -1364,7 +1528,9 @@ With CLOSE, also insert CLOSE after point, as the other half of a pair."
    ("!" "≠ neq" eucalypt-insert-neq)]
   ["Arithmetic"
    ("-" "∸ negate" eucalypt-insert-negate)
-   ("d" "÷ divide" eucalypt-insert-divide)]
+   ("d" "÷ divide" eucalypt-insert-divide)
+   ("|" "∣ divides" eucalypt-insert-divides)
+   ("/" "∤ not-divides" eucalypt-insert-not-divides)]
   ["Bitwise"
    ("x" "⊕ xor" eucalypt-insert-xor)
    ("L" "≪ left-shift" eucalypt-insert-left-shift)
