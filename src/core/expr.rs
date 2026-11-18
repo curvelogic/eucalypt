@@ -469,7 +469,7 @@ where
                 pattern: scope
                     .pattern
                     .iter()
-                    .map(|b| CoreBinding::with_demand(b.name.clone(), V::from(&b.expr), b.demand))
+                    .map(|b| b.with_expr(V::from(&b.expr)))
                     .collect(),
                 body: V::from(&scope.body),
             },
@@ -779,9 +779,7 @@ impl RcExpr {
                     pattern: scope
                         .pattern
                         .iter()
-                        .map(|b| {
-                            CoreBinding::with_demand(b.name.clone(), f(b.expr.clone()), b.demand)
-                        })
+                        .map(|b| b.with_expr(f(b.expr.clone())))
                         .collect(),
                     body: f(scope.body.clone()),
                 },
@@ -850,10 +848,7 @@ impl RcExpr {
                 let bindings = scope
                     .pattern
                     .iter()
-                    .map(|b| {
-                        f(b.expr.clone())
-                            .map(|v| CoreBinding::with_demand(b.name.clone(), v, b.demand))
-                    })
+                    .map(|b| f(b.expr.clone()).map(|v| b.with_expr(v)))
                     .collect::<Result<Vec<CoreBinding<RcExpr>>, E>>()?;
                 RcExpr::from(Expr::Let(
                     *s,
@@ -990,9 +985,7 @@ impl RcExpr {
                                 .pattern
                                 .iter()
                                 .zip(new_exprs)
-                                .map(|(b, new_v)| {
-                                    CoreBinding::with_demand(b.name.clone(), new_v, b.demand)
-                                })
+                                .map(|(b, new_v)| b.with_expr(new_v))
                                 .collect(),
                             body: new_body,
                         },
@@ -1143,9 +1136,7 @@ impl RcExpr {
                                 .pattern
                                 .iter()
                                 .zip(new_exprs)
-                                .map(|(b, new_v)| {
-                                    CoreBinding::with_demand(b.name.clone(), new_v, b.demand)
-                                })
+                                .map(|(b, new_v)| b.with_expr(new_v))
                                 .collect(),
                             body: new_body,
                         },
@@ -1544,13 +1535,7 @@ pub fn bind_free_vars(names: &[&str], depth: u32, expr: &RcExpr) -> RcExpr {
             let new_bindings = scope
                 .pattern
                 .iter()
-                .map(|b| {
-                    CoreBinding::with_demand(
-                        b.name.clone(),
-                        bind_free_vars(names, depth + 1, &b.expr),
-                        b.demand,
-                    )
-                })
+                .map(|b| b.with_expr(bind_free_vars(names, depth + 1, &b.expr)))
                 .collect();
             let new_body = bind_free_vars(names, depth + 1, &scope.body);
             RcExpr::from(Expr::Let(
@@ -1608,13 +1593,7 @@ pub fn close_expr_vars(names: &[&str], depth: u32, expr: &RcExpr) -> RcExpr {
             let new_bindings = scope
                 .pattern
                 .iter()
-                .map(|b| {
-                    CoreBinding::with_demand(
-                        b.name.clone(),
-                        close_expr_vars(names, depth + 1, &b.expr),
-                        b.demand,
-                    )
-                })
+                .map(|b| b.with_expr(close_expr_vars(names, depth + 1, &b.expr)))
                 .collect();
             let new_body = close_expr_vars(names, depth + 1, &scope.body);
             RcExpr::from(Expr::Let(
@@ -1671,13 +1650,7 @@ pub fn open_expr_vars(names: &[Option<&str>], depth: u32, expr: &RcExpr) -> RcEx
             let new_bindings = scope
                 .pattern
                 .iter()
-                .map(|b| {
-                    CoreBinding::with_demand(
-                        b.name.clone(),
-                        open_expr_vars(names, depth + 1, &b.expr),
-                        b.demand,
-                    )
-                })
+                .map(|b| b.with_expr(open_expr_vars(names, depth + 1, &b.expr)))
                 .collect();
             let new_body = open_expr_vars(names, depth + 1, &scope.body);
             RcExpr::from(Expr::Let(
@@ -2266,13 +2239,7 @@ pub mod tests {
                 let new_pattern = scope
                     .pattern
                     .iter()
-                    .map(|b| {
-                        CoreBinding::with_demand(
-                            b.name.clone(),
-                            alpha_norm_inner(&b.expr, counter),
-                            b.demand,
-                        )
-                    })
+                    .map(|b| b.with_expr(alpha_norm_inner(&b.expr, counter)))
                     .collect();
                 let new_body = alpha_norm_inner(&scope.body, counter);
                 RcExpr::from(Expr::Let(
@@ -2403,11 +2370,7 @@ pub mod tests {
                     .pattern
                     .iter()
                     .map(|b| {
-                        CoreBinding::with_demand(
-                            b.name.clone(),
-                            rename_lam_params(&b.expr, old_names, new_names, depth + 1),
-                            b.demand,
-                        )
+                        b.with_expr(rename_lam_params(&b.expr, old_names, new_names, depth + 1))
                     })
                     .collect();
                 let new_body = rename_lam_params(&scope.body, old_names, new_names, depth + 1);
@@ -2456,13 +2419,7 @@ pub mod tests {
                 let new_pattern = scope
                     .pattern
                     .iter()
-                    .map(|b| {
-                        CoreBinding::with_demand(
-                            b.name.clone(),
-                            smid_strip_inner(&b.expr),
-                            b.demand,
-                        )
-                    })
+                    .map(|b| b.with_expr(smid_strip_inner(&b.expr)))
                     .collect();
                 let new_body = smid_strip_inner(&scope.body);
                 RcExpr::from(Expr::Let(

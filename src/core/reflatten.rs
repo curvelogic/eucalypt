@@ -31,7 +31,7 @@ fn walk(expr: &RcExpr) -> RcExpr {
             let new_bindings: Vec<CoreBinding<RcExpr>> = scope
                 .pattern
                 .iter()
-                .map(|b| CoreBinding::with_demand(b.name.clone(), walk(&b.expr), b.demand))
+                .map(|b| b.with_expr(walk(&b.expr)))
                 .collect();
             let new_body = walk(&scope.body);
             let new_scope = Scope {
@@ -99,11 +99,13 @@ fn walk(expr: &RcExpr) -> RcExpr {
     }
 }
 
-/// A binding with its demand annotation, in opened (free-variable) form.
+/// A binding with its demand annotation and signature, in opened
+/// (free-variable) form.
 struct OpenBinding {
     name: String,
     expr: RcExpr,
     demand: Demand,
+    signature: Option<Vec<Demand>>,
 }
 
 /// Check if `expr` heads a chain of mergeable Let/LetRec scopes.
@@ -159,11 +161,14 @@ fn collect_chain(
     // Open this scope: Bound(scope=0) → Free(name)
     let (open_bindings, open_body) = open_let_scope_full(scope);
 
-    // Preserve demand from the original CoreBindings.
-    let demands: Vec<Demand> = scope.pattern.iter().map(|b| b.demand).collect();
-
-    for ((name, expr), demand) in open_bindings.into_iter().zip(demands) {
-        all_bindings.push(OpenBinding { name, expr, demand });
+    // Preserve demand and signature from the original CoreBindings.
+    for ((name, expr), b) in open_bindings.into_iter().zip(&scope.pattern) {
+        all_bindings.push(OpenBinding {
+            name,
+            expr,
+            demand: b.demand,
+            signature: b.signature.clone(),
+        });
     }
 
     // If the opened body is another mergeable Let, recurse.
@@ -189,8 +194,11 @@ fn close_let_scope_with_demand(
 
     let closed_bindings: Vec<CoreBinding<RcExpr>> = bindings
         .into_iter()
-        .map(|b| {
-            CoreBinding::with_demand(b.name, close_expr_vars(&name_refs, 0, &b.expr), b.demand)
+        .map(|b| CoreBinding {
+            expr: close_expr_vars(&name_refs, 0, &b.expr),
+            name: b.name,
+            demand: b.demand,
+            signature: b.signature,
         })
         .collect();
     let closed_body = close_expr_vars(&name_refs, 0, &body);
