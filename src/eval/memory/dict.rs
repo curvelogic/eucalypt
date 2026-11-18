@@ -414,45 +414,6 @@ impl<'a> Dict<'a> {
         }
     }
 
-    /// Of two equal keys, the representative to keep: the integer one.
-    ///
-    /// `1` and `1.0` are one key, so when they meet (an insert over a
-    /// stored key, a union, an intersection, a bulk build) the integer is
-    /// kept, whatever the order of insertion or union, so equal sets and
-    /// dicts render alike. For equal list keys the list whose first
-    /// differing element is the integer one is kept. Otherwise `stored`.
-    pub fn canonical_key(&self, stored: DictKey, new: DictKey) -> DictKey {
-        if self.prefers(&new, &stored) {
-            new
-        } else {
-            stored
-        }
-    }
-
-    /// Whether `a` should replace the equal key `b` as the representative:
-    /// at the first position where one is a float and the other an
-    /// integer, `a` is the integer.
-    pub fn prefers(&self, a: &DictKey, b: &DictKey) -> bool {
-        use DictKey::*;
-        match (a, b) {
-            (Num(x), Num(y)) => !matches!(x, ExactNum::Float(_)) && matches!(y, ExactNum::Float(_)),
-            (List(x), List(y)) if x != y => {
-                let xs = a.list_in(&self.view).unwrap_or_default();
-                let ys = b.list_in(&self.view).unwrap_or_default();
-                for (p, q) in xs.iter().zip(ys) {
-                    if self.prefers(p, q) {
-                        return true;
-                    }
-                    if self.prefers(q, p) {
-                        return false;
-                    }
-                }
-                false
-            }
-            _ => false,
-        }
-    }
-
     /// Allocate a node over `l` and `r` (no rebalancing).
     fn bin(&self, key: DictKey, value: BcValue, l: Tree, r: Tree) -> Result<Tree, ExecutionError> {
         let size = self.size(l) + self.size(r) + 1;
@@ -560,9 +521,7 @@ impl<'a> Dict<'a> {
     }
 
     /// The tree with `key` mapped to `value`. If an equal key is present,
-    /// the value is replaced and the key representative chosen by
-    /// [`Dict::canonical_key`] (the stored key, unless `key` is the
-    /// integer form of a stored float).
+    /// the stored key is kept and only the value replaced.
     pub fn insert(&self, t: Tree, key: DictKey, value: BcValue) -> Result<Tree, ExecutionError> {
         let Some(p) = t else {
             return self.bin(key, value, None, None);
@@ -577,7 +536,7 @@ impl<'a> Dict<'a> {
                 let r = self.insert(n.right, key, value)?;
                 self.balance(n.key, n.value.clone(), n.left, r)
             }
-            Ordering::Equal => self.bin(self.canonical_key(n.key, key), value, n.left, n.right),
+            Ordering::Equal => self.bin(n.key, value, n.left, n.right),
         }
     }
 
@@ -795,9 +754,8 @@ impl<'a> Dict<'a> {
         Ok(below_hi)
     }
 
-    /// The union of `a` and `b`. Where both hold equal keys, the key
-    /// representative is chosen by [`Dict::canonical_key`] (`a`'s, unless
-    /// `b`'s is its integer form, as [`Dict::insert`]) and the
+    /// The union of `a` and `b`. Where both hold equal keys, `a`'s key is
+    /// kept (an equal key keeps the stored key, as [`Dict::insert`]) and the
     /// value is `combine(a_value, b_value)`. Join-based (split `a` at `b`'s
     /// root, recurse, link): O(m log(n/m + 1)) for sizes m ≤ n, and the
     /// recursion depth is bounded by `b`'s height.
@@ -818,10 +776,7 @@ impl<'a> Dict<'a> {
         let (key, value) = match found {
             Some(f) => {
                 let fnode = self.node(f);
-                (
-                    self.canonical_key(fnode.key, bn.key),
-                    combine(&fnode.value, &bn.value)?,
-                )
+                (fnode.key, combine(&fnode.value, &bn.value)?)
             }
             None => (bn.key, bn.value.clone()),
         };
@@ -829,8 +784,7 @@ impl<'a> Dict<'a> {
     }
 
     /// The intersection of `a` and `b`: the entries of `a` whose keys `b`
-    /// also holds (`a`'s value kept; the key representative chosen by
-    /// [`Dict::canonical_key`]). Join-based, as
+    /// also holds (`a`'s key and value kept). Join-based, as
     /// [`Dict::union_with`]; the recursion depth is bounded by `b`'s height.
     pub fn intersect(&self, a: Tree, b: Tree) -> Result<Tree, ExecutionError> {
         let (Some(_), Some(bp)) = (a, b) else {
@@ -843,8 +797,7 @@ impl<'a> Dict<'a> {
         match found {
             Some(f) => {
                 let fnode = self.node(f);
-                let key = self.canonical_key(fnode.key, bn.key);
-                self.link(left, key, fnode.value.clone(), right)
+                self.link(left, fnode.key, fnode.value.clone(), right)
             }
             None => self.merge(left, right),
         }
@@ -899,18 +852,15 @@ impl<'a> Dict<'a> {
     }
 
     /// Sort entries by key (stably) and keep, for each run of equal keys,
-    /// the last value under the [`Dict::canonical_key`] of the run — the
-    /// result repeated [`Dict::insert`]s would give — ready for
-    /// [`Dict::build_sorted`].
+    /// the last value under the first key — the result repeated
+    /// [`Dict::insert`]s would give (an equal key keeps the stored key and
+    /// replaces the value) — ready for [`Dict::build_sorted`].
     pub fn sort_last_wins(&self, mut entries: Vec<Entry>) -> Vec<Entry> {
         entries.sort_by(|a, b| self.cmp_keys(&a.0, &b.0));
         let mut out: Vec<Entry> = Vec::with_capacity(entries.len());
         for (k, v) in entries {
             match out.last_mut() {
-                Some(last) if self.cmp_keys(&last.0, &k) == Ordering::Equal => {
-                    last.0 = self.canonical_key(last.0, k);
-                    last.1 = v;
-                }
+                Some(last) if self.cmp_keys(&last.0, &k) == Ordering::Equal => last.1 = v,
                 _ => out.push((k, v)),
             }
         }
@@ -1374,7 +1324,7 @@ mod tests {
                 .collect();
             assert_eq!(got, expected, "union of {na} and {nb}");
             assert_eq!(calls, collisions);
-            // On a collision the integer key is kept (a's int, not b's float).
+            // On a collision the stored key is a's (an int, not b's float).
             for (k, _) in d.entries(u) {
                 let n = k.to_number().unwrap().as_f64().unwrap() as i64;
                 if n % 2 == 0 && n < 2 * na {
@@ -1440,7 +1390,7 @@ mod tests {
         d.check_invariants(t).unwrap();
         assert_eq!(d.size(t), 1000);
         assert_eq!(val_of(d.node(d.lookup(t, &int(7)).unwrap()).value()), -7);
-        // The integer key of an equal run is kept, as repeated inserts keep it.
+        // The first key of an equal run is kept, as repeated inserts keep it.
         assert!(matches!(
             d.node(d.lookup(t, &int(7)).unwrap()).key(),
             DictKey::Num(ExactNum::Int(7))
@@ -1448,43 +1398,6 @@ mod tests {
         assert_eq!(val_of(d.node(d.lookup(t, &int(3)).unwrap()).value()), -3);
         assert_eq!(val_of(d.node(d.lookup(t, &int(4)).unwrap()).value()), 4);
         assert!(d.build_sorted(&[]).unwrap().is_none());
-    }
-
-    /// Of equal number keys the integer is kept, whatever the order of
-    /// insertion, union, intersection or bulk build (eu-oaz72.117).
-    #[test]
-    fn integer_key_is_kept_whatever_the_order() {
-        let heap = Heap::new();
-        let pool = SymbolPool::new();
-        let d = Dict::new(MutatorHeapView::new(&heap), &pool);
-        let is_int = |t: Tree| {
-            let k = d.node(d.lookup(t, &int(1)).unwrap()).key();
-            matches!(k, DictKey::Num(ExactNum::Int(1)))
-        };
-        let ints = d.insert(None, int(1), val(1)).unwrap();
-        let floats = d.insert(None, float(1.0), val(2)).unwrap();
-
-        // Insert: float over int and int over float.
-        assert!(is_int(d.insert(ints, float(1.0), val(3)).unwrap()));
-        assert!(is_int(d.insert(floats, int(1), val(3)).unwrap()));
-        // Union and intersection, both ways round.
-        let mut first = |a: &BcValue, _: &BcValue| Ok(a.clone());
-        assert!(is_int(d.union_with(ints, floats, &mut first).unwrap()));
-        assert!(is_int(d.union_with(floats, ints, &mut first).unwrap()));
-        assert!(is_int(d.intersect(ints, floats).unwrap()));
-        assert!(is_int(d.intersect(floats, ints).unwrap()));
-        // Bulk build, both orders.
-        for entries in [
-            vec![(float(1.0), val(1)), (int(1), val(2))],
-            vec![(int(1), val(1)), (float(1.0), val(2))],
-        ] {
-            let sorted = d.sort_last_wins(entries);
-            assert!(is_int(d.build_sorted(&sorted).unwrap()));
-        }
-        // Equal keys of one representation keep the stored key.
-        assert!(!d.prefers(&int(1), &int(1)));
-        assert!(!d.prefers(&float(1.0), &float(1.0)));
-        assert!(!d.prefers(&float(1.0), &int(1)));
     }
 
     /// Addresses of every key string, including strings inside key lists.

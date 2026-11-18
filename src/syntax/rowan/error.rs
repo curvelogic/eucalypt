@@ -4,6 +4,17 @@ use rowan::TextRange;
 
 use super::kind::SyntaxKind;
 
+/// The message for [`ParseError::DoubledBraceInCString`], shared by the
+/// command-line rendering and the LSP so the two cannot drift apart.
+pub const DOUBLED_BRACE_IN_CSTRING_MESSAGE: &str =
+    "unexpected content in string interpolation: '{{' is not an escape in a c-string";
+
+/// The help for [`ParseError::DoubledBraceInCString`] (see
+/// [`DOUBLED_BRACE_IN_CSTRING_MESSAGE`]).
+pub const DOUBLED_BRACE_IN_CSTRING_HELP: &str =
+    "write a literal brace in a c-string as \\{ or \\}, \
+     or use a plain string, where '{{' and '}}' are literal braces";
+
 /// A syntax error detected and recorded during parse
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ParseError {
@@ -152,10 +163,7 @@ impl fmt::Display for ParseError {
             ),
             ParseError::DoubledBraceInCString { .. } => write!(
                 f,
-                "unexpected content in string interpolation: '{{{{' is not an escape \
-                 in a c-string\n  \
-                 help: write a literal brace in a c-string as \\{{ or \\}}, \
-                 or use a plain string, where '{{{{' and '}}}}' are literal braces"
+                "{DOUBLED_BRACE_IN_CSTRING_MESSAGE}\n  help: {DOUBLED_BRACE_IN_CSTRING_HELP}"
             ),
             ParseError::InvalidZdtLiteral { reason, .. } => match reason {
                 ZdtInvalidReason::Empty => write!(

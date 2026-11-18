@@ -6845,9 +6845,6 @@ mod tests {
         arr: RefPtr<crate::eval::memory::ndarray::HeapNdArray>,
     }
 
-    /// Build a set, a vec and an n-d array whose storage is spread across
-    /// heap blocks (string elements interleaved with unrooted fillers), with
-    /// the containers reachable only through a bif frame.
     /// The `i`th number element of the native-container fixtures: an
     /// `Int`, a `UInt` (above `i64::MAX`) or a `Float` in turn, so every
     /// exact-number representation is carried across a collection. All
@@ -6861,6 +6858,9 @@ mod tests {
         }
     }
 
+    /// Build a set, a vec and an n-d array whose storage is spread across
+    /// heap blocks (string elements interleaved with unrooted fillers), with
+    /// the containers reachable only through a bif frame.
     fn native_containers_fixture(heap: &Heap) -> NativeContainers {
         use crate::eval::memory::dict::Dict;
         use crate::eval::memory::ndarray::HeapNdArray;

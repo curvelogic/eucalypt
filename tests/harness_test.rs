@@ -5582,6 +5582,14 @@ pub fn test_error_343_cstring_doubled_brace() {
     run_error_test(&error_opts("343_cstring_doubled_brace.eu"));
 }
 
+/// `{{` before dotted content in a c-string (`c"{{a.b}}"`) gets the
+/// c-string help too, not the plain-string "escape it by doubling"
+/// (eu-oaz72.128).
+#[test]
+pub fn test_error_361_cstring_doubled_brace_dotted() {
+    run_error_test(&error_opts("361_cstring_doubled_brace_dotted.eu"));
+}
+
 /// A leading dot in a string interpolation is a parse error: `{.x}` used
 /// to read silently as `{x}` (eu-oaz72.139).
 #[test]

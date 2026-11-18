@@ -1019,7 +1019,14 @@ impl<'text> Parser<'text> {
                                 self.next();
                                 self.sink().token(CLOSE_BRACE, stray_len);
                                 found_close = true;
-                                if let Some(range) = leftover.filter(|_| !reported_later) {
+                                // A doubled brace in a c-string is reported
+                                // here even when the content would otherwise
+                                // be reported by desugaring (`c"{{a.b}}"`),
+                                // whose hint (double the brace) is wrong
+                                // for a c-string.
+                                if let Some(range) =
+                                    leftover.filter(|_| doubled_c_brace || !reported_later)
+                                {
                                     self.errors.push(if doubled_c_brace {
                                         ParseError::DoubledBraceInCString { range }
                                     } else {

@@ -2190,13 +2190,7 @@ Entries come out — from `to-list`, `keys`, `values` and in rendered output —
 in key order. Numbers order numerically, strings by their text, symbols by
 name and lists element by element, and across kinds numbers come before
 strings, strings before symbols, and symbols before lists. `1` and `1.0` are
-the same key. When both forms of a key meet — stored twice, or in a merge —
-the integer form is the one kept, whatever the order, so equal dicts render
-alike:
-
-```eu
-both: dict.of[[1.0, :a], [1, :b]] dict.keys //=> [1]
-```
+the same key.
 
 ```eu
 ` :suppress
@@ -10300,19 +10294,6 @@ eu -e '[1, 2, 2, 3, 3, 3] set.of set.to-list'
 Duplicates are removed and elements are sorted. `set.from-list` is an
 alias of `set.of` — the same function, pairing with `set.to-list`.
 
-`1` and `1.0` are one element. When both forms meet — in `set.of`,
-`set.add`, `set.union` or `set.intersect` — the integer form is kept,
-whatever the order, so equal sets render alike:
-
-```sh
-eu -e '[1.0, 2] set.of set.add(1) set.union([2.0] set.of) set.to-list'
-```
-
-```yaml
-- 1
-- 2
-```
-
 The empty set is written as `∅`:
 
 ```sh
@@ -11691,7 +11672,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
+| `rotate(n, l)` | Rotate list `l` left by `n` positions, wrapping when `n` exceeds the length; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`. An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |
@@ -11986,7 +11967,7 @@ character.
 | `ceiling` | Round number upwards to nearest integer |
 | `⌈⌉` | Ceiling bracket notation, round `n` upwards to nearest integer |
 | `⌊⌋` | Floor bracket notation, round `n` downwards to nearest integer |
-| `pow(b, e)` | Raise `b` to the power `e` |
+| `pow(b, e)` | Raise `b` to the power `e`; an integer base with a non-negative integer exponent gives an integer, or a numeric-overflow error when the result is out of range; a negative exponent gives a float |
 | `div(a, b)` | Floor division; same as `a / b` |
 | `mod(a, b)` | Floor modulus; same as `a % b` |
 | `quot(a, b)` | Truncation division; rounds toward zero |
@@ -12280,8 +12261,8 @@ x: random.int(100, stream)
 | `vec.of` | Convert list `xs` of primitive values to a vec for O(1) indexed access |
 | `vec.from-list` | Alias of `vec.of`: convert list `xs` of primitive values to a vec |
 | `vec.len` | Return the number of elements in vec `v` |
-| `vec.nth` | Return the element at index `n` (0-based) in vec `v` |
-| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v` |
+| `vec.nth` | Return the element at index `n` (0-based) in vec `v`; an index past the end, negative or not an integer is an error |
+| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v`; indices past the end are clamped to the length, and a negative or non-integer index is an error |
 | `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement; a negative `n` samples nothing; a non-integer `n` is an error |
 | `vec.shuffle(v, stream)` | Random monad action: return vec `v` in random order |
 | `vec.to-list` | Convert vec `v` back to a cons-list |
@@ -15128,8 +15109,7 @@ counting loop use `update-strict` or `merge-with-strict`, which evaluate each
 new value, so no chain of unevaluated additions builds up.
 
 Order across types: numbers < strings < symbols (by name) < lists
-(lexicographic). Of equal keys (`1` and `1.0`) a dict or set keeps the
-integer form, whatever the order; `dict.of` keeps the last value.
+(lexicographic). `dict.of` keeps the first of equal keys and the last value.
 A dict renders as a mapping in key order (number keys as their rendered
 text, string keys as their text, symbol keys as their name); a list key, or
 two keys with the same text (`1` and `"1"`), is an error, so render

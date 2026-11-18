@@ -55,7 +55,8 @@ type-str(td):
         inner: (rec elements nil?) ∧ open? then("..", "{body}{tail}")
       }."{lbrace}{inner}{rbrace}"
 
-    # `dict(k, v)` projects to [:t-app, [:t-app, [:t-con, :dict], k], v].
+    ` "The key type `k` if `f` is the applied `dict(k)` of a `dict(k, v)`,
+    which projects to `[:t-app, [:t-app, [:t-con, :dict], k], v]`; else `null`."
     dict-key-of(f): ((f first) = :t-app) ∧ ((f second) = [:t-con, :dict]) then(f !! 2, null)
 
     app-str(f, x):

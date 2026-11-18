@@ -213,7 +213,7 @@ integral-index-checks: {
   ]
 }
 
-` "Shapes and offsets at the edges: whole-number floats are dimensions, a zero dimension gives an empty array, and an offset too large for any coordinate is out of bounds (eu-oaz72.96)"
+` "Shapes and offsets at the edges: whole-number floats are dimensions, a zero dimension gives an empty array, and an offset too large for any coordinate is out of bounds (eu-oaz72.96). The non-zero dimensions of an empty shape are bounded wherever the zero is (so [0, 10000, 10000], not [0, 100000, 100000]): arr.transpose does not re-validate a shape, and would turn [0, 100000, 100000] into [100000, 100000, 0], which would hang rendering"
 edge-checks: {
   trues: [
     (arr.zeros[2.0, 3] arr.shape) = [2, 3],

@@ -3132,8 +3132,15 @@ impl Heap {
     /// Allocate space, with emergency collection on failure
     fn find_space(&self, size_bytes: usize) -> Result<*const u8, HeapError> {
         // First attempt: normal allocation
-        if let Ok(space) = self.try_allocate(size_bytes) {
-            return Ok(space);
+        match self.try_allocate(size_bytes) {
+            Ok(space) => return Ok(space),
+            // The system allocator refused a large object block. An
+            // emergency collection only recycles immix blocks within the
+            // heap; it returns nothing to the system allocator, so it
+            // cannot make that request succeed. Report the refusal as it
+            // is (eu-oaz72.99, eu-oaz72.101).
+            Err(e @ HeapError::BlockAllocationFailed { .. }) => return Err(e),
+            Err(_) => {}
         }
 
         // Check if we can attempt emergency collection
@@ -4691,6 +4698,25 @@ pub mod tests {
             err,
             crate::eval::error::ExecutionError::AllocationError
         ));
+    }
+
+    /// The same refusal through `find_space`, the path every allocation
+    /// (`alloc`, `alloc_bytes`, `alloc_bytes_uninit`) takes: an error, not
+    /// a process abort, and no emergency collection, which could not help.
+    #[test]
+    fn test_find_space_large_object_failure_is_an_error() {
+        let heap = Heap::new();
+        let err = heap.find_space(isize::MAX as usize).unwrap_err();
+        assert!(matches!(err, HeapError::BlockAllocationFailed { .. }));
+        let emergency_state = unsafe { &*heap.emergency_state.get() };
+        assert!(matches!(emergency_state, EmergencyState::Normal));
+        let err: crate::eval::error::ExecutionError = err.into();
+        assert!(matches!(
+            err,
+            crate::eval::error::ExecutionError::AllocationError
+        ));
+        // The heap still allocates afterwards.
+        assert!(heap.find_space(64).is_ok());
     }
 
     #[test]

@@ -1395,8 +1395,10 @@ pub enum ExecutionError {
     ArrayTooLarge(Smid, String, String, usize),
     /// An empty array shape (some dimension zero) whose other dimensions
     /// multiply to more sub-arrays than one array may have: `(function,
-    /// shape, maximum product)`. Rendering such an array would emit that
-    /// many empty sequences.
+    /// shape, maximum product)`. Rendering such an array with the zero
+    /// last would emit that many empty sequences, and since `arr.transpose`
+    /// does not re-validate the shape it can move a leading zero last, so
+    /// the bound holds wherever the zero is.
     #[error("{1}: empty array shape {2} has too many sub-arrays — the dimensions of an empty array other than 0 may multiply to at most {3}")]
     ArrayEmptyShapeTooLarge(Smid, String, String, usize),
     #[error("list index out of bounds: index {1} is beyond the end of the list")]

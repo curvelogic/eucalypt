@@ -861,6 +861,13 @@ fn num_list_to_shape(
 /// nothing, but rendering it emits one empty sequence per sub-array: a
 /// shape such as `[1e18, 0]` would be accepted and then never finish
 /// rendering, so it is rejected here with an error of its own.
+///
+/// Every non-zero dimension counts, wherever the zero is, so a
+/// leading-zero shape such as `[0, 1e5, 1e5]` is rejected too, although
+/// it renders as `[]`. The reason is that `arr.transpose` does not
+/// re-validate the shape: it would turn `[0, 1e5, 1e5]` into
+/// `[1e5, 1e5, 0]`, which would never finish rendering. Bounding the shape
+/// where it is built keeps every rearrangement of it safe.
 fn validate_shape(smid: Smid, function: &str, dims: &[f64]) -> Result<Vec<usize>, ExecutionError> {
     let empty = dims.contains(&0.0);
     let too_large = || {

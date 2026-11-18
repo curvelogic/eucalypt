@@ -60,17 +60,12 @@ api: {
   ` :suppress
   dup: dict.of[[1, :first], [2, :two], [1.0, :last]]
 
-  ` "equal keys keep the integer form of the key, whatever the order, and `dict.of` the last value"
+  ` "equal keys in `dict.of` keep the first key and the last value; `assoc` keeps the stored key"
   equal-keys: [
     (dup dict.size) = 2,
     (dup dict.get(1)) = :last,
     (dup dict.to-list head first) = 1,
-    (dup dict.assoc(1.0, :x) dict.to-list head) = [1, :x],
-    (dict.of[[1.0, :a], [1, :b]] dict.keys head str.of) = "1",
-    (dict.of[[1.0, :a]] dict.assoc(1, :b) dict.keys head str.of) = "1",
-    (dict.of[[1.0, :a]] dict.update(1, const(:b), :z) dict.keys head str.of) = "1",
-    (dict.of[[[1.0, 2], :a], [[1, 2.0], :b]] dict.keys head map(str.of)) = ["1", "2.0"],
-    (dict.of[[[1, 2.0], :a], [[1.0, 2], :b]] dict.keys head map(str.of)) = ["1", "2.0"]
+    (dup dict.assoc(1.0, :x) dict.to-list head) = [1, :x]
   ]
 
   ` :suppress
@@ -277,7 +272,7 @@ ordered-ops: {
   ` :suppress
   b: dict.of[[2.0, "b2"], [3, "b3"], [4, "b4"]]
 
-  ` "merge-with is a union applying `f` to `a`'s value then `b`'s on collisions; of equal keys the integer form is kept, whichever side holds it"
+  ` "merge-with is a union applying `f` to `a`'s value then `b`'s on collisions; it keeps `a`'s key"
   merges: [
     (dict.merge-with(ba, a, b) dict.to-list) = [[1, "a1"], [2, ["b2", "a2"]], [3, ["b3", "a3"]], [4, "b4"]],
     (dict.merge-with-strict(ba, a, b) dict.to-list) = (dict.merge-with(ba, a, b) dict.to-list),
@@ -286,7 +281,7 @@ ordered-ops: {
     (dict.merge-with(never2, dict.empty, b) dict.to-list) = (b dict.to-list),
     (dict.merge-with(+, nums, nums) dict.values) = (range(0, 20) map(* 2)),
     (dict.merge-with(+, dict.of[[1, 1]], dict.of[[1.0, 2]]) dict.keys head str.of) = "1",
-    (dict.merge-with(+, dict.of[[1.0, 1]], dict.of[[1, 2]]) dict.keys head str.of) = "1",
+    (dict.merge-with(+, dict.of[[1.0, 1]], dict.of[[1, 2]]) dict.keys head str.of) = "1.0",
     (dict.merge-with-strict(never2, a, dict.of[[9, "a9"]]) dict.size) = 4,
     (a dict.merge-with(ba, b) dict.get(2)) = ["a2", "b2"]
   ]

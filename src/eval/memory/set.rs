@@ -198,14 +198,14 @@ impl HeapSet {
         HeapSet { root }
     }
 
-    /// Build a set from elements in any order, with duplicates (of equal
-    /// elements the integer form is kept, see `Dict::canonical_key`).
+    /// Build a set from elements in any order, with duplicates (an equal
+    /// element keeps the first occurrence).
     pub fn from_elements(d: &Dict<'_>, elems: Vec<Primitive>) -> Result<Self, ExecutionError> {
         Self::from_keys(d, elems.into_iter().map(Primitive::to_key).collect())
     }
 
-    /// Build a set from element keys in any order, with duplicates (of
-    /// equal elements the integer form is kept). Keys may be lists (design
+    /// Build a set from element keys in any order, with duplicates (an
+    /// equal element keeps the first occurrence). Keys may be lists (design
     /// note OPEN 8).
     pub fn from_keys(d: &Dict<'_>, keys: Vec<DictKey>) -> Result<Self, ExecutionError> {
         let entries = keys.into_iter().map(|k| (k, set_unit())).collect();

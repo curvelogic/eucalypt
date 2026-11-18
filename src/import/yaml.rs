@@ -568,6 +568,11 @@ impl Tag {
     }
 }
 
+/// A core-schema float with digits (no `.inf` or `.nan`, which a number
+/// cannot hold). Shared by tag inference and `!!float` parsing, so the two
+/// cannot drift apart.
+const YAML_FLOAT_REGEX: &str = r"^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$";
+
 lazy_static! {
     /// Compiled regex set for YAML scalar tag inference.
     /// Compiled once and reused for all plain scalar processing.
@@ -583,17 +588,15 @@ lazy_static! {
         r"^[-+]?[0-9]+$",
         r"^0o[0-7]+$",
         r"^0x[0-9a-fA-F]+$",
-        r"^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$",
+        YAML_FLOAT_REGEX,
         r"^[-+]?(\.inf|\.Inf|\.INF)$",
         r"^\.nan|\.NaN|\.NAN$",
     ])
     .expect("YAML scalar patterns should compile");
 
-    /// A core-schema float with digits (no `.inf` or `.nan`, which a
-    /// number cannot hold).
+    /// [`YAML_FLOAT_REGEX`], compiled for `!!float` parsing.
     static ref YAML_FLOAT_PATTERN: Regex =
-        Regex::new(r"^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$")
-            .expect("YAML float pattern should compile");
+        Regex::new(YAML_FLOAT_REGEX).expect("YAML float pattern should compile");
 
     /// Compiled regex for YAML timestamp detection.
     /// Compiled once and reused for all plain scalar processing.
@@ -649,9 +652,17 @@ fn parse_yaml_number(text: &str, tag: &Tag) -> Option<serde_json::Number> {
 /// exactly: an i64 when it fits, else a u64, else a float. `None` for any
 /// other text.
 fn parse_yaml_int(text: &str) -> Option<serde_json::Number> {
+    // `from_str_radix` accepts a leading sign, which the core schema does
+    // not allow after a prefix (`0x+1F`), so check every digit first.
     let (magnitude, negative) = if let Some(oct) = text.strip_prefix("0o") {
+        if !oct.bytes().all(|b| matches!(b, b'0'..=b'7')) {
+            return None;
+        }
         (u128::from_str_radix(oct, 8).ok()?, false)
     } else if let Some(hex) = text.strip_prefix("0x") {
+        if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
         (u128::from_str_radix(hex, 16).ok()?, false)
     } else {
         let (negative, digits) = match text.as_bytes().first()? {
@@ -1319,6 +1330,10 @@ z: !!int 1234232353
         assert!(int("18446744073709551616").unwrap().is_f64());
         assert_eq!(int("0x"), None);
         assert_eq!(int("0o8"), None);
+        // No sign after a prefix (`from_str_radix` alone would accept it).
+        assert_eq!(int("0x+1F"), None);
+        assert_eq!(int("0o+17"), None);
+        assert_eq!(int("0x-1F"), None);
         assert_eq!(int("3.5"), serde_json::Number::from_f64(3.5));
         assert_eq!(float(".5"), serde_json::Number::from_f64(0.5));
         assert_eq!(float("1."), serde_json::Number::from_f64(1.0));

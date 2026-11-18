@@ -907,8 +907,7 @@ counting loop use `update-strict` or `merge-with-strict`, which evaluate each
 new value, so no chain of unevaluated additions builds up.
 
 Order across types: numbers < strings < symbols (by name) < lists
-(lexicographic). Of equal keys (`1` and `1.0`) a dict or set keeps the
-integer form, whatever the order; `dict.of` keeps the last value.
+(lexicographic). `dict.of` keeps the first of equal keys and the last value.
 A dict renders as a mapping in key order (number keys as their rendered
 text, string keys as their text, symbol keys as their name); a list key, or
 two keys with the same text (`1` and `"1"`), is an error, so render
