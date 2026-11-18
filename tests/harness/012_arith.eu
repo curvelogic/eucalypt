@@ -13,11 +13,9 @@
 (l >= r): __GTE(l, r)
 (l <= r): __LTE(l, r)
 
-# Test-only: returns its right operand, at precedence 45, between :cmp (50)
-# and :eq (40). `∣` and `∤` bind at :eq, looser than `⊢`, so `3 ∣ 5 ⊢ 6`
-# is `3 ∣ 6`; were they at :cmp it would be `(3 ∣ 5) ⊢ 6`, i.e. `6`
-# (eu-oaz72.81).
-` { associates: :left precedence: 45 }
+` { doc: "Test-only: `l ⊢ r` is `r`, at precedence 45, between :cmp (50) and :eq (40). `∣` and `∤` bind at :eq, looser than `⊢`, so `3 ∣ 5 ⊢ 6` is `3 ∣ 6`; at :cmp it would be `(3 ∣ 5) ⊢ 6`, i.e. `6` (eu-oaz72.81)."
+    associates: :left
+    precedence: 45 }
 (l ⊢ r): r
 
 integer-arithmetic: {
