@@ -6090,6 +6090,18 @@ pub fn test_error_332_scanl_applies_op_at_cell() {
     run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
 }
 
+/// Closed let/letrec bindings (eu-oaz72.175): closed and not-closed shapes.
+#[test]
+pub fn test_301_closed_bindings() {
+    run_test(&opts("301_closed_bindings.eu"));
+}
+
+/// An error inside a closed binding keeps its trace (eu-oaz72.175).
+#[test]
+pub fn test_error_334_closed_binding_trace() {
+    run_error_test(&error_opts("334_closed_binding_trace.eu"));
+}
+
 /// Fixtures that had no test, or no sidecar, and so asserted nothing
 /// (eu-oxtcq M4). The four `x0NN` files are not errors today; their
 /// sidecars pin that so a change in behaviour is seen.

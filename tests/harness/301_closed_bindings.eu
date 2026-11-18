@@ -1,0 +1,89 @@
+#!/usr/bin/env eu
+{
+  title: "301 closed bindings"
+  doc: "eu-oaz72.175: a let/letrec binding that references no local outside its
+        own frames is closed over a slotless annotation spine instead of the
+        enclosing frame. These targets cover closed and not-closed shapes:
+        a misclassified binding would read a missing slot and error or return
+        a wrong value. Limit: the compiler emits case branches, fallbacks and
+        DeMeta inside user bindings only via inlined intrinsics that let-bind
+        their operands first, so no target can place an outer read exactly on
+        a frame boundary there. BlockKvList is not reachable from a program
+        (elements reach user code as [k, v] lists); it appears only in
+        library bindings such as the inlined `=`. The full harness gates the
+        fallback and branch frame sizes (an over-count breaks harness files
+        084, 107-115 and 224); DeMeta frames are deliberately counted as zero
+        (an under-count, so it cannot misclassify); the BlockKvList size is
+        gated by the unit tests in closed.rs."
+}
+
+` "A closed lambda in a let, applied twice."
+closed-lambda(n): { f(x, y): x + y, a: f(n, 1), b: f(a, 2) }.b
+
+` "A closed thunk: reads only a global."
+closed-thunk(n): { k: 40 + 2, r: n + k }.r
+
+` "A letrec: a self-referencing and a sibling-referencing binding are not closed."
+letrec-mix(n): { go(i, acc): (i = 0) then(acc, go(i - 1, acc + i)), twice(i): go(i, 0) + go(i, 0) }.twice(n)
+
+` "A self-recursive lambda (so not itself closed) whose body cases on a list: exercises branch-field slots alongside a LetRec self-reference."
+sum-list(xs): { s(l, a): l nil? then(a, s(tail(l), a + head(l))) }.s(xs, 0)
+
+` "Inlined `head` expands to a case with Cons/Nil branches and a fallback inside a closed lambda."
+branches(x): { f(v): v nil? then(0, v head) }.f(x)
+
+` "Block lookup inside a closed lambda (compiles to a lookup call, not a BlockKvList branch)."
+block-field(b): { f(blk): blk lookup(:k) }.f(b)
+
+` "Metadata read inside a lambda: its handler reads its own argument, so it is not closed."
+meta-of(x): { m(v): v meta }.m(x)
+
+` "Block merge expands to nested DeMeta handlers inside a lambda that reads an outer local."
+merge-outer(a): { f(v): v << a }.f{ p: 1 }
+
+` "Block merge in a single-binding thunk reading the parameter."
+merge-thunk(a): { t: a << { p: 1 } }.t
+
+` "A nested lambda that reads an outer local is not closed."
+nested-outer(n): { outer(a): { inner(b): a + b }.inner(10) }.outer(n)
+
+` "A nested closed lambda inside a closed lambda inside a lambda that captures."
+deep(n): { g(a): { h(b): { k(c): c + 1 }.k(b) + a }.h(a) }.g(n)
+
+` "An outer local read from inside case branches (the list case and its fallback)."
+branch-outer(a): { f(l): l nil? then(a, head(l) + a) }.f[1]
+
+` "A fallback (non-list scrutinee) referencing an outer local."
+fallback-outer(a): { f(v): v = 0 then(a, a + 1) }.f(5)
+
+` "Block destructuring parameter whose body reads an outer local."
+block-outer(n): { blk: { x: 1, y: 2 }, f(v): v.x + v.y + n, r: f(blk) }.r
+
+` "List destructuring parameter whose body reads an outer local."
+list-outer(a): { f[h : t]: h + a }.f[1, 2]
+
+` "Metadata read inside a lambda that also reads an outer local (so not closed)."
+meta-outer(a): { f(v): (meta(v) = {}) then(a, 0) }.f{ z: 1 }
+
+` { target: :test-values }
+test-values: {
+  lam: closed-lambda(5) = 8
+  thunk: closed-thunk(1) = 43
+  rec: letrec-mix(4) = 20
+  sum: sum-list[1, 2, 3, 4] = 10
+  branch-nonempty: branches[7, 8] = 7
+  branch-empty: branches[] = 0
+  block: block-field{ k: 9 } = 9
+  meta: ({ a: 1 } meta-of) = {}
+  nested: nested-outer(5) = 15
+  deeper: deep(3) = 7
+  br: branch-outer(5) = 6
+  fb: fallback-outer(5) = 6
+  bo: block-outer(5) = 8
+  lo: list-outer(5) = 6
+  mo: meta-outer(5) = 5
+  mg: merge-outer{ q: 2 } = { p: 1 q: 2 }
+  mt: merge-thunk{ q: 2 } = { q: 2 p: 1 }
+  RESULT: [br, fb, bo, lo, mo, mg, mt, lam, thunk, rec, sum, branch-nonempty, branch-empty, block, meta, nested, deeper]
+          all-true? then(:PASS, :FAIL)
+}
