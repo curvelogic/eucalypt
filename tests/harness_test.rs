@@ -4826,6 +4826,49 @@ pub fn test_typecheck_142_tuple_projection_fallthrough_warns_once() {
     assert_eq!(warnings, 3, "expected one warning per binding:\n{stderr}");
 }
 
+/// A projection guarded by `block?` on the same parameter is not a block use:
+/// non-block arguments check clean under `then`, `if`, a negated guard, `and`
+/// and `or` (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_143_block_guard_param_no_warning() {
+    run_typecheck_test("143_block_guard_param_no_warning.eu");
+}
+
+/// A projection on the unguarded side of a `block?` test still makes the
+/// parameter a block (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_144_block_guard_unguarded_use_warns() {
+    run_typecheck_test("144_block_guard_unguarded_use_warns.eu");
+}
+
+/// A `block?` guard on one parameter does not excuse projecting another
+/// (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_145_block_guard_other_param_warns() {
+    run_typecheck_test("145_block_guard_other_param_warns.eu");
+}
+
+/// A `block?` guard of the wrong polarity (`or(x block?, …)`,
+/// `and(x block? not, …)`) protects nothing: both calls warn
+/// (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_146_block_guard_wrong_polarity_warns() {
+    let file = "146_block_guard_wrong_polarity_warns.eu";
+    run_typecheck_test(file);
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", &format!("tests/harness/typecheck/{file}")])
+        .output()
+        .expect("failed to run eu check");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for name in ["h-or", "h-and-not"] {
+        let pattern = format!("type mismatch calling '{name}'");
+        assert!(
+            stderr.contains(&pattern),
+            "expected \"{pattern}\" in stderr:\n{stderr}"
+        );
+    }
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]
