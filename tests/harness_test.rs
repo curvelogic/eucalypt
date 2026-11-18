@@ -3227,6 +3227,9 @@ pub fn test_250_dict() {
         "to-list-shared",
         "update-shared",
         "merge-shared",
+        // `merge-with-strict` forces the cell it stores, so later reads
+        // share that one evaluation (eu-oaz72.124).
+        "merge-strict-shared",
         // A thunk over an evaluated variable, stored and also read through its
         // own slot, or stored twice: still one evaluation (eu-oaz72.84).
         "slot-shared",

@@ -1247,6 +1247,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "DICT.UPDATE" => Some("dict.update"),
         "DICT.UPDATE_STRICT" => Some("dict.update-strict"),
         "DICT.MERGE_WITH" => Some("dict.merge-with"),
+        "DICT.MERGE_WITH_STRICT" => Some("dict.merge-with-strict"),
         "DICT.TO_BLOCK" => Some("dict.to-block"),
 
         // Lookup error path

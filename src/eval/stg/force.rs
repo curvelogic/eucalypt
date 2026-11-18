@@ -41,6 +41,42 @@ impl StgIntrinsic for Seq {
 
 impl CallGlobal2 for Seq {}
 
+/// `seqListThen(xs, r)` — force each element of the list `xs` to weak head
+/// normal form, in order, then return `r`.
+///
+/// Each step forces the head and enters the next step as a tail call, so
+/// the stack stays constant however long `xs` is. Used by
+/// `DICT.MERGE_WITH_STRICT` to evaluate the combined values it stored.
+pub struct SeqListThen;
+
+impl StgIntrinsic for SeqListThen {
+    fn name(&self) -> &str {
+        "seqListThen"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
+            2, // [xs r]
+            switch(
+                local(0),
+                vec![
+                    (DataConstructor::ListNil.tag(), local(1)),
+                    (
+                        DataConstructor::ListCons.tag(), // [h t] [xs r]
+                        force(
+                            local(0),
+                            // [fh] [h t] [xs r]
+                            SeqListThen.global(lref(2), lref(4)),
+                        ),
+                    ),
+                ],
+            ),
+        )
+    }
+}
+
+impl CallGlobal2 for SeqListThen {}
+
 /// seqStrList to evaluate and unbox lists of strings
 pub struct SeqStrList;
 

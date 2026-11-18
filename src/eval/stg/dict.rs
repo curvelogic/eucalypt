@@ -32,7 +32,7 @@ use crate::{
 };
 
 use super::{
-    force::{SeqDictPairs, SeqKey},
+    force::{SeqDictPairs, SeqKey, SeqListThen},
     support::{dict_arg, machine_return_bool, machine_return_num},
     syntax::{
         dsl::{app, app_bif, data, force, lambda, let_, local, lref, no_index, thunk},
@@ -972,6 +972,82 @@ impl StgIntrinsic for DictMergeWith {
 }
 
 impl CallGlobal3 for DictMergeWith {}
+
+/// DICT.MERGE_WITH_STRICT(f, a, b) — as `DICT.MERGE_WITH`, but each
+/// combined value `f(a_value, b_value)` is evaluated before the dict is
+/// returned (eu-oaz72.124).
+///
+/// The wrapper forces `a` and `b`, builds the union with `DICT.MERGE_WITH`'s
+/// execute (combined values in memoising cells), then calls this
+/// intrinsic's execute on `[a, b, union]`, which lists the union's values at
+/// the keys `a` and `b` share, in `b`'s key order — the cells just built.
+/// `seqListThen` forces each in turn and returns the union, entering the
+/// next step as a tail call, so the stack stays constant however large `b`
+/// is. Forcing a cell updates it in place, so the stored values are the
+/// evaluated ones; values only one side holds stay as they were.
+pub struct DictMergeWithStrict;
+
+impl StgIntrinsic for DictMergeWithStrict {
+    fn name(&self) -> &str {
+        "DICT.MERGE_WITH_STRICT"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let merge: u8 = DictMergeWith.index().try_into().unwrap();
+        let shared: u8 = self.index().try_into().unwrap();
+        lambda(
+            3, // [f a b]
+            force(
+                local(1),
+                // [fa] [f a b]
+                force(
+                    local(3),
+                    // [fb] [fa] [f a b]
+                    force(
+                        app_bif(merge, vec![lref(2), lref(1), lref(0)]),
+                        // [u] [fb] [fa] [f a b]
+                        force(
+                            app_bif(shared, vec![lref(2), lref(1), lref(0)]),
+                            // [cells] [u] [fb] [fa] [f a b]
+                            SeqListThen.global(lref(0), lref(1)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    /// Called by the wrapper with `[a, b, union]`: the union's values at
+    /// the keys both `a` and `b` hold, in `b`'s key order.
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let cells = {
+            let m: &dyn IntrinsicMachine = machine;
+            let a = dict_arg(m, view, &args[0])?;
+            let b = dict_arg(m, view, &args[1])?;
+            let union = dict_arg(m, view, &args[2])?;
+            let d = Dict::new(view, m.symbol_pool());
+            let mut cells = Vec::new();
+            d.for_each(b, |n| {
+                let key = n.key();
+                if d.lookup(a, &key).is_some() {
+                    if let Some(p) = d.lookup(union, &key) {
+                        cells.push(AbiClosure::Byte(d.node(p).value().clone()));
+                    }
+                }
+            });
+            cells
+        };
+        machine.return_closure_list(view, cells)
+    }
+}
+
+impl CallGlobal3 for DictMergeWithStrict {}
 
 /// What a dict's entries are being named for: `dict.to-block` or
 /// rendering. Both name entries the same way; only the errors differ.
