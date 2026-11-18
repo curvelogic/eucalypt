@@ -88,7 +88,7 @@ fn stream_write_error(error: crate::export::error::RenderError) -> ExecutionErro
 /// As for rendered output, a closed pipe (`eu dump stg … | head`) becomes
 /// `OutputStreamClosed` — a silent exit 0 — and anything else is reported.
 fn stdout_dump_error(error: std::io::Error) -> ExecutionError {
-    if error.kind() == std::io::ErrorKind::BrokenPipe {
+    if crate::common::pipe::is_broken_pipe(&error) {
         ExecutionError::OutputStreamClosed
     } else {
         ExecutionError::OutputWriteFailed(Smid::default(), error.to_string())
@@ -621,6 +621,7 @@ impl<'a> Executor<'a> {
                     heap_mib,
                     stg_settings.test_mode,
                 )?;
+                m.set_user_location_mask(self.source_map.user_location_mask());
                 if opt.profile() {
                     m.enable_profiler(opt.profile_folded().is_some());
                 }

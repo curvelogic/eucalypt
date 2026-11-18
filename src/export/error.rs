@@ -23,6 +23,6 @@ impl RenderError {
     /// it has what it wants — so the driver exits quietly on this, while
     /// every other write error becomes a diagnostic (eu-1tkk.7.25).
     pub fn is_broken_pipe(&self) -> bool {
-        matches!(self, RenderError::Io(e) if e.kind() == io::ErrorKind::BrokenPipe)
+        matches!(self, RenderError::Io(e) if crate::common::pipe::is_broken_pipe(e))
     }
 }
