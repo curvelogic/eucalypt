@@ -19,12 +19,40 @@ enum ParseEvent {
     StartNode(SyntaxKind),
     Finish,
     Token(SyntaxKind),
+    /// The complete events of a nested block's content, spliced in
+    /// place. Moving a nested block's events up as one event, rather
+    /// than copying them into every enclosing sink, keeps parsing linear
+    /// in nesting depth. A splice always sits inside the node that opened
+    /// the block (`BLOCK`, `BRACKET_BLOCK` or `UNIT`), so sinks that scan
+    /// their buffers never see one at their top level.
+    Splice(Vec<ParseEvent>),
+}
+
+/// Flatten spliced events into a single stream, without recursion so
+/// deep nesting cannot overflow the stack.
+fn flatten_events(events: Vec<ParseEvent>) -> Vec<ParseEvent> {
+    let mut out = Vec::with_capacity(events.len());
+    let mut stack = vec![events.into_iter()];
+    while let Some(top) = stack.last_mut() {
+        match top.next() {
+            Some(ParseEvent::Splice(inner)) => stack.push(inner.into_iter()),
+            Some(e) => out.push(e),
+            None => {
+                stack.pop();
+            }
+        }
+    }
+    out
 }
 
 /// Parser to consume lexer and product a green tree
 pub struct Parser<'text> {
     /// tokens
     tokens: Vec<(SyntaxKind, &'text str)>,
+    /// `starts[i]` is the byte offset of token `i`; `starts[tokens.len()]`
+    /// is the length of the text. Offsets are looked up rather than summed
+    /// so a position costs O(1) however far into the text it is.
+    starts: Vec<TextSize>,
     /// index into tokens
     next_token: usize,
     /// stack of event sinks to capture events into
@@ -42,9 +70,17 @@ impl<'text> Parser<'text> {
         let tokens: Vec<_> = Lexer::from_text(text)
             .map(|(tok, span)| (tok, &text[(span.start().into())..span.end().into()]))
             .collect();
+        let mut starts = Vec::with_capacity(tokens.len() + 1);
+        let mut offset = TextSize::from(0);
+        starts.push(offset);
+        for (_, s) in &tokens {
+            offset += TextSize::of(*s);
+            starts.push(offset);
+        }
 
         Parser {
             tokens,
+            starts,
             next_token: 0,
             sink_stack: vec![Box::new(SimpleEventSink::default())],
             errors: vec![],
@@ -84,11 +120,7 @@ impl<'text> Parser<'text> {
     /// range at the end of the text (an unclosed bracket at end of file
     /// reports its error there rather than indexing past the tokens).
     fn next_range(&self) -> TextRange {
-        let end = self.next_token.min(self.tokens.len());
-        let mut ch: TextSize = 0.into();
-        for (_, s) in &self.tokens[0..end] {
-            ch += TextSize::of(*s);
-        }
+        let ch = self.token_start_at(self.next_token.min(self.tokens.len()));
         match self.tokens.get(self.next_token) {
             Some((_, s)) => TextRange::at(ch, TextSize::of(*s)),
             None => TextRange::empty(ch),
@@ -98,12 +130,9 @@ impl<'text> Parser<'text> {
     /// Calculate a text range covering the last consumed token and the next token.
     /// Used for reporting errors that span two adjacent tokens (e.g. `::` is two COLON tokens).
     fn prev_and_next_range(&self) -> TextRange {
-        let mut ch: TextSize = 0.into();
         let len = self.tokens.len();
         let start_token = self.next_token.saturating_sub(1).min(len);
-        for (_, s) in &self.tokens[0..start_token] {
-            ch += TextSize::of(*s);
-        }
+        let mut ch = self.token_start_at(start_token);
         let start = ch;
         // span from prev token start to end of next token (either may be
         // absent at the edges of the token stream)
@@ -130,11 +159,7 @@ impl<'text> Parser<'text> {
 
     /// Calculate the start offset of the token at the given index.
     fn token_start_at(&self, idx: usize) -> TextSize {
-        let mut ch: TextSize = 0.into();
-        for (_, s) in &self.tokens[0..idx] {
-            ch += TextSize::of(*s);
-        }
-        ch
+        self.starts[idx]
     }
 
     /// Return the byte length of the most recently consumed token.
@@ -153,39 +178,34 @@ impl<'text> Parser<'text> {
         self.sink_stack.last_mut().unwrap().as_mut()
     }
 
-    /// Pop and complete the top event sink, passing its events and the total
-    /// byte length of those events' tokens to the caller.
+    /// Pop and complete the top event sink, passing its events to the
+    /// caller.
     ///
     /// Also merges any sink-generated errors into `self.errors`.
-    fn finish_sink(&mut self) -> (Vec<ParseEvent>, TextSize) {
+    fn finish_sink(&mut self) -> Vec<ParseEvent> {
         if let Some(mut sink) = self.sink_stack.pop() {
             let (events, mut errs) = sink.as_mut().complete();
             self.errors.append(&mut errs);
-            // Compute the total byte length of all tokens in these events by
-            // counting how many Token events exist and summing their text
-            // lengths from self.tokens.
-            //
-            // The tokens in `events` correspond to a contiguous run of tokens
-            // ending at `self.next_token - 1` (unless `push_back` was called).
-            // Count Token events to find how far back to look.
-            let token_count = events
-                .iter()
-                .filter(|e| matches!(e, ParseEvent::Token(_)))
-                .count();
-            let start_idx = self.next_token.saturating_sub(token_count);
-            let total_len: TextSize = self.tokens[start_idx..self.next_token]
-                .iter()
-                .map(|(_, s)| TextSize::of(*s))
-                .sum();
-            (events, total_len)
+            events
         } else {
             unreachable!()
         }
     }
 
+    /// Complete the sink that collected a block's content and hand its
+    /// events to the enclosing sink as one splice, with the byte length of
+    /// the tokens consumed (`start_idx` is the first token of the content).
+    fn finish_block_sink(&mut self, start_idx: usize) {
+        let events = self.finish_sink();
+        // The block sink saw exactly the tokens from `start_idx` up to the
+        // cursor, so their length is a difference of offsets.
+        let len = self.token_start_at(self.next_token) - self.token_start_at(start_idx);
+        self.sink().accept(vec![ParseEvent::Splice(events)], len);
+    }
+
     /// Convert the parse events into a GreenNode
     fn build(&mut self) -> GreenNode {
-        let (mut events, _) = self.finish_sink();
+        let mut events = flatten_events(self.finish_sink());
         let mut surplus_events = self.read_surplus();
 
         if !surplus_events.is_empty() {
@@ -222,6 +242,8 @@ impl<'text> Parser<'text> {
                     builder.token((*k).into(), self.tokens[idx].1);
                     idx += 1;
                 }
+                // flatten_events leaves no splices
+                ParseEvent::Splice(_) => {}
             }
         }
         builder.finish()
@@ -572,12 +594,12 @@ impl<'text> Parser<'text> {
 
     /// Parse block content terminated by BRACKET_CLOSE instead of CLOSE_BRACE.
     fn parse_block_content_until_bracket_close(&mut self) {
-        let start_offset = self.token_start_at(self.next_token);
+        let start_idx = self.next_token;
+        let start_offset = self.token_start_at(start_idx);
         self.sink_stack
             .push(Box::new(BlockEventSink::with_start(start_offset)));
         while self.parse_protoblock_element_until_bracket_close() {}
-        let (events, len) = self.finish_sink();
-        self.sink().accept(events, len);
+        self.finish_block_sink(start_idx);
     }
 
     /// Like `parse_protoblock_element` but stops at BRACKET_CLOSE instead of CLOSE_BRACE.
@@ -731,12 +753,12 @@ impl<'text> Parser<'text> {
     fn parse_block_content(&mut self) {
         // Pass the starting byte offset so the BlockEventSink can compute
         // accurate source positions for declaration-level errors.
-        let start_offset = self.token_start_at(self.next_token);
+        let start_idx = self.next_token;
+        let start_offset = self.token_start_at(start_idx);
         self.sink_stack
             .push(Box::new(BlockEventSink::with_start(start_offset)));
         while self.parse_protoblock_element() {}
-        let (events, len) = self.finish_sink();
-        self.sink().accept(events, len);
+        self.finish_block_sink(start_idx);
     }
 
     /// Parse a temporary protoblock element
@@ -1636,6 +1658,8 @@ impl BlockEventSink {
                         break;
                     }
                 }
+                // A nested block's content, always inside its BLOCK node.
+                ParseEvent::Splice(_) => {}
             }
         }
 

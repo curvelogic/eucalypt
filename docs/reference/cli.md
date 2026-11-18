@@ -682,6 +682,14 @@ The formatter has two modes:
 - **Reformat mode** (`--reformat`) - Full reformatting that applies
   consistent style throughout
 
+In reformat mode a block (of up to three declarations, with no nested
+block or declaration metadata) or a list goes on one line when it fits
+within the width from the column where it starts, leaving one column for a
+separator or bracket after it; otherwise it is laid out one item per line.
+The formatter does not break other expressions, so a line can still pass
+the width when a long expression or string leaves no block or list to
+break.
+
 ## Type Checking
 
 The `check` subcommand runs the type checker without evaluating:

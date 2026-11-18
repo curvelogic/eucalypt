@@ -429,3 +429,34 @@ mod tests {
         );
     }
 }
+#[cfg(test)]
+mod scaling_tests {
+    /// Best of three parses of `depth` nested blocks.
+    fn best_parse_time(depth: usize) -> std::time::Duration {
+        let src = format!("x: {}1{}\n", "{ a: ".repeat(depth), " }".repeat(depth));
+        (0..3)
+            .map(|_| {
+                let start = std::time::Instant::now();
+                let parsed = super::parse_unit(&src);
+                assert!(parsed.errors().is_empty());
+                start.elapsed()
+            })
+            .min()
+            .unwrap()
+    }
+
+    #[test]
+    fn test_parse_unit_is_linear_in_nesting_depth() {
+        // Each block's events were copied into every enclosing block's
+        // sink, and each block start summed the lengths of all tokens
+        // before it, so parsing was quadratic in nesting depth (0.8 s at
+        // depth 1600 in a debug build). An eightfold increase in depth
+        // must cost well under the 64-fold a quadratic parse would.
+        let small = best_parse_time(500);
+        let large = best_parse_time(4000);
+        assert!(
+            large < small * 24,
+            "depth 4000 took {large:?} against {small:?} at depth 500: not linear"
+        );
+    }
+}

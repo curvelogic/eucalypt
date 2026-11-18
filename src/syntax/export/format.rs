@@ -19,6 +19,7 @@ use rowan::ast::AstNode;
 
 /// The formatted parts of a declaration, each formatted once and shared
 /// between the single-line and multi-line layouts.
+#[derive(Clone)]
 struct DeclParts {
     meta: Option<RcDoc<'static, ()>>,
     head: RcDoc<'static, ()>,
@@ -26,18 +27,6 @@ struct DeclParts {
 }
 
 impl DeclParts {
-    /// Width of the single-line layout (`head: body`), measured without
-    /// cloning. `usize::MAX` when it cannot be laid out on one line.
-    fn inline_width(&self, fmt: &Formatter) -> usize {
-        let body = match &self.body {
-            Some(body) => fmt.flat_width(body),
-            None => 0,
-        };
-        fmt.flat_width(&self.head)
-            .saturating_add(2)
-            .saturating_add(body)
-    }
-
     /// `head: body`, without metadata (single-line block layout).
     fn into_inline(self) -> RcDoc<'static, ()> {
         let doc = self.head.append(RcDoc::text(": "));
@@ -96,9 +85,9 @@ impl FormatterConfig {
 /// Blocks with more declarations than this always use multi-line format.
 const MAX_SINGLE_LINE_DECLS: usize = 3;
 
-/// Margin reserved for surrounding context when deciding single-line formatting.
-/// Accounts for potential nesting, braces, and other tokens on the same line.
-const SINGLE_LINE_MARGIN: usize = 10;
+/// Columns kept free after a single-line block or list, for the
+/// separator or closing bracket that may follow it on the line.
+const SINGLE_LINE_RESERVE: usize = 1;
 
 /// The main formatter struct
 pub struct Formatter {
@@ -668,41 +657,34 @@ impl Formatter {
             && !self.has_nested_block(block)
             && parts.iter().all(|p| p.meta.is_none());
 
-        // Documents are measured by reference and then moved into the
-        // chosen layout: cloning a document copies its whole subtree, which
-        // made layout cost quadratic in nesting depth.
         if may_single_line {
-            // `{ ` + meta + space + decls joined by `, ` + ` }`
-            let mut width = 4usize;
-            if let Some(meta) = &meta {
-                width = width
-                    .saturating_add(self.flat_width(meta))
-                    .saturating_add(1);
+            // Single line: { meta a: 1, b: 2 }
+            let mut docs = vec![RcDoc::text("{ ")];
+            if let Some(meta) = meta.clone() {
+                docs.push(meta);
+                docs.push(RcDoc::space());
             }
-            for part in &parts {
-                width = width.saturating_add(part.inline_width(self));
-            }
-            width = width.saturating_add(2 * (parts.len() - 1));
-
-            if width <= self.config.line_width.saturating_sub(SINGLE_LINE_MARGIN) {
-                // Single line: { meta a: 1, b: 2 }
-                let mut docs = vec![RcDoc::text("{ ")];
-                if let Some(meta) = meta {
-                    docs.push(meta);
-                    docs.push(RcDoc::space());
+            for (i, part) in parts.iter().cloned().enumerate() {
+                if i > 0 {
+                    docs.push(RcDoc::text(", "));
                 }
-                for (i, part) in parts.into_iter().enumerate() {
-                    if i > 0 {
-                        docs.push(RcDoc::text(", "));
-                    }
-                    docs.push(part.into_inline());
-                }
-                docs.push(RcDoc::text(" }"));
-                return RcDoc::concat(docs);
+                docs.push(part.into_inline());
             }
+            docs.push(RcDoc::text(" }"));
+            let multi = self.multi_line_block(meta, parts);
+            return self.fit_or_break(RcDoc::concat(docs), multi);
         }
 
-        // Multi-line block
+        self.multi_line_block(meta, parts)
+    }
+
+    /// `{`, then the metadata and each declaration on a line of its own,
+    /// indented, then `}`.
+    fn multi_line_block(
+        &self,
+        meta: Option<RcDoc<'static, ()>>,
+        parts: Vec<DeclParts>,
+    ) -> RcDoc<'static, ()> {
         let indent = self.config.indent_size;
         let mut inner_docs = Vec::new();
         if let Some(meta) = meta {
@@ -717,6 +699,42 @@ impl Formatter {
             .append(RcDoc::hardline().append(inner).nest(indent as isize))
             .append(RcDoc::hardline())
             .append(RcDoc::text("}"))
+    }
+
+    /// `flat` where it fits on its line, else `multi`.
+    ///
+    /// The choice is made when the document is rendered, from the column
+    /// `flat` would start at, so a block or list nested well into a line is
+    /// measured against the room actually left. Only the construct's own
+    /// extent is measured (plus a column for a following separator): the
+    /// text around it on the line cannot be broken, so breaking the
+    /// construct because of it would not shorten the line.
+    ///
+    /// `flat` is measured once here; documents are reference counted, so
+    /// handing either layout out on each render is cheap. Any single-line
+    /// choices inside `flat` are consistent with it: a construct that fits
+    /// leaves room for everything inside it.
+    fn fit_or_break(
+        &self,
+        flat: RcDoc<'static, ()>,
+        multi: RcDoc<'static, ()>,
+    ) -> RcDoc<'static, ()> {
+        let width = self.flat_width(&flat);
+        if width == usize::MAX {
+            return multi;
+        }
+        let limit = self.config.line_width;
+        RcDoc::column(move |col| {
+            if col
+                .saturating_add(width)
+                .saturating_add(SINGLE_LINE_RESERVE)
+                <= limit
+            {
+                flat.clone()
+            } else {
+                multi.clone()
+            }
+        })
     }
 
     fn reformat_list(&self, list: &rowan_ast::List) -> RcDoc<'static, ()> {
@@ -745,26 +763,20 @@ impl Formatter {
 
         let docs: Vec<_> = items.iter().map(|s| self.reformat_soup(s)).collect();
 
-        // Single line: [a, b, c] — measured by reference, see reformat_block.
-        let mut width = 2usize.saturating_add(2 * (docs.len() - 1));
-        for d in &docs {
-            width = width.saturating_add(self.flat_width(d));
-        }
+        // Single line: [a, b, c]
+        let flat = RcDoc::text("[")
+            .append(RcDoc::intersperse(docs.iter().cloned(), RcDoc::text(", ")))
+            .append(RcDoc::text("]"));
 
-        if width <= self.config.line_width.saturating_sub(SINGLE_LINE_MARGIN) {
-            RcDoc::text("[")
-                .append(RcDoc::intersperse(docs, RcDoc::text(", ")))
-                .append(RcDoc::text("]"))
-        } else {
-            // Multi-line - same pattern as blocks for consistent indentation
-            let indent = self.config.indent_size;
-            let inner = RcDoc::intersperse(docs, RcDoc::text(",").append(RcDoc::hardline()));
+        // Multi-line - same pattern as blocks for consistent indentation
+        let indent = self.config.indent_size;
+        let inner = RcDoc::intersperse(docs, RcDoc::text(",").append(RcDoc::hardline()));
+        let multi = RcDoc::text("[")
+            .append(RcDoc::hardline().append(inner).nest(indent as isize))
+            .append(RcDoc::hardline())
+            .append(RcDoc::text("]"));
 
-            RcDoc::text("[")
-                .append(RcDoc::hardline().append(inner).nest(indent as isize))
-                .append(RcDoc::hardline())
-                .append(RcDoc::text("]"))
-        }
+        self.fit_or_break(flat, multi)
     }
 
     fn reformat_paren_expr(&self, pe: &rowan_ast::ParenExpr) -> RcDoc<'static, ()> {
@@ -1630,7 +1642,9 @@ mod correctness_tests {
         let out = rx
             .recv_timeout(std::time::Duration::from_secs(10))
             .expect("reformatting deeply nested blocks did not finish in 10s");
-        assert!(out.contains("a39: [1]"), "{out}");
+        // At this depth the indentation alone passes the width, so the
+        // innermost list breaks too; the point here is that it finishes.
+        assert!(out.contains("a39: ["), "{out}");
     }
 
     #[test]
@@ -1794,6 +1808,81 @@ mod correctness_tests {
             start.elapsed() < std::time::Duration::from_millis(1500),
             "formatting depth {d} took {:?}",
             start.elapsed()
+        );
+    }
+    /// Cases whose every line can be brought within the width by breaking
+    /// blocks and lists (no atom or soup is wider than the narrowest width
+    /// tried below).
+    const NESTED_WIDTH_CASES: &[&str] = &[
+        "a: { b: { c: { d: 1, e: \"two\", f: [3, 4, 5] } g: [6, 7] } }\n",
+        "x: { y: { z: { alpha: \"aaaaaaaa\", beta: \"bbbbbbbb\", gamma: 1 } } }\n",
+        "m: [[1, 2, 3], [\"four\", \"five\", \"six\"], { k: 7, l: [8, 9] }]\n",
+        "p: { ` \"doc\" q: { r: [1, 2] s: { t: 3 } } u: [{ v: 4 }, { w: 5 }] }\n",
+    ];
+
+    #[test]
+    fn test_nested_layout_respects_starting_column() {
+        // Single-line layouts were chosen by the width of the block or
+        // list alone, so a nested one starting well into the line ran
+        // past the width.
+        for width in (24..=100).step_by(4) {
+            let config = FormatterConfig::new(width, 2, true);
+            for case in NESTED_WIDTH_CASES {
+                let once = format_source(case, &config).unwrap();
+                for line in once.lines() {
+                    assert!(
+                        line.chars().count() <= width,
+                        "width {width}: line {line:?} too wide in\n{once}"
+                    );
+                }
+                let twice = format_source(&once, &config).unwrap();
+                assert_eq!(once, twice, "width {width}: not idempotent on {case:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_nested_block_breaks_when_its_line_is_full() {
+        // The inner block is narrow enough for the old width budget but
+        // starts at column 21, so it no longer fits on the line.
+        let src = "outer: {\n  inner: {\n    nested-key-name: { a: \"aaaaaaaaaaaa\", b: \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", c: 3 }\n  }\n}\n";
+        let out = reformat_checked(src);
+        assert!(out.contains("nested-key-name: {\n      a: "), "{out}");
+        assert!(out.lines().all(|l| l.chars().count() <= 80), "{out}");
+    }
+
+    #[test]
+    fn test_multi_line_text_breaks_enclosing_group() {
+        // A string literal spanning lines is never measured as one line.
+        let src = "x: [\"a\nb\", 1]\n";
+        let out = reformat_checked(src);
+        assert_eq!(out, "x: [\n  \"a\nb\",\n  1\n]\n");
+    }
+
+    #[test]
+    fn test_format_source_scales_linearly_in_nesting_depth() {
+        // Parsing and formatting together: parse_unit copied each nested
+        // block's events into every enclosing block, so it was quadratic
+        // in depth. An eightfold increase in depth must cost well under the
+        // 64-fold a quadratic pass would (the best of three runs each, to
+        // damp scheduling noise).
+        fn best_time(depth: usize) -> std::time::Duration {
+            let src = format!("x: {}1{}\n", "{ a: ".repeat(depth), " }".repeat(depth));
+            let config = FormatterConfig::new(80, 2, true);
+            (0..3)
+                .map(|_| {
+                    let start = std::time::Instant::now();
+                    format_source(&src, &config).unwrap();
+                    start.elapsed()
+                })
+                .min()
+                .unwrap()
+        }
+        let small = best_time(400);
+        let large = best_time(3200);
+        assert!(
+            large < small * 24,
+            "depth 3200 took {large:?} against {small:?} at depth 400: not linear"
         );
     }
 }
