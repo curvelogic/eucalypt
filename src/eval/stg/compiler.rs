@@ -1159,6 +1159,15 @@ impl ProtoSyntax for Holder {
 /// makes entering it set the use site as the live annotation, exactly as
 /// a user-written lambda does. Behaviour is otherwise identical: the
 /// lambda has the intrinsic's arity and tail-calls its global.
+///
+/// Cost: the wrapper is let-bound where the call is compiled, so each
+/// evaluation of that call allocates one small closure with no free
+/// variables. That is exactly the cost of the user writing the eta-expanded
+/// form themselves (`xs map(x -> num(x))`), and it is paid once per call,
+/// not per element. It arises only in annotated user code: the prelude
+/// (blob or source) is compiled without annotations and keeps bare
+/// globals. Hoisting the wrapper to a global would need the compiler to
+/// add globals for user code, which it has no mechanism for.
 pub struct ProtoIntrinsicRef {
     index: usize,
     arity: u8,

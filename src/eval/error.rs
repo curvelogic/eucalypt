@@ -844,17 +844,17 @@ fn not_callable_notes(actual_type: &str, ev: &Evidence) -> Vec<String> {
 /// value (an unsaturated lambda or a partial application) found where a
 /// non-function value was expected. Deliberately does not suggest
 /// `block.field` — the value is a function, never a block (eu-1tkk.7.9).
+///
+/// The hint assumes an under-applied call, so it is not shown where the
+/// lone-anaphor note explains the function instead: an argument that is
+/// the identity function is not missing arguments (eu-oaz72.141).
 fn unexpected_function_notes() -> Vec<String> {
-    vec![UNEXPECTED_FUNCTION_HINT.to_string()]
+    vec![
+        "a function value cannot be used directly here; it must first be called with \
+          all of its remaining arguments"
+            .to_string(),
+    ]
 }
-
-/// The generic hint for a function found where a value was wanted. It
-/// assumes an under-applied call, so it is dropped where the lone-anaphor
-/// note explains the function instead: an argument that is the identity
-/// function is not missing arguments (eu-oaz72.141).
-const UNEXPECTED_FUNCTION_HINT: &str = "a function value cannot be used directly here; it \
-                                        must first be called with all of its remaining \
-                                        arguments";
 
 /// The note stating that an argument is a lone anaphor (eu-oaz72.132),
 /// for an error whose primary label is a juxtaposed call that cook gave
@@ -1921,6 +1921,8 @@ impl ExecutionError {
 
         let ev = Evidence(files.and_then(|f| LabelSource::of(&diag, f)));
         let catenation = files.and_then(|f| catenation_operand_note(inner, source_map, f));
+        let lone_anaphor =
+            files.and_then(|f| lone_anaphor_note(inner, primary_file_span, source_map, f));
         let mut notes = match inner {
             ExecutionError::TypeMismatch(_, detail) => {
                 type_mismatch_notes(&detail.0, &detail.1, &ev)
@@ -1987,6 +1989,9 @@ impl ExecutionError {
                 ]
             }
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name, &ev),
+            // The generic hint assumes an under-applied call; where the
+            // lone-anaphor note explains the function it is not shown.
+            ExecutionError::UnexpectedFunction(..) if lone_anaphor.is_some() => vec![],
             ExecutionError::UnexpectedFunction(..) => unexpected_function_notes(),
             ExecutionError::LookupFailure(_, detail) => lookup_failure_notes(&detail.0, &detail.1),
             ExecutionError::CannotReturnFunToCase(_, expected_tags, _) => {
@@ -2129,10 +2134,7 @@ impl ExecutionError {
         if let Some(note) = catenation {
             notes.insert(0, note);
         }
-        if let Some(note) =
-            files.and_then(|f| lone_anaphor_note(inner, primary_file_span, source_map, f))
-        {
-            notes.retain(|n| n != UNEXPECTED_FUNCTION_HINT);
+        if let Some(note) = lone_anaphor {
             notes.insert(0, note);
         }
         if notes.is_empty() {

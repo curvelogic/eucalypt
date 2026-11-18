@@ -472,8 +472,9 @@ impl BcMachineState {
     /// site), preferred over its captured environment's stamped-at-creation
     /// (definition-site) annotation — the latter is used only as a fallback
     /// when the force-site annotation is invalid (eu-1tkk.7.18). `DeMeta`
-    /// still has no force-site annotation of its own, so it keeps borrowing
-    /// its environment's.
+    /// carries its push-time annotation (eu-oaz72.122), but only to restore
+    /// the live annotation when it resumes; its trace frame still borrows
+    /// its environment's, so traces are unchanged by that fix.
     pub fn stack_trace(&self, view: MutatorHeapView<'_>) -> Vec<Smid> {
         self.stack_trace_capped(view, usize::MAX)
     }
