@@ -1,0 +1,4 @@
+{ import: ["lens.eu", "cfg=text@lens.eu"] }
+
+` { doc: "Importing the shipped lens.eu as eucalypt does not let a later data import of the same missing file read the library's source (eu-7tlbg)." }
+result: cfg

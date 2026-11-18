@@ -4752,6 +4752,20 @@ pub fn test_typecheck_137_block_param_nested_projection_warns() {
     run_typecheck_test("137_block_param_nested_projection_warns.eu");
 }
 
+/// An annotated block-returning function called inside a block does not make
+/// the enclosing parameter a block: the valid call checks clean (eu-oaz72.184).
+#[test]
+pub fn test_typecheck_138_block_fn_call_in_block_no_warning() {
+    run_typecheck_test("138_block_fn_call_in_block_no_warning.eu");
+}
+
+/// A real block parameter projected through a sibling binding still warns on
+/// a non-block (eu-oaz72.184).
+#[test]
+pub fn test_typecheck_139_block_fn_call_in_block_mismatch_warns() {
+    run_typecheck_test("139_block_fn_call_in_block_mismatch_warns.eu");
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]
@@ -5733,6 +5747,23 @@ pub fn test_error_331_iterate_applies_f_at_cell() {
 #[test]
 pub fn test_error_347_missing_prelude_path() {
     run_error_test(&error_opts("347_missing_prelude_path.eu"));
+}
+
+#[test]
+pub fn test_error_348_import_missing_file_named_like_library() {
+    run_error_test(&error_opts("348_import_missing_file_named_like_library.eu"));
+}
+
+#[test]
+pub fn test_error_349_data_import_missing_file_named_like_library() {
+    run_error_test(&error_opts(
+        "349_data_import_missing_file_named_like_library.eu",
+    ));
+}
+
+#[test]
+pub fn test_error_350_data_import_after_library_import() {
+    run_error_test(&error_opts("350_data_import_after_library_import.eu"));
 }
 
 #[test]
