@@ -1,0 +1,8 @@
+` { doc: "Annotated block-returning function. Called inside a block, with the result projected from a sibling binding, it must not make the enclosing parameter a block: the valid call checks clean (eu-oaz72.184)."
+    type: "[string] -> block" }
+mk2(xs): { n: xs count }
+
+` "The call result is bound to `g` and projected by the sibling `e`."
+p(lines): { g: mk2(lines)  e: g.n }.e
+
+v: p["a", "b"]
