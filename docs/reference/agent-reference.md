@@ -1052,9 +1052,8 @@ catenation) — navigate with `(xs nth(2)).port` or a lens.
 - A malformed **spec** raises `panic("validate: not a type spec")` — a
   different error from a contract violation, so a schema typo cannot
   masquerade as bad data.
-- Literal types (`"prod"`, `:ok`) are checked by equality here but **not**
-  by `as-spec`, which matches anything for them (a known
-  defect).
+- Literal types (`"prod"`, `:ok`) are checked by equality, here and by
+  `as-spec` alike.
 
 See [Structural Contracts](../guide/contracts.md).
 

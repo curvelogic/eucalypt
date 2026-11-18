@@ -285,14 +285,6 @@ specs and deliberately differs on closed ones.
 - **`block(T)`, `NonEmpty([T])` and recursive types are accepted without
   checking**, matching `as-spec`, so the two agree about what conforms for
   these. Extending them is future work, and will extend both together.
-- **Literal types are the one place `validate` and `as-spec` disagree.**
-  `validate` checks a literal (`"prod"`, `:ok`) by equality, as you would
-  expect. `as-spec` has no arm for literal types, so it falls through to
-  "matches anything" — `s"\"prod\"" as-spec` accepts any value at all. That
-  is a known defect on the `as-spec` side; `validate` does the right
-  thing rather than replicating it. Until it is fixed, do
-  not expect `data match?(spec as-spec)` and `(data validate(spec)) nil?`
-  to agree on a spec containing a literal type.
 - **Data-file blame** — reporting `config.yaml:12` rather than the `ensure`
   call site — needs every importer to carry per-value source provenance.
   Today only the YAML reader (which also serves JSON) does; offering it for

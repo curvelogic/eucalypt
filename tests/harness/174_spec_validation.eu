@@ -175,6 +175,45 @@ test-union-as-spec: {
     all-true? then(:PASS, :FAIL)
 }
 
+` { target: :test-literal-as-spec
+    doc: "eu-pub3r: `as-spec` of a literal string or symbol type matches exactly that one value, as `validate` does; before the fix both fell through to `any?` and matched everything." }
+test-literal-as-spec: {
+  prod: c"\"prod\"" __TYPE_FROM_STRING
+  ok: s":ok"
+
+  ` "String literal: the literal matches; other strings, a same-named symbol and a number do not"
+  t1: "prod" match?(prod as-spec)
+  t2: not("dev" match?(prod as-spec))
+  t3: not(:prod match?(prod as-spec))
+  t4: not(1 match?(prod as-spec))
+
+  ` "Symbol literal: the literal matches; other symbols and a same-named string do not"
+  t5: :ok match?(ok as-spec)
+  t6: not(:error match?(ok as-spec))
+  t7: not("ok" match?(ok as-spec))
+
+  ` "Literal unions and a discriminant field in an open record"
+  t8: :a match?(s":a | :b" as-spec)
+  t9: not(:c match?(s":a | :b" as-spec))
+  t10: { kind: :circle, r: 1 } match?(s"{kind: :circle, ..}" as-spec)
+  t11: not({ kind: :rect, r: 1 } match?(s"{kind: :circle, ..}" as-spec))
+
+  ` "Agreement with validate on literal types"
+  agrees(spec, v): ((v validate(spec)) nil?) = (v match?(spec as-spec))
+  t12: agrees(prod, "prod")
+  t13: agrees(prod, "dev")
+  t14: agrees(prod, :prod)
+  t15: agrees(ok, :ok)
+  t16: agrees(ok, :error)
+  t17: agrees(ok, "ok")
+  t18: agrees(s":a | :b", :b)
+  t19: agrees(s":a | :b", :c)
+
+  RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15,
+           t16, t17, t18, t19]
+    all-true? then(:PASS, :FAIL)
+}
+
 ` { target: :test-projection-closedness
     doc: "eu-u9xj.1: the `t-record` projection carries record closedness, so `from-data` of `to-data` keeps the open marker." }
 test-projection-closedness: {

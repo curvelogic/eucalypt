@@ -9375,14 +9375,6 @@ specs and deliberately differs on closed ones.
 - **`block(T)`, `NonEmpty([T])` and recursive types are accepted without
   checking**, matching `as-spec`, so the two agree about what conforms for
   these. Extending them is future work, and will extend both together.
-- **Literal types are the one place `validate` and `as-spec` disagree.**
-  `validate` checks a literal (`"prod"`, `:ok`) by equality, as you would
-  expect. `as-spec` has no arm for literal types, so it falls through to
-  "matches anything" — `s"\"prod\"" as-spec` accepts any value at all. That
-  is a known defect on the `as-spec` side; `validate` does the right
-  thing rather than replicating it. Until it is fixed, do
-  not expect `data match?(spec as-spec)` and `(data validate(spec)) nil?`
-  to agree on a spec containing a literal type.
 - **Data-file blame** — reporting `config.yaml:12` rather than the `ensure`
   call site — needs every importer to carry per-value source provenance.
   Today only the YAML reader (which also serves JSON) does; offering it for
@@ -12547,7 +12539,7 @@ has no metadata at all.
 | `update?(k?, f, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `let` | Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha |
 | `for` | List monad for list comprehensions. Each binding draws from a list; subsequent bindings can depend on earlier ones. Use [x] filter(pred?) for guards |
-| `as-spec(t)` | Convert type-data to a match?-compatible pattern. Primitive types become predicates, records become block patterns, lists become list predicates, unions become disjunctive predicates, partials accept null or the inner type |
+| `as-spec(t)` | Convert type-data to a match?-compatible pattern. Primitive types become predicates, records become block patterns, lists become list predicates, unions become disjunctive predicates, partials accept null or the inner type, and literal types match exactly their one string or symbol |
 | `parse-args(defaults, args)` | Parse command-line argument list against a defaults block. Each key in `defaults` defines an option with its default value. Field metadata configures parsing: `short` (symbol for short flag), `doc` (description), `flag` (true for boolean toggle). Returns the `defaults` block updated with parsed values, plus an `args` key containing positional arguments as a list. Unknown options cause a runtime error. Use `--help` for auto-generated help text |
 
 ---
@@ -15327,9 +15319,8 @@ catenation) — navigate with `(xs nth(2)).port` or a lens.
 - A malformed **spec** raises `panic("validate: not a type spec")` — a
   different error from a contract violation, so a schema typo cannot
   masquerade as bad data.
-- Literal types (`"prod"`, `:ok`) are checked by equality here but **not**
-  by `as-spec`, which matches anything for them (a known
-  defect).
+- Literal types (`"prod"`, `:ok`) are checked by equality, here and by
+  `as-spec` alike.
 
 See [Structural Contracts](../guide/contracts.md).
 
