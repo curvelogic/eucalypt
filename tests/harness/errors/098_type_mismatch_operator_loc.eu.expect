@@ -1,2 +1,3 @@
 exit: 1
 stderr: "098_type_mismatch_operator_loc"
+location: 2:11

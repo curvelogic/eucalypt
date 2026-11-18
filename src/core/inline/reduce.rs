@@ -83,8 +83,22 @@ fn substs_depth_in(
     capture: Capture,
 ) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
-        Expr::Var(_, Var::Free(name)) => match substs.iter().find(|m| m.name == name) {
+        Expr::Var(s, Var::Free(name)) => match substs.iter().find(|m| m.name == name) {
+            // An intrinsic substituted for a name takes the name's own
+            // location: the replacement's Smid is the prelude definition
+            // (`num: __NUMPARSE`), but the place to blame when an unapplied
+            // reference later fails is the user's use site (eu-oaz72.119).
+            // Only a let substitution (`distribute`) retags: in a beta
+            // reduction the occurrence is a parameter inside the inlined
+            // body, and the argument already carries the caller's site.
             Some(m) => {
+                if let (true, true, Expr::Intrinsic(_, n)) = (
+                    capture == Capture::Avoid,
+                    s.is_valid(),
+                    &*m.replacement.inner,
+                ) {
+                    return Ok(RcExpr::from(Expr::Intrinsic(*s, n.clone())));
+                }
                 // Replacement is from the call site (depth == 0).
                 // If we are now inside `depth` additional scope
                 // boundaries, we must increment all outer BVs in the
@@ -523,6 +537,17 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                         // otherwise bound once in a Let wrapped round the
                         // reduced body, leaving the occurrences to share that
                         // single thunk.
+                        //
+                        // The opened body is reduced first (eu-oaz72.175): a
+                        // callee copied into a call site (e.g. a recursive
+                        // combinator copy-specialised at a saturated call)
+                        // can carry redexes of its own, such as an inlined
+                        // `then` spliced in as a lambda but never applied.
+                        // Left unreduced they cost a closure and a branch
+                        // thunk allocated in the enclosing frame, which pins
+                        // that frame.  A self-reference stays a variable, so
+                        // this does not unroll recursion.
+                        let body = beta_reduce(&body)?;
                         let occurrences = free_var_occurrences(&body);
                         // The occurrence map's keys are exactly the body's
                         // free names (same traversal), so reuse them rather
@@ -606,6 +631,23 @@ pub mod tests {
         let expected = let_(vec![(f, inline(vec![x, y.clone()], var(y)))], num(23));
 
         assert_eq!(inline_pass(&original).unwrap(), expected);
+    }
+
+    /// A saturated inlinable whose own body holds an unreduced redex (as
+    /// arrives when a pre-expanded combinator is copied into a call site)
+    /// must come out fully reduced (eu-oaz72.175).
+    #[test]
+    pub fn test_beta_reduce_reduces_redex_inside_callee_body() {
+        let x = free("x");
+        let a = free("a");
+
+        let redex = app(
+            inline(vec![a.clone()], var(a.clone())),
+            vec![var(x.clone())],
+        );
+        let call = app(inline(vec![x.clone()], redex), vec![num(22)]);
+
+        assert_eq!(beta_reduce(&call).unwrap(), num(22));
     }
 
     #[test]

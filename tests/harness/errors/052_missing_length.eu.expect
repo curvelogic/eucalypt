@@ -1,2 +1,3 @@
 exit: 1
 stderr: "use 'count'"
+location: 3:7

@@ -86,7 +86,9 @@ Type checking runs **unconditionally** on every `eu` invocation (evaluate, dump,
 
 ### Test Architecture
 
-Harness tests cover language features, edge cases, and error conditions. `.eu` sources plus YAML, TOML, CSV, XML and EDN fixtures; error tests in `tests/harness/errors/`, benchmarks in `tests/harness/bench/`. They run via `tests/harness_test.rs`, one test per file in `tests/harness/`, using the `tester` module.
+Harness tests cover language features, edge cases, and error conditions. `.eu` sources plus YAML, TOML, CSV, XML and EDN fixtures; error tests in `tests/harness/errors/`, benchmarks in `tests/harness/bench/`. They run via `tests/harness_test.rs`, one test per file in `tests/harness/`, using the `tester` module. Ordinary fixtures run in-process but through the same eval-path type check as `eu` (`check::eval_path_type_check`), so type warnings reach a target's captured stderr.
+
+Every error fixture needs a test in `tests/harness_test.rs` and an `.expect` sidecar (`exit:`, `stderr:`, `stderr-absent:`), and the sidecar must pin the primary label with `location: LINE:COL` (or `FILE:LINE:COL`), checked against the first `┌─` line under the first `error` header, or give `no-location: <reason>`. Pin only a location that is the same in source and blob prelude modes.
 
 #### Writing harness tests that gate
 

@@ -70,7 +70,7 @@ fn arb_type_at(depth: u32) -> BoxedStrategy<Type> {
         // Homogeneous containers
         1 => arb_type_at(d).prop_map(Type::list),
         1 => arb_type_at(d).prop_map(Type::non_empty),
-        1 => arb_type_at(d).prop_map(Type::dict),
+        1 => arb_type_at(d).prop_map(Type::block),
         // Partial (T | ExecutionError)
         1 => arb_type_at(d).prop_map(Type::partial),
         // Function type

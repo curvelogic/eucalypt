@@ -1,0 +1,4 @@
+# `block(T)` is the homogeneous block type (eu-oaz72.129): a block whose
+# values are not all `T` is reported against `block(number)`.
+` { type: "block(number)" }
+scores: { alice: 95 bob: "eighty-seven" }

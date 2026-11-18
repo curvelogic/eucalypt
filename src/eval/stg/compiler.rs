@@ -1147,6 +1147,53 @@ impl ProtoSyntax for Holder {
     }
 }
 
+/// An intrinsic passed as an argument in user code, eta-expanded into
+/// an annotated lambda carrying the reference's own source location
+/// (eu-oaz72.119).
+///
+/// An intrinsic passed point-free (`xs map(num)`) is otherwise the bare
+/// global wrapper, which carries no user location: when the intrinsic
+/// later fails inside a prelude combinator, the machine's live annotation
+/// is a prelude one (or none) and the error renders without a primary
+/// label. Wrapping the reference as `λ(x1..xn). ann(smid, G(n)(x1..xn))`
+/// makes entering it set the use site as the live annotation, exactly as
+/// a user-written lambda does. Behaviour is otherwise identical: the
+/// lambda has the intrinsic's arity and tail-calls its global.
+///
+/// Cost: the wrapper is let-bound where the call is compiled, so each
+/// evaluation of that call allocates one small closure with no free
+/// variables. That is exactly the cost of the user writing the eta-expanded
+/// form themselves (`xs map(x -> num(x))`), and it is paid once per call,
+/// not per element. It arises only in annotated user code: the prelude
+/// (blob or source) is compiled without annotations and keeps bare
+/// globals. Hoisting the wrapper to a global would need the compiler to
+/// add globals for user code, which it has no mechanism for.
+pub struct ProtoIntrinsicRef {
+    index: usize,
+    arity: u8,
+    smid: Smid,
+}
+
+impl ProtoSyntax for ProtoIntrinsicRef {
+    fn take_lambda_form(
+        &mut self,
+        _compiler: &Compiler,
+        _context: &Context,
+    ) -> Result<LambdaForm, CompileError> {
+        let args = (0..self.arity as usize).map(dsl::lref).collect();
+        let body = dsl::ann(self.smid, dsl::app(dsl::gref(self.index), args));
+        Ok(dsl::annotated_lambda(self.arity, body, self.smid))
+    }
+
+    fn take_syntax(
+        &mut self,
+        _compiler: &Compiler,
+        _context: &Context,
+    ) -> Result<Rc<StgSyn>, CompileError> {
+        unreachable!("ProtoIntrinsicRef is always taken as a lambda form")
+    }
+}
+
 /// A function application using local let bindings
 pub struct ProtoAppGroup {
     f: RcExpr,
@@ -1269,11 +1316,9 @@ impl ProtoSyntax for ProtoAppGroup {
                         compiler.resolve_free_var(*s, name)?,
                     ))),
                 },
-                Expr::Intrinsic(_, bif) => {
-                    let global_index = intrinsics::index(bif)
-                        .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
-                    arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
-                }
+                Expr::Intrinsic(s, bif) => arg_indexes.push(Box::new(ProtoRef::new(
+                    compiler.compile_intrinsic_ref(&mut local_binder, *s, bif)?,
+                ))),
                 _ => {
                     // Use the per-argument demand from the intrinsic signature table.
                     // Falls back to Demand::default() for unknown intrinsics or
@@ -1523,7 +1568,9 @@ pub fn compile_boxed_literal(prim: &Primitive) -> Rc<StgSyn> {
         Primitive::Num(n) => dsl::box_num(n.clone()),
         Primitive::Bool(b) => dsl::bool_(*b),
         Primitive::Null => dsl::unit(),
-        Primitive::TypeData(s) => dsl::box_type_data(s),
+        Primitive::TypeData(s) => {
+            dsl::box_type_data(crate::core::typecheck::parse::canonical_type_data(s))
+        }
     }
 }
 
@@ -1979,6 +2026,33 @@ impl<'rt> Compiler<'rt> {
                 self.compile_binding(binder, body.clone(), *s, Demand::default(), self_recurse)
             }
             _ => Err(CompileError::UnexpectedExpression(expr.smid())),
+        }
+    }
+
+    /// Reference an intrinsic passed as an argument: its global, or, in
+    /// annotated user code with a valid use-site Smid, an annotated
+    /// eta-expansion of it bound in `binder` (see `ProtoIntrinsicRef`).
+    ///
+    /// Only argument position is expanded. An intrinsic that is the value
+    /// of a binding or block member (`size: __DICT.SIZE` in a prelude
+    /// namespace compiled into the user unit) keeps the bare global: an
+    /// annotated wrapper there would install the prelude definition's
+    /// location whenever the member is called, displacing the user's call
+    /// site from the live annotation.
+    fn compile_intrinsic_ref(
+        &self,
+        binder: &mut LetBinder,
+        smid: Smid,
+        name: &str,
+    ) -> Result<Ref, CompileError> {
+        let index = intrinsics::index(name)
+            .ok_or_else(|| CompileError::UnknownIntrinsic(name.to_string()))?;
+        let arity = intrinsics::intrinsic(index).arity();
+        match u8::try_from(arity) {
+            Ok(arity) if arity > 0 && self.generate_annotations() && smid.is_valid() => {
+                binder.add_deferred(Box::new(ProtoIntrinsicRef { index, arity, smid }))
+            }
+            _ => Ok(dsl::gref(index)),
         }
     }
 

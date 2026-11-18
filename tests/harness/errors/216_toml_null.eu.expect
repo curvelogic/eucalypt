@@ -15,3 +15,4 @@
 # recorded on eu-ziq8o.
 exit: 1
 stderr: "(?s)error\[EU-RENDER-UNREPRESENTABLE\].*cannot represent this value in TOML output: TOML has no null; every key must have a value.*┌─[^\n]*216_toml_null\.eu:15:7"
+location: 15:7

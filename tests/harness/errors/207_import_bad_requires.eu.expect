@@ -1,2 +1,3 @@
 exit: 1
 stderr: "does not satisfy requires"
+location: testdata/207_impossible_requires.eu:4:1

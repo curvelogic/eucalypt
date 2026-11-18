@@ -172,7 +172,11 @@ pub fn read_arg_offsets(code: &[u8], pc: &mut usize) -> ArgOffsets {
 /// A decoded lambda-form header (Let/LetRec binding, or a global form).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormHeader {
+    /// Form kind (`FORM_*`), with the `FORM_CLOSED` bit stripped into `closed`.
     pub kind: u8,
+    /// The binding is closed: close it over a slotless annotation spine
+    /// (eu-oaz72.175).
+    pub closed: bool,
     pub arity: u8,
     pub smid: Smid,
     pub body: CodeRef,
@@ -180,12 +184,15 @@ pub struct FormHeader {
 
 /// Read a lambda-form header (`kind`, `arity`, `smid`, `body` offset).
 pub fn read_form_header(code: &[u8], pc: &mut usize) -> FormHeader {
-    let kind = read_u8(code, pc);
+    let kind_byte = read_u8(code, pc);
+    let kind = kind_byte & !super::FORM_CLOSED;
+    let closed = kind_byte & super::FORM_CLOSED != 0;
     let arity = read_u8(code, pc);
     let smid = Smid::from(read_u32(code, pc));
     let body = read_u32(code, pc);
     FormHeader {
         kind,
+        closed,
         arity,
         smid,
         body,
@@ -472,8 +479,9 @@ impl BcMachineState {
     /// site), preferred over its captured environment's stamped-at-creation
     /// (definition-site) annotation — the latter is used only as a fallback
     /// when the force-site annotation is invalid (eu-1tkk.7.18). `DeMeta`
-    /// still has no force-site annotation of its own, so it keeps borrowing
-    /// its environment's.
+    /// carries its push-time annotation (eu-oaz72.122), but only to restore
+    /// the live annotation when it resumes; its trace frame still borrows
+    /// its environment's, so traces are unchanged by that fix.
     pub fn stack_trace(&self, view: MutatorHeapView<'_>) -> Vec<Smid> {
         self.stack_trace_capped(view, usize::MAX)
     }
@@ -1254,8 +1262,9 @@ pub fn return_data(
     args: &[DecodedRef],
     atoms: &[CodeRef],
 ) -> Result<(), ExecutionError> {
-    // `free_slots` sizes a case branch's frame by the constructor's arity;
-    // the frame built here is `args.len()` wide. They must agree.
+    // `closed::branch_frame_size` (shared by `free_slots` and the closedness
+    // analysis) sizes a case branch's frame by the constructor's arity; the
+    // frame built here is `args.len()` wide. They must agree.
     debug_assert!(
         tag == DataConstructor::BlockKvList.tag()
             || DataConstructor::try_from(tag).map_or(true, |c| c.arity() == args.len()),
@@ -1388,8 +1397,12 @@ pub fn return_data(
         BcContinuation::DeMeta {
             or_else,
             environment,
+            annotation,
             ..
         } => {
+            // Restore the push-time annotation, as Branch and SeqBind do
+            // (eu-oaz72.122).
+            state.set_annotation(annotation);
             let cur = state.current.clone();
             let env = view.from_value(cur, environment, state.annotation)?;
             state.current = BcValue::Closure(BcClosure::new(or_else, env));
@@ -1415,6 +1428,7 @@ pub fn return_data(
             key,
             smid,
             default_closure,
+            annotation,
         } => {
             // The forced value has arrived. If it is a block, perform the
             // deferred key lookup; otherwise it is a type error.
@@ -1425,6 +1439,9 @@ pub fn return_data(
                         "bytecode: LookupLitForce block is not a closure".to_string(),
                     )
                 })?;
+                // Restore the push-time annotation before resuming
+                // (eu-oaz72.122).
+                state.set_annotation(annotation);
                 state.current = bc_lookup_in_block(prog, decoded, state, view, &block, key)
                     .unwrap_or(BcValue::Closure(default_closure));
             } else {
@@ -1625,8 +1642,16 @@ pub fn return_native(
                 let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fb, env));
             } else {
+                // Blame the case's own push-time annotation, as the
+                // data-tag arm does: `state.annotation` is whatever the
+                // scrutinee's evaluation left live (eu-oaz72.122).
+                let ann = if annotation.is_valid() {
+                    annotation
+                } else {
+                    state.annotation
+                };
                 return Err(ExecutionError::NoBranchForNative(
-                    state.annotation,
+                    ann,
                     value.type_description().to_string(),
                 ));
             }
@@ -1644,8 +1669,16 @@ pub fn return_native(
                 let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fallback, env));
             } else {
+                // Blame the case's own push-time annotation, as the
+                // data-tag arm does: `state.annotation` is whatever the
+                // scrutinee's evaluation left live (eu-oaz72.122).
+                let ann = if annotation.is_valid() {
+                    annotation
+                } else {
+                    state.annotation
+                };
                 return Err(ExecutionError::NoBranchForNative(
-                    state.annotation,
+                    ann,
                     value.type_description().to_string(),
                 ));
             }
@@ -1667,8 +1700,10 @@ pub fn return_native(
         BcContinuation::DeMeta {
             or_else,
             environment,
+            annotation,
             ..
         } => {
+            state.set_annotation(annotation);
             let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
             state.current = BcValue::Closure(BcClosure::new(or_else, env));
         }
@@ -1805,7 +1840,12 @@ pub fn return_fun(
                 } else {
                     state.annotation
                 };
-                return Err(ExecutionError::CannotReturnFunToCase(ann, expected));
+                // Carry the function's own location (eu-oaz72.151).
+                return Err(ExecutionError::CannotReturnFunToCase(
+                    ann,
+                    expected,
+                    fun.annotation(),
+                ));
             }
         }
         BcContinuation::BranchPredecoded {
@@ -1829,7 +1869,12 @@ pub fn return_fun(
                 } else {
                     state.annotation
                 };
-                return Err(ExecutionError::CannotReturnFunToCase(ann, expected));
+                // Carry the function's own location (eu-oaz72.151).
+                return Err(ExecutionError::CannotReturnFunToCase(
+                    ann,
+                    expected,
+                    fun.annotation(),
+                ));
             }
         }
         BcContinuation::Update {
@@ -1841,8 +1886,10 @@ pub fn return_fun(
         BcContinuation::DeMeta {
             or_else,
             environment,
+            annotation,
             ..
         } => {
+            state.set_annotation(annotation);
             let env = view.from_value(BcValue::Closure(fun), environment, state.annotation)?;
             state.current = BcValue::Closure(BcClosure::new(or_else, env));
         }
@@ -1975,8 +2022,10 @@ fn return_meta(
         BcContinuation::DeMeta {
             handler,
             environment,
+            annotation,
             ..
         } => {
+            state.set_annotation(annotation);
             let meta_v = resolve_ref(view, &state.constants, env, state.globals, meta_ref)?;
             let body_v = resolve_ref(view, &state.constants, env, state.globals, body_ref)?;
             let frame = view.from_values(
@@ -2174,6 +2223,69 @@ fn form_info(kind: u8, arity: u8, smid: Smid, body: CodeRef) -> InfoTagged<CodeR
         FORM_LAMBDA => InfoTagged::new(arity, body, smid),
         _ => InfoTagged::value(body), // FORM_VALUE
     }
+}
+
+/// The environment a *closed* binding closes over (eu-oaz72.175): a chain
+/// of empty frames mirroring the annotations of the chain the binding would
+/// otherwise have captured: the head frame carries exactly the original
+/// head's annotation, and each deeper frame with a valid annotation is kept
+/// in order (default annotations are invisible to every reader of those). A closed closure never reads
+/// its captured environment, so it must not keep the enclosing frames (and
+/// the values in their slots, e.g. a list head) alive; but `env_trace`, the
+/// `DeMeta` continuation trace and the profiler read the closure's
+/// environment chain, so the annotations are kept, in order, on slotless
+/// frames. The longest slotless suffix of the chain (typically the spine of
+/// an enclosing closed binding) is shared rather than copied, so only the
+/// slot-bearing prefix is allocated. Allocated lazily, once per `Let`. `rec`
+/// marks a `LetRec`, whose own frame (annotated with the current annotation)
+/// heads the chain the binding would have captured.
+fn closed_env(
+    view: MutatorHeapView<'_>,
+    state: &BcMachineState,
+    cache: &mut Option<RefPtr<BcEnvFrame>>,
+    env: RefPtr<BcEnvFrame>,
+    rec: bool,
+) -> Result<RefPtr<BcEnvFrame>, ExecutionError> {
+    if let Some(f) = *cache {
+        return Ok(f);
+    }
+    let mut frames: SmallVec<[(Smid, RefPtr<BcEnvFrame>, bool); 16]> = SmallVec::new();
+    let mut cur = Some(env);
+    while let Some(p) = cur {
+        let f = view.scoped(p);
+        frames.push((f.annotation(), p, f.logical_len() == 0));
+        cur = f.next_frame();
+    }
+    // Everything from `shared` on is already slotless: reuse it as the tail.
+    let mut shared = frames.len();
+    while shared > 0 && frames[shared - 1].2 {
+        shared -= 1;
+    }
+    if shared == 0 && !rec {
+        // `env` itself heads a slotless chain.
+        *cache = Some(env);
+        return Ok(env);
+    }
+    let mut next = frames.get(shared).map(|f| f.1);
+    let mk = |smid: Smid, next: Option<RefPtr<BcEnvFrame>>| {
+        view.alloc(BcEnvFrame::new(Array::with_capacity(&view, 0), smid, next))
+            .map(|p| p.as_ptr())
+    };
+    // The head frame (read directly by the `DeMeta` continuation trace and
+    // the profiler) keeps its own annotation, default included; deeper
+    // frames matter only through `annotation_trace`, which skips default
+    // annotations, so those are not allocated at all.
+    for (i, (smid, _, _)) in frames[..shared].iter().enumerate().rev() {
+        if (i == 0 && !rec) || smid.is_valid() {
+            next = Some(mk(*smid, next)?);
+        }
+    }
+    if rec {
+        next = Some(mk(state.annotation, next)?);
+    }
+    let frame = next.expect("the chain always has at least `env`");
+    *cache = Some(frame);
+    Ok(frame)
 }
 
 /// Build the static part of a closure from a decoded form header.
@@ -2421,9 +2533,18 @@ pub fn handle_op(
             let count = read_u32(code, &mut pc) as usize;
             state.allocs += count as u64;
             let mut array = Array::with_capacity(&view, count);
+            let mut closed_cache: Option<RefPtr<BcEnvFrame>> = None;
             for _ in 0..count {
                 let h = read_form_header(code, &mut pc);
-                array.push(&view, BcValue::Closure(BcClosure::close(&bc_info(&h), env)));
+                let close_env = if h.closed {
+                    closed_env(view, state, &mut closed_cache, env, false)?
+                } else {
+                    env
+                };
+                array.push(
+                    &view,
+                    BcValue::Closure(BcClosure::close(&bc_info(&h), close_env)),
+                );
             }
             let body_off = read_u32(code, &mut pc);
             let new_env = view
@@ -2455,10 +2576,19 @@ pub fn handle_op(
             let frame = view
                 .alloc(BcEnvFrame::new(array.clone(), state.annotation, Some(env)))?
                 .as_ptr();
+            let mut closed_cache: Option<RefPtr<BcEnvFrame>> = None;
             for (i, h) in headers.iter().enumerate() {
+                let close_env = if h.closed {
+                    closed_env(view, state, &mut closed_cache, env, true)?
+                } else {
+                    frame
+                };
                 // SAFETY: array was pre-sized to `count` and i < count.
                 unsafe {
-                    array.set_unchecked(i, BcValue::Closure(BcClosure::close(&bc_info(h), frame)));
+                    array.set_unchecked(
+                        i,
+                        BcValue::Closure(BcClosure::close(&bc_info(h), close_env)),
+                    );
                 }
             }
             state.current = BcValue::Closure(BcClosure::new(body_off, frame));
@@ -2578,6 +2708,7 @@ pub fn handle_op(
                 handler: handler_off,
                 or_else: or_else_off,
                 environment: env,
+                annotation: state.annotation,
             });
             state.current = BcValue::Closure(BcClosure::new(scr_off, env));
         }
@@ -2659,6 +2790,7 @@ pub fn handle_op(
                     key: sym_id,
                     smid,
                     default_closure,
+                    annotation: state.annotation,
                 });
                 // Black-hole + Update if the object is a thunk, in the frame
                 // it lives in: the local env, or the shared globals frame. A
@@ -2952,8 +3084,17 @@ pub fn handle_op_predecoded(
             let (start, len) = instr.header_pool();
             state.allocs += len as u64;
             let mut array = Array::with_capacity(&view, len);
+            let mut closed_cache: Option<RefPtr<BcEnvFrame>> = None;
             for h in &decoded.headers[start..start + len] {
-                array.push(&view, BcValue::Closure(BcClosure::close(&bc_info(h), env)));
+                let close_env = if h.closed {
+                    closed_env(view, state, &mut closed_cache, env, false)?
+                } else {
+                    env
+                };
+                array.push(
+                    &view,
+                    BcValue::Closure(BcClosure::close(&bc_info(h), close_env)),
+                );
             }
             let new_env = view
                 .alloc(BcEnvFrame::new(array, state.annotation, Some(env)))?
@@ -2973,10 +3114,19 @@ pub fn handle_op_predecoded(
             let frame = view
                 .alloc(BcEnvFrame::new(array.clone(), state.annotation, Some(env)))?
                 .as_ptr();
+            let mut closed_cache: Option<RefPtr<BcEnvFrame>> = None;
             for (i, h) in decoded.headers[start..start + len].iter().enumerate() {
+                let close_env = if h.closed {
+                    closed_env(view, state, &mut closed_cache, env, true)?
+                } else {
+                    frame
+                };
                 // SAFETY: array was pre-sized to `len` and i < len.
                 unsafe {
-                    array.set_unchecked(i, BcValue::Closure(BcClosure::close(&bc_info(h), frame)));
+                    array.set_unchecked(
+                        i,
+                        BcValue::Closure(BcClosure::close(&bc_info(h), close_env)),
+                    );
                 }
             }
             state.current = BcValue::Closure(BcClosure::new(instr.a, frame));
@@ -3067,6 +3217,7 @@ pub fn handle_op_predecoded(
                 handler: instr.b,
                 or_else: instr.c,
                 environment: env,
+                annotation: state.annotation,
             });
             state.current = BcValue::Closure(BcClosure::new(instr.a, env));
         }
@@ -3134,6 +3285,7 @@ pub fn handle_op_predecoded(
                     key: sym_id,
                     smid,
                     default_closure,
+                    annotation: state.annotation,
                 });
                 if obj_closure.update() {
                     let (frame, i) = obj_slot;
@@ -4678,6 +4830,16 @@ impl BcBifContext<'_, '_> {
                         dref,
                     )?;
                     self.native_from_value(view, inner)
+                } else if c.arity() > 0 {
+                    // A function (an under-applied call): carry its own
+                    // location, as `num_arg` does, so the diagnostic can
+                    // blame the operand rather than the operator it was
+                    // handed to (eu-oaz72.151).
+                    Err(ExecutionError::UnexpectedFunction(
+                        self.state.annotation,
+                        "a primitive value",
+                        c.annotation(),
+                    ))
                 } else {
                     // Classify the non-native closure so the diagnostic names
                     // what was found (a boolean, a list, a block, …). Mirrors
@@ -5582,12 +5744,15 @@ impl BcBifContext<'_, '_> {
                             if tag == DataConstructor::BlockKvList.tag() {
                                 return None;
                             }
-                            let arity = DataConstructor::try_from(tag).ok()?.arity();
+                            let arity = super::closed::branch_frame_size(tag)?;
                             work.push((entry as usize, depth + arity));
                         }
                     }
                     if read_u8(code, &mut pc) == 1 {
-                        work.push((read_u32(code, &mut pc) as usize, depth + 1));
+                        work.push((
+                            read_u32(code, &mut pc) as usize,
+                            depth + super::closed::FALLBACK_FRAME,
+                        ));
                     }
                 }
                 Op::Cons => {
@@ -5638,8 +5803,14 @@ impl BcBifContext<'_, '_> {
                 }
                 Op::DeMeta => {
                     work.push((read_u32(code, &mut pc) as usize, depth));
-                    work.push((read_u32(code, &mut pc) as usize, depth + 2));
-                    work.push((read_u32(code, &mut pc) as usize, depth + 1));
+                    work.push((
+                        read_u32(code, &mut pc) as usize,
+                        depth + super::closed::DEMETA_HANDLER_FRAME,
+                    ));
+                    work.push((
+                        read_u32(code, &mut pc) as usize,
+                        depth + super::closed::DEMETA_OR_ELSE_FRAME,
+                    ));
                 }
                 Op::Seq => {
                     work.push((read_u32(code, &mut pc) as usize, depth));
@@ -6177,6 +6348,73 @@ mod tests {
         });
         let err = return_native(&mut state, view, num(1));
         assert!(matches!(err, Err(ExecutionError::NoBranchForNative(..))));
+    }
+
+    /// A case with no fallback that receives a native blames its own
+    /// push-time annotation, not whatever the scrutinee left live
+    /// (eu-oaz72.122).
+    #[test]
+    fn return_native_no_branch_blames_case_annotation() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+
+        let bt: Array<Option<CodeRef>> = view.array(&[]);
+        state.stack.push(BcContinuation::Branch {
+            min_tag: 0,
+            branch_table: bt,
+            fallback: None,
+            environment: root,
+            annotation: Smid::from(11),
+        });
+        state.set_annotation(Smid::from(22));
+        match return_native(&mut state, view, num(1)) {
+            Err(ExecutionError::NoBranchForNative(smid, _)) => assert_eq!(smid, Smid::from(11)),
+            other => panic!("expected NoBranchForNative, got {other:?}"),
+        }
+    }
+
+    /// A `DeMeta` continuation restores the annotation live when it was
+    /// pushed, whatever kind of value resumes it (eu-oaz72.122).
+    #[test]
+    fn demeta_resume_restores_push_time_annotation() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let push = |state: &mut BcMachineState| {
+            state.stack.push(BcContinuation::DeMeta {
+                handler: 3,
+                or_else: 5,
+                environment: root,
+                annotation: Smid::from(11),
+            });
+            state.set_annotation(Smid::from(22));
+        };
+
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+        push(&mut state);
+        return_native(&mut state, view, num(1)).unwrap();
+        assert_eq!(state.annotation, Smid::from(11));
+
+        let fun_env = view
+            .from_saturation(view.array(&[]), root, Default::default())
+            .unwrap();
+        let mut state = BcMachineState::new(
+            BcValue::Closure(BcClosure::new(0, fun_env)),
+            root,
+            root,
+            vec![],
+        );
+        push(&mut state);
+        return_fun(
+            &mut state,
+            view,
+            &BytecodeProgram::default(),
+            &DecodedProgram::default(),
+        )
+        .unwrap();
+        assert_eq!(state.annotation, Smid::from(11));
     }
 
     #[test]

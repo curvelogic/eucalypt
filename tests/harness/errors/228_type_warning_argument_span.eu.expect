@@ -1,2 +1,3 @@
 exit: 1
 stderr: "(?s)type mismatch calling 'double-it'.*expected number, found .8.*error\[EU-EVAL-TYPE\].*expected number, found .8."
+location: 15:9

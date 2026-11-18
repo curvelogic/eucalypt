@@ -1,0 +1,4 @@
+# Not an error today: the repeated `value` key keeps its first definition
+# and `data` is redefined silently. Pinned so a change is seen (eu-oxtcq M4).
+exit: 0
+no-location: not an error today (exit 0), so there is no diagnostic to locate

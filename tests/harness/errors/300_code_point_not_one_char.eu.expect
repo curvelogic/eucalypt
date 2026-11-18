@@ -1,2 +1,3 @@
 exit: 1
 stderr: "exactly one character"
+location: 2:9

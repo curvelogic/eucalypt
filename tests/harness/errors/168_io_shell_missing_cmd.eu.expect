@@ -1,2 +1,3 @@
 exit: 1
 stderr: "io.shell: 'cmd' field is required"
+no-location: the error is reported without a source label

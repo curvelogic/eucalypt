@@ -1,0 +1,31 @@
+{
+  title: "336 eval-path type warning reaches the in-process harness"
+  doc: "
+    eu-8ke8a: the harness runs ordinary fixtures in-process, and used to
+    skip the type check `eu` runs before evaluating, so a regression in the
+    eval-path checker dispatch (blob-core or source checker) was invisible
+    to every ordinary harness test. The runner now shares that dispatch
+    (`check::eval_path_type_check`) and captures its warnings into the
+    target's stderr, which this fixture asserts."
+}
+
+` { type: "number → number" }
+double(x): x * 2
+
+` "Never evaluated: here only so that the checker has a call to warn about."
+unevaluated: double("hello")
+
+` "True if the eval-path checker's warning reached this target's stderr."
+warned?(context): context.stderr any(str.contains?("type mismatch calling 'double'"))
+
+` "True if the target itself rendered its result."
+rendered?(context): context.result.RESULT = "PASS"
+
+` "PASS only when both the warning and the result are present."
+warned-and-rendered(context): (warned?(context) ∧ rendered?(context)) then(:PASS, :FAIL)
+
+` { target: :test-warning-captured
+    verify: [:warned-and-rendered] }
+test-warning-captured: {
+  RESULT: (double(21) = 42) then(:PASS, :FAIL)
+}

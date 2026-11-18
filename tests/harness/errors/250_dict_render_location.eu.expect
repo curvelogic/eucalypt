@@ -1,2 +1,3 @@
 exit: 1
 stderr: "cannot render dict key \[2, :d\]"
+no-location: the error is reported without a source label

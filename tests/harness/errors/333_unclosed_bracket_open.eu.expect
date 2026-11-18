@@ -1,2 +1,3 @@
 exit: 1
 stderr: "333_unclosed_bracket_open.eu:3:4"
+location: 3:4

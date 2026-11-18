@@ -1,2 +1,3 @@
 exit: 1
 stderr: "block-style content inside non-monad bracket pair"
+location: 6:9

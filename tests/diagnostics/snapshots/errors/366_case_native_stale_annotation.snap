@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/366_case_native_stale_annotation
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/366_case_native_stale_annotation.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/366_case_native_stale_annotation.eu:2:4
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: received a number where a structured value (block or list) was expected
+  ┌─ tests/harness/errors/366_case_native_stale_annotation.eu:2:4
+  │
+2 │ w: not(n)
+  │    ^^^^^^
+  │
+  = list operations such as 'head', 'tail', '++', 'map', 'filter' require list arguments
+  = check that the value is a list before applying list operations; use 'nil?' to test for an empty list
+  = while evaluating (outermost first):
+    - w at 366_case_native_stale_annotation.eu:2:4

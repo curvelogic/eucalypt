@@ -64,8 +64,9 @@ fn eu_binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_eu"))
 }
 
-/// Run an error test — validates against `.expect` sidecar if present,
-/// otherwise passes as unvalidated.
+/// Run an error test against its `.expect` sidecar, which must exist and
+/// must pin the primary label's location or say why not (eu-oxtcq M4,
+/// eu-ziq8o).
 fn run_error_test(opt: &EucalyptOptions) {
     let exit_code = tester::error_test_with_binary(eu_binary(), opt).unwrap();
     assert_eq!(exit_code, 0);
@@ -4860,6 +4861,51 @@ pub fn test_typecheck_146_block_guard_wrong_polarity_warns() {
     }
 }
 
+/// `Dict(T)` is a deprecated alias for the block type `block(T)`
+/// (eu-oaz72.129): an annotation using it warns, pointing to `block(T)`.
+#[test]
+pub fn test_typecheck_147_dict_block_type_deprecated_warns() {
+    run_typecheck_test("147_dict_block_type_deprecated_warns.eu");
+}
+
+/// A `types:` alias spelled with `Dict(T)` warns too (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_148_dict_alias_deprecated_warns() {
+    run_typecheck_test("148_dict_alias_deprecated_warns.eu");
+}
+
+/// `block(T)` is homogeneous: a mismatched value is reported against
+/// `block(number)` (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_149_block_type_mismatch_warns() {
+    run_typecheck_test("149_block_type_mismatch_warns.eu");
+}
+
+/// An s-string `type:` annotation using `Dict(T)` warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_151_dict_sstring_deprecated_warns() {
+    run_typecheck_test("151_dict_sstring_deprecated_warns.eu");
+}
+
+/// An s-string `types:` alias using `Dict(T)` warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_152_dict_sstring_alias_deprecated_warns() {
+    run_typecheck_test("152_dict_sstring_alias_deprecated_warns.eu");
+}
+
+/// `Dict(T)` as a record field's type warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_153_dict_record_field_deprecated_warns() {
+    run_typecheck_test("153_dict_record_field_deprecated_warns.eu");
+}
+
+/// Well-typed `block(T)` and bare `block` code checks clean, with no
+/// deprecation warning (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_150_block_type_no_warning() {
+    run_typecheck_test("150_block_type_no_warning.eu");
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]
@@ -5495,6 +5541,61 @@ pub fn test_error_364_array_empty_shape_too_large() {
     run_error_test(&error_opts("364_array_empty_shape_too_large.eu"));
 }
 
+/// An intrinsic passed point-free is blamed at its use site when it fails
+/// later (eu-oaz72.119).
+#[test]
+pub fn test_error_365_point_free_intrinsic_location() {
+    run_error_test(&error_opts("365_point_free_intrinsic_location.eu"));
+}
+
+/// A case with no fallback that receives a number blames the case, not the
+/// code that last computed a value (eu-oaz72.122).
+#[test]
+pub fn test_error_366_case_native_stale_annotation() {
+    run_error_test(&error_opts("366_case_native_stale_annotation.eu"));
+}
+
+/// A string intrinsic handed an under-applied call blames the call
+/// (eu-oaz72.151).
+#[test]
+pub fn test_error_367_function_operand_string_intrinsic() {
+    run_error_test(&error_opts("367_function_operand_string_intrinsic.eu"));
+}
+
+/// A comparison handed an under-applied call blames the call
+/// (eu-oaz72.151).
+#[test]
+pub fn test_error_368_function_operand_comparison() {
+    run_error_test(&error_opts("368_function_operand_comparison.eu"));
+}
+
+/// Type data is not accepted as a set element (eu-oaz72.144).
+#[test]
+pub fn test_error_369_type_data_set_element() {
+    run_error_test(&error_opts("369_type_data_set_element.eu"));
+}
+
+/// The lone-anaphor note replaces the remaining-arguments hint, and quotes
+/// a multi-line call on one line, keeping a string's spaces (eu-oaz72.141).
+#[test]
+pub fn test_error_370_lone_anaphor_no_arity_hint() {
+    run_error_test(&error_opts("370_lone_anaphor_no_arity_hint.eu"));
+}
+
+/// A lone anaphor passed on to another function is labelled at its call in
+/// both prelude modes (eu-oaz72.141).
+#[test]
+pub fn test_error_371_lone_anaphor_passed_on() {
+    run_error_test(&error_opts("371_lone_anaphor_passed_on.eu"));
+}
+
+/// A lone anaphor in a call inside a `map` argument gets its note
+/// (eu-oaz72.141).
+#[test]
+pub fn test_error_372_lone_anaphor_in_map() {
+    run_error_test(&error_opts("372_lone_anaphor_in_map.eu"));
+}
+
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
 pub fn test_error_275_non_integer_take() {
@@ -5535,6 +5636,30 @@ pub fn test_error_341_non_number_merge_intervals() {
 #[test]
 pub fn test_error_342_list_bound_merge_intervals() {
     run_error_test(&error_opts("342_list_bound_merge_intervals.eu"));
+}
+
+/// A three-element `merge-intervals` interval is an error naming it (eu-oaz72.190, decision 67).
+#[test]
+pub fn test_error_373_three_element_interval_merge_intervals() {
+    run_error_test(&error_opts("373_three_element_interval_merge_intervals.eu"));
+}
+
+/// A one-element `merge-intervals` interval is an error naming it (eu-oaz72.190, decision 67).
+#[test]
+pub fn test_error_374_one_element_interval_merge_intervals() {
+    run_error_test(&error_opts("374_one_element_interval_merge_intervals.eu"));
+}
+
+/// An empty `merge-intervals` interval is an error naming it (eu-oaz72.190, decision 67).
+#[test]
+pub fn test_error_375_empty_interval_merge_intervals() {
+    run_error_test(&error_opts("375_empty_interval_merge_intervals.eu"));
+}
+
+/// An infinite `merge-intervals` interval is an error naming it, without walking the whole interval (eu-oaz72.190).
+#[test]
+pub fn test_error_376_infinite_interval_merge_intervals() {
+    run_error_test(&error_opts("376_infinite_interval_merge_intervals.eu"));
 }
 
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).
@@ -5898,6 +6023,13 @@ pub fn test_335_reverse_and_intervals() {
     run_test(&opts("335_reverse_and_intervals.eu"));
 }
 
+/// The in-process runner shares `eu`'s eval-path type check, so a warning
+/// it emits reaches the target's stderr (eu-8ke8a).
+#[test]
+pub fn test_336_eval_path_type_warning() {
+    run_test(&opts("336_eval_path_type_warning.eu"));
+}
+
 /// Prelude sites converted to constant-stack strict forms (eu-oaz72.165,
 /// owner decisions 40 and 41).
 #[test]
@@ -5956,6 +6088,98 @@ pub fn test_error_350_data_import_after_library_import() {
 #[test]
 pub fn test_error_332_scanl_applies_op_at_cell() {
     run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
+}
+
+/// Closed let/letrec bindings (eu-oaz72.175): closed and not-closed shapes.
+#[test]
+pub fn test_301_closed_bindings() {
+    run_test(&opts("301_closed_bindings.eu"));
+}
+
+/// An error inside a closed binding keeps its trace (eu-oaz72.175).
+#[test]
+pub fn test_error_334_closed_binding_trace() {
+    run_error_test(&error_opts("334_closed_binding_trace.eu"));
+}
+
+/// Fixtures that had no test, or no sidecar, and so asserted nothing
+/// (eu-oxtcq M4). The four `x0NN` files are not errors today; their
+/// sidecars pin that so a change in behaviour is seen.
+#[test]
+pub fn test_error_x007_bad_block_element() {
+    run_error_test(&error_opts("x007_bad_block_element.eu"));
+}
+
+#[test]
+pub fn test_error_x018_missing_comma() {
+    run_error_test(&error_opts("x018_missing_comma.eu"));
+}
+
+#[test]
+pub fn test_error_x021_dot_in_key() {
+    run_error_test(&error_opts("x021_dot_in_key.eu"));
+}
+
+#[test]
+pub fn test_error_x022_redef() {
+    run_error_test(&error_opts("x022_redef.eu"));
+}
+
+/// An unknown export format named with `-x` (eu-oxtcq M4: this fixture had
+/// a sidecar but no test).
+#[test]
+pub fn test_error_091_unknown_format() {
+    let opt = error_opts("091_unknown_format.eu").with_export_type("nonexistent".to_string());
+    run_error_test(&opt);
+}
+
+/// A target named with `-t` that the file does not declare (eu-oxtcq M4:
+/// this fixture had a sidecar but no test).
+#[test]
+pub fn test_error_092_target_not_found() {
+    let opt = error_opts("092_target_not_found.eu").with_target(Some("nonexistent".to_string()));
+    run_error_test(&opt);
+}
+
+/// Every error fixture must have a test here: an `.eu` file in
+/// `tests/harness/errors/` that no test names is never run, and its
+/// sidecar gates nothing (eu-oxtcq M4 found six such fixtures).
+#[test]
+pub fn every_error_fixture_has_a_test() {
+    // A Windows checkout may give this file CRLF line endings; normalise so
+    // the item boundary below (`}` at column 0) is found on every platform.
+    let this_file = include_str!("harness_test.rs").replace("\r\n", "\n");
+    let this_file = this_file.as_str();
+    let mut missing = vec![];
+    for entry in std::fs::read_dir("tests/harness/errors").expect("errors dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("eu") {
+            continue;
+        }
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let quoted = format!("\"{name}\"");
+        let pathed = format!("/{name}\"");
+        // A site counts only if the test it sits in is a `#[test]` and is
+        // not `#[ignore]`d. The item holding the site runs from the end of
+        // the previous top-level item (a `}` at column 0) to the site, so
+        // its whole attribute block is inspected, in whatever order.
+        let live = this_file
+            .match_indices(quoted.as_str())
+            .chain(this_file.match_indices(pathed.as_str()))
+            .any(|(i, _)| {
+                let head = &this_file[..i];
+                let item = &head[head.rfind("\n}\n").map_or(0, |e| e + 3)..];
+                item.contains("#[test]") && !item.contains("#[ignore")
+            });
+        if !live {
+            missing.push(name);
+        }
+    }
+    missing.sort();
+    assert!(
+        missing.is_empty(),
+        "error fixtures with no live (un-ignored) test in tests/harness_test.rs: {missing:?}"
+    );
 }
 
 /// `eu check` must honour `prelude:` unit metadata exactly as evaluation

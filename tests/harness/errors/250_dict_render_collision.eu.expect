@@ -1,2 +1,3 @@
 exit: 1
 stderr: "dict keys 1 and .1. both render as mapping key '1'"
+no-location: the error is reported without a source label
