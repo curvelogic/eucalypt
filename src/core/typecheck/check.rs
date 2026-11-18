@@ -1245,7 +1245,8 @@ impl Checker {
     /// (or `monad: s"T"`) metadata, or `None` when there is no such string.
     ///
     /// `a` is the element variable (the only free variable, if `a` is not
-    /// used); any other free variable in `T`, such as `stream` in
+    /// used; with several free variables and no `a`, `None`); any other
+    /// free variable in `T`, such as `stream` in
     /// `stream → {value: a, rest: stream}`, stands for a type the
     /// metadata does not fix and becomes `any`.
     fn monad_metadata_constructor(&mut self, value: &RcExpr) -> Option<Type> {
@@ -1256,27 +1257,28 @@ impl Checker {
             return None;
         };
         let type_str = extract_string_literal(block.get("monad")?)?;
-        let parsed = match parse::parse_type(&type_str) {
-            Ok(parsed) => parsed,
-            Err(e) => {
-                self.warn_invalid_annotation(meta.smid(), &e);
-                return None;
-            }
-        };
+        // The desugarer validates `monad:` strings; one that still fails to
+        // parse here leaves the monad gradual rather than raising a second,
+        // differently worded diagnostic.
+        let parsed = parse::parse_type(&type_str).ok()?;
         let wrapper = self.resolve_aliases_in_type(parsed);
-        let free = infer_scheme(wrapper.clone()).vars;
+        let mut free = infer_scheme(wrapper.clone()).vars;
+        let mut seen = HashSet::new();
+        free.retain(|v| seen.insert(v.clone()));
+        // Without a recognisable element variable the wrapper cannot be read
+        // as a constructor, so the monad stays gradual.
         let element = TypeVarId("a".to_string());
         let element = if free.contains(&element) {
-            Some(element)
+            element
         } else if let [only] = free.as_slice() {
-            Some(only.clone())
+            only.clone()
         } else {
-            None
+            return None;
         };
         let param = self.fresh_type_var_id();
         let mut subst = Substitution::new();
         for v in free {
-            let replacement = if Some(&v) == element.as_ref() {
+            let replacement = if v == element {
                 Type::var(param.clone())
             } else {
                 Type::Any
@@ -1892,27 +1894,18 @@ impl Checker {
                     if matches!(&param_applied, Type::Function(_, _))
                         && is_informative(&param_applied)
                     {
+                        if self
+                            .infer_lambda_result(scope, &param_applied, subst)
+                            .is_some()
+                        {
+                            self.record_lambda_params(*lam_smid, scope, &param_applied, subst);
+                            return apply_subst(&result_type, subst);
+                        }
                         self.check_against(arg, &param_applied, smid);
-                        // Record resolved lambda parameter types for LSP,
-                        // keyed by the lambda's Smid (source location) to
+                        // Keyed by the lambda's Smid (source location) to
                         // avoid name collisions between different monadic
                         // blocks using the same binding name.
-                        let mut params = Vec::new();
-                        let mut remaining = param_applied.clone();
-                        for param in &scope.pattern {
-                            if let Type::Function(p, r) = remaining {
-                                let resolved = apply_subst(&p, subst);
-                                if is_informative(&resolved)
-                                    && !matches!(&resolved, Type::Var(_, _))
-                                {
-                                    params.push((param.clone(), resolved));
-                                }
-                                remaining = *r;
-                            }
-                        }
-                        if !params.is_empty() {
-                            self.lambda_params.insert(*lam_smid, params);
-                        }
+                        self.record_lambda_params(*lam_smid, scope, &param_applied, subst);
                         return apply_subst(&result_type, subst);
                     }
                 }
@@ -2061,6 +2054,71 @@ impl Checker {
                 self.synthesise(arg);
                 Type::Any
             }
+        }
+    }
+
+    /// Infer the result of a lambda argument whose expected type returns a
+    /// bare, unresolved type variable (e.g. the `a → m b` continuation of a
+    /// monad's `bind` once `m` is known): checking the body against a bare
+    /// variable tests nothing, so the body is synthesised once with the
+    /// parameters bound and the variable is unified with its type.  Without
+    /// this, `let.bind("s", λx. let.return(x))` would be typed `b`, losing
+    /// the mismatch in `double({ :let x: "s" }.(x))` (eu-oaz72.183).
+    ///
+    /// Returns `None`, leaving the caller to check the lambda as before,
+    /// when the expected result is not a bare variable or the lambda has
+    /// more parameters than the expected type.
+    fn infer_lambda_result(
+        &mut self,
+        scope: &crate::core::expr::LamScope<RcExpr>,
+        expected: &Type,
+        subst: &mut Substitution,
+    ) -> Option<Type> {
+        let mut frame: HashMap<String, TypeScheme> = HashMap::new();
+        let mut remaining = expected.clone();
+        for param in &scope.pattern {
+            let Type::Function(p, r) = remaining else {
+                return None;
+            };
+            frame.insert(param.clone(), TypeScheme::mono(apply_subst(&p, subst)));
+            remaining = *r;
+        }
+        let remaining = apply_subst(&remaining, subst);
+        if !matches!(&remaining, Type::Var(_, Kind::Star)) {
+            return None;
+        }
+        self.push_scope(frame);
+        let body_type = self.synthesise(&scope.body);
+        self.pop_scope();
+        if is_informative(&body_type) {
+            // A failed unification leaves the variable unsolved (gradual).
+            let _ = unify(&remaining, &body_type, subst);
+        }
+        Some(apply_subst(&remaining, subst))
+    }
+
+    /// Record a lambda argument's resolved parameter types for LSP inlay
+    /// hints, keyed by the lambda's `Smid`.
+    fn record_lambda_params(
+        &mut self,
+        lam_smid: Smid,
+        scope: &crate::core::expr::LamScope<RcExpr>,
+        expected: &Type,
+        subst: &Substitution,
+    ) {
+        let mut params = Vec::new();
+        let mut remaining = expected.clone();
+        for param in &scope.pattern {
+            if let Type::Function(p, r) = remaining {
+                let resolved = apply_subst(&p, subst);
+                if is_informative(&resolved) && !matches!(&resolved, Type::Var(_, _)) {
+                    params.push((param.clone(), resolved));
+                }
+                remaining = *r;
+            }
+        }
+        if !params.is_empty() {
+            self.lambda_params.insert(lam_smid, params);
         }
     }
 
@@ -5418,5 +5476,17 @@ mod tests {
         let fun = Type::Function(Box::new(app.clone()), Box::new(app));
         let ty = c.resolve_monad_constructors(&with_monad_meta("[a]"), fun.clone());
         assert_eq!(ty, fun);
+    }
+
+    #[test]
+    fn monad_metadata_without_element_variable_is_gradual() {
+        // Two free variables, neither `a`: no element, so `m` stays gradual
+        // rather than becoming a constant functor.
+        let mut c = Checker::new();
+        let ty = c.resolve_monad_constructors(
+            &with_monad_meta("s → {value: t, rest: s}"),
+            record_of_hk_apps(&["m"]),
+        );
+        assert_eq!(field(&ty, "f0"), Type::Any);
     }
 }

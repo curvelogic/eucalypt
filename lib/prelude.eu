@@ -2588,7 +2588,7 @@ graph: {
 ##
 
 ` { doc: "Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha."
-    monad: true }
+    monad: s"a" }
 let: monad({bind(m, f): f(m), return: identity})
 
 ##

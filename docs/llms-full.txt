@@ -8636,14 +8636,17 @@ random.map(inc, 41)          # warning: expected any → {rest: any, value: numb
 
 Other type variables in the metadata, such as `stream` in the random
 monad's `stream → {value: a, rest: stream}`, are not fixed by it and
-are read as `any`. An identity monad declares `monad: s"a"`.
+are read as `any`. An identity monad, such as `let`, declares
+`monad: s"a"`, so `double({ :let x: "s" }.(x))` warns when `double`
+takes a number. A wrapper with several type variables, none of them
+`a`, names no element, and the monad stays unchecked.
 
 #### Monads without a wrapper type
 
-A monad declared with `monad: true` (such as `let`), or with no
-`monad:` metadata at all, has an unknown wrapper: its derived
-combinators accept any action, and a block built with them (for
-example `{ :let x: 1 }.{ a: x }.(a)`) is not mistaken for its first
+A monad declared with `monad: true`, or with no `monad:` metadata at
+all, has an unknown wrapper: its derived combinators accept any
+action, and a block built with them (for example
+`{ :ident x: 1 }.{ a: x }.(a)`) is not mistaken for its first
 binding's type. Give the monad a `monad:` wrapper type to have its
 combinators checked.
 

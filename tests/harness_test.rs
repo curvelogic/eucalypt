@@ -4787,6 +4787,21 @@ pub fn test_typecheck_157_metadata_identity_monad_map_misuse_warns() {
     run_typecheck_test("157_metadata_identity_monad_map_misuse_warns.eu");
 }
 
+/// A `:let` block's result is checked: `let` is the identity monad
+/// (`monad: s"a"`) and the bind continuation's result is inferred
+/// (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_158_let_monad_block_misuse_warns() {
+    run_typecheck_test("158_let_monad_block_misuse_warns.eu");
+}
+
+/// `let.return` is the identity, so its result type is checked
+/// (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_159_let_monad_return_misuse_warns() {
+    run_typecheck_test("159_let_monad_return_misuse_warns.eu");
+}
+
 /// A list-destructuring parameter with a block element is not a block
 /// parameter: the valid call checks clean (eu-oaz72.172).
 #[test]

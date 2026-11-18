@@ -1,0 +1,5 @@
+` { doc: "let.return of a string, passed to this number function, warns: let is the identity monad (eu-oaz72.183)."
+    type: "number → number" }
+double(n): n * 2
+
+doubled: double(let.return("s"))

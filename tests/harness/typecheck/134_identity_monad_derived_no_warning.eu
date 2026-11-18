@@ -1,3 +1,5 @@
+{ import: "resource:do" }
+
 ` "Derived monad combinators on an identity-like monad, and on random, check clean (eu-oaz72.170); monadic blocks and monad results used as blocks check clean too (eu-oaz72.171)."
 id-bind(m, f): f(m)
 
@@ -21,3 +23,9 @@ bind-block: let.bind(1, wrap-a).(a)
 ident-chain: { :ident x: 1 }.{ a: x }.(a)
 ident-implicit: { :ident _: 99 r: 7 }
 ident-has: ident-implicit has(:_)
+
+` { doc: "A do action, typed as its monad: metadata declares (a ctx → IO action of a value-and-ctx block)."
+    type: s"any → IO({value: number, ctx: any})" }
+act(c): io.return{ value: 1, ctx: c }
+
+do-mapped: do.map(inc, act)
