@@ -72,7 +72,14 @@ def main():
     args = ap.parse_args()
     # eu runs with cwd=examples/aoc25, so both paths must be absolute.
     args.out = os.path.abspath(args.out)
-    args.eu = os.path.abspath(args.eu)
+    # A bare name (no directory part) is looked up on PATH.
+    if os.path.dirname(args.eu):
+        args.eu = os.path.abspath(args.eu)
+    else:
+        found = shutil.which(args.eu)
+        if found is None:
+            raise SystemExit(f"{args.eu}: not found on PATH")
+        args.eu = found
     os.makedirs(args.out, exist_ok=True)
 
     results = {}
