@@ -1,0 +1,8 @@
+` "A guard of the wrong polarity protects nothing: or's second argument runs when x is not a block, and so does and's after a negated test. Both calls warn (eu-oaz72.194)."
+h-or(x): or(x block?, x.a)
+
+` "and after a negated block? test."
+h-and-not(x): and(x block? not, x.a)
+
+bad-or: h-or(3)
+bad-and-not: h-and-not(3)

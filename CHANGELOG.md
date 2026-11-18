@@ -27,6 +27,7 @@ preparation work (eu-oaz72) and editor highlighting consolidation (eu-ioz21).
 
 ### Changed
 
+- **The LSP debounces type-check runs on one thread (eu-4toi.1)** — each edit used to start a thread that slept 300 ms before checking, so fast typing kept several sleeping threads alive. One persistent thread now keeps the latest pending run per document and starts a check once the document has been quiet for 300 ms; diagnostics are published as before.
 - **Prelude sites run in constant stack: `max-of`, `min-of`, `max-of-by`, `min-of-by`, `all-true?`, `reduce`, `range`, `iterate`, `scanl` (eu-oaz72.165, owner decisions 40 and 41)** — each grew the stack in proportion to its input (a 300,000-element walk reached 600,000 to 1,500,000 frames) and now stays under about 25. `max-of`, `min-of`, `max-of-by`, `min-of-by`, `all-true?` and `reduce` use `foldl-strict`; `range` evaluates its counter as each cell is demanded; `iterate` and `scanl` evaluate each element to weak head normal form as its cell is reached (no `-strict` variants; the lazy forms are gone). Observable: `reduce` evaluates every step's result, so `reduce(keep-second, [1, panic, 3])` now errors where it gave `3`; `iterate(f, x) take(k) count` now applies `f` (and surfaces its errors) where it did not; `scanl` likewise applies `op`. `foldl` stays lazy and `any-true?` is unchanged. Cost: bench 022 (`range(0, 400000) foldl`) +5.2% ticks, 019 +3.5%, 018 +1.8%, 015 +1.5%, the rest under 0.1% (measured-single, ticks are deterministic); see `docs/superpowers/reports/2026-11-16-strict-prelude-ticks.md`.
 - **`sum`, `product` and `count` use `foldl-strict` (eu-oaz72.78)** — their stack depth no longer grows with the list. Cost: about 10 more ticks per element in blob mode and 13 in source-prelude mode; `tests/harness/bench/019_list_scale.eu` goes from 989,245 to 1,049,245 ticks (blob) and 875,213 to 953,213 (source), reproduced independently by two reviewers (measured-verified, ticks being deterministic; see `docs/superpowers/reports/2026-11-15-foldl-strict.md`). `foldl` is unchanged.
 
@@ -38,6 +39,7 @@ preparation work (eu-oaz72) and editor highlighting consolidation (eu-ioz21).
 
 ### Fixed
 
+- **`as-spec` of a literal type (eu-pub3r)** — `as-spec` of a literal string type (`c"\"prod\""` as type data) or a literal symbol type (`s":ok"`) now matches exactly that value, as `validate` does; both matched any value before.
 - **`rotate` wraps past the length; `update-nth` past the end is an out-of-range error (eu-oaz72.100)** — `[1, 2, 3] rotate(4)` returned the list unchanged instead of `[2, 3, 1]`, contradicting its doc string, and `update-nth` past the end failed with "head of empty list".
 - **Stray dots in string interpolation are errors (eu-oaz72.139)** — `"{.x}"` and `"{x.}"` were read silently as `"{x}"`; they now give the same parse error as `"{ a b }"`.
 - **`c"{{"` explains how to write a literal brace (eu-oaz72.128)** — a doubled brace is not an escape in a c-string; the parse error now says to write `\{` or `\}`.

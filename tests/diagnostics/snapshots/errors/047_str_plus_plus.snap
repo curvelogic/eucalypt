@@ -1,9 +1,9 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/047_str_plus_plus
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/047_str_plus_plus.eu
-prelude-modes: divergent
+prelude-modes: identical
 
-=== blob prelude ===
+=== both prelude modes ===
 exit: 1
 errors: 1
 warnings: 0
@@ -26,21 +26,3 @@ error: head requires a list, found "Hello, "
   │
   = to concatenate strings, use string interpolation (e.g. "{a}{b}") or 'str.join-on', not '++' (which is for list append)
   = to get individual characters of a string, use 'str.letters'
-
-=== --source-prelude ===
-exit: 1
-errors: 1
-warnings: 0
-code: -
-primary: none
-help-lines: 0
-note-lines: 1
-secondary-labels: 0
-trace-frames: 0
-trace-user-frames: 0
-trace-prelude-frames: 0
-prelude-excerpt-lines: 0
-rust-panic: no
---- stderr ---
-error: head requires a list, found "Hello, "
- = to get individual characters of a string, use 'str.letters'

@@ -16,11 +16,7 @@
 //! `<pre>` blocks (no page, no stylesheet), for embedding in other pages;
 //! `--css` writes only the stylesheet, to go with them.
 
-use std::{
-    fmt::Write as _,
-    io::{ErrorKind, Write as _},
-    path::PathBuf,
-};
+use std::{fmt::Write as _, io::Write as _, path::PathBuf};
 
 use anyhow::{bail, Context, Result};
 use tree_sitter_highlight::{HighlightConfiguration, Highlighter, HtmlRenderer};
@@ -263,10 +259,10 @@ fn emit(out: Option<PathBuf>, text: &str) -> Result<()> {
         Some(path) => {
             std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))
         }
-        None => match std::io::stdout().lock().write_all(text.as_bytes()) {
-            Err(e) if e.kind() == ErrorKind::BrokenPipe => Ok(()),
-            r => r.context("writing to stdout"),
-        },
+        None => eucalypt::common::pipe::ignore_broken_pipe(
+            std::io::stdout().lock().write_all(text.as_bytes()),
+        )
+        .context("writing to stdout"),
     }
 }
 

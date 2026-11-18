@@ -1,0 +1,4 @@
+` "A block? guard on one parameter does not excuse projecting another inside the guarded branch (eu-oaz72.194)."
+h(x, y): x block? then(y.b, 0)
+
+bad: h({a: 1}, 4)

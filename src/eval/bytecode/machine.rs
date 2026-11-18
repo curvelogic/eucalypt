@@ -296,6 +296,25 @@ pub struct BcMachineState {
     /// pending call — and `to_diagnostic` consults it only once the error's
     /// own Smid and both traces have failed to yield a user-file location.
     pub last_annotation: Smid,
+    /// The most recent [`BcMachineState::last_annotation`] that lies in a
+    /// user-authored file, per [`BcMachineState::user_locations`]
+    /// (eu-oaz72.202). This, not `last_annotation`, is the error-reporting
+    /// fallback.
+    ///
+    /// In blob mode the two agree for prelude code, which carries
+    /// `Smid::global_slot` identities that `last_annotation` already skips.
+    /// In source-prelude mode prelude code carries real prelude locations,
+    /// so `last_annotation` ends on (say) `io.shell`'s body — a location
+    /// diagnostics rightly refuse as a primary label — and the user call
+    /// site was lost in that mode alone. Filtering by file gives both modes
+    /// the same fallback. `last_annotation` is kept as is for the
+    /// profiler, which wants library locations too.
+    pub last_user_annotation: Smid,
+    /// Bitset of Smid indices that lie in user-authored files (see
+    /// `SourceMap::user_location_mask`). Empty when the driver supplied
+    /// none, in which case [`BcMachineState::fallback_annotation`] uses
+    /// `last_annotation` unfiltered.
+    pub user_locations: Box<[u64]>,
     /// Deferred BIF intrinsic index (set by the `Bif` arm, run in `step`).
     pub pending_bif: Option<u8>,
     /// The deferred BIF's decoded argument refs (spec §6.3): captured by the
@@ -370,6 +389,8 @@ impl BcMachineState {
             terminated: false,
             annotation: Smid::default(),
             last_annotation: Smid::default(),
+            last_user_annotation: Smid::default(),
+            user_locations: Box::default(),
             pending_bif: None,
             pending_bif_args: SmallVec::new(),
             capture_end_pending: false,
@@ -403,6 +424,30 @@ impl BcMachineState {
         self.annotation = smid;
         if smid.is_source_location() {
             self.last_annotation = smid;
+            if self.is_user_location(smid) {
+                self.last_user_annotation = smid;
+            }
+        }
+    }
+
+    /// Whether `smid` is marked in [`BcMachineState::user_locations`].
+    #[inline]
+    fn is_user_location(&self, smid: Smid) -> bool {
+        smid.get().is_some_and(|i| {
+            self.user_locations
+                .get(i / 64)
+                .is_some_and(|w| (w >> (i % 64)) & 1 == 1)
+        })
+    }
+
+    /// The last-known location to fall back on when an error carries none
+    /// of its own: the last user-file location when a mask was supplied,
+    /// else `last_annotation` (eu-oaz72.202).
+    pub fn fallback_annotation(&self) -> Smid {
+        if self.user_locations.is_empty() {
+            self.last_annotation
+        } else {
+            self.last_user_annotation
         }
     }
 
@@ -572,7 +617,7 @@ fn attach_trace(
     let stack_trace = state.stack_trace(view);
     ExecutionError::Traced(
         Box::new(e),
-        Box::new((env_trace, stack_trace, state.last_annotation)),
+        Box::new((env_trace, stack_trace, state.fallback_annotation())),
     )
 }
 
@@ -1366,7 +1411,7 @@ pub fn return_data(
             // onto every continuation created for the *next* binding, blaming
             // the first annotated declaration in the unit for a failure
             // anywhere after it (eu-og3u6). Errors raised in the unannotated
-            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // window fall back to `state.fallback_annotation()` (see `attach_trace`),
             // which is what preserves the locations eu-0lvf recovered.
             state.set_annotation(annotation);
         }
@@ -1667,7 +1712,7 @@ pub fn return_native(
             // onto every continuation created for the *next* binding, blaming
             // the first annotated declaration in the unit for a failure
             // anywhere after it (eu-og3u6). Errors raised in the unannotated
-            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // window fall back to `state.fallback_annotation()` (see `attach_trace`),
             // which is what preserves the locations eu-0lvf recovered.
             state.set_annotation(annotation);
         }
@@ -1852,7 +1897,7 @@ pub fn return_fun(
             // onto every continuation created for the *next* binding, blaming
             // the first annotated declaration in the unit for a failure
             // anywhere after it (eu-og3u6). Errors raised in the unannotated
-            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // window fall back to `state.fallback_annotation()` (see `attach_trace`),
             // which is what preserves the locations eu-0lvf recovered.
             state.set_annotation(annotation);
         }
@@ -3782,6 +3827,18 @@ impl BytecodeMachine<'_> {
         self.state.last_annotation
     }
 
+    /// See [`BcMachineState::fallback_annotation`].
+    pub fn fallback_annotation(&self) -> Smid {
+        self.state.fallback_annotation()
+    }
+
+    /// Supply the bitset of user-file Smids (from
+    /// `SourceMap::user_location_mask`) that selects which locations the
+    /// error-reporting fallback remembers (eu-oaz72.202).
+    pub fn set_user_location_mask(&mut self, mask: Vec<u64>) {
+        self.state.user_locations = mask.into_boxed_slice();
+    }
+
     /// The current machine value (a clone; GC roots stay in the state).
     pub fn current(&self) -> BcValue {
         self.state.current.clone()
@@ -4821,41 +4878,51 @@ impl BcBifContext<'_, '_> {
             }
             self.metrics.tick();
             self.metrics.stack(self.state.stack.len());
-            {
-                // SAFETY: the view borrows the heap for this scope only and is
-                // dropped before any `&mut self.heap` use; this mirrors the
-                // HeapSyn `bif_view` aliasing (`vm.rs`).
-                let view = unsafe { MutatorHeapView::from_raw_heap(self.heap as *const Heap) };
-                // Mirror the sub-evaluation step map_err (vm.rs
-                // `evaluate_to_whnf_impl`): wrap the step error with traces
-                // here. The nested BIF error (below) is left raw, matching the
-                // HeapSyn sub-evaluation loop — it is wrapped once at the outer
-                // BIF site when it unwinds.
-                let res = if self.predecode {
-                    step_predecoded(self.state, view, self.program, self.decoded)
-                } else {
-                    step(self.state, view, self.program, self.decoded)
-                };
-                if let Err(e) = res {
-                    return Err(attach_trace(self.state, view, e));
-                }
-            }
-            if let Some(idx) = self.state.pending_bif.take() {
-                self.dispatch_pending_bif(idx, &mut null)?;
-            }
-            // Capture-emitter lifecycle inside the force sub-run (eu-fgl0).
-            // A `render-as` forced by an intrinsic sets `pending_capture_start`;
-            // consume it here (previously the sub-loop ignored it, letting it
-            // leak into the outer dispatch, which then pushed a spurious late
-            // capture emitter — a divergence from HeapSyn). This mirrors
-            // HeapSyn's `evaluate_to_whnf_impl` (vm.rs) exactly, keeping the two
-            // engines byte-identical.
-            self.run_subrun_capture_lifecycle()?;
+            // As in `run_loop`, a dispatch is profiled before its error
+            // propagates, so a failing dispatch is still charged
+            // (eu-oaz72.146).
+            let dispatched = self.subrun_dispatch(&mut null);
             if PROFILE {
                 profile_tick(self.state, self.heap);
             }
+            dispatched?;
         }
         Ok(())
+    }
+
+    /// One dispatch of the `run_to_whnf` sub-run: a step, the intrinsic it
+    /// left pending, and the capture lifecycle.
+    fn subrun_dispatch(&mut self, null: &mut NullEmitter) -> Result<(), ExecutionError> {
+        {
+            // SAFETY: the view borrows the heap for this scope only and is
+            // dropped before any `&mut self.heap` use; this mirrors the
+            // HeapSyn `bif_view` aliasing (`vm.rs`).
+            let view = unsafe { MutatorHeapView::from_raw_heap(self.heap as *const Heap) };
+            // Mirror the sub-evaluation step map_err (vm.rs
+            // `evaluate_to_whnf_impl`): wrap the step error with traces
+            // here. The nested BIF error (below) is left raw, matching the
+            // HeapSyn sub-evaluation loop — it is wrapped once at the outer
+            // BIF site when it unwinds.
+            let res = if self.predecode {
+                step_predecoded(self.state, view, self.program, self.decoded)
+            } else {
+                step(self.state, view, self.program, self.decoded)
+            };
+            if let Err(e) = res {
+                return Err(attach_trace(self.state, view, e));
+            }
+        }
+        if let Some(idx) = self.state.pending_bif.take() {
+            self.dispatch_pending_bif(idx, null)?;
+        }
+        // Capture-emitter lifecycle inside the force sub-run (eu-fgl0).
+        // A `render-as` forced by an intrinsic sets `pending_capture_start`;
+        // consume it here (previously the sub-loop ignored it, letting it
+        // leak into the outer dispatch, which then pushed a spurious late
+        // capture emitter — a divergence from HeapSyn). This mirrors
+        // HeapSyn's `evaluate_to_whnf_impl` (vm.rs) exactly, keeping the two
+        // engines byte-identical.
+        self.run_subrun_capture_lifecycle()
     }
 
     /// Consume any `pending_capture_start` that fired during a force sub-run,
@@ -6105,6 +6172,36 @@ mod tests {
             BcValue::Native(Native::Num(n)) => assert_eq!(n.as_i64(), Some(99)),
             _ => panic!("expected native slot"),
         }
+    }
+
+    /// eu-oaz72.202: a library location after the user call site must not
+    /// displace it from the error-reporting fallback, though it still moves
+    /// `last_annotation` (which the profiler reads).
+    #[test]
+    fn fallback_annotation_keeps_the_last_user_location() {
+        use crate::common::sourcemap::SourceMap;
+        use codespan::Span;
+        let mut sm = SourceMap::new();
+        let user = sm.add(0, Span::new(1u32, 3u32));
+        let prelude = sm.add(1, Span::new(5u32, 9u32));
+        sm.mark_resource_file(1);
+
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+
+        // Without a mask the fallback is `last_annotation`, unfiltered.
+        state.set_annotation(user);
+        state.set_annotation(prelude);
+        assert_eq!(state.fallback_annotation(), prelude);
+
+        state.user_locations = sm.user_location_mask().into_boxed_slice();
+        state.set_annotation(user);
+        state.set_annotation(prelude);
+        state.set_annotation(Smid::default());
+        assert_eq!(state.last_annotation, prelude);
+        assert_eq!(state.fallback_annotation(), user);
     }
 
     #[test]
@@ -7374,10 +7471,12 @@ mod tests {
     ///
     /// Fault injection: removing the `profile_enter_force` call in
     /// `drive_to_whnf` fails the pre-force assertion (the intrinsic's
-    /// allocations move to the thunk); removing `exit_force` fails the
-    /// post-force assertion (the intrinsic's later work lands on the thunk's
-    /// annotation); sampling `stack_trace_capped` instead of `profile_trace`
-    /// in `profile_tick` fails the folded-stack assertion.
+    /// allocations and bytes move to the thunk); removing `exit_force` fails
+    /// the post-force assertion (the intrinsic's later work lands on the
+    /// thunk's annotation); moving `Profiler::enter_force`'s byte charge to
+    /// the thunk fails the byte assertions (eu-oaz72.146); sampling
+    /// `stack_trace_capped` instead of `profile_trace` in `profile_tick`
+    /// fails the folded-stack assertion.
     #[test]
     fn profiled_force_attributes_intrinsic_and_thunk_separately() {
         let intrinsic_site = Smid::fake(7001);
@@ -7401,6 +7500,7 @@ mod tests {
         let thunk = m.state.current;
         m.state.current = BcValue::Native(num(0));
         m.enable_profiler(true);
+        let bytes_start = m.heap.bytes_allocated();
 
         // A caller frame suspended under the force.
         let args = MutatorHeapView::new(&m.heap).array(&[]);
@@ -7413,32 +7513,22 @@ mod tests {
         // forcing.
         m.state.annotation = intrinsic_site;
         m.state.allocs += 7;
+        intrinsic_alloc(&m, "the intrinsic's allocation before the force");
+        let bytes_before_force = m.heap.bytes_allocated();
         if let Some(p) = m.state.profiler.as_deref_mut() {
             // The first record inside the force takes a folded sample.
             p.set_ticks(crate::eval::bytecode::profile::FOLDED_SAMPLE_INTERVAL - 1);
         }
         {
-            let mut ctx = BcBifContext {
-                state: &mut m.state,
-                program: &m.program,
-                symbol_pool: &mut m.symbol_pool,
-                rcache: &mut m.rcache,
-                test_mode: m.test_mode,
-                heap: &mut m.heap,
-                intrinsics: &m.intrinsics,
-                metrics: &mut m.metrics,
-                clock: &mut m.clock,
-                dump_heap: m.dump_heap,
-                predecode: m.predecode,
-                decoded: &m.decoded,
-            };
-            let forced = ctx.force(AbiClosure::Byte(thunk)).unwrap();
-            let AbiClosure::Byte(v) = forced;
+            let AbiClosure::Byte(v) = force_in(&mut m, thunk).unwrap();
             assert!(matches!(v, BcValue::Native(_)), "thunk forced to WHNF");
         }
+        let bytes_after_force = m.heap.bytes_allocated();
 
         // Back in the intrinsic: it allocates more, then its dispatch ends.
         m.state.allocs += 3;
+        intrinsic_alloc(&m, "the intrinsic's allocation after the force");
+        let bytes_end = m.heap.bytes_allocated();
         profile_tick(&mut m.state, &m.heap);
 
         let p = m.profiler().unwrap();
@@ -7464,6 +7554,22 @@ mod tests {
             p.locations()
         );
         assert!(thunk_counts.ticks >= 1, "the thunk's dispatches are ticked");
+        assert!(
+            bytes_after_force > bytes_before_force,
+            "the thunk's let allocates on the heap"
+        );
+        assert_eq!(
+            intrinsic.bytes,
+            (bytes_before_force - bytes_start) + (bytes_end - bytes_after_force),
+            "the intrinsic's bytes before and after the force stay on its site: {:?}",
+            p.locations()
+        );
+        assert_eq!(
+            thunk_counts.bytes,
+            bytes_after_force - bytes_before_force,
+            "the forced thunk's bytes are charged to the thunk: {:?}",
+            p.locations()
+        );
 
         let folded = p.folded_samples().unwrap();
         assert!(
@@ -7471,6 +7577,118 @@ mod tests {
                 .keys()
                 .any(|trace| trace.first() == Some(&thunk_site) && trace.contains(&caller_site)),
             "a sample inside the force keeps the suspended caller frame: {folded:?}"
+        );
+    }
+
+    /// Allocate a string on `m`'s heap, standing in for an intrinsic's own
+    /// allocation, so the profiler sees real bytes.
+    fn intrinsic_alloc(m: &BytecodeMachine<'static>, text: &str) {
+        let view = MutatorHeapView::new(&m.heap);
+        view.alloc(HeapString::from_str(&view, text)).unwrap();
+    }
+
+    /// Force `thunk` as an intrinsic would (`BcBifContext::force`).
+    fn force_in(
+        m: &mut BytecodeMachine<'static>,
+        thunk: BcValue,
+    ) -> Result<AbiClosure, ExecutionError> {
+        let mut ctx = BcBifContext {
+            state: &mut m.state,
+            program: &m.program,
+            symbol_pool: &mut m.symbol_pool,
+            rcache: &mut m.rcache,
+            test_mode: m.test_mode,
+            heap: &mut m.heap,
+            intrinsics: &m.intrinsics,
+            metrics: &mut m.metrics,
+            clock: &mut m.clock,
+            dump_heap: m.dump_heap,
+            predecode: m.predecode,
+            decoded: &m.decoded,
+        };
+        ctx.force(AbiClosure::Byte(thunk))
+    }
+
+    /// eu-oaz72.146: an intrinsic dispatched with no valid annotation is
+    /// charged, through the force, to the location its dispatch falls back
+    /// to (the last valid annotation), not to the forced thunk.
+    ///
+    /// Fault injection: dropping the `resume` set by `Profiler::exit_force`
+    /// (the post-force record then falls back to the thunk's annotation)
+    /// fails this test.
+    #[test]
+    fn profiled_force_with_invalid_annotation_charges_the_fallback_site() {
+        let intrinsic_site = Smid::fake(7011);
+        let thunk_site = Smid::fake(7012);
+        let syn = dsl::ann(
+            thunk_site,
+            dsl::let_(
+                vec![dsl::thunk(dsl::atom(dsl::num(5)))],
+                dsl::atom(dsl::num(1)),
+            ),
+        );
+        let (prog, root, gforms) = encode(&syn, &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+        let thunk = m.state.current;
+        m.state.current = BcValue::Native(num(0));
+        m.enable_profiler(false);
+        let bytes_start = m.heap.bytes_allocated();
+
+        m.state.annotation = Smid::default();
+        m.state.last_annotation = intrinsic_site;
+        m.state.allocs += 4;
+        intrinsic_alloc(&m, "before");
+        let bytes_before_force = m.heap.bytes_allocated();
+        force_in(&mut m, thunk).unwrap();
+        let bytes_after_force = m.heap.bytes_allocated();
+        m.state.allocs += 5;
+        intrinsic_alloc(&m, "after");
+        let bytes_end = m.heap.bytes_allocated();
+        profile_tick(&mut m.state, &m.heap);
+
+        let p = m.profiler().unwrap();
+        let at = |s: Smid| p.locations().get(&s).copied().unwrap_or_default();
+        let intrinsic = at(intrinsic_site);
+        assert_eq!(intrinsic.allocs, 9, "{:?}", p.locations());
+        assert_eq!(intrinsic.ticks, 1, "{:?}", p.locations());
+        assert_eq!(
+            intrinsic.bytes,
+            (bytes_before_force - bytes_start) + (bytes_end - bytes_after_force),
+            "{:?}",
+            p.locations()
+        );
+        assert_eq!(at(thunk_site).allocs, 1, "{:?}", p.locations());
+        assert!(
+            !p.locations().contains_key(&Smid::default()),
+            "nothing is charged to an invalid location: {:?}",
+            p.locations()
+        );
+    }
+
+    /// eu-oaz72.146: a force sub-run profiles every dispatch it counts,
+    /// including one that fails, as the top-level loops do.
+    ///
+    /// Fault injection: moving the `?` in `drive_to_whnf_loop` back above
+    /// `profile_tick` fails this test (one tick short).
+    #[test]
+    fn profiled_force_ticks_a_failing_dispatch() {
+        let thunk_site = Smid::fake(7021);
+        // Applying a number fails.
+        let syn = dsl::ann(thunk_site, dsl::app(dsl::num(3), vec![dsl::num(1)]));
+        let (prog, root, gforms) = encode(&syn, &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+        let thunk = m.state.current;
+        m.state.current = BcValue::Native(num(0));
+        m.state.annotation = Smid::fake(7020);
+        m.enable_profiler(false);
+        let ticks_before = m.metrics.ticks();
+        assert!(force_in(&mut m, thunk).is_err(), "the forced code fails");
+        let dispatched = m.metrics.ticks() - ticks_before;
+        assert!(dispatched >= 1);
+        assert_eq!(
+            m.profiler().unwrap().ticks(),
+            dispatched,
+            "every dispatch of the sub-run is profiled, the failing one too"
         );
     }
 }
