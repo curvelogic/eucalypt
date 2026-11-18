@@ -4834,8 +4834,8 @@ pub fn test_doc_nested_namespaces() {
         "Quiet member doc.",
         // Headings clamp at level six rather than dropping deeper members.
         "###### `l5`",
-        "###### `l6`",
-        "###### `bottom(x)`\n\nBelow the last heading level.",
+        "###### `l1.l2.l3.l4.l5.l6`",
+        "###### `l1.l2.l3.l4.l5.l6.bottom(x)`\n\nBelow the last heading level.",
     ] {
         assert!(stdout.contains(pattern), "missing {pattern:?}:\n{stdout}");
     }
@@ -4860,6 +4860,10 @@ pub fn test_doc_nested_namespaces_coverage() {
     assert!(
         stdout.contains("12/14 public bindings documented"),
         "unexpected coverage:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Undocumented:\n  - outer.cfg-undoc\n  - outer.quiet\n"),
+        "unexpected undocumented list:\n{stdout}"
     );
 }
 

@@ -40,42 +40,44 @@ pub fn render_markdown(entries: &[DocEntry], title: &str, unit_doc: Option<&str>
             if let Some(ref doc) = entry.doc {
                 out.push_str(&format!("{doc}\n\n"));
             }
-            render_children_markdown(&entry.children, &mut out, "###");
+            render_children_markdown(&entry.children, &mut out, 3);
             continue;
         }
 
-        render_entry_markdown(entry, &mut out, "###");
+        render_entry_markdown(entry, &mut out, "###", false);
     }
 
     out
 }
 
 /// Render namespace members; a member that is itself a namespace block is
-/// rendered with its own members nested one heading level deeper. Markdown
-/// has six heading levels, so members nested deeper than that are rendered
-/// at level six rather than dropped.
-fn render_children_markdown(children: &[DocEntry], out: &mut String, heading: &str) {
-    let deeper = if heading.len() < 6 {
-        format!("{heading}#")
-    } else {
-        heading.to_string()
-    };
+/// rendered with its own members nested one heading level deeper. `depth`
+/// is the heading level these members would take. Markdown has six heading
+/// levels, so members nested deeper than that are rendered at level six,
+/// under their fully-qualified name so the nesting stays visible.
+fn render_children_markdown(children: &[DocEntry], out: &mut String, depth: usize) {
+    let heading = "#".repeat(depth.min(6));
     for child in children {
         if !child.is_public() {
             continue;
         }
-        render_entry_markdown(child, out, heading);
-        render_children_markdown(&child.children, out, &deeper);
+        render_entry_markdown(child, out, &heading, depth > 6);
+        render_children_markdown(&child.children, out, depth + 1);
     }
 }
 
-fn render_entry_markdown(entry: &DocEntry, out: &mut String, heading: &str) {
+fn render_entry_markdown(entry: &DocEntry, out: &mut String, heading: &str, qualified: bool) {
+    let name = if qualified {
+        entry.qualified_name()
+    } else {
+        entry.name.clone()
+    };
     // Function signature with params, or bare name
     let signature = match &entry.kind {
         DocKind::Function { params } if !params.is_empty() => {
-            format!("`{}({})`", entry.name, params.join(", "))
+            format!("`{}({})`", name, params.join(", "))
         }
-        _ => format!("`{}`", entry.name),
+        _ => format!("`{name}`"),
     };
 
     out.push_str(&format!("{heading} {signature}\n\n"));
@@ -323,24 +325,26 @@ pub fn compute_coverage(entries: &[DocEntry]) -> Coverage {
     let mut undocumented = 0;
     let mut undocumented_names = Vec::new();
 
-    // Coverage counts public top-level bindings and public namespace
-    // members at every depth that is rendered. As before nesting was
-    // counted, a member's own visibility decides whether it counts, not its
-    // namespace's: the prelude reference pages publish members of
-    // namespaces marked `export: :suppress`.
+    // Coverage counts public bindings at every depth that is rendered. A
+    // non-public namespace member is not rendered, nor is anything inside
+    // it, so neither is counted. At the top level, as before nested members
+    // were counted, the members of a non-public namespace still count: the
+    // prelude reference pages publish members of namespaces marked
+    // `export: :suppress`.
     fn check(
         entry: &DocEntry,
         documented: &mut usize,
         undocumented: &mut usize,
         names: &mut Vec<String>,
     ) {
-        if entry.is_public() {
-            if entry.doc.is_some() {
-                *documented += 1;
-            } else {
-                *undocumented += 1;
-                names.push(entry.qualified_name());
-            }
+        if !entry.is_public() {
+            return;
+        }
+        if entry.doc.is_some() {
+            *documented += 1;
+        } else {
+            *undocumented += 1;
+            names.push(entry.qualified_name());
         }
         for child in &entry.children {
             check(child, documented, undocumented, names);
@@ -348,12 +352,23 @@ pub fn compute_coverage(entries: &[DocEntry]) -> Coverage {
     }
 
     for entry in entries {
-        check(
-            entry,
-            &mut documented,
-            &mut undocumented,
-            &mut undocumented_names,
-        );
+        if entry.is_public() {
+            check(
+                entry,
+                &mut documented,
+                &mut undocumented,
+                &mut undocumented_names,
+            );
+        } else {
+            for child in &entry.children {
+                check(
+                    child,
+                    &mut documented,
+                    &mut undocumented,
+                    &mut undocumented_names,
+                );
+            }
+        }
     }
 
     Coverage {
@@ -415,6 +430,30 @@ mod tests {
     }
 
     #[test]
+    fn coverage_skips_inside_non_public_members() {
+        let src = "` \"Outer\"\nouter: {\n  ` \"Hid\"\n  hid: {\n    ` { doc: \"Priv\" export: :internal }\n    priv: {\n      ` \"A\"\n      a: 1\n      b: 2\n    }\n    ` \"Shown\"\n    shown: 3\n  }\n}\n";
+        let unit = parse_unit(src).tree();
+        let entries = extract_doc_entries(&unit);
+        let md = render_markdown(&entries, "t", None);
+        assert!(!md.contains("`a`") && !md.contains("`b`"), "{md}");
+        let cov = compute_coverage(&entries);
+        assert_eq!(cov.total, 3, "{:?}", cov.undocumented_names);
+        assert!(cov.undocumented_names.is_empty());
+    }
+
+    #[test]
+    fn non_public_docs_do_not_make_a_namespace() {
+        let src = "` \"Outer\"\nouter: {\n  data: {\n    ` { doc: \"Hidden\" export: :internal }\n    p: 1\n  }\n}\n";
+        let unit = parse_unit(src).tree();
+        let entries = extract_doc_entries(&unit);
+        assert!(entries[0].children[0].children.is_empty());
+        let md = render_markdown(&entries, "t", None);
+        assert!(!md.contains("`p`"), "{md}");
+        let cov = compute_coverage(&entries);
+        assert_eq!(cov.undocumented_names, vec!["outer.data".to_string()]);
+    }
+
+    #[test]
     fn deep_nesting_clamps_heading_level() {
         // Seven nested namespaces: members below level six stay at `######`.
         let mut src = String::new();
@@ -440,9 +479,9 @@ mod tests {
             "#### `n3`",
             "##### `n4`",
             "###### `n5`",
-            "###### `n6`",
-            "###### `n7`",
-            "###### `leaf`",
+            "###### `n1.n2.n3.n4.n5.n6`",
+            "###### `n1.n2.n3.n4.n5.n6.n7`",
+            "###### `n1.n2.n3.n4.n5.n6.n7.leaf`",
         ] {
             assert!(md.contains(&format!("{h}\n")), "missing {h:?}:\n{md}");
         }
