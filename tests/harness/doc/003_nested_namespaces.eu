@@ -14,8 +14,10 @@ outer: {
   cfg-undoc: { data-hidden: 1 }
 
   cfg-private: {
-    ` { doc: "Internal docs do not make a namespace." export: :internal }
-    private-hidden: 1
+    private-hidden: {
+      ` { doc: "Internal docs do not make a namespace." export: :internal }
+      p: 1
+    }
   }
 
   quiet: {
