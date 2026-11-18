@@ -752,22 +752,36 @@ jobs:
         with:
           name: CHANGELOG.md
 
+      # download-artifact does not preserve file modes, so the binaries
+      # arrive as 0644; `install -m 0755` restores the executable bit before
+      # each one is tarred.
       - name: Prepare release packages
         run: |
           mkdir eucalypt-x86_64-linux
-          cp eu_amd64 eucalypt-x86_64-linux/eu
+          install -m 0755 eu_amd64 eucalypt-x86_64-linux/eu
           cp repo/LICENSE repo/LICENSE-MIT repo/LICENSE-APACHE eucalypt-x86_64-linux/
           tar -cvzf eucalypt-x86_64-linux.tgz eucalypt-x86_64-linux
 
           mkdir eucalypt-aarch64-linux
-          cp eu_aarch64 eucalypt-aarch64-linux/eu
+          install -m 0755 eu_aarch64 eucalypt-aarch64-linux/eu
           cp repo/LICENSE repo/LICENSE-MIT repo/LICENSE-APACHE eucalypt-aarch64-linux/
           tar -cvzf eucalypt-aarch64-linux.tgz eucalypt-aarch64-linux
 
           mkdir eucalypt-aarch64-osx
-          cp eu_darwin eucalypt-aarch64-osx/eu
+          install -m 0755 eu_darwin eucalypt-aarch64-osx/eu
           cp repo/LICENSE repo/LICENSE-MIT repo/LICENSE-APACHE eucalypt-aarch64-osx/
           tar -cvzf eucalypt-aarch64-osx.tgz eucalypt-aarch64-osx
+
+      - name: Check eu is executable in each tarball
+        run: |
+          for t in eucalypt-x86_64-linux eucalypt-aarch64-linux eucalypt-aarch64-osx; do
+            mode=$(tar -tvzf "$t.tgz" "$t/eu" | awk '{print $1}')
+            echo "$t.tgz: $t/eu $mode"
+            if [ "$mode" != "-rwxr-xr-x" ]; then
+              echo "::error::$t/eu in $t.tgz has mode $mode, expected -rwxr-xr-x"
+              exit 1
+            fi
+          done
 
       - name: Generate SHA256SUMS
         run: |
