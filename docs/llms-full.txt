@@ -5262,6 +5262,20 @@ absolute path or a git import), eucalypt resolves it by searching in this order:
 If the file is found in the source-relative directory it is used immediately and
 the global lib path is not consulted.
 
+If the file is found in neither place, the import is an error — with one
+exception. The libraries shipped inside eucalypt (`prelude.eu`, `lens.eu`,
+`state.eu`, `do.eu`, `reflect.eu`, `contract.eu`, `markup.eu`, `test.eu`) are
+imported by their bare file name, as in `{ import: "lens.eu" }`. That exact
+name, or the name without `.eu`, falls back to the shipped library when no
+such file exists and the import is read as eucalypt. A file of your own with
+that name, found by the search above, takes priority. Any other import is
+only ever a file: `"lib/lens.eu"`, `"./lens.eu"`, `"lens.yaml"` or a data
+import such as `"text@lens.eu"` that does not exist is a `could not read`
+error, never the shipped library. (Inside a file fetched by a git import,
+relative imports are fetched from the same repository instead; see
+[Git Imports](#git-imports).) A shipped library can also be named directly
+as a resource: `"resource:lens"`.
+
 ### Transitive resolution
 
 Resolution is always relative to the *importing* file, not to the entry-point
@@ -13166,6 +13180,14 @@ The formatter has two modes:
 - **Reformat mode** (`--reformat`) - Full reformatting that applies
   consistent style throughout
 
+In reformat mode a block (of up to three declarations, with no nested
+block or declaration metadata) or a list goes on one line when it fits
+within the width from the column where it starts, leaving one column for a
+separator or bracket after it; otherwise it is laid out one item per line.
+The formatter does not break other expressions, so a line can still pass
+the width when a long expression or string leaves no block or list to
+break.
+
 ## Type Checking
 
 The `check` subcommand runs the type checker without evaluating:
@@ -13191,9 +13213,21 @@ eucalypt source:
 eu doc file.eu                    # Markdown output to stdout
 eu doc --format json file.eu      # JSON Schema output
 eu doc --prelude                  # Document the embedded prelude
-eu doc --check file.eu            # Report documentation coverage (exit 1 if < 100%)
+eu doc --check file.eu            # Report documentation coverage
 eu doc --output-dir out/ file.eu  # Write categorised Markdown files to a directory
 ```
+
+A top-level block (`name: { ... }`) is documented as a namespace, and its
+members are documented with it. A member whose value is itself a block is a
+nested namespace when that member, or any public member within it, has a
+docstring; its members are rendered one heading level deeper and counted by
+`--check`. Markdown has six heading levels, so members nested deeper than
+that are rendered at the sixth level under their fully-qualified name. A
+non-public member (`:internal` or `:suppress`) is neither rendered nor
+counted, and neither is anything inside it. A
+member whose block is used only for scoping (`m: { helper: 1 }.result`),
+and any block returned by a function, is documented without its contents.
+The coverage report is informational: it exits 0 whatever the coverage.
 
 ### Options
 
