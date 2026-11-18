@@ -21,4 +21,8 @@ const files = fs
 const result = spawnSync(process.execPath, ["--test", ...files], {
   stdio: "inherit",
 });
+if (result.error) {
+  console.error(`could not run node --test: ${result.error.message}`);
+  process.exit(1);
+}
 process.exit(result.status === null ? 1 : result.status);

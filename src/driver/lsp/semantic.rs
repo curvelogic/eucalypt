@@ -87,8 +87,9 @@ pub fn semantic_tokens_full(
 
         // LSP clients cannot place a token that spans lines, so a
         // multi-line token (a string literal, say) is emitted as one token
-        // per line segment. Empty segments (the end of a line ending in
-        // the token) are skipped.
+        // per line segment, split at `\n` as `LineIndex` counts lines. A
+        // segment's line terminator (`\n`, or `\r\n`) is not part of its
+        // token, and segments left empty are skipped.
         let token_start = u32::from(token.text_range().start());
         let mut segment_start = token_start;
         for segment in token.text().split_inclusive('\n') {
@@ -302,11 +303,12 @@ enum PatternRole {
 fn pattern_role(token: &crate::syntax::rowan::kind::SyntaxToken) -> Option<PatternRole> {
     // The first head or body met on the way up decides the role: a head
     // means the token names a pattern declaration's field, a body that it
-    // is the declaration's binding.
+    // is the declaration's binding. Declaration metadata inside a pattern
+    // (`f({ `{ doc: "d" } x: a }):`) is left to the metadata check.
     let mut role = None;
-    let mut node = token.parent()?;
-    loop {
+    for node in token.parent_ancestors() {
         match node.kind() {
+            SyntaxKind::DECL_META => return None,
             SyntaxKind::DECL_HEAD if role.is_none() => role = Some(PatternRole::FieldName),
             SyntaxKind::DECL_BODY if role.is_none() => role = Some(PatternRole::Binding),
             SyntaxKind::ARG_TUPLE | SyntaxKind::PAREN_EXPR | SyntaxKind::BRACKET_EXPR
@@ -318,8 +320,8 @@ fn pattern_role(token: &crate::syntax::rowan::kind::SyntaxToken) -> Option<Patte
             }
             _ => {}
         }
-        node = node.parent()?;
     }
+    None
 }
 
 /// Check if a token is in a metadata annotation context.
@@ -486,12 +488,13 @@ mod tests {
             .collect()
     }
 
-    /// The classifications of every token on `line` with text `text`.
-    fn classes_of(source: &str, line: u32, text: &str) -> Vec<(u32, u32)> {
-        decoded(source)
-            .into_iter()
+    /// The classifications of every token on `line` with text `text`,
+    /// from tokens already decoded by `decoded`.
+    fn classes_of(tokens: &[(u32, String, u32, u32)], line: u32, text: &str) -> Vec<(u32, u32)> {
+        tokens
+            .iter()
             .filter(|(l, t, _, _)| *l == line && t == text)
-            .map(|(_, _, ty, m)| (ty, m))
+            .map(|(_, _, ty, m)| (*ty, *m))
             .collect()
     }
 
@@ -501,73 +504,104 @@ mod tests {
     #[test]
     fn block_destructuring_parameters_are_parameters() {
         let source = "f{x y}: x\ng({a b}): a\n";
-        assert_eq!(classes_of(source, 0, "x")[0], PARAM_DECL);
-        assert_eq!(classes_of(source, 0, "y"), vec![PARAM_DECL]);
-        assert_eq!(classes_of(source, 1, "a")[0], PARAM_DECL);
-        assert_eq!(classes_of(source, 1, "b"), vec![PARAM_DECL]);
+        let tokens = decoded(source);
+        assert_eq!(classes_of(&tokens, 0, "x")[0], PARAM_DECL);
+        assert_eq!(classes_of(&tokens, 0, "y"), vec![PARAM_DECL]);
+        assert_eq!(classes_of(&tokens, 1, "a")[0], PARAM_DECL);
+        assert_eq!(classes_of(&tokens, 1, "b"), vec![PARAM_DECL]);
     }
 
     #[test]
     fn rename_pattern_field_is_parameter_and_binding_is_declaration() {
         let source = "f({x: a  y}): a\n";
-        assert_eq!(classes_of(source, 0, "x"), vec![(token_type::PARAMETER, 0)]);
-        assert_eq!(classes_of(source, 0, "a")[0], PARAM_DECL);
-        assert_eq!(classes_of(source, 0, "y"), vec![PARAM_DECL]);
+        let tokens = decoded(source);
+        assert_eq!(
+            classes_of(&tokens, 0, "x"),
+            vec![(token_type::PARAMETER, 0)]
+        );
+        assert_eq!(classes_of(&tokens, 0, "a")[0], PARAM_DECL);
+        assert_eq!(classes_of(&tokens, 0, "y"), vec![PARAM_DECL]);
     }
 
     #[test]
     fn list_and_ordinary_parameters_are_parameters() {
         let source = "k([h : t], n): h\n";
-        assert_eq!(classes_of(source, 0, "h")[0], PARAM_DECL);
-        assert_eq!(classes_of(source, 0, "t"), vec![PARAM_DECL]);
-        assert_eq!(classes_of(source, 0, "n"), vec![PARAM_DECL]);
+        let tokens = decoded(source);
+        assert_eq!(classes_of(&tokens, 0, "h")[0], PARAM_DECL);
+        assert_eq!(classes_of(&tokens, 0, "t"), vec![PARAM_DECL]);
+        assert_eq!(classes_of(&tokens, 0, "n"), vec![PARAM_DECL]);
     }
 
     #[test]
     fn parameter_named_like_prelude_function_is_parameter() {
         let source = "f(first): first\n";
-        assert_eq!(classes_of(source, 0, "first")[0], PARAM_DECL);
+        let tokens = decoded(source);
+        assert_eq!(classes_of(&tokens, 0, "first")[0], PARAM_DECL);
     }
 
     #[test]
     fn declarations_in_block_call_argument_are_properties() {
         let source = "h: merge({ a: 1 })\n";
-        assert_eq!(classes_of(source, 0, "a"), vec![PROPERTY_DECL]);
+        let tokens = decoded(source);
+        assert_eq!(classes_of(&tokens, 0, "a"), vec![PROPERTY_DECL]);
     }
 
     #[test]
     fn operator_and_bracket_declaration_operands_are_parameters() {
         let source = "(l +++ r): l\n⟦ xs ⟧: xs\n(! p): p\n";
-        assert_eq!(classes_of(source, 0, "l")[0], PARAM_DECL);
-        assert_eq!(classes_of(source, 0, "r"), vec![PARAM_DECL]);
-        assert_eq!(classes_of(source, 1, "xs")[0], PARAM_DECL);
-        assert_eq!(classes_of(source, 2, "p")[0], PARAM_DECL);
+        let tokens = decoded(source);
+        assert_eq!(classes_of(&tokens, 0, "l")[0], PARAM_DECL);
+        assert_eq!(classes_of(&tokens, 0, "r"), vec![PARAM_DECL]);
+        assert_eq!(classes_of(&tokens, 1, "xs")[0], PARAM_DECL);
+        assert_eq!(classes_of(&tokens, 2, "p")[0], PARAM_DECL);
     }
 
     #[test]
     fn declared_names_are_unchanged() {
         let source = "f(x): x\nv: 1\n";
+        let tokens = decoded(source);
         assert_eq!(
-            classes_of(source, 0, "f"),
+            classes_of(&tokens, 0, "f"),
             vec![(token_type::FUNCTION, token_modifier::DECLARATION)]
         );
-        assert_eq!(classes_of(source, 1, "v"), vec![PROPERTY_DECL]);
+        assert_eq!(classes_of(&tokens, 1, "v"), vec![PROPERTY_DECL]);
     }
 
     #[test]
     fn block_metadata_is_still_decorator() {
         let source = "b: { { doc: \"d\" } a: 1 }\n";
+        let tokens = decoded(source);
         assert_eq!(
-            classes_of(source, 0, "doc"),
+            classes_of(&tokens, 0, "doc"),
             vec![(token_type::DECORATOR, 0)]
         );
     }
 
     #[test]
+    fn metadata_inside_a_parameter_pattern_is_still_decorator() {
+        let source = "f({ `{ doc: \"d\" tag: :t } x: a }): a\n";
+        let tokens = decoded(source);
+        assert_eq!(
+            classes_of(&tokens, 0, "doc"),
+            vec![(token_type::DECORATOR, 0)]
+        );
+        assert_eq!(
+            classes_of(&tokens, 0, "tag"),
+            vec![(token_type::DECORATOR, 0)]
+        );
+        assert_eq!(
+            classes_of(&tokens, 0, "x"),
+            vec![(token_type::PARAMETER, 0)]
+        );
+        assert_eq!(classes_of(&tokens, 0, "a")[0], PARAM_DECL);
+    }
+
+    #[test]
     fn s_string_is_string() {
         let source = "t: s\"foo\"\n";
+        let tokens = decoded(source);
         assert_eq!(
-            classes_of(source, 0, "s\"foo\""),
+            classes_of(&tokens, 0, "s\"foo\""),
             vec![(token_type::STRING, 0)]
         );
     }
@@ -575,16 +609,17 @@ mod tests {
     #[test]
     fn multi_line_string_is_one_token_per_line() {
         let source = "m: \"abc\r\n\ndéf\"\nn: 1\n";
-        let strings: Vec<_> = decoded(source)
-            .into_iter()
+        let tokens = decoded(source);
+        let strings: Vec<_> = tokens
+            .iter()
             .filter(|(_, _, ty, _)| *ty == token_type::STRING)
-            .map(|(l, t, _, _)| (l, t))
+            .map(|(l, t, _, _)| (*l, t.clone()))
             .collect();
         assert_eq!(
             strings,
             vec![(0, "\"abc".to_string()), (2, "déf\"".to_string())]
         );
-        assert_eq!(classes_of(source, 3, "n"), vec![PROPERTY_DECL]);
+        assert_eq!(classes_of(&tokens, 3, "n"), vec![PROPERTY_DECL]);
     }
 
     #[test]

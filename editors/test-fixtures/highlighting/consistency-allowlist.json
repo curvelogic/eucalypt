@@ -14,8 +14,12 @@
       "kind": "mismatch",
       "rowan": "parameter",
       "other": "declaration",
+      "text": "[\\p{L}_•$?][\\p{L}\\p{N}_$?!*\\-]*",
+      "files": [
+        "tests/harness/098_juxtaposed_definitions.eu"
+      ],
       "reason": "highlights.scm marks the field names of a rename pattern in a juxtaposed block-pattern head (magnitude-sq{x: px  y: py}:) as declarations; rowan and TextMate mark them as parameters",
-      "ref": "follow-up: highlights.scm juxtaposed rename-pattern fields"
+      "ref": "follow-up (reported to the coordinator; highlights.scm is changed by owner-held #1288): highlights.scm juxtaposed rename-pattern fields"
     },
     {
       "highlighter": "*",
