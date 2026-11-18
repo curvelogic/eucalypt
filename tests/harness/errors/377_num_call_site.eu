@@ -1,0 +1,5 @@
+` "Parse a string as a number: the bad string fails inside this function."
+parse(s): s num
+
+` "num rejects 12x: the error points at the num call in parse, not at the map below (eu-oaz72.118)."
+result: ["1", "12x"] map(parse)

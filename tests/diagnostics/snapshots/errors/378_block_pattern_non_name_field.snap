@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/377_block_pattern_non_name_field
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/377_block_pattern_non_name_field.eu
+fixture: errors/378_block_pattern_non_name_field
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/378_block_pattern_non_name_field.eu
 prelude-modes: identical
 
 === both prelude modes ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/377_block_pattern_non_name_field.eu:2:10
+primary: user tests/harness/errors/378_block_pattern_non_name_field.eu:2:10
 help-lines: 0
 note-lines: 2
 secondary-labels: 0
@@ -19,7 +19,7 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: unexpected content in block pattern
-  ┌─ tests/harness/errors/377_block_pattern_non_name_field.eu:2:10
+  ┌─ tests/harness/errors/378_block_pattern_non_name_field.eu:2:10
   │
 2 │ f{k: kk, 3}: kk
   │          ^

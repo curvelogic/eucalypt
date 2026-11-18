@@ -1,0 +1,13 @@
+{ title: "nested checked target"
+  doc: "Fixture for `test_tester_reports_nested_checked_target`: the `inner`
+  target carries a failing `RESULT` inside `test-outer`, which passes on
+  its own `RESULT`. The inner check does not decide the outer verdict, so
+  the tester must report `inner` as never running and fail the file
+  (eu-oaz72.69)." }
+
+` { target: :test-outer }
+outer: {
+  ` { target: :inner }
+  inner: { RESULT: :FAIL }
+  RESULT: :PASS
+}
