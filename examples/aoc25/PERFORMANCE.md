@@ -45,10 +45,10 @@ alone) and the pre-revision solutions timed on this binary and machine
 | day08-p2 | >600s / — | >600s (not re-run) / — | 4.577s (4.391–4.755) | 2.202s (2.122–2.243) | 2.08× | 86,264,511 | 14,538,105 | 24 | measured-single |
 | day09-p1 | 2.002s (3%) / 0.478s (7%) | 1.973s (1.944–2.159) / 1.289s (1.210–1.356) | 1.037s (0.981–1.073) | 0.743s (0.686–0.772) | 1.39× | 34,994,019 | 5,173,548 | 32 | measured-single |
 | day09-p2 | >600s / — | >600s (not re-run) / — | 4.627s (4.562–4.746) | 3.439s (3.229–3.580) | 1.35× | 107,719,965 | 15,421,464 | 82 | measured-single |
-| day10-p1 | 7.858s (3%) / 1.091s (43%) | 6.787s (6.609–7.170) / 2.630s (2.550–2.696) | 1.250s (1.237–1.339) | 0.606s (0.589–0.667) | 2.06× | 25,968,458 | 5,582,301 | 24 | measured-single |
+| day10-p1 | 7.858s (3%) / 1.091s (43%\*) | 6.787s (6.609–7.170) / 2.630s (2.550–2.696) | 1.250s (1.237–1.339) | 0.606s (0.589–0.667) | 2.06× | 25,968,458 | 5,582,301 | 24 | measured-single |
 | day10-p2 | >600s / — | >600s (not re-run) / — | 5.638s (5.288–5.884) | 2.876s (2.753–2.974) | 1.96× | 133,543,871 | 25,571,739 | 63 | measured-single |
-| day11-p1 | 0.150s (2%) / — | 0.256s (0.255–0.259) / — | 0.082s (0.080–0.108) | 0.082s (0.080–0.110) | 1.00× | 202,506 | 31,219 | 0 | measured-single (sub-200ms, par arm sub-200ms) |
-| day11-p2 | 4.429s (3%) / 1.161s (2%) | 10.419s (10.196–10.967) / 5.457s (5.235–5.703) | 0.160s (0.157–0.179) | 0.125s (0.123–0.153) | 1.28× | 1,978,696 | 301,851 | 2 | measured-single (sub-200ms, par arm sub-200ms) |
+| day11-p1 | 0.150s (2%) / — | 0.256s (0.255–0.259) / — | 0.082s (0.080–0.108) | 0.082s (0.080–0.110) | — (sub-200ms) | 202,506 | 31,219 | 0 | measured-single (sub-200ms, par arm sub-200ms) |
+| day11-p2 | 4.429s (3%) / 1.161s (2%) | 10.419s (10.196–10.967) / 5.457s (5.235–5.703) | 0.160s (0.157–0.179) | 0.125s (0.123–0.153) | — (sub-200ms) | 1,978,696 | 301,851 | 2 | measured-single (sub-200ms, par arm sub-200ms) |
 | day12-p1 | 0.106s (3%) / — | 0.185s (0.178–0.188) / — | 0.156s (0.153–0.164) | — | — | 1,710,323 | 304,003 | 1 | measured-single (sub-200ms) |
 
 Notes:
@@ -60,6 +60,10 @@ Notes:
 - day05-p1 no longer has a `par-*` site (the 0.16 solution is a dict range
   lookup, 0.11s), so it has no parallel arm. day04-p2 and day11-p1 run no
   `par-*` call on their path, so their two arms are equal within noise.
+- *Previous* column: figures and spreads as published for 0.14, with that
+  table's caveats: the 0.14 parallel arms of day04-p1 and day05-p1 were
+  sub-200ms, and its >600s rows were n=1 probes. \* The 0.14 day10-p1
+  parallel spread is one 1.55s outlier in five runs (others 1.077–1.122s).
 - The list-retention fix (#1268) is **not** in this baseline. Re-run with
   `scripts/aoc25-bench.py` (command in the report) once it lands.
 
@@ -81,13 +85,11 @@ reproduced on a quiet machine).
 The 0.14 figures are carried in the *Previous* column of the 0.16 table
 above; the 0.11.0 ones are in the historical summary below.
 
-\* day10-p1 parallel spread is one 1.55s outlier in five runs (others
-1.077–1.122s); the median is robust to it.
-
-A `—` in the parallel column means the example has no `par-*` site (either no
-independent map, or the site was assessed and rejected — see below).
-day08-p2 inherits the `window-pairs` conversion from day08-p1 but its
-parallel arm is not reported: parallelism does not change its asymptotics.
+In the 0.14 table, a `—` in the parallel column meant the example had no
+`par-*` site (no independent map, or the site was assessed and rejected —
+see below), and day08-p2's parallel arm was not reported because it then
+timed out either way. The 0.16 solutions add `par-*` sites to day08-p2,
+day09-p2 and day10-p2; the 0.16 table reports both arms for them.
 
 The sequential column is itself news: the 0.12–0.14 engine work (bytecode
 default, pre-decoded dispatch, lookup and codegen improvements) has made the

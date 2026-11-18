@@ -11,8 +11,8 @@ side findings.
 
 ## Method
 
-- Inputs: the real puzzle inputs, restored from history into the gitignored
-  `examples/aoc25/inputs/dayNN.txt` locally (never committed).
+- Inputs: the real puzzle inputs, present locally in the gitignored
+  `examples/aoc25/inputs/dayNN.txt` (never committed).
 - Binary: `cargo xtask prelude-compile && cargo clean && cargo build
   --release` on master, rustc 1.99.1. One binary and one blob for every arm.
 - Runs: `timeout 600 eu --statistics-file … run/dayNN.eu -t part-N` from
@@ -47,15 +47,18 @@ Every figure is **measured-single**. Deviations from
   cross-machine wall comparisons are indicative only. The same-machine
   pre-revision column is the like-for-like comparison.
 - Many parts are under ~200 ms, dominated by startup (`eu -e 1` takes about
-  0.058 s with the blob); they are labelled as such and not used in ratios.
+  0.058 s with the blob); they are labelled as such and not used in ratios
+  (the table gives no parallel speedup where either arm is under 200 ms).
 
 ## Headline changes (same machine, sequential)
 
 - All four former >600 s parts finish: day04-p2 2.67 s, day08-p2 4.58 s,
   day09-p2 4.63 s, day10-p2 5.64 s (par 2.72 / 2.20 / 3.44 / 2.88 s).
-- day11-p2 10.42 s → 0.16 s; day10-p1 6.79 s → 1.25 s; day05-p1 0.51 s →
-  0.11 s; day08-p1 5.07 s → 3.14 s; day09-p1 1.97 s → 1.04 s; day07 and
-  day06-p2 2.7–3.8× faster.
+- day10-p1 6.79 s → 1.25 s; day08-p1 5.07 s → 3.14 s; day09-p1 1.97 s →
+  1.04 s; day06-p2 0.71 s → 0.26 s; day03-p2 0.42 s → 0.25 s.
+- From above 200 ms to startup-dominated (under 200 ms, so no ratio is
+  given): day11-p2 10.42 s → 0.16 s, day05-p1 0.51 s → 0.11 s, day07-p1/p2
+  0.67/0.72 s → 0.19 s.
 - Unchanged within noise: day01, day02, day04-p1, day06-p1, day12-p1.
 - Parallel speedups on 4 cores: 1.3–2.5× where the work is heavy
   (day04-p1 2.47×, day08-p2 2.08×, day10-p1 2.06×, day10-p2 1.96×).
@@ -65,7 +68,7 @@ Every figure is **measured-single**. Deviations from
 1. **No blob on a plain build.** `lib/prelude.blob` is gitignored, so a fresh
    clean build silently takes the source-prelude fallback. A first full run
    made that way was discarded: startup was 0.116 s rather than 0.058 s, and
-   small parts read 1.5–2× slower. This is documented in
+   small parts read about 0.06–0.09 s slower. This is documented in
    `docs/development/prelude-blob.md`; noted because it is easy to miss when
    re-running this baseline.
 2. **Ticks are higher with the blob than without** on several parts (e.g.

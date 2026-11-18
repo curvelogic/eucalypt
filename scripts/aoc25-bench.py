@@ -6,7 +6,8 @@ examples/aoc25/inputs/dayNN.txt (not in the repository; see the README
 there). Days with a `par-*` site run as interleaved pairs: a sequential arm
 (EU_PP_THRESHOLD forced above any list size, so `par-*` takes the
 sequential fallback) and a parallel arm (the default: `par-*` forks). The
-other days run once per round with defaults.
+other days run once per round in the sequential arm only; they make no
+`par-*` call, so that is the same as running them with defaults.
 
 Prints a Markdown table: wall median-of-N with min-max range, and ticks,
 allocations, collections and peak stack from the median sequential run.
@@ -69,10 +70,13 @@ def main():
     ap.add_argument("--copy-stats", action="store_true")
     ap.add_argument("targets", nargs="*", default=PARTS)
     args = ap.parse_args()
+    # eu runs with cwd=examples/aoc25, so both paths must be absolute.
+    args.out = os.path.abspath(args.out)
+    args.eu = os.path.abspath(args.eu)
     os.makedirs(args.out, exist_ok=True)
 
     results = {}
-    with open(os.path.join(args.out, "raw.jsonl"), "a") as log:
+    with open(os.path.join(args.out, "raw.jsonl"), "w") as log:
         for target in args.targets:
             arms = ["seq", "par"] if target[:2] in PAR_DAYS else ["seq"]
             for i in range(args.runs):
@@ -101,7 +105,11 @@ def main():
         par_s, speedup = "—", "—"
         if (target, "par") in results:
             par_s, par_med = wall(results[(target, "par")])
-            speedup = f"{seq_med / par_med:.2f}×"
+            # PROTOCOL.md: nothing under ~200 ms enters ratio analysis.
+            if min(seq_med, par_med) < 0.2:
+                speedup = "— (sub-200ms)"
+            else:
+                speedup = f"{seq_med / par_med:.2f}×"
         day, part = target.split("-")
         print(f"| day{day}-p{part} | {seq_s} | {par_s} | {speedup} | "
               f"{s['machine_ticks']:,} | {s['machine_allocs']:,} | "
