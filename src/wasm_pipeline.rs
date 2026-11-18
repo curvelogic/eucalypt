@@ -354,6 +354,9 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
         stg_settings.test_mode,
     )
     .map_err(|e| execution_error_to_pipeline_error(e, &files, &source_map))?;
+    // Keep the error-reporting fallback on user locations (eu-oaz72.202), as
+    // the CLI driver does: WASM always compiles the prelude from source.
+    machine.set_user_location_mask(source_map.user_location_mask());
 
     let ret = machine.run(Some(MAX_STEPS));
     let stream_end = machine.take_emitter().stream_end();
@@ -610,6 +613,18 @@ fn parse_error_range(error: &rowan::ParseError) -> Option<::rowan::TextRange> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// eu-oaz72.202: WASM always compiles the prelude from source, so an
+    /// error raised in prelude code (here `head` inside `++`) must still
+    /// fall back to the user's line, as the CLI's blob mode does.
+    #[test]
+    fn test_prelude_error_falls_back_to_user_location() {
+        let err = evaluate_unit("greeting: \"Hello, \" ++ \"World!\"", "json").unwrap_err();
+        let loc = err
+            .location
+            .unwrap_or_else(|| panic!("no location for: {}", err.message));
+        assert_eq!(loc.line, 1, "error was: {}", err.message);
+    }
 
     // ── Unit mode (declaration-style, like a .eu file) ──────────────
 

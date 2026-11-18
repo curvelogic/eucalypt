@@ -296,6 +296,25 @@ pub struct BcMachineState {
     /// pending call — and `to_diagnostic` consults it only once the error's
     /// own Smid and both traces have failed to yield a user-file location.
     pub last_annotation: Smid,
+    /// The most recent [`BcMachineState::last_annotation`] that lies in a
+    /// user-authored file, per [`BcMachineState::user_locations`]
+    /// (eu-oaz72.202). This, not `last_annotation`, is the error-reporting
+    /// fallback.
+    ///
+    /// In blob mode the two agree for prelude code, which carries
+    /// `Smid::global_slot` identities that `last_annotation` already skips.
+    /// In source-prelude mode prelude code carries real prelude locations,
+    /// so `last_annotation` ends on (say) `io.shell`'s body — a location
+    /// diagnostics rightly refuse as a primary label — and the user call
+    /// site was lost in that mode alone. Filtering by file gives both modes
+    /// the same fallback. `last_annotation` is kept as is for the
+    /// profiler, which wants library locations too.
+    pub last_user_annotation: Smid,
+    /// Bitset of Smid indices that lie in user-authored files (see
+    /// `SourceMap::user_location_mask`). Empty when the driver supplied
+    /// none, in which case [`BcMachineState::fallback_annotation`] uses
+    /// `last_annotation` unfiltered.
+    pub user_locations: Box<[u64]>,
     /// Deferred BIF intrinsic index (set by the `Bif` arm, run in `step`).
     pub pending_bif: Option<u8>,
     /// The deferred BIF's decoded argument refs (spec §6.3): captured by the
@@ -370,6 +389,8 @@ impl BcMachineState {
             terminated: false,
             annotation: Smid::default(),
             last_annotation: Smid::default(),
+            last_user_annotation: Smid::default(),
+            user_locations: Box::default(),
             pending_bif: None,
             pending_bif_args: SmallVec::new(),
             capture_end_pending: false,
@@ -403,6 +424,30 @@ impl BcMachineState {
         self.annotation = smid;
         if smid.is_source_location() {
             self.last_annotation = smid;
+            if self.is_user_location(smid) {
+                self.last_user_annotation = smid;
+            }
+        }
+    }
+
+    /// Whether `smid` is marked in [`BcMachineState::user_locations`].
+    #[inline]
+    fn is_user_location(&self, smid: Smid) -> bool {
+        smid.get().is_some_and(|i| {
+            self.user_locations
+                .get(i / 64)
+                .is_some_and(|w| (w >> (i % 64)) & 1 == 1)
+        })
+    }
+
+    /// The last-known location to fall back on when an error carries none
+    /// of its own: the last user-file location when a mask was supplied,
+    /// else `last_annotation` (eu-oaz72.202).
+    pub fn fallback_annotation(&self) -> Smid {
+        if self.user_locations.is_empty() {
+            self.last_annotation
+        } else {
+            self.last_user_annotation
         }
     }
 
@@ -572,7 +617,7 @@ fn attach_trace(
     let stack_trace = state.stack_trace(view);
     ExecutionError::Traced(
         Box::new(e),
-        Box::new((env_trace, stack_trace, state.last_annotation)),
+        Box::new((env_trace, stack_trace, state.fallback_annotation())),
     )
 }
 
@@ -1362,7 +1407,7 @@ pub fn return_data(
             // onto every continuation created for the *next* binding, blaming
             // the first annotated declaration in the unit for a failure
             // anywhere after it (eu-og3u6). Errors raised in the unannotated
-            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // window fall back to `state.fallback_annotation()` (see `attach_trace`),
             // which is what preserves the locations eu-0lvf recovered.
             state.set_annotation(annotation);
         }
@@ -1641,7 +1686,7 @@ pub fn return_native(
             // onto every continuation created for the *next* binding, blaming
             // the first annotated declaration in the unit for a failure
             // anywhere after it (eu-og3u6). Errors raised in the unannotated
-            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // window fall back to `state.fallback_annotation()` (see `attach_trace`),
             // which is what preserves the locations eu-0lvf recovered.
             state.set_annotation(annotation);
         }
@@ -1814,7 +1859,7 @@ pub fn return_fun(
             // onto every continuation created for the *next* binding, blaming
             // the first annotated declaration in the unit for a failure
             // anywhere after it (eu-og3u6). Errors raised in the unannotated
-            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // window fall back to `state.fallback_annotation()` (see `attach_trace`),
             // which is what preserves the locations eu-0lvf recovered.
             state.set_annotation(annotation);
         }
@@ -3736,6 +3781,18 @@ impl BytecodeMachine<'_> {
     /// [`BcMachineState::last_annotation`].
     pub fn last_annotation(&self) -> Smid {
         self.state.last_annotation
+    }
+
+    /// See [`BcMachineState::fallback_annotation`].
+    pub fn fallback_annotation(&self) -> Smid {
+        self.state.fallback_annotation()
+    }
+
+    /// Supply the bitset of user-file Smids (from
+    /// `SourceMap::user_location_mask`) that selects which locations the
+    /// error-reporting fallback remembers (eu-oaz72.202).
+    pub fn set_user_location_mask(&mut self, mask: Vec<u64>) {
+        self.state.user_locations = mask.into_boxed_slice();
     }
 
     /// The current machine value (a clone; GC roots stay in the state).
@@ -6061,6 +6118,36 @@ mod tests {
             BcValue::Native(Native::Num(n)) => assert_eq!(n.as_i64(), Some(99)),
             _ => panic!("expected native slot"),
         }
+    }
+
+    /// eu-oaz72.202: a library location after the user call site must not
+    /// displace it from the error-reporting fallback, though it still moves
+    /// `last_annotation` (which the profiler reads).
+    #[test]
+    fn fallback_annotation_keeps_the_last_user_location() {
+        use crate::common::sourcemap::SourceMap;
+        use codespan::Span;
+        let mut sm = SourceMap::new();
+        let user = sm.add(0, Span::new(1u32, 3u32));
+        let prelude = sm.add(1, Span::new(5u32, 9u32));
+        sm.mark_resource_file(1);
+
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+
+        // Without a mask the fallback is `last_annotation`, unfiltered.
+        state.set_annotation(user);
+        state.set_annotation(prelude);
+        assert_eq!(state.fallback_annotation(), prelude);
+
+        state.user_locations = sm.user_location_mask().into_boxed_slice();
+        state.set_annotation(user);
+        state.set_annotation(prelude);
+        state.set_annotation(Smid::default());
+        assert_eq!(state.last_annotation, prelude);
+        assert_eq!(state.fallback_annotation(), user);
     }
 
     #[test]
