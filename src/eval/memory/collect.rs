@@ -9,7 +9,7 @@ use std::{collections::VecDeque, mem::size_of, ptr::NonNull};
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
 use super::{
-    array::{Array, HeapBacked},
+    array::HeapBacked,
     header::AllocHeader,
     heap::{BlockBaseSet, Heap},
 };
@@ -235,9 +235,12 @@ impl<'a> CollectorHeapView<'a> {
     /// move it (the backing has its own header but no tracing of its own).
     ///
     /// Returns whether the backing was newly marked. A caller whose
-    /// elements hold heap pointers traces them only then: a backing shared
-    /// with another array (`Array::clone_with_length`, a reshaped
-    /// `HeapNdArray`) is traced once.
+    /// elements hold heap pointers traces them only then, so a backing
+    /// shared by several arrays is traced once, through whichever reaches
+    /// it first. That is sound only if every array sharing a backing of
+    /// traced elements has the same length: environment frames guarantee
+    /// it (`EnvironmentFrame::shared_bindings`). A reshaped `HeapNdArray` shares a
+    /// backing of `f64`s, which has nothing to trace.
     pub fn scan_backing<B: HeapBacked>(
         &mut self,
         backed: &B,
@@ -384,13 +387,6 @@ impl CollectorHeapView<'_> {
     /// pushed onto the scan queue as an `OpaqueHeapBytes` object).
     pub fn mark_raw_bytes(&mut self, ptr: NonNull<u8>) -> bool {
         self.mark_backing(ptr, "raw bytes")
-    }
-
-    /// Mark an array's backing buffer if not already marked and return
-    /// whether it was newly marked (`false` for an unallocated array).
-    pub fn mark_array<T: Clone>(&mut self, arr: &Array<T>) -> bool {
-        arr.allocated_data()
-            .is_some_and(|ptr| self.mark_backing(ptr, "array backing"))
     }
 
     /// Mark a separately allocated backing buffer, covering every line its
@@ -929,7 +925,7 @@ fn verify_mark_integrity(roots: &dyn GcScannable, heap: &mut Heap, forwarding: F
 /// methods as marking, with a private visited set in place of mark bits
 /// (every object is already marked, so marking alone would visit nothing).
 /// Every pointer `scan` reports passes through `mark`, `mark_raw_bytes` or
-/// `mark_array`, which panic if it still points at an old copy: one that
+/// `scan_backing`, which panic if it still points at an old copy: one that
 /// `scan` reports but `scan_and_update` does not rewrite. Runs before
 /// `release_evacuated_lines`, so the old copies are still intact.
 ///
@@ -996,6 +992,8 @@ fn try_evacuate(
 #[cfg(test)]
 pub mod tests {
     use std::iter::repeat_with;
+
+    use crate::eval::memory::array::Array;
 
     use crate::eval::memory::{
         alloc::{ScopedAllocator, StgObject},
@@ -1617,7 +1615,7 @@ pub mod tests {
     }
 
     /// A stale element of a pointer array is reached only because
-    /// `mark_array` records its backing as visited in the post-update
+    /// `scan_backing` records its backing as visited in the post-update
     /// traversal (everything is already marked) (eu-oaz72.136).
     #[test]
     #[should_panic(expected = "GC VERIFY: marking met a forwarded header after the update phase")]
@@ -1628,7 +1626,7 @@ pub mod tests {
         evacuate_head_block_verified(&mut heap, TestObj::StaleElements(arr));
     }
 
-    /// A stale array backing pointer trips `mark_array`'s check
+    /// A stale array backing pointer trips `scan_backing`'s check
     /// (eu-oaz72.136).
     #[test]
     #[should_panic(expected = "(type array backing) was evacuated")]

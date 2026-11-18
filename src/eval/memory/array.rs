@@ -192,7 +192,7 @@ impl<T: Sized> RawArray<T> {
         let capacity_bytes = capacity.checked_mul(size_of::<T>()).ok_or_else(|| {
             ExecutionError::from(super::heap::HeapError::InvalidAllocationSize {
                 requested_size: usize::MAX,
-                max_size: u32::MAX as usize,
+                max_size: super::bump::MAX_ALLOC_SIZE,
             })
         })?;
         Ok(Some(mem.alloc_bytes_uninit(capacity_bytes)?.cast::<T>()))
