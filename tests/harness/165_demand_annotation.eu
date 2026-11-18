@@ -20,7 +20,9 @@
         need. eu-oaz72.85: `iota` leaves its start unevaluated for
         its first two cells and then runs in constant stack. eu-oaz72.78: `foldl-strict` evaluates its accumulator at each
         step, so `sum`, `product` and `count` run in constant stack, while
-        `foldl` keeps its lazy accumulator."
+        `foldl` keeps its lazy accumulator. eu-oaz72.66: a signature is
+        found by the binding a call refers to, and a lambda literal's only
+        for a call that supplies all its arguments."
 }
 
 ` { target: :test-annotation }
@@ -143,6 +145,9 @@ test-foldl-strict: {
   RESULT: [same, empty, lazy-foldl, lazy-seed, lazy-op] all-true? then(:PASS, :FAIL)
 }
 
+` "Lambda literals each given one of their two arguments: a partial application runs nothing, so `y` must stay unevaluated (eu-oaz72.66)."
+partial-literals(y): ({ g: (_0 + _1)(y) }.(g block?)) = ({ g: (_0 * _1)(y) }.(g block?))
+
 ` { target: :test-laziness }
 test-laziness: {
   unused: unused-acc(0, 10) = 1
@@ -155,7 +160,9 @@ test-laziness: {
   parameter: [[second-of] map(via-param), strict-hop(3)] = [[1], 3]
   arities: [first-max(3), next-max(3)] = [10, 10]
   partial: (loop-a(panic("partial application forced")) block?) = false
-  RESULT: [unused, untaken, closure, closure-applied, lazy-foldl, same-name, alias, parameter, arities, partial]
+  partial-literal: partial-literals(panic("partial literal forced"))
+  RESULT: [unused, untaken, closure, closure-applied, lazy-foldl, same-name, alias, parameter, arities, partial,
+           partial-literal]
           all-true? then(:PASS, :FAIL)
 }
 

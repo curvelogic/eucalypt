@@ -47,7 +47,8 @@ fn dumped_signature_of_f(source_prelude: bool) -> Option<String> {
         .split("-- demand annotations --")
         .nth(1)?
         .lines()
-        .map(str::trim)
+        // The program's own top-level `f`: nested bindings, such as a local
+        // `f` in a source-mode prelude function, are indented.
         .find(|line| line.starts_with("f:"))
         .map(str::to_string)
 }

@@ -1154,11 +1154,11 @@ impl<'p> DemandAnalyser<'p> {
         };
         let mut env = f_env;
 
-        // Try to find the function's signature. A lambda literal's is
-        // recorded under its analysed body, so look it up on the analysed
-        // head (eu-oaz72.66, #1156); every other head is looked up as
-        // written.
-        let sig = match &*head.inner {
+        // Try to find the function's signature. A lambda literal's (bare or
+        // under metadata) is recorded under its analysed body, so look it up
+        // on the analysed head (eu-oaz72.66, #1156); every other head is
+        // looked up as written.
+        let sig = match &*peel_meta(head).inner {
             Expr::Lam(..) => self.lookup_signature(&new_head, total),
             _ => self.lookup_signature(head, total),
         };
@@ -1259,11 +1259,19 @@ impl<'p> DemandAnalyser<'p> {
             // Intrinsic function: use seed signature
             Expr::Intrinsic(_, name) => self.intrinsic_sigs.get(name).cloned(),
 
-            // Lambda: look in the signatures table
+            // A lambda literal (the analysed one: its signature is recorded
+            // under its analysed body). Saturated calls only, as above: a
+            // partial application of a literal runs nothing (eu-oaz72.66).
             Expr::Lam(_, _, scope) => {
                 let key = Rc::as_ptr(&scope.body.inner) as usize;
-                self.signatures.get(&key).cloned()
+                self.signatures
+                    .get(&key)
+                    .filter(|sig| nargs >= sig.len())
+                    .cloned()
             }
+
+            // A literal wrapped in metadata is the literal.
+            Expr::Meta(_, inner, _) => self.lookup_signature(inner, nargs),
 
             _ => None,
         }
@@ -2349,6 +2357,54 @@ mod tests {
         let x = free("x");
         let y = free("y");
         let callee = lam(vec!["x".into()], app(bif("ADD"), vec![var(x), num(1)]));
+        let expr = let_(
+            vec![(y.clone(), app(bif("ADD"), vec![num(1), num(2)]))],
+            app(callee, vec![var(y)]),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(scope.pattern[0].demand.strictness, Strictness::Strict)
+            }
+            _ => panic!("expected Let"),
+        }
+    }
+
+    /// A lambda literal applied to fewer arguments than it takes runs
+    /// nothing, so its signature does not apply (eu-oaz72.66): `y` stays
+    /// lazy in `(\\x z -> ADD(x, z))(y)`.
+    #[test]
+    fn partially_applied_lambda_literal_takes_no_signature() {
+        let x = free("x");
+        let z = free("z");
+        let y = free("y");
+        let callee = lam(
+            vec!["x".into(), "z".into()],
+            app(bif("ADD"), vec![var(x), var(z)]),
+        );
+        let expr = let_(
+            vec![(y.clone(), app(bif("ADD"), vec![num(1), num(2)]))],
+            app(callee, vec![var(y)]),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_ne!(scope.pattern[0].demand.strictness, Strictness::Strict)
+            }
+            _ => panic!("expected Let"),
+        }
+    }
+
+    /// A lambda literal under metadata in function position takes its
+    /// signature as a bare one does.
+    #[test]
+    fn lambda_literal_under_metadata_takes_its_signature() {
+        let x = free("x");
+        let y = free("y");
+        let callee = meta(
+            lam(vec!["x".into()], app(bif("ADD"), vec![var(x), num(1)])),
+            block(vec![]),
+        );
         let expr = let_(
             vec![(y.clone(), app(bif("ADD"), vec![num(1), num(2)]))],
             app(callee, vec![var(y)]),
