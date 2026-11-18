@@ -20,7 +20,7 @@ use eucalypt::eval::machine::metrics::{Clock, ThreadOccupation};
 use eucalypt::eval::memory::alloc::{ScopedAllocator, StgObject};
 use eucalypt::eval::memory::array::Array;
 use eucalypt::eval::memory::collect::{
-    collect, CollectorHeapView, CollectorScope, GcScannable, OpaqueHeapBytes, ScanPtr,
+    collect, CollectorHeapView, CollectorScope, GcScannable, ScanPtr,
 };
 use eucalypt::eval::memory::heap::Heap;
 use eucalypt::eval::memory::mutator::MutatorHeapView;
@@ -45,13 +45,7 @@ impl GcScannable for Node {
         out: &mut Vec<ScanPtr<'a>>,
     ) {
         if let Node::Compound(bindings, body) = self {
-            if marker.mark_array(bindings) {
-                if let Some(backing_ptr) = bindings.allocated_data() {
-                    out.push(ScanPtr::from_non_null(
-                        scope,
-                        backing_ptr.cast::<OpaqueHeapBytes>(),
-                    ));
-                }
+            if marker.scan_backing(bindings, scope, out) {
                 for b in bindings.iter() {
                     if marker.mark(*b) {
                         out.push(ScanPtr::from_non_null(scope, *b));
@@ -66,13 +60,7 @@ impl GcScannable for Node {
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
         if let Node::Compound(bindings, body) = self {
-            if let Some(old_ptr) = bindings.allocated_data() {
-                if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
-                    // SAFETY: new_ptr is a valid evacuated copy of the same
-                    // backing allocation.
-                    unsafe { bindings.set_backing_ptr(new_ptr.cast()) };
-                }
-            }
+            heap.update_backing(bindings);
             for b in bindings.iter_mut() {
                 if let Some(new) = heap.forwarded_to(*b) {
                     *b = new;

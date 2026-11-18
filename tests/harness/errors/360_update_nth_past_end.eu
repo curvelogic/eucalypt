@@ -1,0 +1,4 @@
+` "Error test (eu-oaz72.100): an index past the end of the list is an
+out-of-range error from `update-nth`, as from `nth`, rather than a
+destructuring error."
+x: [1, 2, 3] update-nth(3, inc)

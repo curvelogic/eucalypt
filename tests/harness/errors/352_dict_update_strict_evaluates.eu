@@ -1,0 +1,8 @@
+# Error: dict.update-strict evaluates the new value as it stores it, so an
+# error in it is raised even though only the size is asked for (dict.update,
+# which stores the value unevaluated, gives 1 here)
+
+` "a function whose value is an error"
+boom(x): panic("update-strict evaluated the new value")
+
+x: dict.of[[1, 0]] dict.update-strict(1, boom, 0) dict.size

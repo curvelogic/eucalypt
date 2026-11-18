@@ -188,10 +188,11 @@ pub fn io_run(machine: &mut BytecodeMachine<'_>, allow_io: bool) -> Result<BcVal
                     // The live annotation register has typically been reset
                     // to invalid by unstamped prelude code between the user
                     // call site and this yield point (io.shell/io.fail/etc.
-                    // are prelude wrappers). `last_annotation` retains the
-                    // most recent *valid* location, which is the user call
-                    // site — see eu-1tkk.7.21.
-                    return Err(IoRunError::IoNotAllowed(machine.last_annotation()));
+                    // are prelude wrappers). The fallback register retains
+                    // the most recent *user-file* location, which is the
+                    // user call site in both prelude modes — see
+                    // eu-1tkk.7.21 and eu-oaz72.202.
+                    return Err(IoRunError::IoNotAllowed(machine.fallback_annotation()));
                 }
                 let world = args[0].clone();
                 let spec_block = args[1].clone();

@@ -1,6 +1,6 @@
 //! Tag selected lambdas as inlinable for inline pass
 use crate::core::{
-    binding::{CoreBinding, Scope, Var},
+    binding::{Scope, Var},
     error::CoreError,
     expr::{Expr, LamScope, LetType, RcExpr},
 };
@@ -69,10 +69,7 @@ pub fn tag_combinators_named(expr: &RcExpr, self_name: Option<&str>) -> Result<R
             let bindings = scope
                 .pattern
                 .iter()
-                .map(|b| {
-                    tag_combinators_named(&b.expr, Some(&b.name))
-                        .map(|e| CoreBinding::with_demand(b.name.clone(), e, b.demand))
-                })
+                .map(|b| tag_combinators_named(&b.expr, Some(&b.name)).map(|e| b.with_expr(e)))
                 .collect::<Result<Vec<_>, _>>()?;
             let body = tag_combinators_named(&scope.body, None)?;
             Ok(RcExpr::from(Expr::Let(

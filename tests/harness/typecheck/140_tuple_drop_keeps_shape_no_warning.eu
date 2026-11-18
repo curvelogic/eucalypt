@@ -1,0 +1,23 @@
+{ doc: "A heterogeneous list (the shape XML import gives) keeps its tuple shape through drop with a literal count: mapping, filtering and indexing the remaining child elements checks clean (eu-oaz72.174)."
+    import: "root=xml@../testdata/aux_import.xml" }
+
+` "Child elements of an XML element, as in harness test 047."
+content: drop(2)
+
+` "Tag of an XML element."
+tag: first
+
+` "Attributes of an XML element."
+attrs: nth(1)
+
+` "A literal list with the same heterogeneous shape."
+lit: [:abc, {}, [:foo, {}], [:bar, {a: "a" b: "b"}, "blah"], [:quux, {}, "a", [:b, {}]]]
+
+direct: lit drop(2) map(tag)
+via-alias: lit content map(tag)
+filtered: lit content filter((_ = :quux) ∘ tag) head content
+indexed: lit content second attrs
+none-left: lit drop(9) map(tag)
+xml-tags: root content map(tag)
+xml-filtered: root content filter((_ = :quux) ∘ tag) head content
+xml-indexed: root content second attrs

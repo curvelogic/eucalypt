@@ -2704,22 +2704,17 @@ pub fn test_error_168() {
 /// source position — which clobbered the real user call site that had been
 /// recorded moments earlier.
 ///
-/// **Blob-only, deliberately**: every test below is gated on
-/// `#[cfg(prelude_blob_ok)]` (set by `build.rs` only when a fresh
-/// `lib/prelude.blob` was embedded — see the pattern established in
-/// `src/eval/stg/blob.rs` and `tests/diagnostics_blame_plumbing_test.rs`,
-/// eu-1tkk.7.11). `Smid::global_slot` identities — the thing this fix
-/// corrects for — only exist on the blob path; CI's plain "Test Suite" job
-/// runs `cargo test` without generating a blob first, so `eu` falls back to
-/// compiling the prelude from source at runtime and every prelude Smid is a
-/// real (non-tagged) source position instead. Checked directly against the
-/// released 0.13.2 binary: in `--source-prelude` mode 0.13.2 shows a
-/// **prelude** location (`[prelude]:84:14`), not a user one — and
-/// eu-1tkk.7.8 deliberately suppresses a non-user-file primary label, so
-/// 0.14 showing no location in source-prelude mode is correct behaviour
-/// under that invariant, not a regression. Do not "fix" the source-prelude
-/// path by weakening the suppression rule to make these assertions pass
-/// unconditionally.
+/// **Both prelude modes** (eu-oaz72.202): these tests once carried
+/// `#[cfg(prelude_blob_ok)]`, on the reasoning that source-prelude mode
+/// legitimately showed no location. It did not: in that mode prelude code
+/// carries real prelude locations, which overwrote the user call site in the
+/// machine's fallback register, so the error lost its location in source
+/// mode alone — a source/blob divergence. The machine now keeps the last
+/// *user-file* location as the fallback, so both modes report the call
+/// site. The suppression of non-user primary labels (eu-1tkk.7.8) is
+/// unchanged. Without the cfg gate they run in both CI configurations
+/// (blob, and no blob — the source prelude); they also pass with a blob
+/// present under `EU_SOURCE_PRELUDE=1`, which no CI job runs today.
 ///
 /// `072_io_fail.eu`, `094_io_no_flag.eu`, `106_io_check_fail.eu` and
 /// `168_io_shell_missing_cmd.eu` each already have a `test_error_*` function
@@ -2731,7 +2726,6 @@ pub fn test_error_168() {
 /// assert the primary label names the fixture's own file and the call
 /// site's line:column, matching blob-mode 0.13.2 exactly.
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_072_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/072_io_fail.eu"])
@@ -2751,7 +2745,6 @@ pub fn test_error_072_not_allowed_has_location() {
 }
 
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_094_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/094_io_no_flag.eu", "-t", "result"])
@@ -2771,7 +2764,6 @@ pub fn test_error_094_not_allowed_has_location() {
 }
 
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_106_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/106_io_check_fail.eu"])
@@ -2791,7 +2783,6 @@ pub fn test_error_106_not_allowed_has_location() {
 }
 
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_168_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/168_io_shell_missing_cmd.eu"])
@@ -4793,6 +4784,82 @@ pub fn test_typecheck_139_block_fn_call_in_block_mismatch_warns() {
     run_typecheck_test("139_block_fn_call_in_block_mismatch_warns.eu");
 }
 
+/// `drop` with a literal count keeps a heterogeneous list's tuple shape, so
+/// mapping, filtering and indexing the suffix checks clean (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_140_tuple_drop_keeps_shape_no_warning() {
+    run_typecheck_test("140_tuple_drop_keeps_shape_no_warning.eu");
+}
+
+/// A genuine non-list left in a dropped tuple suffix still warns
+/// (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_141_tuple_drop_suffix_mismatch_warns() {
+    run_typecheck_test("141_tuple_drop_suffix_mismatch_warns.eu");
+}
+
+/// A precise tuple path that falls through on a non-tuple argument must not
+/// synthesise that argument twice: each of the three warnings appears once
+/// (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_142_tuple_projection_fallthrough_warns_once() {
+    let file = "142_tuple_projection_fallthrough_warns_once.eu";
+    run_typecheck_test(file);
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", &format!("tests/harness/typecheck/{file}")])
+        .output()
+        .expect("failed to run eu check");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let warnings = stderr
+        .lines()
+        .filter(|l| l.contains("expected [string], found [number]"))
+        .count();
+    assert_eq!(warnings, 3, "expected one warning per binding:\n{stderr}");
+}
+
+/// A projection guarded by `block?` on the same parameter is not a block use:
+/// non-block arguments check clean under `then`, `if`, a negated guard, `and`
+/// and `or` (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_143_block_guard_param_no_warning() {
+    run_typecheck_test("143_block_guard_param_no_warning.eu");
+}
+
+/// A projection on the unguarded side of a `block?` test still makes the
+/// parameter a block (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_144_block_guard_unguarded_use_warns() {
+    run_typecheck_test("144_block_guard_unguarded_use_warns.eu");
+}
+
+/// A `block?` guard on one parameter does not excuse projecting another
+/// (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_145_block_guard_other_param_warns() {
+    run_typecheck_test("145_block_guard_other_param_warns.eu");
+}
+
+/// A `block?` guard of the wrong polarity (`or(x block?, …)`,
+/// `and(x block? not, …)`) protects nothing: both calls warn
+/// (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_146_block_guard_wrong_polarity_warns() {
+    let file = "146_block_guard_wrong_polarity_warns.eu";
+    run_typecheck_test(file);
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", &format!("tests/harness/typecheck/{file}")])
+        .output()
+        .expect("failed to run eu check");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for name in ["h-or", "h-and-not"] {
+        let pattern = format!("type mismatch calling '{name}'");
+        assert!(
+            stderr.contains(&pattern),
+            "expected \"{pattern}\" in stderr:\n{stderr}"
+        );
+    }
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]
@@ -5409,6 +5476,25 @@ pub fn test_error_277_array_slice_non_integer() {
     run_error_test(&error_opts("277_array_slice_non_integer.eu"));
 }
 
+/// `arr.neighbours` offsets are not truncated (eu-oaz72.97).
+#[test]
+pub fn test_error_362_array_neighbours_non_integer_offset() {
+    run_error_test(&error_opts("362_array_neighbours_non_integer_offset.eu"));
+}
+
+/// A negative array coordinate error names the function (eu-oaz72.97).
+#[test]
+pub fn test_error_363_array_get_negative() {
+    run_error_test(&error_opts("363_array_get_negative.eu"));
+}
+
+/// An empty shape with too many sub-arrays is rejected at construction
+/// rather than rendering endlessly (eu-oaz72.99).
+#[test]
+pub fn test_error_364_array_empty_shape_too_large() {
+    run_error_test(&error_opts("364_array_empty_shape_too_large.eu"));
+}
+
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
 pub fn test_error_275_non_integer_take() {
@@ -5485,6 +5571,13 @@ pub fn test_error_275_non_integer_nth() {
 #[test]
 pub fn test_error_275_non_integer_update_nth() {
     run_error_test(&error_opts("275_non_integer_update_nth.eu"));
+}
+
+/// An index past the end is an out-of-range error from `update-nth`
+/// (eu-oaz72.100), not a destructuring error.
+#[test]
+pub fn test_error_360_update_nth_past_end() {
+    run_error_test(&error_opts("360_update_nth_past_end.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
@@ -5623,6 +5716,28 @@ pub fn test_error_290_set_of_random_stream_element() {
 #[test]
 pub fn test_error_284_interpolation_two_names() {
     run_error_test(&error_opts("284_interpolation_two_names.eu"));
+}
+
+/// `{{` is not an escape in a c-string: `c"{{}}"` is a parse error whose
+/// help names `\{`, never a silent wrong answer (eu-oaz72.128).
+#[test]
+pub fn test_error_343_cstring_doubled_brace() {
+    run_error_test(&error_opts("343_cstring_doubled_brace.eu"));
+}
+
+/// `{{` before dotted content in a c-string (`c"{{a.b}}"`) gets the
+/// c-string help too, not the plain-string "escape it by doubling"
+/// (eu-oaz72.128).
+#[test]
+pub fn test_error_361_cstring_doubled_brace_dotted() {
+    run_error_test(&error_opts("361_cstring_doubled_brace_dotted.eu"));
+}
+
+/// A leading dot in a string interpolation is a parse error: `{.x}` used
+/// to read silently as `{x}` (eu-oaz72.139).
+#[test]
+pub fn test_error_344_interpolation_stray_dot() {
+    run_error_test(&error_opts("344_interpolation_stray_dot.eu"));
 }
 
 #[test]
@@ -5809,6 +5924,16 @@ pub fn test_error_331_iterate_applies_f_at_cell() {
 #[test]
 pub fn test_error_347_missing_prelude_path() {
     run_error_test(&error_opts("347_missing_prelude_path.eu"));
+}
+
+#[test]
+pub fn test_error_351_mixed_width_overflow() {
+    run_error_test(&error_opts("351_mixed_width_overflow.eu"));
+}
+
+#[test]
+pub fn test_error_352_dict_update_strict_evaluates() {
+    run_error_test(&error_opts("352_dict_update_strict_evaluates.eu"));
 }
 
 #[test]

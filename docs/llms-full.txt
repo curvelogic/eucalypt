@@ -2423,7 +2423,20 @@ If you require C-style escapes, you can use C-strings:
 multiline: c"first line\nsecond line"
 ```
 
-C-strings also support interpolation with `{...}`.
+C-strings also support interpolation with `{...}`. In a c-string a
+literal brace is written with a backslash, `\{` or `\}`: doubling
+(`{{`, `}}`) is **not** an escape there, so `c"{{x}}"` opens an
+interpolation that holds a stray `{` and is a parse error.
+
+```eu
+n: 3
+braces: c"\{n\} is {n}"
+```
+
+```yaml
+n: 3
+braces: '{n} is 3'
+```
 
 ## Basic Interpolation
 
@@ -2481,8 +2494,9 @@ label: '99'
 > result: "{sum}"
 > ```
 >
-> Anything else inside the braces — a second name, as in `"{ a b }"` —
-> is a parse error. Whitespace around the name and the format
+> Anything else inside the braces — a second name, as in `"{ a b }"`,
+> or a dot with no name on one side, as in `"{.x}"` or `"{x.}"` — is a
+> parse error. Whitespace around the name and the format
 > specifier is ignored: `"{ n : %06d }"` is `"{n:%06d}"`.
 
 ## Escaping Braces
@@ -2775,6 +2789,8 @@ table: rows map(format-row)
 - Escape literal braces by doubling them: `{{` and `}}`. This works
   straight after an interpolation too: `"{x}}}"` is the value of `x`
   followed by `}`
+- In a c-string, write a literal brace as `\{` or `\}`; `{{` is not an
+  escape there
 - The `str` namespace provides splitting, joining, case conversion,
   matching, and more
 
@@ -7992,12 +8008,13 @@ Literal types are most useful in **discriminated unions** — type aliases
 where a tag field distinguishes variants:
 
 ```eu,notest
-{ types: { Shape: c"{{type: \"circle\", radius: number, ..}} | {{type: \"rect\", w: number, h: number, ..}}" } }
+{ types: { Shape: c"\{type: \"circle\", radius: number, ..\} | \{type: \"rect\", w: number, h: number, ..\}" } }
 ```
 
 Because writing complex union types inline is verbose, defining a `types:`
 alias is the recommended approach. (Note the `c"..."` **c-string** — see
-*Writing literal types in annotation strings* below.)
+*Writing literal types in annotation strings* below. In a c-string a
+literal brace is written `\{` and `\}`: `{{` is not an escape there.)
 
 **Subtyping rules**:
 - `"foo"` is consistent with `string` — a literal satisfies a string parameter
@@ -8103,6 +8120,22 @@ second(pair) # type: number  (index 1)
 
 Any user-defined function whose body is `xs tail head` (or `xs tail tail head`,
 etc.) acquires the same precise projection typing automatically.
+
+`drop` with a literal count keeps the shape of what is left, so a
+heterogeneous list such as an imported XML element can be mapped or
+filtered after its tag and attributes are dropped. A binding that is
+just `drop(n)` for a literal `n` (or an alias of one) is treated the same
+way:
+
+```eu,notest
+el: [:item, {}, [:a, {}], [:b, {}]]
+content: drop(2)
+el drop(2)   # type: ((:a, {..}), (:b, {..}))
+el content   # type: ((:a, {..}), (:b, {..}))
+el drop(9)   # type: [any]  (nothing left)
+```
+
+A count that is not a literal falls back to `drop`'s own type, `[a]`.
 
 ### Prefix-lists
 
@@ -8275,7 +8308,7 @@ remaining fields.
 #### Inference for unannotated block combinators (B9)
 
 When a lambda parameter is **used as a block** — projected (`.field`),
-merged (`merge`/`over`), or passed to a block-typed function — the
+merged (`merge`), or passed to a block-typed function — the
 checker allocates a fresh row variable for it automatically, even
 without an explicit `type:` annotation.
 
@@ -8291,6 +8324,22 @@ result: base f(ext)   # result : {x: number, y: string}
 The checker uses a **use-driven** approach: only parameters that appear
 in a block position acquire row variables. Parameters used arithmetically
 (`x + y`) stay `any`, avoiding spurious warnings.
+
+A projection that only runs when the parameter is already a block does
+not count. In a branch guarded by `block?` on that parameter, the
+parameter is left `any`, so other arguments are still accepted. The
+guarded branch is the first arm of `then` or `if` under `x block?` (the
+second under `x block? not`), the second argument of `and(x block?, …)`,
+or the second argument of `or(x block? not, …)`. `cond` clauses are not
+recognised:
+
+```eu,notest
+h(x): x block? then(x.a, 0)
+h(3)           # no warning: x.a only runs for a block
+```
+
+A projection on the unguarded side, or of a different parameter inside
+the guarded branch, still counts.
 
 ### Functions
 
@@ -9319,14 +9368,6 @@ specs and deliberately differs on closed ones.
 - **`Dict(T)`, `NonEmpty([T])` and recursive types are accepted without
   checking**, matching `as-spec`, so the two agree about what conforms for
   these. Extending them is future work, and will extend both together.
-- **Literal types are the one place `validate` and `as-spec` disagree.**
-  `validate` checks a literal (`"prod"`, `:ok`) by equality, as you would
-  expect. `as-spec` has no arm for literal types, so it falls through to
-  "matches anything" — `s"\"prod\"" as-spec` accepts any value at all. That
-  is a known defect on the `as-spec` side; `validate` does the right
-  thing rather than replicating it. Until it is fixed, do
-  not expect `data match?(spec as-spec)` and `(data validate(spec)) nil?`
-  to agree on a spec containing a literal type.
 - **Data-file blame** — reporting `config.yaml:12` rather than the `ensure`
   call site — needs every importer to carry per-value source provenance.
   Today only the YAML reader (which also serves JSON) does; offering it for
@@ -11669,7 +11710,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
+| `rotate(n, l)` | Rotate list `l` left by `n` positions, wrapping when `n` exceeds the length; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`. An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |
@@ -11964,7 +12005,7 @@ character.
 | `ceiling` | Round number upwards to nearest integer |
 | `⌈⌉` | Ceiling bracket notation, round `n` upwards to nearest integer |
 | `⌊⌋` | Floor bracket notation, round `n` downwards to nearest integer |
-| `pow(b, e)` | Raise `b` to the power `e` |
+| `pow(b, e)` | Raise `b` to the power `e`; an integer base with a non-negative integer exponent gives an integer, or a numeric-overflow error when the result is out of range; a negative exponent gives a float, and a zero base with a negative exponent is an error |
 | `div(a, b)` | Floor division; same as `a / b` |
 | `mod(a, b)` | Floor modulus; same as `a % b` |
 | `quot(a, b)` | Truncation division; rounds toward zero |
@@ -12258,8 +12299,8 @@ x: random.int(100, stream)
 | `vec.of` | Convert list `xs` of primitive values to a vec for O(1) indexed access |
 | `vec.from-list` | Alias of `vec.of`: convert list `xs` of primitive values to a vec |
 | `vec.len` | Return the number of elements in vec `v` |
-| `vec.nth` | Return the element at index `n` (0-based) in vec `v` |
-| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v` |
+| `vec.nth` | Return the element at index `n` (0-based) in vec `v`; an index past the end, negative or not an integer is an error |
+| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v`; indices past the end are clamped to the length, and a negative or non-integer index is an error |
 | `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement; a negative `n` samples nothing; a non-integer `n` is an error |
 | `vec.shuffle(v, stream)` | Random monad action: return vec `v` in random order |
 | `vec.to-list` | Convert vec `v` back to a cons-list |
@@ -12491,7 +12532,7 @@ has no metadata at all.
 | `update?(k?, f, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `let` | Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha |
 | `for` | List monad for list comprehensions. Each binding draws from a list; subsequent bindings can depend on earlier ones. Use [x] filter(pred?) for guards |
-| `as-spec(t)` | Convert type-data to a match?-compatible pattern. Primitive types become predicates, records become block patterns, lists become list predicates, unions become disjunctive predicates, partials accept null or the inner type |
+| `as-spec(t)` | Convert type-data to a match?-compatible pattern. Primitive types become predicates, records become block patterns, lists become list predicates, unions become disjunctive predicates, partials accept null or the inner type, and literal types match exactly their one string or symbol |
 | `parse-args(defaults, args)` | Parse command-line argument list against a defaults block. Each key in `defaults` defines an option with its default value. Field metadata configures parsing: `short` (symbol for short flag), `doc` (description), `flag` (true for boolean toggle). Returns the `defaults` block updated with parsed values, plus an `args` key containing positional arguments as a list. Unknown options cause a runtime error. Use `--help` for auto-generated help text |
 
 ---
@@ -15271,9 +15312,8 @@ catenation) — navigate with `(xs nth(2)).port` or a lens.
 - A malformed **spec** raises `panic("validate: not a type spec")` — a
   different error from a contract violation, so a schema typo cannot
   masquerade as bad data.
-- Literal types (`"prod"`, `:ok`) are checked by equality here but **not**
-  by `as-spec`, which matches anything for them (a known
-  defect).
+- Literal types (`"prod"`, `:ok`) are checked by equality, here and by
+  `as-spec` alike.
 
 See [Structural Contracts](../guide/contracts.md).
 
