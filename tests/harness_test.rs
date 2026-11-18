@@ -5802,15 +5802,17 @@ pub fn every_error_fixture_has_a_test() {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let quoted = format!("\"{name}\"");
         let pathed = format!("/{name}\"");
-        // A site counts only if the test it sits in is not `#[ignore]`d:
-        // the attributes between the enclosing `#[test]` and the name.
+        // A site counts only if the test it sits in is a `#[test]` and is
+        // not `#[ignore]`d. The item holding the site runs from the end of
+        // the previous top-level item (a `}` at column 0) to the site, so
+        // its whole attribute block is inspected, in whatever order.
         let live = this_file
             .match_indices(quoted.as_str())
             .chain(this_file.match_indices(pathed.as_str()))
             .any(|(i, _)| {
                 let head = &this_file[..i];
-                head.rfind("#[test]")
-                    .is_some_and(|t| !head[t..].contains("#[ignore"))
+                let item = &head[head.rfind("\n}\n").map_or(0, |e| e + 3)..];
+                item.contains("#[test]") && !item.contains("#[ignore")
             });
         if !live {
             missing.push(name);

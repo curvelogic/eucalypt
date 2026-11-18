@@ -737,11 +737,10 @@ impl Tester for InProcessTester {
         let mut results = vec![];
         // The eval-path type check covers the whole file, so it runs once
         // per plan, not once per target and format: its rendered warnings
-        // and findings are kept here and given to every run. `None` inside
-        // records a `--strict` failure.
-        let mut plan_check: Option<
-            Option<(Vec<u8>, crate::driver::warning_link::TypeWarningLinks)>,
-        > = None;
+        // and findings are kept here and given to every run. `Err` records
+        // a `--strict` failure, with the warnings that caused it.
+        type PlanCheck = Result<(Vec<u8>, crate::driver::warning_link::TypeWarningLinks), Vec<u8>>;
+        let mut plan_check: Option<PlanCheck> = None;
 
         for (t, fs) in plan.targets() {
             for f in fs {
@@ -802,21 +801,24 @@ impl Tester for InProcessTester {
                         &mut codespan_reporting::term::termcolor::NoColor::new(&mut rendered),
                     ) {
                         crate::driver::check::EvalPathCheck::Proceed(findings) => {
-                            Some((rendered, findings))
+                            Ok((rendered, findings))
                         }
-                        crate::driver::check::EvalPathCheck::StrictFailure => None,
+                        crate::driver::check::EvalPathCheck::StrictFailure => Err(rendered),
                     }
                 });
-                let Some((rendered, findings)) = check else {
-                    results.push(TestResult {
-                        target: t,
-                        format: f.to_string(),
-                        exit_code: None,
-                        stdout: String::new(),
-                        stderr: String::new(),
-                        statistics,
-                    });
-                    continue;
+                let (rendered, findings) = match check {
+                    Ok(passed) => passed,
+                    Err(warnings) => {
+                        results.push(TestResult {
+                            target: t,
+                            format: f.to_string(),
+                            exit_code: None,
+                            stdout: String::new(),
+                            stderr: String::from_utf8_lossy(warnings).into_owned(),
+                            statistics,
+                        });
+                        continue;
+                    }
                 };
                 let mut errbuf = rendered.clone();
                 let type_findings = findings.clone();
