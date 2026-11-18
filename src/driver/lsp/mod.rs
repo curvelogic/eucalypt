@@ -8,6 +8,7 @@
 mod actions;
 pub mod alias_index;
 mod completion;
+mod debounce;
 mod diagnostics;
 mod folding;
 mod formatting;
@@ -29,7 +30,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
@@ -52,6 +52,7 @@ use lsp_types::{
 use crate::common::sourcemap::SourceMap;
 use crate::core::typecheck::types::Type;
 
+use self::debounce::Debouncer;
 use self::query::{
     hash_combine, hash_str, ContentHash, FileId, ImportedFile, PipelineCacheEntry,
     PipelineStageHashes, QueryStore, TypeEnv,
@@ -300,6 +301,9 @@ struct ServerState {
     /// Sender cloned to each background thread for delivering results.
     pipeline_tx: Sender<PipelineResult>,
 
+    /// The persistent thread that debounces pipeline runs.
+    debouncer: Debouncer<PipelineJob>,
+
     /// Cancel flags per document URI for in-flight pipeline runs.
     cancel: HashMap<Url, Arc<AtomicBool>>,
 
@@ -311,7 +315,7 @@ struct ServerState {
 }
 
 impl ServerState {
-    fn new(refresh: RefreshSupport) -> (Self, Receiver<PipelineResult>) {
+    fn new(refresh: RefreshSupport) -> std::io::Result<(Self, Receiver<PipelineResult>)> {
         // Write the embedded prelude to a temp file so go-to-definition
         // can navigate to real source locations instead of the non-existent
         // resource:prelude URI.
@@ -325,11 +329,12 @@ impl ServerState {
             prelude_table: symbol_table::prelude_symbols(&prelude_uri),
             queries: QueryStore::new(),
             pipeline_tx,
+            debouncer: pipeline_debouncer()?,
             cancel: HashMap::new(),
             refresh,
             next_request_id: 0,
         };
-        (state, pipeline_rx)
+        Ok((state, pipeline_rx))
     }
 
     /// Write the embedded prelude source to a temp file and return its
@@ -565,7 +570,7 @@ fn main_loop(
     use lsp_types::notification::Exit;
     use lsp_types::request::{Request as _, Shutdown};
 
-    let (mut state, pipeline_rx) = ServerState::new(refresh);
+    let (mut state, pipeline_rx) = ServerState::new(refresh)?;
     let mut shutdown_requested = false;
 
     loop {
@@ -862,7 +867,7 @@ fn on_document_changed(
     let tx = state.pipeline_tx.clone();
     let uri_clone = uri.clone();
 
-    spawn_pipeline(uri_clone, text_owned, path, tx, cancel);
+    schedule_pipeline(&state.debouncer, uri_clone, text_owned, path, tx, cancel);
 
     // Cross-file invalidation: trigger a pipeline re-run for all files that
     // import the changed file.  The import graph was populated when those
@@ -884,7 +889,8 @@ fn on_document_changed(
             .cancel
             .insert(importer_uri.clone(), importer_cancel.clone());
         let importer_path = importer_uri.to_file_path().ok();
-        spawn_pipeline(
+        schedule_pipeline(
+            &state.debouncer,
             importer_uri,
             importer_text,
             importer_path,
@@ -1175,24 +1181,61 @@ fn extract_top_level_bindings(expr: &crate::core::expr::RcExpr, type_env: &mut T
     }
 }
 
-/// Spawn a background thread that runs the full SourceLoader pipeline
-/// after a debounce delay. Results are sent via the pipeline channel.
-fn spawn_pipeline(
+/// A pipeline run waiting in the debouncer.
+struct PipelineJob {
+    uri: Url,
+    text: String,
+    path: Option<PathBuf>,
+    tx: Sender<PipelineResult>,
+    cancel: Arc<AtomicBool>,
+}
+
+/// Start the debounce thread for pipeline runs: each run that falls due
+/// [`debounce::DEBOUNCE_DELAY`] after its document's last edit starts on
+/// a worker thread.
+fn pipeline_debouncer() -> std::io::Result<Debouncer<PipelineJob>> {
+    Debouncer::new(debounce::DEBOUNCE_DELAY, start_pipeline)
+}
+
+/// Ask for a pipeline run of `text` for `uri` once the document has been
+/// quiet for the debounce delay. A later request for the same document
+/// replaces this one; results are sent via the pipeline channel.
+fn schedule_pipeline(
+    debouncer: &Debouncer<PipelineJob>,
     uri: Url,
     text: String,
     path: Option<PathBuf>,
     tx: Sender<PipelineResult>,
     cancel: Arc<AtomicBool>,
 ) {
-    std::thread::Builder::new()
+    debouncer.schedule(
+        uri.clone(),
+        PipelineJob {
+            uri,
+            text,
+            path,
+            tx,
+            cancel,
+        },
+    );
+}
+
+/// Run a debounced pipeline job on a worker thread, unless it was
+/// cancelled while it waited. Called on the debounce thread.
+fn start_pipeline(job: PipelineJob) {
+    let PipelineJob {
+        uri,
+        text,
+        path,
+        tx,
+        cancel,
+    } = job;
+    if cancel.load(Ordering::SeqCst) {
+        return;
+    }
+    let spawned = std::thread::Builder::new()
         .stack_size(64 * 1024 * 1024) // 64 MiB, matching the main thread
         .spawn(move || {
-            // Debounce: wait 300ms before starting the pipeline.
-            std::thread::sleep(Duration::from_millis(300));
-            if cancel.load(Ordering::SeqCst) {
-                return;
-            }
-
             let result = run_pipeline(&uri, &text, path.as_deref());
             if cancel.load(Ordering::SeqCst) {
                 return;
@@ -1203,8 +1246,12 @@ fn spawn_pipeline(
                 cancel,
                 result,
             });
-        })
-        .expect("failed to spawn LSP pipeline thread");
+        });
+    if let Err(error) = spawned {
+        // The debounce thread must survive, so a failed spawn loses only
+        // this run: the document's next edit asks for another.
+        eprintln!("failed to start LSP pipeline thread: {error}");
+    }
 }
 
 /// Run the full SourceLoader pipeline on the given document text.
@@ -1687,7 +1734,7 @@ mod tests {
     #[test]
     fn stale_pipeline_results_are_not_published() {
         let (server, client) = Connection::memory();
-        let (mut state, _rx) = ServerState::new(RefreshSupport::default());
+        let (mut state, _rx) = ServerState::new(RefreshSupport::default()).unwrap();
         let uri = Url::parse("file:///stale.eu").unwrap();
 
         // Document open and current: published.
@@ -1713,7 +1760,7 @@ mod tests {
     #[test]
     fn missing_prelude_path_is_published_as_error_diagnostic() {
         let (server, client) = Connection::memory();
-        let (mut state, _rx) = ServerState::new(RefreshSupport::default());
+        let (mut state, _rx) = ServerState::new(RefreshSupport::default()).unwrap();
         let uri = Url::parse("file:///tmp/eu_lsp_prelude_publish_test.eu").unwrap();
         let text = "{ prelude: \"nope/prelude.eu\" }\nx: 1\n";
         state.store.open(uri.clone(), text.to_string());
@@ -1750,7 +1797,7 @@ mod tests {
 
     #[test]
     fn cancel_all_flags_every_in_flight_run() {
-        let (state, _rx) = ServerState::new(RefreshSupport::default());
+        let (state, _rx) = ServerState::new(RefreshSupport::default()).unwrap();
         let mut state = state;
         let a = Arc::new(AtomicBool::new(false));
         let b = Arc::new(AtomicBool::new(false));
