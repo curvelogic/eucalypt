@@ -1,0 +1,7 @@
+` "A user monad declaring the wrapper a in its monad metadata is the identity monad, so mapping inc over a string warns (eu-oaz72.183)."
+id-bind(m, f): f(m)
+
+` { monad: s"a" }
+id-monad: monad{bind: id-bind, return: identity}
+
+mapped: id-monad.map(inc, "x")

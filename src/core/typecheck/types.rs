@@ -751,8 +751,56 @@ fn fmt_app(f: &mut fmt::Formatter<'_>, head: &Type, arg: &Type) -> fmt::Result {
             _ => {}
         }
     }
-    // Generic application by juxtaposition.
-    write!(f, "{head} {arg}")
+    // Generic application by juxtaposition.  An argument that itself
+    // renders by juxtaposition (`m a`) or with an infix or binder form
+    // (`a → b`, `a | b`, `forall a. …`) is parenthesised, so that the
+    // rendering re-parses to the same type: `m (m a)`, not `m m a`, which
+    // reads back as `(m m) a` (eu-oaz72.183).  Likewise a head that is not
+    // itself an application or atom.
+    if needs_parens_in_app(head, false) {
+        write!(f, "({head})")?;
+    } else {
+        write!(f, "{head}")?;
+    }
+    if needs_parens_in_app(arg, true) {
+        write!(f, " ({arg})")
+    } else {
+        write!(f, " {arg}")
+    }
+}
+
+/// Whether `ty` must be parenthesised when rendered as the head
+/// (`is_arg == false`) or argument (`is_arg == true`) of a juxtaposed type
+/// application.
+fn needs_parens_in_app(ty: &Type, is_arg: bool) -> bool {
+    match ty {
+        Type::Function(_, _) | Type::Forall(_, _) | Type::Lam(_, _) => true,
+        Type::Union(variants) => variants.len() > 1,
+        // A juxtaposed application is left-associative, so it needs
+        // parentheses only in argument position; sugared constructors
+        // (`[a]`, `IO(a)`, `Lens(a, b)`, …) are self-delimiting.
+        Type::App(_, _) => is_arg && renders_by_juxtaposition(ty),
+        _ => false,
+    }
+}
+
+/// Whether an application renders by juxtaposition (`m a`) rather than
+/// through one of the self-delimiting sugared forms in [`fmt_app`].
+fn renders_by_juxtaposition(ty: &Type) -> bool {
+    let Type::App(head, _) = ty else {
+        return false;
+    };
+    match head.as_ref() {
+        Type::Con(name) => !matches!(
+            name.as_str(),
+            "List" | "IO" | "block" | "NonEmpty" | "Random" | "State"
+        ),
+        Type::App(inner, _) => !matches!(
+            inner.as_ref(),
+            Type::Con(name) if matches!(name.as_str(), "Lens" | "Traversal" | "dict")
+        ),
+        _ => true,
+    }
 }
 
 // ── humanise ─────────────────────────────────────────────────────────────────
@@ -1513,5 +1561,36 @@ mod tests {
         } else {
             panic!("expected Record");
         }
+    }
+
+    /// A juxtaposed application whose argument is itself an application, a
+    /// function or a union renders with parentheses, so the rendering parses
+    /// back to the same type (eu-oaz72.183).
+    #[test]
+    fn display_nested_application_round_trips() {
+        use crate::core::typecheck::parse::parse_type;
+        for src in [
+            "m (m a) → m a",
+            "m (a → b)",
+            "m (a | b)",
+            "f a b",
+            "m [a]",
+            "m IO(a)",
+            "[m (m a)]",
+            "m (n (m a))",
+        ] {
+            let parsed = parse_type(src).unwrap();
+            let rendered = parsed.to_string();
+            assert_eq!(
+                parse_type(&rendered).unwrap(),
+                parsed,
+                "{src} rendered as {rendered}, which parses differently"
+            );
+        }
+        let nested = Type::App(
+            Box::new(hk_var("m")),
+            Box::new(Type::App(Box::new(hk_var("m")), Box::new(var("a")))),
+        );
+        assert_eq!(nested.to_string(), "m (m a)");
     }
 }

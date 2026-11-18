@@ -36,10 +36,10 @@ use crate::{
             error::{CallSite, TypeWarning},
             parse,
             subtype::{is_abstract_hkt_app, is_consistent, is_subtype},
-            types::{unfold_mu, Constraint, Type, TypeScheme, TypeVarId},
+            types::{unfold_mu, Constraint, Kind, Type, TypeScheme, TypeVarId},
             unify::{
-                apply_subst, freshen, freshen_forall, freshen_with_constraints, infer_scheme,
-                unify, Substitution,
+                apply_subst, free_higher_kinded_vars, freshen, freshen_forall,
+                freshen_with_constraints, infer_scheme, unify, Substitution,
             },
         },
     },
@@ -1096,6 +1096,7 @@ impl Checker {
                     let name = &b.name;
                     let value = &b.expr;
                     let synthesised = self.synthesise_binding_value(value);
+                    let synthesised = self.resolve_monad_constructors(value, synthesised);
                     let placeholder = TypeScheme::mono(Type::Any);
                     if let Some(frame) = self.scope_stack.front_mut() {
                         if frame.get(name) == Some(&placeholder) {
@@ -1192,6 +1193,116 @@ impl Checker {
             // ── Everything else ───────────────────────────────────────────────
             _ => Type::Any,
         }
+    }
+
+    /// Resolve the type constructor of a monad namespace binding
+    /// (eu-oaz72.183, eu-oaz72.171).
+    ///
+    /// `monad(m)` has type `forall (m :: * → *). {..} → {bind: …, map: …}`,
+    /// and its argument never constrains `m`, so a binding such as
+    /// `io: monad{…}` synthesises a record whose members mention a free
+    /// higher-kinded variable.  Left free, `m` is solved afresh at each use:
+    /// either it stays abstract (so misuse such as `io.map(inc, 41)` is
+    /// not reported) or higher-order unification guesses a constant functor
+    /// from the first argument (`m a ~ number` gives `m := λx. number`, so
+    /// `let.bind(1, …)` is typed `number`).
+    ///
+    /// Here, at the binding where `m` escapes, it is fixed once:
+    ///
+    /// - from the binding's `monad: "T"` metadata when present, as `λa. T`
+    ///   (see [`Self::monad_metadata_constructor`]);
+    /// - otherwise (`monad: true`, or no metadata) as `λa. any`: the monad's
+    ///   wrapper is unknown, so its members are gradual.
+    ///
+    /// Only record-typed bindings (monad namespaces) are affected; functions
+    /// and other higher-kinded polymorphic code keep their variables.
+    fn resolve_monad_constructors(&mut self, value: &RcExpr, ty: Type) -> Type {
+        if !matches!(ty, Type::Record { .. }) {
+            return ty;
+        }
+        let hk_vars = free_higher_kinded_vars(&ty);
+        if hk_vars.is_empty() {
+            return ty;
+        }
+        // The declared wrapper describes one `* → *` constructor; it is
+        // used only when exactly one such variable escapes.
+        let declared = match hk_vars.as_slice() {
+            [(_, kind)] if *kind == Kind::star_to_star() => self.monad_metadata_constructor(value),
+            _ => None,
+        };
+        let mut subst = Substitution::new();
+        for (id, kind) in &hk_vars {
+            let ctor = match &declared {
+                Some(ctor) => ctor.clone(),
+                None => self.any_constructor(kind),
+            };
+            subst.insert(id.clone(), ctor);
+        }
+        apply_subst(&ty, &subst)
+    }
+
+    /// The type constructor `λa. T` declared by a binding's `monad: "T"`
+    /// (or `monad: s"T"`) metadata, or `None` when there is no such string.
+    ///
+    /// `a` is the element variable (the only free variable, if `a` is not
+    /// used); any other free variable in `T`, such as `stream` in
+    /// `stream → {value: a, rest: stream}`, stands for a type the
+    /// metadata does not fix and becomes `any`.
+    fn monad_metadata_constructor(&mut self, value: &RcExpr) -> Option<Type> {
+        let Expr::Meta(_, _, meta) = &*value.inner else {
+            return None;
+        };
+        let Expr::Block(_, block) = &*meta.inner else {
+            return None;
+        };
+        let type_str = extract_string_literal(block.get("monad")?)?;
+        let parsed = match parse::parse_type(&type_str) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                self.warn_invalid_annotation(meta.smid(), &e);
+                return None;
+            }
+        };
+        let wrapper = self.resolve_aliases_in_type(parsed);
+        let free = infer_scheme(wrapper.clone()).vars;
+        let element = TypeVarId("a".to_string());
+        let element = if free.contains(&element) {
+            Some(element)
+        } else if let [only] = free.as_slice() {
+            Some(only.clone())
+        } else {
+            None
+        };
+        let param = self.fresh_type_var_id();
+        let mut subst = Substitution::new();
+        for v in free {
+            let replacement = if Some(&v) == element.as_ref() {
+                Type::var(param.clone())
+            } else {
+                Type::Any
+            };
+            subst.insert(v, replacement);
+        }
+        Some(Type::Lam(param, Box::new(apply_subst(&wrapper, &subst))))
+    }
+
+    /// A type constructor of the given kind that ignores its arguments and
+    /// yields `any`, e.g. `λx. any` for `* → *`.
+    fn any_constructor(&mut self, kind: &Kind) -> Type {
+        match kind {
+            Kind::Star => Type::Any,
+            Kind::Arrow(_, result) => {
+                let param = self.fresh_type_var_id();
+                Type::Lam(param, Box::new(self.any_constructor(result)))
+            }
+        }
+    }
+
+    /// A fresh type-variable name from the checker's counter.
+    fn fresh_type_var_id(&mut self) -> TypeVarId {
+        let id = TypeVarId(format!("_t{}", self.var_counter));
+        self.var_counter += 1;
+        id
     }
 
     /// Synthesise the type of a let-binding value, giving priority to any

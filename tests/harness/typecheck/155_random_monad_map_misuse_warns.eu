@@ -1,0 +1,2 @@
+` "random.map on a non-action warns: m is resolved from the monad: metadata on random (eu-oaz72.183)."
+mapped: random.map(inc, 41)

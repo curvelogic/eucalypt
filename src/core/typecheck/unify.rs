@@ -846,6 +846,25 @@ pub fn infer_scheme(ty: Type) -> TypeScheme {
     }
 }
 
+/// The free type variables of `ty` whose kind is not `*` (higher-kinded
+/// variables such as `m :: * → *`), each with its kind, in order of first
+/// appearance.
+pub fn free_higher_kinded_vars(ty: &Type) -> Vec<(TypeVarId, Kind)> {
+    let mut vars: Vec<TypeVarId> = Vec::new();
+    let mut seen: HashSet<TypeVarId> = HashSet::new();
+    collect_free_vars(ty, &mut vars, &mut seen);
+    // `collect_free_vars` scopes `seen` per binder, so a variable free under
+    // several `forall`s is listed once per occurrence there.
+    let mut unique: HashSet<TypeVarId> = HashSet::new();
+    vars.retain(|v| unique.insert(v.clone()));
+    vars.into_iter()
+        .filter_map(|v| {
+            let kind = var_kind_in_type(&v, ty);
+            (kind != Kind::Star).then_some((v, kind))
+        })
+        .collect()
+}
+
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 /// Collect all free type variables from `ty` in order of first appearance.
@@ -1406,6 +1425,45 @@ mod tests {
         assert!(
             !matches!(m_bound, Some(Type::Lam(_, _))),
             "m should NOT be bound to a Lam when rhs is a Var, got {m_bound:?}"
+        );
+    }
+
+    #[test]
+    fn free_higher_kinded_vars_lists_each_once() {
+        // `{p: forall a. m a, q: forall b. m b → n b}`: `m` is free under two
+        // binders but listed once; `a`, `b` are bound and `*`-kinded.
+        let m = Type::hk_var(vid("m"), Kind::star_to_star());
+        let n = Type::hk_var(vid("n"), Kind::star_to_star());
+        let app = |h: &Type, x: &str| Type::App(Box::new(h.clone()), Box::new(var(x)));
+        let mut fields = std::collections::BTreeMap::new();
+        fields.insert(
+            "p".to_string(),
+            FieldPresence::Required(Type::Forall(
+                vec![(vid("a"), Kind::Star)],
+                Box::new(app(&m, "a")),
+            )),
+        );
+        fields.insert(
+            "q".to_string(),
+            FieldPresence::Required(Type::Forall(
+                vec![(vid("b"), Kind::Star)],
+                Box::new(Type::Function(
+                    Box::new(app(&m, "b")),
+                    Box::new(app(&n, "b")),
+                )),
+            )),
+        );
+        let record = Type::Record {
+            fields,
+            open: false,
+            rows: vec![],
+        };
+        assert_eq!(
+            free_higher_kinded_vars(&record),
+            vec![
+                (vid("m"), Kind::star_to_star()),
+                (vid("n"), Kind::star_to_star())
+            ]
         );
     }
 }

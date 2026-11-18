@@ -4752,10 +4752,39 @@ pub fn test_typecheck_133_prelude_override_type_mismatch() {
 }
 
 /// Derived monad combinators on identity-like monads and `random` check
-/// clean: an abstract `m a` is gradual against a concrete type (eu-oaz72.170).
+/// clean: an abstract `m a` is gradual against a concrete type (eu-oaz72.170);
+/// monadic blocks and monad results used as blocks check clean (eu-oaz72.171).
 #[test]
 pub fn test_typecheck_134_identity_monad_derived_no_warning() {
     run_typecheck_test("134_identity_monad_derived_no_warning.eu");
+}
+
+/// `io.map` on a non-IO argument warns: `m` is resolved to `IO` from the
+/// `monad:` metadata on `io` (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_154_io_monad_map_misuse_warns() {
+    run_typecheck_test("154_io_monad_map_misuse_warns.eu");
+}
+
+/// `random.map` on a non-action warns: `m` is resolved from the `monad:`
+/// metadata on `random` (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_155_random_monad_map_misuse_warns() {
+    run_typecheck_test("155_random_monad_map_misuse_warns.eu");
+}
+
+/// `random.join` on a string warns: its parameter is `m (m a)`, which the
+/// type parser and renderer must keep nested (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_156_random_monad_join_misuse_warns() {
+    run_typecheck_test("156_random_monad_join_misuse_warns.eu");
+}
+
+/// A user monad declaring `monad: s"a"` is the identity monad, so its
+/// derived `map` is checked precisely (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_157_metadata_identity_monad_map_misuse_warns() {
+    run_typecheck_test("157_metadata_identity_monad_map_misuse_warns.eu");
 }
 
 /// A list-destructuring parameter with a block element is not a block
