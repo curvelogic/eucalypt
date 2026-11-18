@@ -16,7 +16,7 @@ use serde_json::Number;
 use super::{
     alloc::{MutatorScope, StgObject},
     array::Array,
-    collect::{CollectorHeapView, CollectorScope, GcScannable, OpaqueHeapBytes, ScanPtr},
+    collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr},
     dict::{Dict, DictKey, Tree},
     number::ExactNum,
     string::HeapString,
@@ -112,14 +112,7 @@ pub(crate) fn scan_primitive_array<'a>(
     marker: &mut CollectorHeapView<'a>,
     out: &mut Vec<ScanPtr<'a>>,
 ) {
-    if marker.mark_array(elements) {
-        if let Some(backing) = elements.allocated_data() {
-            out.push(ScanPtr::from_non_null(
-                scope,
-                backing.cast::<OpaqueHeapBytes>(),
-            ));
-        }
-    }
+    marker.scan_array_backing(elements, scope, out);
     if has_strings {
         for elem in elements.as_slice() {
             elem.scan(scope, marker, out);
@@ -135,13 +128,7 @@ pub(crate) fn update_primitive_array(
     has_strings: bool,
     heap: &CollectorHeapView<'_>,
 ) {
-    if let Some(old_ptr) = elements.allocated_data() {
-        if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
-            // SAFETY: new_ptr is the evacuated copy of the same backing
-            // allocation, holding `len` initialised elements.
-            unsafe { elements.set_backing_ptr(new_ptr.cast()) };
-        }
-    }
+    heap.update_backing(elements);
     if has_strings {
         for elem in elements.as_mut_slice() {
             elem.update(heap);

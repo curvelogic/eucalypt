@@ -42,13 +42,7 @@ impl GcScannable for HeapString {
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
-        if let Some(old_ptr) = self.data.allocated_data() {
-            if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
-                // SAFETY: new_ptr is a valid evacuated copy of the same
-                // backing byte allocation.
-                unsafe { self.data.set_backing_ptr(new_ptr.cast()) };
-            }
-        }
+        heap.update_backing(&mut self.data);
     }
 }
 

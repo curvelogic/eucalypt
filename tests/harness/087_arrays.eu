@@ -247,6 +247,23 @@ heap-build-checks: {
   ]
 }
 
+` "A reshaped array shares its source's data backing (eu-oaz72.163): both read correctly after allocation churn has run collections, and setting an element of either copies rather than writing through"
+reshape-share-checks: {
+  big: arr.from-flat([300, 100], range(0, 30000))
+  r: big arr.reshape[100, 300]
+  churn: range(0, 200000) map(_ * 2) foldl-strict(+, 0)
+  trues: [
+    (r arr.get[99, 299]) = 29999,
+    churn = 39999800000,
+    (r arr.get[50, 7]) = 15007,
+    (big arr.get[150, 7]) = 15007,
+    (r arr.set([0, 0], -1) arr.get[0, 0]) = -1,
+    (big arr.get[0, 0]) = 0,
+    (r arr.get[0, 0]) = 0,
+    (r arr.reshape[30000] arr.get[29999]) = 29999
+  ]
+}
+
 ` "Regression coverage: computed (non-literal) arguments to the array wrappers (not shown to gate a removed force)."
 computed-checks: {
   n(x): x + 0
@@ -276,7 +293,8 @@ pass: [
   neighbours-checks.trues all-true?,
   integral-index-checks.trues all-true?,
   edge-checks.trues all-true?,
-  heap-build-checks.trues all-true?
+  heap-build-checks.trues all-true?,
+  reshape-share-checks.trues all-true?
 ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)

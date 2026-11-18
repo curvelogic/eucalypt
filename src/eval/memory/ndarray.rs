@@ -17,7 +17,7 @@ use ndarray::{ArrayViewD, IxDyn};
 use super::{
     alloc::{ScopedAllocator, StgObject},
     array::Array,
-    collect::{CollectorHeapView, CollectorScope, GcScannable, OpaqueHeapBytes, ScanPtr},
+    collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr},
 };
 use crate::eval::error::ExecutionError;
 
@@ -29,35 +29,6 @@ pub struct HeapNdArray {
 
 impl StgObject for HeapNdArray {}
 
-/// Mark a scalar heap array's backing buffer and queue it as opaque
-/// bytes so it can be evacuated.
-fn scan_scalar_array<'a, T: Clone>(
-    arr: &'a Array<T>,
-    scope: &'a dyn CollectorScope,
-    marker: &mut CollectorHeapView<'a>,
-    out: &mut Vec<ScanPtr<'a>>,
-) {
-    if marker.mark_array(arr) {
-        if let Some(backing) = arr.allocated_data() {
-            out.push(ScanPtr::from_non_null(
-                scope,
-                backing.cast::<OpaqueHeapBytes>(),
-            ));
-        }
-    }
-}
-
-/// Rewrite a scalar heap array's backing pointer if it was evacuated.
-fn update_scalar_array<T: Clone>(arr: &mut Array<T>, heap: &CollectorHeapView<'_>) {
-    if let Some(old_ptr) = arr.allocated_data() {
-        if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
-            // SAFETY: new_ptr is the evacuated copy of the same backing
-            // allocation.
-            unsafe { arr.set_backing_ptr(new_ptr.cast()) };
-        }
-    }
-}
-
 impl GcScannable for HeapNdArray {
     fn scan<'a>(
         &'a self,
@@ -65,13 +36,13 @@ impl GcScannable for HeapNdArray {
         marker: &mut CollectorHeapView<'a>,
         out: &mut Vec<ScanPtr<'a>>,
     ) {
-        scan_scalar_array(&self.shape, scope, marker, out);
-        scan_scalar_array(&self.data, scope, marker, out);
+        marker.scan_array_backing(&self.shape, scope, out);
+        marker.scan_array_backing(&self.data, scope, out);
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
-        update_scalar_array(&mut self.shape, heap);
-        update_scalar_array(&mut self.data, heap);
+        heap.update_backing(&mut self.shape);
+        heap.update_backing(&mut self.data);
     }
 }
 
@@ -185,14 +156,26 @@ impl HeapNdArray {
         .map(Some)
     }
 
-    /// A copy reshaped to the given dimensions, or `None` if the element
+    /// The array reshaped to the given dimensions, or `None` if the element
     /// counts disagree.
+    ///
+    /// Only the shape is allocated: the result shares this array's data
+    /// backing. That is sound because a `HeapNdArray`'s data is never
+    /// written after construction (every operation builds a fresh buffer),
+    /// and the collector traces a shared backing once and forwards both
+    /// owners to the same evacuated copy.
     pub fn reshape<'guard, A: ScopedAllocator<'guard>>(
         &self,
         mem: &A,
         new_shape: &[usize],
     ) -> Result<Option<Self>, ExecutionError> {
-        Self::from_flat(mem, new_shape, self.data.as_slice())
+        if new_shape.iter().product::<usize>() != self.len() {
+            return Ok(None);
+        }
+        Ok(Some(HeapNdArray {
+            shape: Array::try_from_slice(mem, new_shape)?,
+            data: self.data.clone(),
+        }))
     }
 
     /// The transpose (axes reversed), stored row-major.
@@ -258,7 +241,6 @@ impl HeapNdArray {
     /// within bounds (out-of-bounds neighbours are silently skipped).
     pub fn neighbours_values(&self, coords: &[usize], offsets: &[Vec<i64>]) -> Vec<f64> {
         let shape = self.shape();
-        let view = self.view();
         offsets
             .iter()
             .filter_map(|offset| {
@@ -280,7 +262,7 @@ impl HeapNdArray {
                         }
                     })
                     .collect::<Option<Vec<usize>>>()?;
-                view.get(IxDyn(&neighbour)).copied()
+                self.get(&neighbour)
             })
             .collect()
     }
@@ -375,6 +357,45 @@ mod tests {
         assert_eq!(b.get(&[0, 0]), Some(1.0));
         assert_eq!(b.get(&[2, 1]), Some(6.0));
         assert!(a.reshape(&view, &[4, 2]).unwrap().is_none());
+    }
+
+    /// eu-oaz72.163: reshape allocates only the shape; the data backing is
+    /// shared with the source, and a later `with_set` on either copies.
+    #[test]
+    fn reshape_shares_data_backing() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let a = heap_arr(&view, &[2, 3], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let b = a.reshape(&view, &[3, 2]).unwrap().unwrap();
+        assert!(a.data.allocated_data().is_some());
+        assert_eq!(a.data.allocated_data(), b.data.allocated_data());
+        assert_ne!(a.shape.allocated_data(), b.shape.allocated_data());
+        let c = b.with_set(&view, &[0, 0], 9.0).unwrap().unwrap();
+        assert_ne!(c.data.allocated_data(), b.data.allocated_data());
+        assert_eq!(a.get(&[0, 0]), Some(1.0));
+        assert_eq!(b.get(&[0, 0]), Some(1.0));
+        assert_eq!(c.get(&[0, 0]), Some(9.0));
+    }
+
+    #[test]
+    fn neighbours_values_skips_out_of_bounds_and_wrong_rank() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let a = heap_arr(&view, &[2, 3], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let offsets = vec![
+            vec![0, 1],
+            vec![1, 0],
+            vec![1, 2],
+            vec![-1, 0],
+            vec![0, 3],
+            vec![0],
+            vec![i64::MAX, 0],
+        ];
+        assert_eq!(a.neighbours_values(&[0, 0], &offsets), vec![2.0, 4.0, 6.0]);
+        assert_eq!(
+            a.neighbours_values(&[1, 2], &[vec![-1, -2], vec![0, -1]]),
+            vec![1.0, 5.0]
+        );
     }
 
     #[test]

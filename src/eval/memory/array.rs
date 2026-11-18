@@ -14,6 +14,47 @@ use super::{
     syntax::RefPtr,
 };
 
+/// Storage held in one separately allocated heap buffer, which the
+/// evacuating collector may move: a [`RawArray`] or an [`Array`].
+///
+/// The collector's update phase rewrites the buffer pointer through this
+/// trait (`CollectorHeapView::update_backing`), so every such container
+/// is fixed up the same way.
+pub trait HeapBacked {
+    /// The backing buffer, or `None` when nothing is allocated.
+    fn allocated_data(&self) -> Option<RefPtr<u8>>;
+
+    /// Point at the evacuated copy of the backing buffer.
+    ///
+    /// # Safety
+    ///
+    /// `new_ptr` must be a valid heap allocation holding a copy of the
+    /// current backing buffer: the same capacity and element layout.
+    unsafe fn set_backing_bytes(&mut self, new_ptr: RefPtr<u8>);
+}
+
+impl<T: Sized> HeapBacked for RawArray<T> {
+    fn allocated_data(&self) -> Option<RefPtr<u8>> {
+        RawArray::allocated_data(self)
+    }
+
+    unsafe fn set_backing_bytes(&mut self, new_ptr: RefPtr<u8>) {
+        // SAFETY: the caller's contract is `set_backing_ptr`'s.
+        unsafe { self.set_backing_ptr(new_ptr.cast()) }
+    }
+}
+
+impl<T: Sized + Clone> HeapBacked for Array<T> {
+    fn allocated_data(&self) -> Option<RefPtr<u8>> {
+        Array::allocated_data(self)
+    }
+
+    unsafe fn set_backing_bytes(&mut self, new_ptr: RefPtr<u8>) {
+        // SAFETY: the caller's contract is `set_backing_ptr`'s.
+        unsafe { self.set_backing_ptr(new_ptr.cast()) }
+    }
+}
+
 /// Simple growable backing array
 ///
 /// Provides memory for [`Array<T>`]
@@ -55,57 +96,36 @@ impl<T: Sized> RawArray<T> {
     }
 
     /// Initialise by copying from a slice
+    ///
+    /// Panics on allocation failure; see [`Self::try_with_data`].
     pub fn with_data<'guard, A: ScopedAllocator<'guard>>(mem: &A, data: &[T]) -> Self {
-        let new_ptr = Self::alloc(mem, data.len());
-        if let Some(new) = new_ptr {
-            // SAFETY: The copy is valid because:
-            // - `data.as_ptr()` points to valid, initialised memory
-            // - `new.as_ptr()` points to freshly allocated heap memory
-            // - Both regions have size `data.len() * size_of::<T>()` bytes
-            // - The regions do not overlap (new is freshly allocated)
-            // - T is Sized, so element size is well-defined
-            unsafe {
-                std::ptr::copy_nonoverlapping(data.as_ptr(), new.as_ptr(), data.len());
-            }
-        }
-
-        RawArray {
-            capacity: data.len(),
-            ptr: new_ptr,
-        }
+        Self::try_with_data(mem, data).unwrap_or_else(|e| panic!("Array: allocation failed: {e}"))
     }
 
     /// Initialise by copying from a slice, returning an error rather
     /// than panicking when the heap cannot satisfy the allocation.
     ///
     /// Used for user-sized storage (set, vec and n-d array contents),
-    /// where exhausting the heap limit is a reachable condition.
+    /// where exhausting the heap limit, or the per-allocation cap (see
+    /// [`Self::try_alloc`]), is a reachable condition.
     pub fn try_with_data<'guard, A: ScopedAllocator<'guard>>(
         mem: &A,
         data: &[T],
     ) -> Result<Self, ExecutionError> {
-        if data.is_empty() {
-            return Ok(RawArray::new());
-        }
-        let capacity_bytes = data.len().checked_mul(size_of::<T>()).ok_or_else(|| {
-            ExecutionError::from(super::heap::HeapError::InvalidAllocationSize {
-                requested_size: usize::MAX,
-                max_size: isize::MAX as usize,
-            })
-        })?;
-        let raw = mem.alloc_bytes_uninit(capacity_bytes)?;
-        let new = RefPtr::new(raw.as_ptr() as *mut T).expect("allocation returned null");
-        // SAFETY: The copy is valid because:
-        // - `data.as_ptr()` points to valid, initialised memory
-        // - `new` points to freshly allocated heap memory of
-        //   `data.len() * size_of::<T>()` bytes
-        // - The regions do not overlap (new is freshly allocated)
-        unsafe {
-            std::ptr::copy_nonoverlapping(data.as_ptr(), new.as_ptr(), data.len());
+        let ptr = Self::try_alloc(mem, data.len())?;
+        if let Some(new) = ptr {
+            // SAFETY: The copy is valid because:
+            // - `data.as_ptr()` points to valid, initialised memory
+            // - `new` points to freshly allocated heap memory of
+            //   `data.len() * size_of::<T>()` bytes
+            // - The regions do not overlap (new is freshly allocated)
+            unsafe {
+                std::ptr::copy_nonoverlapping(data.as_ptr(), new.as_ptr(), data.len());
+            }
         }
         Ok(RawArray {
             capacity: data.len(),
-            ptr: Some(new),
+            ptr,
         })
     }
 
@@ -140,19 +160,34 @@ impl<T: Sized> RawArray<T> {
         self.capacity
     }
 
+    /// Allocate an uninitialised buffer for `capacity` elements, panicking
+    /// on failure.
     fn alloc<'guard, A: ScopedAllocator<'guard>>(mem: &A, capacity: usize) -> Option<RefPtr<T>> {
+        Self::try_alloc(mem, capacity).unwrap_or_else(|e| panic!("Array: allocation failed: {e}"))
+    }
+
+    /// Allocate an uninitialised buffer for `capacity` elements, or `None`
+    /// for an empty one.
+    ///
+    /// One heap allocation holds at most `u32::MAX` bytes (the header
+    /// records its size in 32 bits), so a single container's storage is
+    /// capped at 4 GiB whatever the heap limit. A larger request,
+    /// including one whose byte size overflows `usize`, is an
+    /// `InvalidAllocationSize` error naming that cap, not a panic.
+    fn try_alloc<'guard, A: ScopedAllocator<'guard>>(
+        mem: &A,
+        capacity: usize,
+    ) -> Result<Option<RefPtr<T>>, ExecutionError> {
         if capacity == 0 {
-            None
-        } else {
-            let capacity_bytes = capacity
-                .checked_mul(size_of::<T>())
-                .unwrap_or_else(|| panic!("Array: capacity overflow: {capacity} elements"));
-            RefPtr::new(
-                mem.alloc_bytes_uninit(capacity_bytes)
-                    .unwrap_or_else(|e| panic!("Array: allocation failed: {e}"))
-                    .as_ptr() as *mut T,
-            )
+            return Ok(None);
         }
+        let capacity_bytes = capacity.checked_mul(size_of::<T>()).ok_or_else(|| {
+            ExecutionError::from(super::heap::HeapError::InvalidAllocationSize {
+                requested_size: usize::MAX,
+                max_size: u32::MAX as usize,
+            })
+        })?;
+        Ok(Some(mem.alloc_bytes_uninit(capacity_bytes)?.cast::<T>()))
     }
 
     /// Pointer to the backing array
@@ -248,20 +283,10 @@ impl<T: Sized + Clone> Array<T> {
         T: Copy,
         I: IntoIterator<Item = T>,
     {
-        if len == 0 {
-            return Ok(Array {
-                length: 0,
-                data: RawArray::new(),
-            });
-        }
-        let bytes = len.checked_mul(size_of::<T>()).ok_or_else(|| {
-            ExecutionError::from(super::heap::HeapError::InvalidAllocationSize {
-                requested_size: usize::MAX,
-                max_size: isize::MAX as usize,
-            })
-        })?;
-        let raw = mem.alloc_bytes_uninit(bytes)?;
-        let base = RefPtr::new(raw.as_ptr() as *mut T).expect("allocation returned null");
+        // Only an empty array allocates nothing.
+        let Some(base) = RawArray::<T>::try_alloc(mem, len)? else {
+            return Ok(Array::default());
+        };
         let mut written = 0usize;
         for item in iter.into_iter().take(len) {
             // SAFETY: `written < len`, so the slot lies inside the
@@ -531,6 +556,26 @@ pub mod tests {
     use crate::eval::memory::{heap::Heap, mutator::MutatorHeapView};
 
     use super::*;
+
+    /// eu-oaz72.53: an oversized request is an error, not a panic, whether
+    /// its byte size overflows `usize` or only the 4 GiB allocation cap.
+    #[test]
+    pub fn test_try_alloc_rejects_oversized_requests() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        assert!(RawArray::<u64>::try_alloc(&view, usize::MAX / 2).is_err());
+        assert!(RawArray::<u64>::try_alloc(&view, (u32::MAX as usize) / 8 + 1).is_err());
+        assert!(RawArray::<u64>::try_alloc(&view, 0).unwrap().is_none());
+        assert!(RawArray::<u64>::try_alloc(&view, 4).unwrap().is_some());
+        let empty = RawArray::<u64>::try_with_data(&view, &[]).unwrap();
+        assert_eq!(empty.capacity(), 0);
+        assert!(empty.as_ptr().is_none());
+        let arr = Array::<u64>::try_from_exact_iter(&view, 3, [1, 2, 3]).unwrap();
+        assert_eq!(arr.as_slice(), &[1, 2, 3]);
+        assert!(Array::<u64>::try_from_exact_iter(&view, 0, [])
+            .unwrap()
+            .is_empty());
+    }
 
     #[test]
     pub fn test_simple_array_ops() {

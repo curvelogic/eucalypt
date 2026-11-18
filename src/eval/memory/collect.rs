@@ -9,7 +9,7 @@ use std::{collections::VecDeque, mem::size_of, ptr::NonNull};
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
 use super::{
-    array::Array,
+    array::{Array, HeapBacked},
     header::AllocHeader,
     heap::{BlockBaseSet, Heap},
 };
@@ -229,6 +229,33 @@ impl<'guard> CollectorHeapView<'guard> {
     }
 }
 
+impl<'a> CollectorHeapView<'a> {
+    /// Mark a heap array's backing buffer and, if it was not already
+    /// marked, queue it as opaque bytes so the evacuating collector can
+    /// move it (the backing has its own header but no tracing of its own).
+    ///
+    /// Returns whether the backing was newly marked. A caller whose
+    /// elements hold heap pointers traces them only then: a backing shared
+    /// with another array (`Array::clone_with_length`) is traced once.
+    pub fn scan_array_backing<T: Clone>(
+        &mut self,
+        arr: &Array<T>,
+        scope: &'a dyn CollectorScope,
+        out: &mut Vec<ScanPtr<'a>>,
+    ) -> bool {
+        let newly = self.mark_array(arr);
+        if newly {
+            if let Some(backing) = arr.allocated_data() {
+                out.push(ScanPtr::from_non_null(
+                    scope,
+                    backing.cast::<OpaqueHeapBytes>(),
+                ));
+            }
+        }
+        newly
+    }
+}
+
 impl CollectorHeapView<'_> {
     pub fn reset(&mut self) {
         self.heap.reset_region_marks();
@@ -383,6 +410,22 @@ impl CollectorHeapView<'_> {
 
     pub fn is_marked<T>(&self, obj: NonNull<T>) -> bool {
         self.heap.is_marked(obj)
+    }
+
+    /// Rewrite a container's backing pointer if the collector evacuated
+    /// its buffer: the update-phase half of [`Self::scan_array_backing`]
+    /// (and of `mark_raw_bytes` for a `RawArray`).
+    ///
+    /// Callers that hold traced elements update them after this, so they
+    /// read the elements at the new location.
+    pub fn update_backing<B: HeapBacked>(&self, backed: &mut B) {
+        if let Some(old_ptr) = backed.allocated_data() {
+            if let Some(new_ptr) = self.forwarded_to(old_ptr) {
+                // SAFETY: `new_ptr` is the evacuated copy of the same backing
+                // allocation, with the same capacity and element layout.
+                unsafe { backed.set_backing_bytes(new_ptr) };
+            }
+        }
     }
 
     pub fn sweep(&mut self) {
@@ -1044,13 +1087,7 @@ pub mod tests {
             match self {
                 TestObj::Leaf(_) | TestObj::Unupdated(_) | TestObj::StaleBytes(_) => {}
                 TestObj::StaleElements(arr) => {
-                    if let Some(old_ptr) = arr.allocated_data() {
-                        if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
-                            // SAFETY: new_ptr is a valid evacuated copy of
-                            // the same backing allocation.
-                            unsafe { arr.set_backing_ptr(new_ptr.cast()) };
-                        }
-                    }
+                    heap.update_backing(arr);
                 }
                 TestObj::StaleBacking(arr) => {
                     for p in arr.iter_mut() {
@@ -1083,13 +1120,7 @@ pub mod tests {
         marker: &mut CollectorHeapView<'a>,
         out: &mut Vec<ScanPtr<'a>>,
     ) {
-        if marker.mark_array(arr) {
-            if let Some(backing_ptr) = arr.allocated_data() {
-                out.push(ScanPtr::from_non_null(
-                    scope,
-                    backing_ptr.cast::<OpaqueHeapBytes>(),
-                ));
-            }
+        if marker.scan_array_backing(arr, scope, out) {
             for p in arr.iter() {
                 if marker.mark(*p) {
                     out.push(ScanPtr::from_non_null(scope, *p));
@@ -1099,13 +1130,7 @@ pub mod tests {
     }
 
     fn update_ptr_array(arr: &mut Array<RefPtr<TestObj>>, heap: &CollectorHeapView<'_>) {
-        if let Some(old_ptr) = arr.allocated_data() {
-            if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
-                // SAFETY: new_ptr is a valid evacuated copy of the same
-                // backing allocation.
-                unsafe { arr.set_backing_ptr(new_ptr.cast()) };
-            }
-        }
+        heap.update_backing(arr);
         for p in arr.iter_mut() {
             if let Some(new) = heap.forwarded_to(*p) {
                 *p = new;
