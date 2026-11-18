@@ -2598,7 +2598,8 @@ for: monad({bind(m, f): m mapcat(f), return(v): [v]})
 ` { doc: "`as-spec(t)` - convert type-data to a match?-compatible pattern.
          Primitive types become predicates, records become block patterns,
          lists become list predicates, unions become disjunctive predicates,
-         partials accept null or the inner type."
+         partials accept null or the inner type, and literal types match
+         exactly their one string or symbol."
     type: s"any → any" }
 as-spec(t):
   { td: type-data?(t) then(__TYPE_TO_DATA(t), t)
@@ -2625,6 +2626,8 @@ as-spec(t):
     partial-spec(inner, v): (v null?) ∨ (v match?(inner to-spec-td))
 
     tuple-spec(ts): match?(ts map(to-spec-td))
+
+    lit-spec(lit, v): v = lit
 
     prefix-list-spec(prefix, tail, v): {
       p-specs: prefix map(to-spec-td)
@@ -2656,6 +2659,8 @@ as-spec(t):
         , tag = :t-tuple   => tuple-spec(rest)
         , tag = :t-prefix-list => prefix-list-spec(rest first, rest second)
         , tag = :t-record  => record-spec(rest first)
+        , tag = :t-lit-str => lit-spec(rest first)
+        , tag = :t-lit-sym => lit-spec(rest first)
         , tag = :t-forall  => to-spec-td(rest second)
         , any?
         ]

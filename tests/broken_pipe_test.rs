@@ -129,8 +129,11 @@ fn piping_into_a_short_reader_exits_quietly() {
 // The tests above cover rendered documents. `eu test`, the `eu dump` phases,
 // `eu list-targets`, `eu doc`, `eu fmt` and `eu error` print to stdout
 // themselves, and used `print!`/`println!`, which panic on EPIPE:
-// `eu test FILE | head -1` aborted with a backtrace and exit 101. Each must
-// now end as rendering does on a closed pipe: exit 0, nothing on stderr.
+// `eu test FILE | head -1` aborted with a backtrace and exit 101. None may
+// panic on a closed pipe, and each ends quietly with nothing on stderr. The
+// exit code is what the command would have returned with a reader: 0 for
+// the commands that only print, and for `eu test` the suite's verdict, so a
+// failing suite still exits 1.
 // ---------------------------------------------------------------------------
 
 /// A tiny passing test file, so `eu test` prints a result line and the
