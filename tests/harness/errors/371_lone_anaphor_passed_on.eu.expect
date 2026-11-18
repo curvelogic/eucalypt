@@ -1,0 +1,2 @@
+exit: 1
+stderr: "(?s)errors[/\\]371_lone_anaphor_passed_on\.eu:3:6.*note: in .inc\(_\)., ._. is the whole argument"

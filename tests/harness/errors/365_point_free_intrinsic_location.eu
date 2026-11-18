@@ -1,0 +1,2 @@
+` "An intrinsic passed point-free that fails later is blamed at its own use site, not left without a location (eu-oaz72.119)"
+x: "ab" str.letters map(num)
