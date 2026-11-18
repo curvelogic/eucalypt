@@ -5662,6 +5662,11 @@ pub fn test_error_376_infinite_interval_merge_intervals() {
     run_error_test(&error_opts("376_infinite_interval_merge_intervals.eu"));
 }
 
+#[test]
+pub fn test_error_377_block_pattern_non_name_field() {
+    run_error_test(&error_opts("377_block_pattern_non_name_field.eu"));
+}
+
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).
 #[test]
 pub fn test_error_336_non_integer_combinations() {

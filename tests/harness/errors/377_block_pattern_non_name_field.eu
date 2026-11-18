@@ -1,0 +1,3 @@
+` "Error test: content after a renamed field in a block pattern that is not a shorthand name (eu-ioz21.14)"
+f{k: kk, 3}: kk
+RESULT: f{k: 1}

@@ -88,6 +88,20 @@ result: describe({x: 1  y: 5})
 result: x=1 h=5
 ```
 
+Fields may come in any order. A shorthand field after a rename needs a
+comma before it, because without one it would be read as part of the
+rename's pattern (`{y: height x}` reads `height x` as one expression):
+
+```eu
+describe-after{y: height, x}: "x={x} h={height}"
+
+result: describe-after{x: 1  y: 5}
+```
+
+```yaml
+result: x=1 h=5
+```
+
 ### Fixed-length list destructuring
 
 A list pattern binds positional elements from a list argument:
