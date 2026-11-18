@@ -416,7 +416,8 @@ impl SourceLoader {
         if crate::import::is_stream_format(input.format()) {
             return self.load_stream(input);
         }
-        let file_id = self.load_source(input.locator())?;
+        // Data, not eucalypt: a missing file is never a shipped library.
+        let file_id = self.load_source(input.locator(), false)?;
         let core = read_to_core(
             input.format(),
             &mut self.files,
@@ -615,7 +616,7 @@ impl SourceLoader {
 
             // Parse the file's source and look for a `prelude:` key.
             let source = match input.locator() {
-                Locator::Fs(path) => self.read_fs_input(path).ok().map(FsInput::into_text),
+                Locator::Fs(path) => self.read_fs_input(path, true).ok().map(FsInput::into_text),
                 // An editor buffer carries its own (possibly unsaved) text.
                 Locator::Buffer { text, .. } => Some(text.clone()),
                 _ => None,
@@ -641,8 +642,8 @@ impl SourceLoader {
             }
 
             // A filesystem path must exist: `read_fs_input` would otherwise
-            // fall back to a bundled library of the same file stem (e.g.
-            // `nope/prelude.eu`), silently ignoring a mistyped path.
+            // fall back to the bundled library for a bare canonical name
+            // (`prelude.eu`), silently ignoring a missing file.
             if let Locator::Fs(path) = prelude_input.locator() {
                 let found = self.lib_path.iter().any(|d| d.join(path).is_file()) || path.is_file();
                 if !found {
@@ -679,7 +680,7 @@ impl SourceLoader {
     /// Load and parse the source from a source specified by locator
     pub fn load_eucalypt(&mut self, locator: &Locator) -> Result<usize, EucalyptError> {
         // Load the text
-        let id = self.load_source(locator)?;
+        let id = self.load_source(locator, true)?;
 
         // We may still have an AST for this content (or we may have
         // consumed it in translation - it is rare enough we don't
@@ -710,7 +711,7 @@ impl SourceLoader {
 
     /// Load pseudoblock as core (dispatches based on pseudo name)
     fn load_core(&mut self, input: &Input) -> Result<usize, EucalyptError> {
-        let file_id = self.load_source(input.locator())?;
+        let file_id = self.load_source(input.locator(), false)?;
 
         // Dispatch based on pseudo name
         let core = match input.locator() {
@@ -724,61 +725,80 @@ impl SourceLoader {
         Ok(file_id)
     }
 
-    /// Load the text from the specified location into our file store
-    fn load_source(&mut self, locator: &Locator) -> Result<usize, EucalyptError> {
-        if let Some(file_id) = self.locators.get(locator) {
-            return Ok(*file_id);
-        }
-
-        match self.locators.get(locator) {
-            Some(id) => Ok(*id),
-            None => {
-                // Read the text, and alongside it decide whether this file is a
-                // shipped library rather than the user's own code. Every arm
-                // answers both questions, so there is one place to look for
-                // either and no way to add a locator that answers only one.
-                let (source, is_library) = match locator {
-                    Locator::Fs(path) => {
-                        // A filename import may resolve to the user's file *or*
-                        // fall back to a library baked into the binary — and
-                        // only `read_fs_input` knows which happened (eu-8a49h).
-                        let input = self.read_fs_input(path)?;
-                        let is_library = input.is_baked_in_resource();
-                        (input.into_text(), is_library)
-                    }
-                    Locator::Resource(name) => (
-                        self.resources
-                            .get(name)
-                            .ok_or_else(|| EucalyptError::UnknownResource(name.clone()))?
-                            .clone(),
-                        true,
-                    ),
-                    Locator::Cli(text) => (text.to_string(), false),
-                    Locator::Literal(text) => (text.to_string(), false),
-                    Locator::Buffer { text, .. } => (text.to_string(), false),
-                    Locator::StdIn => (self.read_stdin()?, false),
-                    Locator::Pseudo(_) => ("(no source)".to_string(), false),
-                    other => {
-                        return Err(EucalyptError::FileCouldNotBeRead(
-                            format!("unsupported locator: {other}"),
-                            None,
-                        ))
-                    }
-                };
-
-                // store text and map locator to fileid
-                let id = self.files.add(locator.to_string(), source);
-                self.locators.insert(locator.clone(), id);
-                // A shipped library is not the user's code: mark it so a
-                // diagnostic prefers a user-code location as its primary error
-                // site rather than excerpting library internals the reader did
-                // not write and cannot change.
-                if is_library {
-                    self.source_map.mark_resource_file(id);
+    /// Load the text from the specified location into our file store.
+    ///
+    /// `library_fallback` says whether a missing filesystem file may be
+    /// served from a shipped eucalypt library of the same canonical name
+    /// (see [`Self::read_fs_input`]): only an import read *as eucalypt* may
+    /// be, so `text@lens.eu` or `yaml@state` naming a missing file is an
+    /// error, not the library's source as data (eu-7tlbg).
+    fn load_source(
+        &mut self,
+        locator: &Locator,
+        library_fallback: bool,
+    ) -> Result<usize, EucalyptError> {
+        if let Some(&file_id) = self.locators.get(locator) {
+            // The cache is keyed by locator alone, so `lens.eu` read earlier
+            // as eucalypt — and served from the shipped library because no
+            // such file exists — is cached under the same key a later
+            // `text@lens.eu` asks for. A filesystem file marked as a
+            // resource can only have come from that fallback, which a
+            // non-eucalypt read may not use (eu-7tlbg).
+            if let Locator::Fs(path) = locator {
+                if !library_fallback && !self.source_map.is_user_file(file_id) {
+                    return Err(EucalyptError::FileCouldNotBeRead(
+                        path.to_string_lossy().to_string(),
+                        None,
+                    ));
                 }
-                Ok(id)
             }
+            return Ok(file_id);
         }
+
+        // Read the text, and alongside it decide whether this file is a
+        // shipped library rather than the user's own code. Every arm
+        // answers both questions, so there is one place to look for
+        // either and no way to add a locator that answers only one.
+        let (source, is_library) = match locator {
+            Locator::Fs(path) => {
+                // A filename import may resolve to the user's file *or*
+                // fall back to a library baked into the binary — and
+                // only `read_fs_input` knows which happened (eu-8a49h).
+                let input = self.read_fs_input(path, library_fallback)?;
+                let is_library = input.is_baked_in_resource();
+                (input.into_text(), is_library)
+            }
+            Locator::Resource(name) => (
+                self.resources
+                    .get(name)
+                    .ok_or_else(|| EucalyptError::UnknownResource(name.clone()))?
+                    .clone(),
+                true,
+            ),
+            Locator::Cli(text) => (text.to_string(), false),
+            Locator::Literal(text) => (text.to_string(), false),
+            Locator::Buffer { text, .. } => (text.to_string(), false),
+            Locator::StdIn => (self.read_stdin()?, false),
+            Locator::Pseudo(_) => ("(no source)".to_string(), false),
+            other => {
+                return Err(EucalyptError::FileCouldNotBeRead(
+                    format!("unsupported locator: {other}"),
+                    None,
+                ))
+            }
+        };
+
+        // store text and map locator to fileid
+        let id = self.files.add(locator.to_string(), source);
+        self.locators.insert(locator.clone(), id);
+        // A shipped library is not the user's code: mark it so a
+        // diagnostic prefers a user-code location as its primary error
+        // site rather than excerpting library internals the reader did
+        // not write and cannot change.
+        if is_library {
+            self.source_map.mark_resource_file(id);
+        }
+        Ok(id)
     }
 
     /// Desugar the interrelated tree of ASTs identified by `input`
@@ -1278,11 +1298,14 @@ impl SourceLoader {
     /// Read text from the filesystem, using lib-path to resolve the
     /// filenames.
     ///
-    /// If the file cannot be found on the filesystem, falls back to checking
-    /// baked-in resources. The stem of the filename (without extension) is
-    /// used as the resource name, so `lens.eu` falls back to the `lens`
-    /// resource if one exists. Filesystem resolution always takes priority,
-    /// allowing users to override baked-in resources with their own files.
+    /// If the file cannot be found on the filesystem, `library_fallback` is
+    /// set (the file is being read as eucalypt) and the path is exactly
+    /// a shipped library's canonical file name (`lens.eu`; see
+    /// [`Resources::library_for_import_path`]), falls back to that baked-in
+    /// library. Any other missing path is an error, even one sharing a
+    /// library's stem (eu-7tlbg). Filesystem resolution always takes
+    /// priority, allowing users to override baked-in libraries with their
+    /// own files.
     ///
     /// The result says **which** of the two it was, because that decides
     /// whether the file may be blamed as user code in a diagnostic (eu-8a49h):
@@ -1290,7 +1313,11 @@ impl SourceLoader {
     /// needs an explicit `resource:` prefix, while `{ import: "lens.eu" }`
     /// yields `Locator::Fs` and reaches the library through this fallback with
     /// the locator unchanged.
-    fn read_fs_input(&mut self, path: &Path) -> Result<FsInput, EucalyptError> {
+    fn read_fs_input(
+        &mut self,
+        path: &Path,
+        library_fallback: bool,
+    ) -> Result<FsInput, EucalyptError> {
         for libdir in &self.lib_path {
             let mut filename = libdir.to_path_buf();
             filename.push(path);
@@ -1304,12 +1331,17 @@ impl SourceLoader {
             return Ok(FsInput::UserFile(text));
         }
 
-        // Fall back to baked-in resources using the filename stem.
-        // This allows libraries shipped inside the binary (e.g. `prelude.eu`,
-        // `test.eu`) to be imported by filename without being present on disk.
-        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-            if let Some(resource_text) = self.resources.get(stem) {
-                return Ok(FsInput::BakedInResource(resource_text.clone()));
+        // Fall back to a library baked into the binary, but only when the
+        // path is exactly that library's canonical file name (`lens.eu`,
+        // `test.eu`): that spelling is how a program asks for the shipped
+        // library. Any other path that merely shares its stem (`lib/test.eu`,
+        // `test.yaml`) names the user's own file, and a missing one must be
+        // an error, not a silent substitution of the library (eu-7tlbg).
+        if library_fallback {
+            if let Some(name) = Resources::library_for_import_path(path) {
+                if let Some(resource_text) = self.resources.get(name) {
+                    return Ok(FsInput::BakedInResource(resource_text.clone()));
+                }
             }
         }
 
@@ -1570,7 +1602,7 @@ pub mod tests {
     fn test_read_fs_input_flags_the_baked_in_resource_fallback() {
         let mut loader = SourceLoader::new(vec![]);
         let input = loader
-            .read_fs_input(Path::new("reflect.eu"))
+            .read_fs_input(Path::new("reflect.eu"), true)
             .expect("reflect.eu resolves via the baked-in resource fallback");
         assert!(
             matches!(input, FsInput::BakedInResource(_)),
@@ -1602,7 +1634,7 @@ pub mod tests {
         fs::write(&shadow, "shadowed-marker: 1\n").expect("write shadow library");
 
         let mut loader = SourceLoader::new(vec![dir.clone()]);
-        let result = loader.read_fs_input(Path::new("reflect.eu"));
+        let result = loader.read_fs_input(Path::new("reflect.eu"), true);
 
         // Clean up before asserting, so a failure does not leave the scratch
         // copy behind for the next run to trip over.
@@ -1616,6 +1648,87 @@ pub mod tests {
         assert!(
             input.into_text().contains("shadowed-marker"),
             "the on-disk copy must take priority over the baked-in resource"
+        );
+    }
+
+    /// eu-7tlbg: a missing file that only *shares a shipped library's stem*
+    /// is an error, never a silent load of the library. Only the bare
+    /// canonical name (`test.eu`) asks for the library itself.
+    #[test]
+    fn test_read_fs_input_does_not_substitute_a_library_for_a_missing_file() {
+        // Every non-canonical path sits under a directory unique to this
+        // process, so no stray file in the working directory can satisfy it.
+        let absent = format!("eu-7tlbg-absent-{}", std::process::id());
+        let mut loader = SourceLoader::new(vec![]);
+        for path in [
+            "test.eu",
+            "lens.eu",
+            "sub/state.eu",
+            "lens",
+            "test.yaml",
+            "package.eu",
+        ] {
+            let path = Path::new(&absent).join(path);
+            assert!(
+                matches!(
+                    loader.read_fs_input(&path, true),
+                    Err(EucalyptError::FileCouldNotBeRead(..))
+                ),
+                "a missing '{}' must not resolve to a baked-in resource",
+                path.display()
+            );
+        }
+        // Top-level paths that share a library's stem but are not its
+        // canonical name; none of them exists in the repository.
+        for path in ["lens.txt", "state.yaml", "package.eu", "build-meta.eu"] {
+            assert!(
+                matches!(
+                    loader.read_fs_input(Path::new(path), true),
+                    Err(EucalyptError::FileCouldNotBeRead(..))
+                ),
+                "a missing '{path}' must not resolve to a baked-in resource"
+            );
+        }
+        for path in ["test.eu", "lens.eu", "prelude.eu", "prelude", "lens"] {
+            assert!(
+                matches!(
+                    loader.read_fs_input(Path::new(path), true),
+                    Ok(FsInput::BakedInResource(_))
+                ),
+                "the canonical name '{path}' must still reach the shipped library"
+            );
+            // Read as data rather than eucalypt (`text@lens.eu`), a missing
+            // file is an error even under the canonical name.
+            assert!(
+                matches!(
+                    loader.read_fs_input(Path::new(path), false),
+                    Err(EucalyptError::FileCouldNotBeRead(..))
+                ),
+                "'{path}' read as data must not resolve to a baked-in resource"
+            );
+        }
+    }
+
+    /// eu-7tlbg: the file cache is keyed by locator alone, so a library
+    /// served for `lens.eu` read as eucalypt must not be handed to a later
+    /// non-eucalypt read (`text@lens.eu`) of the same missing file.
+    #[test]
+    fn test_load_source_cache_does_not_serve_a_library_to_a_data_read() {
+        let mut loader = SourceLoader::new(vec![]);
+        let locator = Locator::Fs(PathBuf::from("lens.eu"));
+        loader
+            .load_source(&locator, true)
+            .expect("lens.eu read as eucalypt reaches the shipped library");
+        assert!(
+            matches!(
+                loader.load_source(&locator, false),
+                Err(EucalyptError::FileCouldNotBeRead(..))
+            ),
+            "a data read must not reuse the cached library text"
+        );
+        assert!(
+            loader.load_source(&locator, true).is_ok(),
+            "a second eucalypt read still reuses the cache"
         );
     }
 }
