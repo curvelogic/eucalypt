@@ -1384,6 +1384,24 @@ pub fn deprecation_notes(input: &str) -> Vec<String> {
     Vec::new()
 }
 
+/// The runtime form of a type-data string.
+///
+/// Desugaring keeps the source text of an `s"..."` that uses a deprecated
+/// spelling (the block type's old `Dict(T)`), so that the type checker sees
+/// it and warns (eu-oaz72.129). Once checked, such a string is compiled in
+/// its canonical form, as every other type-data string already is, so that
+/// `s"Dict(number)"` and `s"block(number)"` are the same value at runtime.
+/// Any other string is returned unchanged.
+pub fn canonical_type_data(s: &str) -> std::borrow::Cow<'_, str> {
+    if deprecation_notes(s).is_empty() {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    match parse_scheme(s) {
+        Ok((ty, constraints)) => std::borrow::Cow::Owned(render_scheme(&ty, &constraints)),
+        Err(_) => std::borrow::Cow::Borrowed(s),
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

@@ -309,8 +309,13 @@ test-type-str: {
   t22: ([:t-app, [:t-con, :Dict], s"number" to-data] from-data) = s"block(number)"
   t23: (s"block(number)" to-data second) = [:t-con, :block]
 
+  ` "An s-string in the deprecated spelling is the same type-data value as
+    the new one at runtime (eu-oaz72.129)."
+  t24: (s"Dict(number)") = (s"block(number)")
+  t25: (s"[Dict(number)]" to-data type-str) = "[block(number)]"
+
   RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15,
-           t16, t17, t18, t19, t20, t21, t22, t23]
+           t16, t17, t18, t19, t20, t21, t22, t23, t24, t25]
     all-true? then(:PASS, :FAIL)
 }
 
