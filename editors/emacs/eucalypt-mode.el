@@ -810,7 +810,7 @@ nothing after `--' is read."
                     (progn (push (cons char nil) options)
                            (setq i (1+ i)))
                   (let* ((rest (substring arg (1+ i)))
-                         (rest (string-remove-prefix "=" rest))
+                         (rest (if (string-prefix-p "=" rest) (substring rest 1) rest))
                          (value (if (string-empty-p rest) (pop args) rest)))
                     (when value (push (cons char value) options))
                     (setq i n))))))))))
