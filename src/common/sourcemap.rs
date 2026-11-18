@@ -1289,7 +1289,9 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "AND" | "OR" | "SATURATED" => None,
         // Internal block/list helpers
         "LOOKUPOR#" | "MATCHES_KEY" | "EXTRACT_VALUE" | "EXTRACT_KEY" | "PACK_PAIR"
-        | "BLOCK_PAIR" | "seqStrList" | "seqKey" | "seqDictPairs" | "NV.ALL[*]" => None,
+        | "BLOCK_PAIR" | "seqStrList" | "seqKey" | "seqDictPairs" | "seqListThen" | "NV.ALL[*]" => {
+            None
+        }
         // Internal constants and data constructors
         "KNIL" | "K[]" | "K{}" | "DQ" | "IFIELDS" | "SUPPRESSES" | "REQUIRES" => None,
 
