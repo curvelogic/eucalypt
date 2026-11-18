@@ -1383,14 +1383,24 @@ pub enum ExecutionError {
     ArrayNdIndexOutOfBounds(Smid, Vec<usize>),
     #[error("array shape mismatch: {1}")]
     ArrayShapeMismatch(Smid, String),
-    #[error("negative array index or dimension: {} — array indices and dimensions must be non-negative", display_f64(*.1))]
-    ArrayNegativeIndex(Smid, f64),
+    /// A negative array coordinate, axis, index or dimension:
+    /// `(function and what, value)`, e.g. `("arr.slice index", -1)`.
+    #[error("{} {} must be non-negative", .1, display_f64(*.2))]
+    ArrayNegativeIndex(Smid, String, f64),
     #[error("{} {} must be an integer", .1, display_f64(*.2))]
     ArrayNonIntegerIndex(Smid, String, f64),
     /// An array shape whose element count exceeds what one array can
     /// hold: `(function, shape, maximum element count)`.
     #[error("{1}: array shape {2} has too many elements — an array holds at most {3} elements")]
     ArrayTooLarge(Smid, String, String, usize),
+    /// An empty array shape (some dimension zero) whose other dimensions
+    /// multiply to more sub-arrays than one array may have: `(function,
+    /// shape, maximum product)`. Rendering such an array with the zero
+    /// last would emit that many empty sequences, and since `arr.transpose`
+    /// does not re-validate the shape it can move a leading zero last, so
+    /// the bound holds wherever the zero is.
+    #[error("{1}: empty array shape {2} has too many sub-arrays — the dimensions of an empty array other than 0 may multiply to at most {3}")]
+    ArrayEmptyShapeTooLarge(Smid, String, String, usize),
     #[error("list index out of bounds: index {1} is beyond the end of the list")]
     ListIndexOutOfBounds(Smid, usize),
     /// `dict.get` of a key the dict does not hold; `.1` renders the key.
@@ -1510,9 +1520,10 @@ impl HasSmid for ExecutionError {
             ExecutionError::Compile(compile_error) => compile_error.smid(),
             ExecutionError::ArrayNdIndexOutOfBounds(s, _) => *s,
             ExecutionError::ArrayShapeMismatch(s, _) => *s,
-            ExecutionError::ArrayNegativeIndex(s, _) => *s,
+            ExecutionError::ArrayNegativeIndex(s, _, _) => *s,
             ExecutionError::ArrayNonIntegerIndex(s, _, _) => *s,
             ExecutionError::ArrayTooLarge(s, _, _, _) => *s,
+            ExecutionError::ArrayEmptyShapeTooLarge(s, _, _, _) => *s,
             ExecutionError::IoNotAllowed(s) => *s,
             ExecutionError::IoFail(s, _) => *s,
             ExecutionError::IoTimeout(s, _) => *s,
@@ -1554,6 +1565,18 @@ impl HasSmid for ExecutionError {
 }
 
 impl ExecutionError {
+    /// Whether this error is raised from internal machinery that has no
+    /// annotation of its own, such as the render wrapper. The machine's last
+    /// annotation is then whatever user code ran last, unrelated to the
+    /// failure, so the diagnostic never falls back to it: no location is
+    /// better than a wrong one (eu-oaz72.21).
+    fn raised_by_internal_machinery(&self) -> bool {
+        matches!(
+            self,
+            ExecutionError::DictKeyNotRenderable(..) | ExecutionError::DictRenderKeyCollision(..)
+        )
+    }
+
     /// Build the diagnostic without access to source text: hints that need
     /// evidence from the source (eu-oaz72.28) are omitted.
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
@@ -1624,15 +1647,13 @@ impl ExecutionError {
             other => (other, [].as_slice(), [].as_slice(), Smid::default()),
         };
 
-        // A dict render error is raised from the render machinery, which has
-        // no annotation of its own: the machine's last annotation is then
-        // whatever user code ran last, unrelated to the dict being rendered
-        // (eu-oaz72.21). Never fall back to it for these errors; no location
-        // is better than a wrong one.
-        let last_annotation = match inner {
-            ExecutionError::DictKeyNotRenderable(..)
-            | ExecutionError::DictRenderKeyCollision(..) => Smid::default(),
-            _ => last_annotation,
+        // An error raised by internal machinery (a dict render error, from
+        // the render wrapper) never falls back to the machine's last
+        // annotation, which is unrelated to it.
+        let last_annotation = if inner.raised_by_internal_machinery() {
+            Smid::default()
+        } else {
+            last_annotation
         };
 
         // Determine the best primary source location:

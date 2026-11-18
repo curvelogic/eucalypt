@@ -88,9 +88,17 @@ dot-lookup: {
 # without updating its slot, so each `str.len` rebuilt the whole `str`
 # namespace block, about 350 allocations (engine: `Op::LookupLit`,
 # eu-oaz72.94). Rebuilding a block is one tick, so the budget counts
-# allocations: about 50 per read when shared (either prelude mode), 400
-# when rebuilt.
-len-plus(i): str.len("ab") + i
+# allocations. Each iteration reads the namespace twice (`str.of`,
+# `str.len`): about 62k allocations in all when shared, about 480k when
+# rebuilt. The test gates in blob mode only; with the source prelude the
+# namespace is not a global thunk and the fault does not arise. The call
+# takes the loop variable, so a pass that floats or shares whole
+# loop-invariant expressions cannot lift it out of the loop, where the
+# budget would pass vacuously (eu-oaz72.103). The `str.of` and `str.len`
+# lookups themselves are loop-invariant (the fault is in literal-key
+# `LookupLit`, so the key cannot vary); a pass that floated a bare lookup
+# out of a call would need this target revisited.
+len-plus(i): (i str.of str.len) + i
 len-total: range(0, 1000) map(len-plus) sum
 
 ` "the namespace is built once however often it is read"
@@ -100,5 +108,6 @@ built-once(context): (context.stats.allocs < 200000) then(:PASS, :FAIL)
     verify: [:values, :built-once] }
 namespace-lookup: {
   sum: len-total
-  expected: 1000 * 2 + 499500
+  # 10 one-digit, 90 two-digit and 900 three-digit numbers
+  expected: 10 + 90 * 2 + 900 * 3 + 499500
 }
