@@ -707,9 +707,21 @@ eucalypt source:
 eu doc file.eu                    # Markdown output to stdout
 eu doc --format json file.eu      # JSON Schema output
 eu doc --prelude                  # Document the embedded prelude
-eu doc --check file.eu            # Report documentation coverage (exit 1 if < 100%)
+eu doc --check file.eu            # Report documentation coverage
 eu doc --output-dir out/ file.eu  # Write categorised Markdown files to a directory
 ```
+
+A top-level block (`name: { ... }`) is documented as a namespace, and its
+members are documented with it. A member whose value is itself a block is a
+nested namespace when that member, or any public member within it, has a
+docstring; its members are rendered one heading level deeper and counted by
+`--check`. Markdown has six heading levels, so members nested deeper than
+that are rendered at the sixth level under their fully-qualified name. A
+non-public member (`:internal` or `:suppress`) is neither rendered nor
+counted, and neither is anything inside it. A
+member whose block is used only for scoping (`m: { helper: 1 }.result`),
+and any block returned by a function, is documented without its contents.
+The coverage report is informational: it exits 0 whatever the coverage.
 
 ### Options
 

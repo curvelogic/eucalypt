@@ -4826,12 +4826,47 @@ pub fn test_doc_nested_namespaces() {
         .expect("failed to run eu doc");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(output.status.code(), Some(0), "{stdout}");
-    for pattern in ["#### `deep(x)`", "Deep function doc."] {
+    for pattern in [
+        "#### `deep(x)`",
+        "Deep function doc.",
+        // An undocumented sub-namespace keeps its documented members.
+        "#### `loud(x)`",
+        "Quiet member doc.",
+        // Headings clamp at level six rather than dropping deeper members.
+        "###### `l5`",
+        "###### `l1.l2.l3.l4.l5.l6`",
+        "###### `l1.l2.l3.l4.l5.l6.bottom(x)`\n\nBelow the last heading level.",
+    ] {
         assert!(stdout.contains(pattern), "missing {pattern:?}:\n{stdout}");
     }
-    for hidden in ["helper-hidden", "data-hidden"] {
+    for hidden in ["helper-hidden", "data-hidden", "private-hidden", "#######"] {
         assert!(!stdout.contains(hidden), "leaked {hidden:?}:\n{stdout}");
     }
+}
+
+/// `eu doc --check` counts namespace members at every depth it renders.
+#[test]
+pub fn test_doc_nested_namespaces_coverage() {
+    let output = std::process::Command::new(eu_binary())
+        .args([
+            "doc",
+            "--check",
+            "tests/harness/doc/003_nested_namespaces.eu",
+        ])
+        .output()
+        .expect("failed to run eu doc --check");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(0), "{stdout}");
+    assert!(
+        stdout.contains("12/15 public bindings documented"),
+        "unexpected coverage:\n{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Undocumented:\n  - outer.cfg-undoc\n  - outer.cfg-private\n  - outer.quiet\n"
+        ),
+        "unexpected undocumented list:\n{stdout}"
+    );
 }
 
 /// `eu doc` extracts type annotations and renders them in a code block.
