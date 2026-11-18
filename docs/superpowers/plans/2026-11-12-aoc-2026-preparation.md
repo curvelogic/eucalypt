@@ -217,14 +217,20 @@ eu-oaz72.17); the Emacs commands and font-lock from `highlights.scm`
 its WASM build (eu-oaz72.18, eu-oaz72.14, eu-ioz21.1, eu-ioz21.5,
 eu-ioz21.2); and the web playground's highlighting (eu-ioz21.6).
 
-**Still open at release.** Strict accumulation in demand analysis
+**In 0.16.0's scope, still in progress at release.** Owner decision 60
+put eu-oaz72.8 (Emacs fidelity), eu-oaz72.14 (tree-sitter mis-parses, now
+closed) and eu-oaz72.38 (the 2025 revisit) in 0.16.0 and raised the
+tooling fixes eu-oaz72.131, eu-oaz72.166 (closed), eu-oaz72.185 (closed)
+and eu-ioz21.13 to P2. Owner decision 61 put the WASM API's extra import
+files and step limit (eu-oaz72.20.1) in 0.16.0. Of these, eu-oaz72.8,
+eu-oaz72.38, eu-oaz72.20.1, eu-oaz72.131 and eu-ioz21.13 are still open
+or in progress on 2026-11-18; whether they hold the release is the
+owner's call.
+
+**Other open work.** Strict accumulation in demand analysis
 (eu-oaz72.27), the prelude-body demand analysis follow-through
-(eu-oaz72.175), the 2025 revisit (eu-oaz72.38), Emacs fidelity
-(eu-oaz72.8, eu-oaz72.131), the WASM API's extra import files and step
-limit (eu-oaz72.20.1), `vec`/`set` booleans and null (eu-oaz72.30) and
-the docs highlighting work (eu-ioz21.4), with the P3 follow-ups filed
-from review. These ship in a later release or in the AoC helper library;
-none blocks 0.16.0.
+(eu-oaz72.175), `vec`/`set` booleans and null (eu-oaz72.30), the docs
+highlighting work (eu-ioz21.4), and the P3 follow-ups filed from review.
 
 **Out of 0.16, now 0.17.** By owner decision 60: the DS4 and DS5 designs
 (eu-kc98.1, eu-kc98.2) and lazy-`foldl` list retention (eu-oaz72.180). By
