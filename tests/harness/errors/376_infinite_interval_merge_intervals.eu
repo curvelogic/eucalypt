@@ -1,0 +1,2 @@
+` "merge-intervals: an infinite interval is an error naming merge-intervals, found without walking the whole interval (owner decision 67)"
+x: merge-intervals[[1, 2], [4] ++ repeat(1)]
