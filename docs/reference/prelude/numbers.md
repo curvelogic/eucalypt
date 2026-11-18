@@ -24,7 +24,7 @@
 | `ceiling` | Round number upwards to nearest integer |
 | `⌈⌉` | Ceiling bracket notation, round `n` upwards to nearest integer |
 | `⌊⌋` | Floor bracket notation, round `n` downwards to nearest integer |
-| `pow(b, e)` | Raise `b` to the power `e`; integer operands give an integer, and a numeric-overflow error when the result is out of range |
+| `pow(b, e)` | Raise `b` to the power `e`; an integer base with a non-negative integer exponent gives an integer, or a numeric-overflow error when the result is out of range; a negative exponent gives a float |
 | `div(a, b)` | Floor division; same as `a / b` |
 | `mod(a, b)` | Floor modulus; same as `a % b` |
 | `quot(a, b)` | Truncation division; rounds toward zero |
