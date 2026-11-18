@@ -367,8 +367,9 @@ fn cmd_prelude_compile() -> Result<()> {
     );
 
     // Pre-expand: substitute collected definitions into each other so the
-    // runtime inline pass sees them already resolved (no multi-pass
-    // resolution needed). The fixed point collects in dependency order, so a
+    // runtime inline pass sees them resolved (no multi-pass resolution
+    // needed), apart from references kept by name: a self-recursive
+    // inlinable's reference to itself, and one withheld to avoid capture. The fixed point collects in dependency order, so a
     // single forward pass suffices. It substitutes capture-avoidingly, as the
     // source path does, so the two cannot diverge (eu-oaz72.189).
     let inlinable_bindings =

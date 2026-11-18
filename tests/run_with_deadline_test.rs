@@ -86,3 +86,20 @@ fn grandchild_holding_pipes_returns_at_deadline() {
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("hi"));
 }
+
+/// eu-oaz72.186: a child that exits just before the deadline leaves output
+/// still to come (here from a grandchild sharing its pipes). The drain runs
+/// on for a grace period after the exit, so the late output is collected
+/// rather than cut off at the deadline.
+#[cfg(unix)]
+#[test]
+fn output_after_an_exit_near_the_deadline_is_collected() {
+    let cmd = sh("(sleep 1.5; echo late; sleep 30) & sleep 1");
+    let out = run_with_deadline(cmd, Duration::from_millis(1200))
+        .expect("the child itself exited before the deadline");
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("late"),
+        "output written inside the drain grace was lost"
+    );
+}

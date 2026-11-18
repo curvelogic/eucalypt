@@ -115,8 +115,10 @@ pub fn run_with_deadline(mut cmd: Command, deadline: Duration) -> Option<Output>
     })
 }
 
-// These run in each integration-test crate that includes this module; they
-// are cheap.
+// This runs in each integration-test crate that includes this module (it
+// needs the private `forward`; making that public would leave it unused,
+// and so warned, in the other crates). It takes microseconds. The drain
+// grace is gated end to end in `run_with_deadline_test.rs`.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,15 +148,5 @@ mod tests {
         drop(tx);
         let got: Vec<u8> = rx.iter().flatten().collect();
         assert_eq!(got, b"hi");
-    }
-
-    #[test]
-    fn drain_runs_on_past_a_deadline_the_child_exited_near() {
-        let now = Instant::now();
-        // The child exited just before the deadline: the grace applies.
-        assert_eq!(drain_until(now, now), now + DRAIN_GRACE);
-        // It exited long before: the deadline stands.
-        let later = now + DRAIN_GRACE * 5;
-        assert_eq!(drain_until(later, now), later);
     }
 }
