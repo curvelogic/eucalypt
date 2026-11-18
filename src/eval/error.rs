@@ -842,12 +842,16 @@ fn not_callable_notes(actual_type: &str, ev: &Evidence) -> Vec<String> {
 /// non-function value was expected. Deliberately does not suggest
 /// `block.field` — the value is a function, never a block (eu-1tkk.7.9).
 fn unexpected_function_notes() -> Vec<String> {
-    vec![
-        "a function value cannot be used directly here; it must first be called with \
-         all of its remaining arguments"
-            .to_string(),
-    ]
+    vec![UNEXPECTED_FUNCTION_HINT.to_string()]
 }
+
+/// The generic hint for a function found where a value was wanted. It
+/// assumes an under-applied call, so it is dropped where the lone-anaphor
+/// note explains the function instead: an argument that is the identity
+/// function is not missing arguments (eu-oaz72.141).
+const UNEXPECTED_FUNCTION_HINT: &str = "a function value cannot be used directly here; it \
+                                        must first be called with all of its remaining \
+                                        arguments";
 
 /// The note stating that an argument is a lone anaphor (eu-oaz72.132),
 /// for an error whose primary label is a juxtaposed call that cook gave
@@ -883,12 +887,9 @@ fn lone_anaphor_note(
         }
         let span = info.span?;
         let text = source.get(span.start().to_usize()..span.end().to_usize())?;
-        // On one line; whitespace within a line, as in a string, is kept.
-        Some(if text.contains('\n') {
-            text.split_whitespace().collect::<Vec<_>>().join(" ")
-        } else {
-            text.to_string()
-        })
+        // On one line, token by token, so whitespace inside a string is
+        // kept even when the call spans lines, and comments are dropped.
+        Some(crate::common::evidence::one_line(text))
     };
     let whole = text(call.call)?;
     let anaphors = call
@@ -1296,8 +1297,11 @@ pub enum ExecutionError {
     NoBranchForDataTag(Smid, u8, Vec<u8>),
     #[error("type mismatch: received a {1} where a structured value (block or list) was expected")]
     NoBranchForNative(Smid, String),
+    /// The third field is the function's own annotation, used as the
+    /// primary location when it lies in a user file (eu-oaz72.151), as for
+    /// `UnexpectedFunction`; invalid when the function has none.
     #[error("{}", format_cannot_return_fun(.1))]
-    CannotReturnFunToCase(Smid, Vec<u8>),
+    CannotReturnFunToCase(Smid, Vec<u8>, Smid),
     /// Internal runtime error — shown as-is, without any "panic:" prefix.
     ///
     /// Use `UserPanic` when the error originates from the user's `panic()`
@@ -1503,7 +1507,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::OutputStreamClosed => Smid::default(),
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,
             ExecutionError::NoBranchForNative(s, _) => *s,
-            ExecutionError::CannotReturnFunToCase(s, _) => *s,
+            ExecutionError::CannotReturnFunToCase(s, _, _) => *s,
             ExecutionError::BlackHole(s) => *s,
             ExecutionError::Panic(s, _) => *s,
             ExecutionError::UserPanic(s, _) => *s,
@@ -1609,6 +1613,16 @@ impl ExecutionError {
                         kind,
                         Smid::default(),
                     ))
+            }
+            ExecutionError::CannotReturnFunToCase(_, expected, operand) => {
+                let file = source_map.source_info_for_smid(*operand)?.file?;
+                source_map.is_user_file(file).then(|| {
+                    ExecutionError::CannotReturnFunToCase(
+                        *operand,
+                        expected.clone(),
+                        Smid::default(),
+                    )
+                })
             }
             _ => None,
         }
@@ -1972,7 +1986,7 @@ impl ExecutionError {
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name, &ev),
             ExecutionError::UnexpectedFunction(..) => unexpected_function_notes(),
             ExecutionError::LookupFailure(_, detail) => lookup_failure_notes(&detail.0, &detail.1),
-            ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
+            ExecutionError::CannotReturnFunToCase(_, expected_tags, _) => {
                 let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
                     || expected_tags.contains(&DataConstructor::BoolFalse.tag());
                 if expects_bool && ev.line_has_word("_") {
@@ -2115,6 +2129,7 @@ impl ExecutionError {
         if let Some(note) =
             files.and_then(|f| lone_anaphor_note(inner, primary_file_span, source_map, f))
         {
+            notes.retain(|n| n != UNEXPECTED_FUNCTION_HINT);
             notes.insert(0, note);
         }
         if notes.is_empty() {

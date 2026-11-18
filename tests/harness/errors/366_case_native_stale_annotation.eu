@@ -1,0 +1,5 @@
+` "A case that finds a number where it wanted data blames the case, not the code that last computed a value (eu-oaz72.122)"
+w: not(n)
+
+` { doc: "Computed only when w forces it." export: :suppress }
+n: 1 + 1

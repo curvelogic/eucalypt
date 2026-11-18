@@ -1343,8 +1343,12 @@ pub fn return_data(
         BcContinuation::DeMeta {
             or_else,
             environment,
+            annotation,
             ..
         } => {
+            // Restore the push-time annotation, as Branch and SeqBind do
+            // (eu-oaz72.122).
+            state.set_annotation(annotation);
             let cur = state.current.clone();
             let env = view.from_value(cur, environment, state.annotation)?;
             state.current = BcValue::Closure(BcClosure::new(or_else, env));
@@ -1370,6 +1374,7 @@ pub fn return_data(
             key,
             smid,
             default_closure,
+            annotation,
         } => {
             // The forced value has arrived. If it is a block, perform the
             // deferred key lookup; otherwise it is a type error.
@@ -1380,6 +1385,9 @@ pub fn return_data(
                         "bytecode: LookupLitForce block is not a closure".to_string(),
                     )
                 })?;
+                // Restore the push-time annotation before resuming
+                // (eu-oaz72.122).
+                state.set_annotation(annotation);
                 state.current = bc_lookup_in_block(prog, decoded, state, view, &block, key)
                     .unwrap_or(BcValue::Closure(default_closure));
             } else {
@@ -1580,8 +1588,16 @@ pub fn return_native(
                 let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fb, env));
             } else {
+                // Blame the case's own push-time annotation, as the
+                // data-tag arm does: `state.annotation` is whatever the
+                // scrutinee's evaluation left live (eu-oaz72.122).
+                let ann = if annotation.is_valid() {
+                    annotation
+                } else {
+                    state.annotation
+                };
                 return Err(ExecutionError::NoBranchForNative(
-                    state.annotation,
+                    ann,
                     value.type_description().to_string(),
                 ));
             }
@@ -1599,8 +1615,16 @@ pub fn return_native(
                 let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
                 state.current = BcValue::Closure(BcClosure::new(fallback, env));
             } else {
+                // Blame the case's own push-time annotation, as the
+                // data-tag arm does: `state.annotation` is whatever the
+                // scrutinee's evaluation left live (eu-oaz72.122).
+                let ann = if annotation.is_valid() {
+                    annotation
+                } else {
+                    state.annotation
+                };
                 return Err(ExecutionError::NoBranchForNative(
-                    state.annotation,
+                    ann,
                     value.type_description().to_string(),
                 ));
             }
@@ -1622,8 +1646,10 @@ pub fn return_native(
         BcContinuation::DeMeta {
             or_else,
             environment,
+            annotation,
             ..
         } => {
+            state.set_annotation(annotation);
             let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
             state.current = BcValue::Closure(BcClosure::new(or_else, env));
         }
@@ -1760,7 +1786,12 @@ pub fn return_fun(
                 } else {
                     state.annotation
                 };
-                return Err(ExecutionError::CannotReturnFunToCase(ann, expected));
+                // Carry the function's own location (eu-oaz72.151).
+                return Err(ExecutionError::CannotReturnFunToCase(
+                    ann,
+                    expected,
+                    fun.annotation(),
+                ));
             }
         }
         BcContinuation::BranchPredecoded {
@@ -1784,7 +1815,12 @@ pub fn return_fun(
                 } else {
                     state.annotation
                 };
-                return Err(ExecutionError::CannotReturnFunToCase(ann, expected));
+                // Carry the function's own location (eu-oaz72.151).
+                return Err(ExecutionError::CannotReturnFunToCase(
+                    ann,
+                    expected,
+                    fun.annotation(),
+                ));
             }
         }
         BcContinuation::Update {
@@ -1796,8 +1832,10 @@ pub fn return_fun(
         BcContinuation::DeMeta {
             or_else,
             environment,
+            annotation,
             ..
         } => {
+            state.set_annotation(annotation);
             let env = view.from_value(BcValue::Closure(fun), environment, state.annotation)?;
             state.current = BcValue::Closure(BcClosure::new(or_else, env));
         }
@@ -1930,8 +1968,10 @@ fn return_meta(
         BcContinuation::DeMeta {
             handler,
             environment,
+            annotation,
             ..
         } => {
+            state.set_annotation(annotation);
             let meta_v = resolve_ref(view, &state.constants, env, state.globals, meta_ref)?;
             let body_v = resolve_ref(view, &state.constants, env, state.globals, body_ref)?;
             let frame = view.from_values(
@@ -2533,6 +2573,7 @@ pub fn handle_op(
                 handler: handler_off,
                 or_else: or_else_off,
                 environment: env,
+                annotation: state.annotation,
             });
             state.current = BcValue::Closure(BcClosure::new(scr_off, env));
         }
@@ -2614,6 +2655,7 @@ pub fn handle_op(
                     key: sym_id,
                     smid,
                     default_closure,
+                    annotation: state.annotation,
                 });
                 // Black-hole + Update if the object is a thunk, in the frame
                 // it lives in: the local env, or the shared globals frame. A
@@ -3022,6 +3064,7 @@ pub fn handle_op_predecoded(
                 handler: instr.b,
                 or_else: instr.c,
                 environment: env,
+                annotation: state.annotation,
             });
             state.current = BcValue::Closure(BcClosure::new(instr.a, env));
         }
@@ -3089,6 +3132,7 @@ pub fn handle_op_predecoded(
                     key: sym_id,
                     smid,
                     default_closure,
+                    annotation: state.annotation,
                 });
                 if obj_closure.update() {
                     let (frame, i) = obj_slot;
@@ -4621,6 +4665,16 @@ impl BcBifContext<'_, '_> {
                         dref,
                     )?;
                     self.native_from_value(view, inner)
+                } else if c.arity() > 0 {
+                    // A function (an under-applied call): carry its own
+                    // location, as `num_arg` does, so the diagnostic can
+                    // blame the operand rather than the operator it was
+                    // handed to (eu-oaz72.151).
+                    Err(ExecutionError::UnexpectedFunction(
+                        self.state.annotation,
+                        "a primitive value",
+                        c.annotation(),
+                    ))
                 } else {
                     // Classify the non-native closure so the diagnostic names
                     // what was found (a boolean, a list, a block, …). Mirrors
@@ -6080,6 +6134,73 @@ mod tests {
         });
         let err = return_native(&mut state, view, num(1));
         assert!(matches!(err, Err(ExecutionError::NoBranchForNative(..))));
+    }
+
+    /// A case with no fallback that receives a native blames its own
+    /// push-time annotation, not whatever the scrutinee left live
+    /// (eu-oaz72.122).
+    #[test]
+    fn return_native_no_branch_blames_case_annotation() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+
+        let bt: Array<Option<CodeRef>> = view.array(&[]);
+        state.stack.push(BcContinuation::Branch {
+            min_tag: 0,
+            branch_table: bt,
+            fallback: None,
+            environment: root,
+            annotation: Smid::from(11),
+        });
+        state.set_annotation(Smid::from(22));
+        match return_native(&mut state, view, num(1)) {
+            Err(ExecutionError::NoBranchForNative(smid, _)) => assert_eq!(smid, Smid::from(11)),
+            other => panic!("expected NoBranchForNative, got {other:?}"),
+        }
+    }
+
+    /// A `DeMeta` continuation restores the annotation live when it was
+    /// pushed, whatever kind of value resumes it (eu-oaz72.122).
+    #[test]
+    fn demeta_resume_restores_push_time_annotation() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let push = |state: &mut BcMachineState| {
+            state.stack.push(BcContinuation::DeMeta {
+                handler: 3,
+                or_else: 5,
+                environment: root,
+                annotation: Smid::from(11),
+            });
+            state.set_annotation(Smid::from(22));
+        };
+
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+        push(&mut state);
+        return_native(&mut state, view, num(1)).unwrap();
+        assert_eq!(state.annotation, Smid::from(11));
+
+        let fun_env = view
+            .from_saturation(view.array(&[]), root, Default::default())
+            .unwrap();
+        let mut state = BcMachineState::new(
+            BcValue::Closure(BcClosure::new(0, fun_env)),
+            root,
+            root,
+            vec![],
+        );
+        push(&mut state);
+        return_fun(
+            &mut state,
+            view,
+            &BytecodeProgram::default(),
+            &DecodedProgram::default(),
+        )
+        .unwrap();
+        assert_eq!(state.annotation, Smid::from(11));
     }
 
     #[test]

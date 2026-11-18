@@ -1,0 +1,3 @@
+` "A lone anaphor in a call passed on to another function is labelled at that call in both prelude modes, with its note (eu-oaz72.141)"
+g(f): f(1)
+x: g(inc(_))

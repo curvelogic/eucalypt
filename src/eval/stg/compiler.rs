@@ -1147,6 +1147,44 @@ impl ProtoSyntax for Holder {
     }
 }
 
+/// An unapplied reference to an intrinsic in user code, eta-expanded into
+/// an annotated lambda carrying the reference's own source location
+/// (eu-oaz72.119).
+///
+/// An intrinsic passed point-free (`xs map(num)`) is otherwise the bare
+/// global wrapper, which carries no user location: when the intrinsic
+/// later fails inside a prelude combinator, the machine's live annotation
+/// is a prelude one (or none) and the error renders without a primary
+/// label. Wrapping the reference as `λ(x1..xn). ann(smid, G(n)(x1..xn))`
+/// makes entering it set the use site as the live annotation, exactly as
+/// a user-written lambda does. Behaviour is otherwise identical: the
+/// lambda has the intrinsic's arity and tail-calls its global.
+pub struct ProtoIntrinsicRef {
+    index: usize,
+    arity: u8,
+    smid: Smid,
+}
+
+impl ProtoSyntax for ProtoIntrinsicRef {
+    fn take_lambda_form(
+        &mut self,
+        _compiler: &Compiler,
+        _context: &Context,
+    ) -> Result<LambdaForm, CompileError> {
+        let args = (0..self.arity as usize).map(dsl::lref).collect();
+        let body = dsl::ann(self.smid, dsl::app(dsl::gref(self.index), args));
+        Ok(dsl::annotated_lambda(self.arity, body, self.smid))
+    }
+
+    fn take_syntax(
+        &mut self,
+        _compiler: &Compiler,
+        _context: &Context,
+    ) -> Result<Rc<StgSyn>, CompileError> {
+        unreachable!("ProtoIntrinsicRef is always taken as a lambda form")
+    }
+}
+
 /// A function application using local let bindings
 pub struct ProtoAppGroup {
     f: RcExpr,
@@ -1269,11 +1307,9 @@ impl ProtoSyntax for ProtoAppGroup {
                         compiler.resolve_free_var(*s, name)?,
                     ))),
                 },
-                Expr::Intrinsic(_, bif) => {
-                    let global_index = intrinsics::index(bif)
-                        .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
-                    arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
-                }
+                Expr::Intrinsic(s, bif) => arg_indexes.push(Box::new(ProtoRef::new(
+                    compiler.compile_intrinsic_ref(&mut local_binder, *s, bif)?,
+                ))),
                 _ => {
                     // Use the per-argument demand from the intrinsic signature table.
                     // Falls back to Demand::default() for unknown intrinsics or
@@ -1924,11 +1960,7 @@ impl<'rt> Compiler<'rt> {
                 let block = self.compile_block(binder, *s, map)?;
                 binder.add_deferred(Box::new(block))
             }
-            Expr::Intrinsic(_, name) => {
-                let index = intrinsics::index(name)
-                    .ok_or_else(|| CompileError::UnknownIntrinsic(name.clone()))?;
-                Ok(dsl::gref(index))
-            }
+            Expr::Intrinsic(s, name) => self.compile_intrinsic_ref(binder, *s, name),
             Expr::Lookup(s, obj, k, d) => {
                 let lookup = self.compile_lookup(binder, obj, k, d, *s)?;
                 binder.add_deferred(Box::new(lookup))
@@ -1989,6 +2021,26 @@ impl<'rt> Compiler<'rt> {
     /// (e.g. merged/imported blocks), the default fires — which is
     /// the original LookupOr wrapper that can force elements lazily
     /// via Case expressions.
+    /// Reference an unapplied intrinsic: its global, or, in annotated
+    /// user code with a valid use-site Smid, an annotated eta-expansion
+    /// of it bound in `binder` (see `ProtoIntrinsicRef`).
+    pub fn compile_intrinsic_ref(
+        &self,
+        binder: &mut LetBinder,
+        smid: Smid,
+        name: &str,
+    ) -> Result<Ref, CompileError> {
+        let index = intrinsics::index(name)
+            .ok_or_else(|| CompileError::UnknownIntrinsic(name.to_string()))?;
+        let arity = intrinsics::intrinsic(index).arity();
+        match u8::try_from(arity) {
+            Ok(arity) if arity > 0 && self.generate_annotations() && smid.is_valid() => {
+                binder.add_deferred(Box::new(ProtoIntrinsicRef { index, arity, smid }))
+            }
+            _ => Ok(dsl::gref(index)),
+        }
+    }
+
     pub fn compile_lookup(
         &self,
         binder: &mut LetBinder,

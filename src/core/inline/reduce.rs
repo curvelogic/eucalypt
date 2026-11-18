@@ -83,8 +83,15 @@ fn substs_depth_in(
     capture: Capture,
 ) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
-        Expr::Var(_, Var::Free(name)) => match substs.iter().find(|m| m.name == name) {
+        Expr::Var(s, Var::Free(name)) => match substs.iter().find(|m| m.name == name) {
+            // An intrinsic substituted for a name takes the name's own
+            // location: the replacement's Smid is the prelude definition
+            // (`num: __NUMPARSE`), but the place to blame when an unapplied
+            // reference later fails is the user's use site (eu-oaz72.119).
             Some(m) => {
+                if let (true, Expr::Intrinsic(_, n)) = (s.is_valid(), &*m.replacement.inner) {
+                    return Ok(RcExpr::from(Expr::Intrinsic(*s, n.clone())));
+                }
                 // Replacement is from the call site (depth == 0).
                 // If we are now inside `depth` additional scope
                 // boundaries, we must increment all outer BVs in the

@@ -1,0 +1,2 @@
+exit: 1
+stderr: "(?s)bad number format: a.*errors[/\\]365_point_free_intrinsic_location\.eu:2:25"

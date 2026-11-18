@@ -539,22 +539,28 @@ pub fn closure_to_element(
     collection: &IntrinsicType,
 ) -> Result<crate::eval::memory::set::Primitive, ExecutionError> {
     let smid = machine.annotation();
-    if let Some(native) = machine.value_native(view, item) {
-        return native_to_element(smid, &native, collection);
-    }
     let dc: Option<DataConstructor> = machine
         .data_tag(view, item)
         .and_then(|tag| tag.try_into().ok());
+    // `value_native` looks through every box, type data's included, so
+    // type data is excluded before it is asked.
+    if !matches!(dc, Some(DataConstructor::BoxedTypeData)) {
+        if let Some(native) = machine.value_native(view, item) {
+            return native_to_element(smid, &native, collection);
+        }
+    }
     let found = match dc {
         Some(
             DataConstructor::BoxedNumber
             | DataConstructor::BoxedString
-            | DataConstructor::BoxedSymbol
-            | DataConstructor::BoxedTypeData,
+            | DataConstructor::BoxedSymbol,
         ) => {
             let native = closure_native_unboxing(machine, view, item)?;
             return native_to_element(smid, &native, collection);
         }
+        // Type data (`s"..."`) boxes a string, but it is not a string
+        // value and is never an element (eu-oaz72.144).
+        Some(DataConstructor::BoxedTypeData) => "type data".to_string(),
         // Forced only to its box, a datetime's inner value may still be a
         // thunk; it is never an element either way.
         Some(DataConstructor::BoxedZdt) => with_article(&IntrinsicType::ZonedDateTime),
@@ -1020,6 +1026,29 @@ pub mod call {
 
         pub fn merge_with(list: Ref, sep: Ref, f: Ref) -> Rc<StgSyn> {
             call_bif("MERGEWITH", &[list, sep, f])
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A stream handle is named as one, not by its internal type
+    /// (eu-oaz72.144). No program can hand a raw producer handle to
+    /// `set.of` or `vec.of` (streams are only reachable through the lazy
+    /// list that wraps them), so this is pinned here rather than by an
+    /// error fixture.
+    #[test]
+    fn stream_handles_are_named_as_streams() {
+        for (native, found) in [
+            (Native::Producer(0), "a stream"),
+            (Native::Prng(0), "a random number stream"),
+        ] {
+            match native_to_element(Smid::default(), &native, &IntrinsicType::Set) {
+                Err(ExecutionError::InvalidElement(_, detail)) => assert_eq!(detail.1, found),
+                other => panic!("expected InvalidElement, got {other:?}"),
+            }
         }
     }
 }

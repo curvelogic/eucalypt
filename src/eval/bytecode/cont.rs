@@ -87,6 +87,9 @@ pub enum BcContinuation {
         or_else: CodeRef,
         /// Environment of handlers.
         environment: RefPtr<BcEnvFrame>,
+        /// Source annotation live when the continuation was pushed,
+        /// restored when it resumes (eu-oaz72.122).
+        annotation: Smid,
     },
     /// Force-and-discard: once the scrutinee reaches WHNF, enter `body` in
     /// the original environment.
@@ -107,6 +110,9 @@ pub enum BcContinuation {
         smid: Smid,
         /// Pre-resolved default closure (returned when key is absent).
         default_closure: BcClosure,
+        /// Source annotation live when the continuation was pushed,
+        /// restored when it resumes (eu-oaz72.122).
+        annotation: Smid,
     },
     /// Marks the end of an emitter capture.
     CaptureEnd,
