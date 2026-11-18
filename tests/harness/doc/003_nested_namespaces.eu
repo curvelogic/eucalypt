@@ -13,6 +13,11 @@ outer: {
 
   cfg-undoc: { data-hidden: 1 }
 
+  cfg-private: {
+    ` { doc: "Internal docs do not make a namespace." export: :internal }
+    private-hidden: 1
+  }
+
   quiet: {
     ` "Quiet member doc."
     loud(x): x

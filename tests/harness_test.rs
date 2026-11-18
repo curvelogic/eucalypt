@@ -4839,7 +4839,7 @@ pub fn test_doc_nested_namespaces() {
     ] {
         assert!(stdout.contains(pattern), "missing {pattern:?}:\n{stdout}");
     }
-    for hidden in ["helper-hidden", "data-hidden", "#######"] {
+    for hidden in ["helper-hidden", "data-hidden", "private-hidden", "#######"] {
         assert!(!stdout.contains(hidden), "leaked {hidden:?}:\n{stdout}");
     }
 }
@@ -4858,11 +4858,13 @@ pub fn test_doc_nested_namespaces_coverage() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(output.status.code(), Some(0), "{stdout}");
     assert!(
-        stdout.contains("12/14 public bindings documented"),
+        stdout.contains("12/15 public bindings documented"),
         "unexpected coverage:\n{stdout}"
     );
     assert!(
-        stdout.contains("Undocumented:\n  - outer.cfg-undoc\n  - outer.quiet\n"),
+        stdout.contains(
+            "Undocumented:\n  - outer.cfg-undoc\n  - outer.cfg-private\n  - outer.quiet\n"
+        ),
         "unexpected undocumented list:\n{stdout}"
     );
 }
