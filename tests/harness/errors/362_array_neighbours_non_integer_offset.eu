@@ -1,0 +1,2 @@
+` "A non-integer arr.neighbours offset is an error, not truncated (eu-oaz72.97)"
+r: arr.from-flat([3], [10, 20, 30]) arr.neighbours([1], [[0.5]])

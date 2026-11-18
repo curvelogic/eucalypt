@@ -5442,6 +5442,25 @@ pub fn test_error_277_array_slice_non_integer() {
     run_error_test(&error_opts("277_array_slice_non_integer.eu"));
 }
 
+/// `arr.neighbours` offsets are not truncated (eu-oaz72.97).
+#[test]
+pub fn test_error_362_array_neighbours_non_integer_offset() {
+    run_error_test(&error_opts("362_array_neighbours_non_integer_offset.eu"));
+}
+
+/// A negative array coordinate error names the function (eu-oaz72.97).
+#[test]
+pub fn test_error_363_array_get_negative() {
+    run_error_test(&error_opts("363_array_get_negative.eu"));
+}
+
+/// An empty shape with too many sub-arrays is rejected at construction
+/// rather than rendering endlessly (eu-oaz72.99).
+#[test]
+pub fn test_error_364_array_empty_shape_too_large() {
+    run_error_test(&error_opts("364_array_empty_shape_too_large.eu"));
+}
+
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
 pub fn test_error_275_non_integer_take() {
@@ -5518,6 +5537,13 @@ pub fn test_error_275_non_integer_nth() {
 #[test]
 pub fn test_error_275_non_integer_update_nth() {
     run_error_test(&error_opts("275_non_integer_update_nth.eu"));
+}
+
+/// An index past the end is an out-of-range error from `update-nth`
+/// (eu-oaz72.100), not a destructuring error.
+#[test]
+pub fn test_error_360_update_nth_past_end() {
+    run_error_test(&error_opts("360_update_nth_past_end.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
@@ -5656,6 +5682,28 @@ pub fn test_error_290_set_of_random_stream_element() {
 #[test]
 pub fn test_error_284_interpolation_two_names() {
     run_error_test(&error_opts("284_interpolation_two_names.eu"));
+}
+
+/// `{{` is not an escape in a c-string: `c"{{}}"` is a parse error whose
+/// help names `\{`, never a silent wrong answer (eu-oaz72.128).
+#[test]
+pub fn test_error_343_cstring_doubled_brace() {
+    run_error_test(&error_opts("343_cstring_doubled_brace.eu"));
+}
+
+/// `{{` before dotted content in a c-string (`c"{{a.b}}"`) gets the
+/// c-string help too, not the plain-string "escape it by doubling"
+/// (eu-oaz72.128).
+#[test]
+pub fn test_error_361_cstring_doubled_brace_dotted() {
+    run_error_test(&error_opts("361_cstring_doubled_brace_dotted.eu"));
+}
+
+/// A leading dot in a string interpolation is a parse error: `{.x}` used
+/// to read silently as `{x}` (eu-oaz72.139).
+#[test]
+pub fn test_error_344_interpolation_stray_dot() {
+    run_error_test(&error_opts("344_interpolation_stray_dot.eu"));
 }
 
 #[test]
@@ -5842,6 +5890,16 @@ pub fn test_error_331_iterate_applies_f_at_cell() {
 #[test]
 pub fn test_error_347_missing_prelude_path() {
     run_error_test(&error_opts("347_missing_prelude_path.eu"));
+}
+
+#[test]
+pub fn test_error_351_mixed_width_overflow() {
+    run_error_test(&error_opts("351_mixed_width_overflow.eu"));
+}
+
+#[test]
+pub fn test_error_352_dict_update_strict_evaluates() {
+    run_error_test(&error_opts("352_dict_update_strict_evaluates.eu"));
 }
 
 #[test]
