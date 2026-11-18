@@ -1,0 +1,3 @@
+` "A comparison handed an under-applied call blames the call, not the operator (eu-oaz72.151)"
+add(a, b): a + b
+r: add(1) < 3

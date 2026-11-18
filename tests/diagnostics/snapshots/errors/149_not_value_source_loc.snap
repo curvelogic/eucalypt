@@ -7,10 +7,10 @@ prelude-modes: identical
 exit: 1
 errors: 1
 warnings: 0
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/harness/errors/149_not_value_source_loc.eu:4:9
-help-lines: 1
-note-lines: 0
+help-lines: 0
+note-lines: 1
 secondary-labels: 0
 trace-frames: 0
 trace-user-frames: 0
@@ -18,9 +18,10 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: expected a primitive value but found a let binding
-  help: this can occur when a function or structured value appears where a primitive (number, string, etc.) was expected
+error[EU-EVAL-TYPE]: type mismatch: expected a primitive value, found a function
   ┌─ tests/harness/errors/149_not_value_source_loc.eu:4:9
   │
 4 │ result: str.of(f)
   │         ^^^^^^^^^
+  │
+  = a function value cannot be used directly here; it must first be called with all of its remaining arguments

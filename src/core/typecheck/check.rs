@@ -320,6 +320,17 @@ pub struct Checker {
     ///
     /// Populated eagerly during Let synthesis alongside `binding_bodies`.
     projection_shapes: HashMap<BoundKey, Option<usize>>,
+    /// Memoised tuple-drop classification per binding: `Some(n)` when the
+    /// binding is `drop(n)` for a literal count `n`, or an alias of one.
+    drop_shapes: HashMap<BoundKey, Option<usize>>,
+    /// Types of application arguments already synthesised by a precise
+    /// typing path (head/tail, drop, projection) that then fell through to
+    /// the generic path, keyed by the argument's node address.  The generic
+    /// path takes the type from here instead of synthesising the argument a
+    /// second time, which would repeat every warning inside it (and, for
+    /// nested calls, multiply the work).  Entries live only for the
+    /// application that made them: `synthesise_app` removes them on return.
+    presynthesised: HashMap<usize, Type>,
 
     /// When `true`, the outermost scope frame is preserved rather than
     /// popped when `synthesise(Let)` would otherwise call `pop_scope`.
@@ -378,6 +389,8 @@ impl Checker {
             binding_bodies: HashMap::new(),
             branch_shapes: HashMap::new(),
             projection_shapes: HashMap::new(),
+            drop_shapes: HashMap::new(),
+            presynthesised: HashMap::new(),
             keep_root_scope: false,
             seed_branch_shapes: HashMap::new(),
             operator_overloads: HashMap::new(),
@@ -806,6 +819,7 @@ impl Checker {
                 for b in &scope.pattern {
                     if let Some(type_str) = extract_string_literal(&b.expr) {
                         if let Ok(ty) = parse::parse_type(&type_str) {
+                            self.warn_deprecated_syntax(b.expr.smid(), &type_str);
                             self.register_alias(b.name.clone(), ty);
                         }
                     }
@@ -818,6 +832,7 @@ impl Checker {
                 for (alias_name, type_str_expr) in b.iter() {
                     if let Some(type_str) = extract_string_literal(type_str_expr) {
                         if let Ok(ty) = parse::parse_type(&type_str) {
+                            self.warn_deprecated_syntax(type_str_expr.smid(), &type_str);
                             self.register_alias(alias_name.clone(), ty);
                         }
                     }
@@ -920,12 +935,15 @@ impl Checker {
         };
 
         match parse::parse_scheme(&type_str) {
-            Ok((parsed, constraints)) => Some((
-                self.resolve_aliases_in_type(parsed),
-                constraints,
-                asserted,
-                is_hint,
-            )),
+            Ok((parsed, constraints)) => {
+                self.warn_deprecated_syntax(meta.smid(), &type_str);
+                Some((
+                    self.resolve_aliases_in_type(parsed),
+                    constraints,
+                    asserted,
+                    is_hint,
+                ))
+            }
             Err(e) => {
                 self.warn_invalid_annotation(meta.smid(), &e);
                 None
@@ -953,6 +971,20 @@ impl Checker {
         }
     }
 
+    /// Emit a warning for each deprecated construct in a successfully
+    /// parsed annotation or alias string, such as the block type's old
+    /// spelling `Dict(T)` (eu-oaz72.129). Deduplicated by `Smid` like
+    /// [`Self::warn_invalid_annotation`]: a string either fails to parse or
+    /// parses, so the two never compete for the same `Smid`.
+    fn warn_deprecated_syntax(&mut self, smid: Smid, type_str: &str) {
+        let notes = parse::deprecation_notes(type_str);
+        if !notes.is_empty() && self.warned_annotation_smids.insert(smid) {
+            for note in notes {
+                self.warnings.push(TypeWarning::new(note).at(smid));
+            }
+        }
+    }
+
     /// Try to extract a `TypeScheme` from a binding value's `Meta` wrapper.
     ///
     /// Returns `Some(scheme)` when the value is wrapped in a `Meta` node that
@@ -976,6 +1008,9 @@ impl Checker {
 
     /// Synthesise the type of `expr`, recursing to gather warnings along the way.
     pub fn synthesise(&mut self, expr: &RcExpr) -> Type {
+        if let Some(ty) = self.presynthesised.remove(&expr_key(expr)) {
+            return ty;
+        }
         match &*expr.inner {
             // ── Literals ─────────────────────────────────────────────────────
             Expr::Literal(_, prim) => synthesise_primitive(prim),
@@ -1040,6 +1075,7 @@ impl Checker {
                     // "not a brancher/projector" and terminates.
                     self.branch_shapes.insert(key.clone(), None);
                     self.projection_shapes.insert(key.clone(), None);
+                    self.drop_shapes.insert(key.clone(), None);
                     // Store the body for later structural analysis.
                     let body = peel_meta(&b.expr).clone();
                     self.binding_bodies.insert(key.clone(), body.clone());
@@ -1047,7 +1083,9 @@ impl Checker {
                     let shape = self.classify_binding_shape(&body, self.scope_stack.len());
                     self.branch_shapes.insert(key.clone(), shape);
                     let proj = self.classify_projection_body(&body, self.scope_stack.len());
-                    self.projection_shapes.insert(key, proj);
+                    self.projection_shapes.insert(key.clone(), proj);
+                    let drop = self.classify_drop_body(&body, self.scope_stack.len());
+                    self.drop_shapes.insert(key, drop);
                 }
 
                 // Pass 2: synthesise each binding value — triggers consistency
@@ -1325,6 +1363,27 @@ impl Checker {
     /// We flatten `func` into `(head, prefix_args)` and prepend to `args` so
     /// the full argument list `[a, b, x]` is visible for recognition.
     fn synthesise_app(&mut self, smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
+        let ty = self.synthesise_app_inner(smid, func, args);
+        // Drop any argument type a precise path stored but the generic path
+        // did not consume, so it cannot leak to a later synthesis of the same
+        // node in another context.
+        let (_, prefix_args) = flatten_app_spine(func);
+        for arg in prefix_args.into_iter().chain(args.iter()) {
+            self.presynthesised.remove(&expr_key(arg));
+        }
+        ty
+    }
+
+    /// Synthesise an argument for a precise typing path that may fall through
+    /// to the generic application path, recording the type so the generic
+    /// path reuses it rather than synthesising the argument again.
+    fn synthesise_once(&mut self, arg: &RcExpr) -> Type {
+        let ty = self.synthesise(arg);
+        self.presynthesised.insert(expr_key(arg), ty.clone());
+        ty
+    }
+
+    fn synthesise_app_inner(&mut self, smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
         // ── String interpolation (JOIN) ─────────────────────────────────────
         //
         // The desugarer produces `App(Intrinsic("JOIN"), [List(…), sep])` for
@@ -1357,7 +1416,7 @@ impl Checker {
         // When `lookup` / `LOOKUP` is applied to a literal-symbol key and a
         // known record type, return the precise field type (or warn on a key
         // typo in a closed record).  This fires before the generic annotation
-        // path so that the precise field type overrides the `Dict(a) → a`
+        // path so that the precise field type overrides the `block(a) → a`
         // annotation.
         //
         // The type checker runs before inlining, so the head may be either:
@@ -1388,7 +1447,7 @@ impl Checker {
         // only fires when there is exactly one argument.
         if spine_args.len() == 1 {
             if let Some(proj) = is_head_or_tail(head) {
-                let arg_type = self.synthesise(spine_args[0]);
+                let arg_type = self.synthesise_once(spine_args[0]);
                 if let Some(result) = apply_head_tail_to_tuple(proj, &arg_type) {
                     return result;
                 }
@@ -1420,6 +1479,22 @@ impl Checker {
             }
         }
 
+        // ── DROP-on-Tuple precise typing (§A6.8) ───────────────────────────
+        //
+        // `drop(n)` with a literal count, applied to a `Tuple`, keeps the
+        // positional shape of the suffix rather than widening to the list of
+        // the union of every element (which would include the dropped ones):
+        //   drop(n, Tuple([T₀,…,Tₖ])) → Tuple([Tₙ,…,Tₖ])   (n > k → List(any))
+        // Covers both a direct call (`xs drop(2)`) and a binding classified
+        // as a dropper (`content: drop(2)`, then `xs content`).
+        if let Some((count, target)) = self.recognise_tuple_drop(head, &spine_args) {
+            let arg_type = self.synthesise_once(target);
+            if let Some(result) = apply_drop_to_tuple(count, &arg_type) {
+                return result;
+            }
+            // Not a Tuple or prefix-list — fall through to the generic path.
+        }
+
         // ── ProjectionShape precise tuple typing (§B6.3) ─────────────────────
         //
         // When a bound variable function has a ProjectionShape of index `i` and
@@ -1430,7 +1505,7 @@ impl Checker {
         // this path covers index ≥ 1 (and also 0 for completeness via bound vars).
         if spine_args.len() == 1 {
             if let Some(index) = self.recognise_projection_index(head) {
-                let synth = self.synthesise(spine_args[0]);
+                let synth = self.synthesise_once(spine_args[0]);
                 // Unfold a recursive alias one step so a `Mu`-wrapped prefix-list
                 // (the markup `Element` shape) is projected precisely.
                 let arg_type = match &synth {
@@ -1625,7 +1700,7 @@ impl Checker {
     ///    the substitution to resolve it to a concrete type.
     ///
     /// Returns `None` when the hint cannot be parsed, the wrapper type is
-    /// not a recognised container (`List`, `IO`, `Dict`, `NonEmpty`), or
+    /// not a recognised container (`List`, `IO`, `block`, `NonEmpty`), or
     /// the unification fails (e.g. `val_type = string` vs wrapper `[a]`).
     fn infer_elem_type_from_hint_str(&mut self, hint_str: &str, val_type: &Type) -> Option<Type> {
         let parsed = parse::parse_type(hint_str).ok()?;
@@ -1634,14 +1709,12 @@ impl Checker {
         let freshened = freshen(&scheme, &mut self.var_counter);
 
         // Extract the inner type variable from the freshened wrapper.
-        // Accepts List, IO, Dict, and NonEmpty containers — all represented as
-        // App(Con("X"), T) in the new HKT representation.
-        // Accepts List, IO, Dict, and NonEmpty containers — all represented as
+        // Accepts List, IO, block, and NonEmpty containers — all represented as
         // App(Con("X"), T) in the new HKT representation.
         let inner = freshened
             .as_list()
             .or_else(|| freshened.as_io())
-            .or_else(|| freshened.as_dict())
+            .or_else(|| freshened.as_block())
             .or_else(|| freshened.as_non_empty())
             .cloned()?;
 
@@ -2312,7 +2385,7 @@ impl Checker {
     /// If no parameter is block-shaped, falls back to `any` immediately,
     /// preserving the existing gradual boundary for non-block lambdas.
     fn synthesise_lam(&mut self, scope: &crate::core::expr::LamScope<RcExpr>) -> Type {
-        let block_flags = detect_block_params(scope);
+        let block_flags = self.detect_block_params(scope);
 
         // Fast path: no block-shaped params → keep `any` (unchanged behaviour).
         if block_flags.iter().all(|&b| !b) {
@@ -2365,11 +2438,20 @@ impl Checker {
     ///
     /// Returns `None` for everything else (not a recognised brancher).
     fn recognise_brancher(&self, func: &RcExpr) -> Option<BranchShape> {
+        self.recognise_brancher_at(func, 0)
+    }
+
+    /// `recognise_brancher` for an expression `offset` binding scopes inside
+    /// the innermost frame of `scope_stack` — used while scanning a lambda
+    /// body whose own frame (and any nested ones) has not been pushed.  A
+    /// bound variable with `scope < offset` belongs to those unpushed scopes
+    /// and is not recognised.
+    fn recognise_brancher_at(&self, func: &RcExpr, offset: usize) -> Option<BranchShape> {
         match &*func.inner {
             Expr::Intrinsic(_, name) => intrinsic_branch_shape(name),
             Expr::Var(_, Var::Bound(bv)) => {
                 let name = bv.name.as_deref()?;
-                let idx = bv.scope as usize;
+                let idx = (bv.scope as usize).checked_sub(offset)?;
                 // Saturating sub: if idx >= scope_stack.len(), the variable
                 // is from an outer scope that we haven't seen (should not
                 // normally happen after varify, but guard anyway).
@@ -2384,6 +2466,131 @@ impl Checker {
             Expr::Var(_, Var::Free(name)) => intrinsic_branch_shape(name)
                 .or_else(|| self.seed_branch_shapes.get(name.as_str()).cloned()),
             _ => None,
+        }
+    }
+
+    // ── B9: use-driven block-parameter detection ──────────────────────────
+
+    /// Scan a lambda scope to determine which parameters are "used as a block"
+    /// — i.e. appear in a projection (`Lookup`) or as arguments to `merge`
+    /// in the body.
+    ///
+    /// A projection inside a branch guarded by `block?` on that parameter
+    /// (`x block? then(x.a, 0)`) is not a use: the branch only runs when the
+    /// parameter is already a block, so it says nothing about what callers
+    /// may pass.
+    ///
+    /// Returns a `Vec<bool>` of length `scope.pattern.len()`.  `true` at index `i`
+    /// means parameter `i` is block-shaped and should receive a fresh row-variable
+    /// record type during synthesis.
+    ///
+    /// Called before the lambda's own frame is pushed, so `scope_stack` is the
+    /// environment enclosing the lambda.
+    fn detect_block_params(&self, scope: &crate::core::expr::LamScope<RcExpr>) -> Vec<bool> {
+        let n = scope.pattern.len();
+        let mut flags = vec![false; n];
+        self.collect_block_uses(&scope.body, 0, &mut flags);
+        flags
+    }
+
+    /// Recursively scan `expr` for block usages of the parameters introduced by
+    /// the lambda that `flags` belongs to.
+    ///
+    /// `depth` is the number of additional binding scopes (lambdas and lets)
+    /// entered since the original lambda boundary.  The original parameters
+    /// are referenced by `Var::Bound { scope: depth, binder: i }`.
+    fn collect_block_uses(&self, expr: &RcExpr, depth: usize, flags: &mut Vec<bool>) {
+        match &*expr.inner {
+            // Projection: the object expression is used as a block.
+            Expr::Lookup(_, obj, _, fallback) => {
+                mark_block_param(obj, depth, flags);
+                self.collect_block_uses(obj, depth, flags);
+                if let Some(f) = fallback {
+                    self.collect_block_uses(f, depth, flags);
+                }
+            }
+
+            // Application: if the function spine resolves to `merge`,
+            // every argument in the full spine is used as a block.  A fully
+            // applied branch combinator whose condition tests `block?` on a
+            // parameter scans its guarded branches without counting that
+            // parameter.
+            Expr::App(_, func, args) => {
+                let (head, prefix_args) = flatten_app_spine(func);
+                if is_merge_expr(head) {
+                    for arg in &prefix_args {
+                        mark_block_param(arg, depth, flags);
+                    }
+                    for arg in args {
+                        mark_block_param(arg, depth, flags);
+                    }
+                }
+                if let Some(shape) = self.recognise_brancher_at(peel_meta(head), depth + 1) {
+                    let spine: Vec<&RcExpr> =
+                        prefix_args.iter().copied().chain(args.iter()).collect();
+                    if let Some((branch, param)) = block_guarded_branch(&shape, &spine, depth) {
+                        // `head` is a variable or intrinsic: nothing in it to scan.
+                        for (i, arg) in spine.iter().enumerate() {
+                            if i != branch {
+                                self.collect_block_uses(arg, depth, flags);
+                                continue;
+                            }
+                            let mut branch_flags = vec![false; flags.len()];
+                            self.collect_block_uses(arg, depth, &mut branch_flags);
+                            for (j, used) in branch_flags.into_iter().enumerate() {
+                                if used && j != param {
+                                    flags[j] = true;
+                                }
+                            }
+                        }
+                        return;
+                    }
+                }
+                self.collect_block_uses(func, depth, flags);
+                for arg in args {
+                    self.collect_block_uses(arg, depth, flags);
+                }
+            }
+
+            // Nested lambda: increase depth so outer parameters are still found.
+            Expr::Lam(_, _, inner_scope) => {
+                self.collect_block_uses(&inner_scope.body, depth + 1, flags);
+            }
+
+            // Let binding: a let is recursive, so both the binding values and the
+            // body sit inside the let's own scope (depth+1).  Scanning the values
+            // at `depth` would mistake references to the let's own binders (e.g.
+            // the `__p'1` introduced by list-destructuring parameters) for the
+            // enclosing lambda's parameters.
+            Expr::Let(_, inner_scope, _) => {
+                for b in &inner_scope.pattern {
+                    self.collect_block_uses(&b.expr, depth + 1, flags);
+                }
+                self.collect_block_uses(&inner_scope.body, depth + 1, flags);
+            }
+
+            // Meta wrappers: recurse through both.
+            Expr::Meta(_, inner, meta) => {
+                self.collect_block_uses(inner, depth, flags);
+                self.collect_block_uses(meta, depth, flags);
+            }
+
+            // Block literal: scan field values.
+            Expr::Block(_, fields) => {
+                for (_, val) in fields.iter() {
+                    self.collect_block_uses(val, depth, flags);
+                }
+            }
+
+            // List literal: scan elements.
+            Expr::List(_, items) => {
+                for item in items {
+                    self.collect_block_uses(item, depth, flags);
+                }
+            }
+
+            // Variables and primitives: nothing to do.
+            _ => {}
         }
     }
 
@@ -2533,7 +2740,7 @@ impl Checker {
     /// | closed `Record` | yes | — | field type |
     /// | closed `Record` | — | yes | `any` + key-typo warning |
     /// | open `Record` or row-variable `Record` | — | yes | `any`, no warning |
-    /// | `Dict(v)` | — | — | `v` |
+    /// | `block(v)` | — | — | `v` |
     /// | other | — | — | `any` |
     fn synthesise_lookup_with_literal_key(
         &mut self,
@@ -2564,7 +2771,7 @@ impl Checker {
                 }
             }
             other => {
-                if let Some(val_type) = other.as_dict() {
+                if let Some(val_type) = other.as_block() {
                     val_type.clone()
                 } else {
                     Type::Any
@@ -2636,6 +2843,54 @@ impl Checker {
             Expr::Lam(_, _, scope) if scope.pattern.len() == 1 => {
                 let param_name = &scope.pattern[0];
                 self.classify_proj_lam_body(param_name, &scope.body)
+            }
+            _ => None,
+        }
+    }
+
+    /// Recognise a tuple drop in head position and return its literal count
+    /// and the expression it is applied to.
+    ///
+    /// - `drop(n, xs)` (spine of two, `n` a non-negative integer literal);
+    /// - `f(xs)` where `f` is a binding classified as `drop(n)` (§A6.8).
+    fn recognise_tuple_drop<'e>(
+        &self,
+        head: &RcExpr,
+        spine_args: &[&'e RcExpr],
+    ) -> Option<(usize, &'e RcExpr)> {
+        match spine_args {
+            [count, target] if is_drop_fn(head) => Some((literal_count(count)?, target)),
+            [target] => {
+                let Expr::Var(_, Var::Bound(bv)) = &*peel_meta(head).inner else {
+                    return None;
+                };
+                let name = bv.name.as_deref()?;
+                let anchored = self.scope_stack.len().checked_sub(1 + bv.scope as usize)?;
+                let count = (*self.drop_shapes.get(&(anchored, name.to_string()))?)?;
+                Some((count, target))
+            }
+            _ => None,
+        }
+    }
+
+    /// Classify a binding body as a tuple dropper and return its count.
+    ///
+    /// - `drop(n)` partially applied to a non-negative integer literal → `n`;
+    /// - an alias of a binding already classified as a dropper → its count.
+    fn classify_drop_body(&self, body: &RcExpr, stack_len: usize) -> Option<usize> {
+        let peeled = peel_meta(body);
+        match &*peeled.inner {
+            Expr::App(_, func, args) => {
+                let (head, prefix) = flatten_app_spine(func);
+                match (prefix.as_slice(), args.as_slice()) {
+                    ([], [count]) if is_drop_fn(head) => literal_count(count),
+                    _ => None,
+                }
+            }
+            Expr::Var(_, Var::Bound(bv)) => {
+                let name = bv.name.as_deref()?;
+                let anchored = stack_len.checked_sub(1 + bv.scope as usize)?;
+                *self.drop_shapes.get(&(anchored, name.to_string()))?
             }
             _ => None,
         }
@@ -2750,94 +3005,57 @@ fn flatten_app_spine(func: &RcExpr) -> (&RcExpr, Vec<&RcExpr>) {
 
 // ── B9: use-driven block-parameter detection ──────────────────────────────────
 
-/// Scan a lambda scope to determine which parameters are "used as a block"
-/// — i.e. appear in a projection (`Lookup`) or as arguments to `merge`
-/// in the body.
+/// For a fully applied branch combinator whose condition is `block?(p)` (or
+/// its negation) on one of the scanned lambda's parameters `p`, return
+/// `(spine index, p)` for the branch that only runs when `p` is a block:
 ///
-/// Returns a `Vec<bool>` of length `scope.pattern.len()`.  `true` at index `i`
-/// means parameter `i` is block-shaped and should receive a fresh row-variable
-/// record type during synthesis.
-fn detect_block_params(scope: &crate::core::expr::LamScope<RcExpr>) -> Vec<bool> {
-    let n = scope.pattern.len();
-    let mut flags = vec![false; n];
-    collect_block_uses(&scope.body, 0, &mut flags);
-    flags
+/// - `if(c, t, f)` and combinators derived from it (`then`): `t` when `c` is
+///   `block?(p)`, `f` when it is `not(block?(p))`;
+/// - `and(c, r)`: `r` when `c` is `block?(p)`;
+/// - `or(c, r)`: `r` when `c` is `not(block?(p))`.
+///
+/// `cond` is not covered.  Returns `None` when the arity is wrong or the
+/// condition is not such a test, so the caller scans as usual.
+fn block_guarded_branch(
+    shape: &BranchShape,
+    spine: &[&RcExpr],
+    depth: usize,
+) -> Option<(usize, usize)> {
+    if spine.len() != shape.arity {
+        return None;
+    }
+    let (param, positive) = block_test_of_param(spine[shape.condition], depth)?;
+    let branch = match (&shape.kind, positive) {
+        (BranchKind::If, true) => shape.branches[0],
+        (BranchKind::If, false) => shape.branches[1],
+        (BranchKind::And, true) | (BranchKind::Or, false) => shape.branches[0],
+        _ => return None,
+    };
+    Some((branch, param))
 }
 
-/// Recursively scan `expr` for block usages of the parameters introduced by
-/// the lambda that `flags` belongs to.
-///
-/// `depth` is the number of additional lambda scopes that have been entered
-/// since the original lambda boundary.  The original parameters are referenced
-/// by `Var::Bound { scope: depth, binder: i }` inside nested lambdas.
-fn collect_block_uses(expr: &RcExpr, depth: usize, flags: &mut Vec<bool>) {
-    match &*expr.inner {
-        // Projection: the object expression is used as a block.
-        Expr::Lookup(_, obj, _, fallback) => {
-            mark_block_param(obj, depth, flags);
-            collect_block_uses(obj, depth, flags);
-            if let Some(f) = fallback {
-                collect_block_uses(f, depth, flags);
-            }
+/// Recognise `block?(p)` or `not(block?(p))` where `p` is a parameter of the
+/// lambda being scanned (`scope == depth`); return `(p's index, polarity)`,
+/// polarity `true` for the un-negated test.
+fn block_test_of_param(condition: &RcExpr, depth: usize) -> Option<(usize, bool)> {
+    let Expr::App(_, func, args) = &*peel_meta(condition).inner else {
+        return None;
+    };
+    let [arg] = args.as_slice() else {
+        return None;
+    };
+    let func = peel_meta(func);
+    if is_not_func(func) {
+        return block_test_of_param(arg, depth).map(|(p, pos)| (p, !pos));
+    }
+    if !matches!(classify_predicate(func), Some(PredicateKind::Block)) {
+        return None;
+    }
+    match &*peel_meta(arg).inner {
+        Expr::Var(_, Var::Bound(bv)) if bv.scope as usize == depth => {
+            Some((bv.binder as usize, true))
         }
-
-        // Application: if the function spine resolves to `merge`,
-        // every argument in the full spine is used as a block.
-        Expr::App(_, func, args) => {
-            let (head, prefix_args) = flatten_app_spine(func);
-            if is_merge_expr(head) {
-                for arg in &prefix_args {
-                    mark_block_param(arg, depth, flags);
-                }
-                for arg in args {
-                    mark_block_param(arg, depth, flags);
-                }
-            }
-            collect_block_uses(func, depth, flags);
-            for arg in args {
-                collect_block_uses(arg, depth, flags);
-            }
-        }
-
-        // Nested lambda: increase depth so outer parameters are still found.
-        Expr::Lam(_, _, inner_scope) => {
-            collect_block_uses(&inner_scope.body, depth + 1, flags);
-        }
-
-        // Let binding: a let is recursive, so both the binding values and the
-        // body sit inside the let's own scope (depth+1).  Scanning the values
-        // at `depth` would mistake references to the let's own binders (e.g.
-        // the `__p'1` introduced by list-destructuring parameters) for the
-        // enclosing lambda's parameters.
-        Expr::Let(_, inner_scope, _) => {
-            for b in &inner_scope.pattern {
-                collect_block_uses(&b.expr, depth + 1, flags);
-            }
-            collect_block_uses(&inner_scope.body, depth + 1, flags);
-        }
-
-        // Meta wrappers: recurse through both.
-        Expr::Meta(_, inner, meta) => {
-            collect_block_uses(inner, depth, flags);
-            collect_block_uses(meta, depth, flags);
-        }
-
-        // Block literal: scan field values.
-        Expr::Block(_, fields) => {
-            for (_, val) in fields.iter() {
-                collect_block_uses(val, depth, flags);
-            }
-        }
-
-        // List literal: scan elements.
-        Expr::List(_, items) => {
-            for item in items {
-                collect_block_uses(item, depth, flags);
-            }
-        }
-
-        // Variables and primitives: nothing to do.
-        _ => {}
+        _ => None,
     }
 }
 
@@ -3026,6 +3244,10 @@ fn is_tail_fn(expr: &RcExpr) -> bool {
 /// Returns `None` when `arg_type` is neither shape (caller falls through to the
 /// generic annotation path).
 fn apply_head_tail_to_tuple(proj: HeadTailProjection, arg_type: &Type) -> Option<Type> {
+    // `tail` is `drop(1)`.
+    if let HeadTailProjection::Tail = proj {
+        return apply_drop_to_tuple(1, arg_type);
+    }
     // Unfold a recursive alias one step so projection sees the underlying shape
     // (the markup `Element` alias is `Mu`-wrapped because its tail is
     // self-referential).  Unfolding a `Mu(List(_))` yields a `List` which this
@@ -3035,24 +3257,57 @@ fn apply_head_tail_to_tuple(proj: HeadTailProjection, arg_type: &Type) -> Option
         return apply_head_tail_to_tuple(proj, &unfolded);
     }
     match arg_type {
-        Type::Tuple(elems) => match proj {
-            HeadTailProjection::Head => elems.first().cloned(),
-            HeadTailProjection::Tail => {
-                if elems.len() <= 1 {
-                    // tail of a singleton (or degenerate zero-elem) tuple is the empty list.
-                    Some(Type::list(Type::Any))
-                } else {
-                    Some(Type::Tuple(elems[1..].to_vec()))
-                }
-            }
-        },
-        Type::PrefixList { prefix, tail } => match proj {
-            HeadTailProjection::Head => prefix.first().cloned(),
-            HeadTailProjection::Tail => Some(Type::prefix_list(
-                prefix[1..].to_vec(),
-                tail.as_ref().clone(),
-            )),
-        },
+        Type::Tuple(elems) => elems.first().cloned(),
+        Type::PrefixList { prefix, .. } => prefix.first().cloned(),
+        _ => None,
+    }
+}
+
+/// The address of an expression node, identifying it for the lifetime of
+/// the checked tree (see `Checker::presynthesised`).
+fn expr_key(expr: &RcExpr) -> usize {
+    std::rc::Rc::as_ptr(&expr.inner) as usize
+}
+
+/// Return `true` when `expr` is the prelude `drop` (a bound or, in
+/// prelude-cached mode, free variable named `"drop"`).
+fn is_drop_fn(expr: &RcExpr) -> bool {
+    match &*peel_meta(expr).inner {
+        Expr::Var(_, Var::Bound(bv)) => bv.name.as_deref() == Some("drop"),
+        Expr::Var(_, Var::Free(name)) => name == "drop",
+        _ => false,
+    }
+}
+
+/// The value of a non-negative integer literal, or `None` for anything else.
+fn literal_count(expr: &RcExpr) -> Option<usize> {
+    match &*peel_meta(expr).inner {
+        Expr::Literal(_, Primitive::Num(n)) => n.as_u64().and_then(|n| usize::try_from(n).ok()),
+        _ => None,
+    }
+}
+
+/// Apply `drop(count)` to a known `Tuple` or `PrefixList` type (§A6.8).
+///
+/// - `drop(n, Tuple([T₀, …, Tₖ])) → Tuple([Tₙ, …, Tₖ])`, or `List(Any)` when
+///   nothing is left (as for `tail` of a singleton);
+/// - `drop(n, PrefixList{p, t}) → PrefixList{p[n..], t}` when `n` lies within
+///   the prefix (past it, how much of the tail remains is unknown).
+///
+/// Returns `None` for any other shape (the caller falls through to the
+/// generic annotation path).
+fn apply_drop_to_tuple(count: usize, arg_type: &Type) -> Option<Type> {
+    if let Type::Mu(x, body) = arg_type {
+        let unfolded = unfold_mu(x, body, arg_type);
+        return apply_drop_to_tuple(count, &unfolded);
+    }
+    match arg_type {
+        Type::Tuple(elems) if count >= elems.len() => Some(Type::list(Type::Any)),
+        Type::Tuple(elems) => Some(Type::Tuple(elems[count..].to_vec())),
+        Type::PrefixList { prefix, tail } if count <= prefix.len() => Some(Type::prefix_list(
+            prefix[count..].to_vec(),
+            tail.as_ref().clone(),
+        )),
         _ => None,
     }
 }
@@ -3570,6 +3825,9 @@ pub fn parse_operator_overloads(
     for (name, (type_str, smid)) in raw {
         match parse::parse_scheme(type_str) {
             Ok((ty, constraints)) => {
+                for note in parse::deprecation_notes(type_str) {
+                    warnings.push(TypeWarning::new(note).at(*smid));
+                }
                 let mut scheme = infer_scheme(ty);
                 scheme.constraints = constraints;
                 overloads.insert(name.clone(), scheme);

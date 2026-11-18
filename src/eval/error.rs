@@ -780,10 +780,13 @@ fn catenation_operand_note(
     if !source_map.is_user_file(file) {
         return None;
     }
-    // Only an operand blamed by its own location (eu-oaz72.121) is found
-    // from the step head; every other error is raised at the operator.
+    // Only an operand blamed by its own location (eu-oaz72.121, and
+    // eu-oaz72.151 for case scrutinees) is found from the step head;
+    // every other error is raised at the operator.
     let by_head = || {
-        let ExecutionError::UnexpectedFunction(..) = inner else {
+        let (ExecutionError::UnexpectedFunction(..) | ExecutionError::CannotReturnFunToCase(..)) =
+            inner
+        else {
             return None;
         };
         let source: &str = codespan_reporting::files::Files::source(files, file).ok()?;
@@ -841,10 +844,14 @@ fn not_callable_notes(actual_type: &str, ev: &Evidence) -> Vec<String> {
 /// value (an unsaturated lambda or a partial application) found where a
 /// non-function value was expected. Deliberately does not suggest
 /// `block.field` — the value is a function, never a block (eu-1tkk.7.9).
+///
+/// The hint assumes an under-applied call, so it is not shown where the
+/// lone-anaphor note explains the function instead: an argument that is
+/// the identity function is not missing arguments (eu-oaz72.141).
 fn unexpected_function_notes() -> Vec<String> {
     vec![
         "a function value cannot be used directly here; it must first be called with \
-         all of its remaining arguments"
+          all of its remaining arguments"
             .to_string(),
     ]
 }
@@ -883,12 +890,9 @@ fn lone_anaphor_note(
         }
         let span = info.span?;
         let text = source.get(span.start().to_usize()..span.end().to_usize())?;
-        // On one line; whitespace within a line, as in a string, is kept.
-        Some(if text.contains('\n') {
-            text.split_whitespace().collect::<Vec<_>>().join(" ")
-        } else {
-            text.to_string()
-        })
+        // On one line, token by token, so whitespace inside a string is
+        // kept even when the call spans lines, and comments are dropped.
+        Some(crate::common::evidence::one_line(text))
     };
     let whole = text(call.call)?;
     let anaphors = call
@@ -1296,8 +1300,11 @@ pub enum ExecutionError {
     NoBranchForDataTag(Smid, u8, Vec<u8>),
     #[error("type mismatch: received a {1} where a structured value (block or list) was expected")]
     NoBranchForNative(Smid, String),
+    /// The third field is the function's own annotation, used as the
+    /// primary location when it lies in a user file (eu-oaz72.151), as for
+    /// `UnexpectedFunction`; invalid when the function has none.
     #[error("{}", format_cannot_return_fun(.1))]
-    CannotReturnFunToCase(Smid, Vec<u8>),
+    CannotReturnFunToCase(Smid, Vec<u8>, Smid),
     /// Internal runtime error — shown as-is, without any "panic:" prefix.
     ///
     /// Use `UserPanic` when the error originates from the user's `panic()`
@@ -1383,14 +1390,24 @@ pub enum ExecutionError {
     ArrayNdIndexOutOfBounds(Smid, Vec<usize>),
     #[error("array shape mismatch: {1}")]
     ArrayShapeMismatch(Smid, String),
-    #[error("negative array index or dimension: {} — array indices and dimensions must be non-negative", display_f64(*.1))]
-    ArrayNegativeIndex(Smid, f64),
+    /// A negative array coordinate, axis, index or dimension:
+    /// `(function and what, value)`, e.g. `("arr.slice index", -1)`.
+    #[error("{} {} must be non-negative", .1, display_f64(*.2))]
+    ArrayNegativeIndex(Smid, String, f64),
     #[error("{} {} must be an integer", .1, display_f64(*.2))]
     ArrayNonIntegerIndex(Smid, String, f64),
     /// An array shape whose element count exceeds what one array can
     /// hold: `(function, shape, maximum element count)`.
     #[error("{1}: array shape {2} has too many elements — an array holds at most {3} elements")]
     ArrayTooLarge(Smid, String, String, usize),
+    /// An empty array shape (some dimension zero) whose other dimensions
+    /// multiply to more sub-arrays than one array may have: `(function,
+    /// shape, maximum product)`. Rendering such an array with the zero
+    /// last would emit that many empty sequences, and since `arr.transpose`
+    /// does not re-validate the shape it can move a leading zero last, so
+    /// the bound holds wherever the zero is.
+    #[error("{1}: empty array shape {2} has too many sub-arrays — the dimensions of an empty array other than 0 may multiply to at most {3}")]
+    ArrayEmptyShapeTooLarge(Smid, String, String, usize),
     #[error("list index out of bounds: index {1} is beyond the end of the list")]
     ListIndexOutOfBounds(Smid, usize),
     /// `dict.get` of a key the dict does not hold; `.1` renders the key.
@@ -1493,7 +1510,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::OutputStreamClosed => Smid::default(),
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,
             ExecutionError::NoBranchForNative(s, _) => *s,
-            ExecutionError::CannotReturnFunToCase(s, _) => *s,
+            ExecutionError::CannotReturnFunToCase(s, _, _) => *s,
             ExecutionError::BlackHole(s) => *s,
             ExecutionError::Panic(s, _) => *s,
             ExecutionError::UserPanic(s, _) => *s,
@@ -1510,9 +1527,10 @@ impl HasSmid for ExecutionError {
             ExecutionError::Compile(compile_error) => compile_error.smid(),
             ExecutionError::ArrayNdIndexOutOfBounds(s, _) => *s,
             ExecutionError::ArrayShapeMismatch(s, _) => *s,
-            ExecutionError::ArrayNegativeIndex(s, _) => *s,
+            ExecutionError::ArrayNegativeIndex(s, _, _) => *s,
             ExecutionError::ArrayNonIntegerIndex(s, _, _) => *s,
             ExecutionError::ArrayTooLarge(s, _, _, _) => *s,
+            ExecutionError::ArrayEmptyShapeTooLarge(s, _, _, _) => *s,
             ExecutionError::IoNotAllowed(s) => *s,
             ExecutionError::IoFail(s, _) => *s,
             ExecutionError::IoTimeout(s, _) => *s,
@@ -1554,6 +1572,18 @@ impl HasSmid for ExecutionError {
 }
 
 impl ExecutionError {
+    /// Whether this error is raised from internal machinery that has no
+    /// annotation of its own, such as the render wrapper. The machine's last
+    /// annotation is then whatever user code ran last, unrelated to the
+    /// failure, so the diagnostic never falls back to it: no location is
+    /// better than a wrong one (eu-oaz72.21).
+    fn raised_by_internal_machinery(&self) -> bool {
+        matches!(
+            self,
+            ExecutionError::DictKeyNotRenderable(..) | ExecutionError::DictRenderKeyCollision(..)
+        )
+    }
+
     /// Build the diagnostic without access to source text: hints that need
     /// evidence from the source (eu-oaz72.28) are omitted.
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
@@ -1586,6 +1616,16 @@ impl ExecutionError {
                         kind,
                         Smid::default(),
                     ))
+            }
+            ExecutionError::CannotReturnFunToCase(_, expected, operand) => {
+                let file = source_map.source_info_for_smid(*operand)?.file?;
+                source_map.is_user_file(file).then(|| {
+                    ExecutionError::CannotReturnFunToCase(
+                        *operand,
+                        expected.clone(),
+                        Smid::default(),
+                    )
+                })
             }
             _ => None,
         }
@@ -1624,15 +1664,13 @@ impl ExecutionError {
             other => (other, [].as_slice(), [].as_slice(), Smid::default()),
         };
 
-        // A dict render error is raised from the render machinery, which has
-        // no annotation of its own: the machine's last annotation is then
-        // whatever user code ran last, unrelated to the dict being rendered
-        // (eu-oaz72.21). Never fall back to it for these errors; no location
-        // is better than a wrong one.
-        let last_annotation = match inner {
-            ExecutionError::DictKeyNotRenderable(..)
-            | ExecutionError::DictRenderKeyCollision(..) => Smid::default(),
-            _ => last_annotation,
+        // An error raised by internal machinery (a dict render error, from
+        // the render wrapper) never falls back to the machine's last
+        // annotation, which is unrelated to it.
+        let last_annotation = if inner.raised_by_internal_machinery() {
+            Smid::default()
+        } else {
+            last_annotation
         };
 
         // Determine the best primary source location:
@@ -1883,6 +1921,8 @@ impl ExecutionError {
 
         let ev = Evidence(files.and_then(|f| LabelSource::of(&diag, f)));
         let catenation = files.and_then(|f| catenation_operand_note(inner, source_map, f));
+        let lone_anaphor =
+            files.and_then(|f| lone_anaphor_note(inner, primary_file_span, source_map, f));
         let mut notes = match inner {
             ExecutionError::TypeMismatch(_, detail) => {
                 type_mismatch_notes(&detail.0, &detail.1, &ev)
@@ -1949,9 +1989,12 @@ impl ExecutionError {
                 ]
             }
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name, &ev),
+            // The generic hint assumes an under-applied call; where the
+            // lone-anaphor note explains the function it is not shown.
+            ExecutionError::UnexpectedFunction(..) if lone_anaphor.is_some() => vec![],
             ExecutionError::UnexpectedFunction(..) => unexpected_function_notes(),
             ExecutionError::LookupFailure(_, detail) => lookup_failure_notes(&detail.0, &detail.1),
-            ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
+            ExecutionError::CannotReturnFunToCase(_, expected_tags, _) => {
                 let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
                     || expected_tags.contains(&DataConstructor::BoolFalse.tag());
                 if expects_bool && ev.line_has_word("_") {
@@ -2091,9 +2134,7 @@ impl ExecutionError {
         if let Some(note) = catenation {
             notes.insert(0, note);
         }
-        if let Some(note) =
-            files.and_then(|f| lone_anaphor_note(inner, primary_file_span, source_map, f))
-        {
+        if let Some(note) = lone_anaphor {
             notes.insert(0, note);
         }
         if notes.is_empty() {

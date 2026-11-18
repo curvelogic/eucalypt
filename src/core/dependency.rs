@@ -32,7 +32,7 @@ fn walk(expr: &RcExpr) -> RcExpr {
             let new_bindings: Vec<CoreBinding<RcExpr>> = scope
                 .pattern
                 .iter()
-                .map(|b| CoreBinding::with_demand(b.name.clone(), walk(&b.expr), b.demand))
+                .map(|b| b.with_expr(walk(&b.expr)))
                 .collect();
             let new_body = walk(&scope.body);
             let new_scope = Scope {

@@ -17,12 +17,13 @@ use std::process::Command;
 /// A user function strict in its argument only through a prelude call.
 const PROGRAM: &str = "f(x): inc(x)\n\nout: f(4)\n";
 
-/// The named-signature line `eu dump demands` prints for `f`.
-const EXPECTED: &str = "f: [(Strict,AtMostOnce)]";
+/// The line `eu dump demands` prints for `f`: its demand, then its
+/// signature (eu-oaz72.66).
+const EXPECTED: &str = "f: (Strict, Multi) [(Strict,AtMostOnce)]";
 
 /// Run `eu dump demands` on `PROGRAM`, with the source prelude forced when
-/// `source_prelude` is set, and return the line for `f` in its named
-/// signature table.
+/// `source_prelude` is set, and return the line for `f` in its demand
+/// annotations.
 fn dumped_signature_of_f(source_prelude: bool) -> Option<String> {
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("prog.eu");
@@ -43,10 +44,11 @@ fn dumped_signature_of_f(source_prelude: bool) -> Option<String> {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     stdout
-        .split("-- named signature table")
+        .split("-- demand annotations --")
         .nth(1)?
         .lines()
-        .map(str::trim)
+        // The program's own top-level `f`: nested bindings, such as a local
+        // `f` in a source-mode prelude function, are indented.
         .find(|line| line.starts_with("f:"))
         .map(str::to_string)
 }

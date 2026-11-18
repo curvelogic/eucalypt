@@ -6,6 +6,9 @@
 
 use crate::common::sourcemap::SourceMap;
 use crate::core::typecheck::error::TypeWarning;
+use crate::syntax::rowan::error::{
+    DOUBLED_BRACE_IN_CSTRING_HELP, DOUBLED_BRACE_IN_CSTRING_MESSAGE,
+};
 use crate::syntax::rowan::kind::SyntaxNode;
 use crate::syntax::rowan::ParseError;
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
@@ -118,6 +121,7 @@ fn error_range(error: &ParseError) -> TextRange {
         | ParseError::EmptyExpression { range }
         | ParseError::UnclosedStringInterpolation { range }
         | ParseError::InvalidStringInterpolation { range }
+        | ParseError::DoubledBraceInCString { range }
         | ParseError::InvalidZdtLiteral { range, .. }
         | ParseError::InvalidDoubleColon { range }
         | ParseError::UnclosedBracketExpr { range }
@@ -153,6 +157,9 @@ fn error_message(error: &ParseError) -> String {
         }
         ParseError::InvalidStringInterpolation { .. } => {
             "unexpected content in string interpolation".to_string()
+        }
+        ParseError::DoubledBraceInCString { .. } => {
+            format!("{DOUBLED_BRACE_IN_CSTRING_MESSAGE} ({DOUBLED_BRACE_IN_CSTRING_HELP})")
         }
         ParseError::InvalidZdtLiteral { .. } => "invalid ZDT literal".to_string(),
         ParseError::InvalidDoubleColon { .. } => {

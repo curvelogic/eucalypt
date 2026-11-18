@@ -21,7 +21,7 @@
 //!
 //! ## Constructor application (B1)
 //!
-//! For known built-in constructors (`List`, `IO`, `Dict`, `NonEmpty`) the
+//! For known built-in constructors (`List`, `IO`, `block`, `NonEmpty`) the
 //! argument is **covariant**.  `Lens`/`Traversal` follow the same rules as
 //! before.  For an abstract head — `App(Var(m), a)` — variance is unknown
 //! so **invariance** is required.
@@ -244,12 +244,12 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
             true
         }
 
-        // Dict(A) <: Dict(B) iff A <: B
-        (s, t) if s_is_app_con(s, "Dict") && s_is_app_con(t, "Dict") => {
-            is_subtype_co(s.as_dict().unwrap(), t.as_dict().unwrap(), assumed)
+        // block(A) <: block(B) iff A <: B
+        (s, t) if s_is_app_con(s, "block") && s_is_app_con(t, "block") => {
+            is_subtype_co(s.as_block().unwrap(), t.as_block().unwrap(), assumed)
         }
 
-        // Closed record <: Dict(B) when all field values are <: B.
+        // Closed record <: block(B) when all field values are <: B.
         (
             Type::Record {
                 fields: s_fields,
@@ -257,20 +257,20 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
                 rows,
             },
             _,
-        ) if rows.is_empty() && s_is_app_con(t, "Dict") => {
-            let b = t.as_dict().unwrap();
+        ) if rows.is_empty() && s_is_app_con(t, "block") => {
+            let b = t.as_block().unwrap();
             s_fields
                 .values()
                 .all(|fp| is_subtype_co(fp.ty(), b, assumed))
         }
 
-        // Dict(T) <: {..}
+        // block(T) <: {..}
         (
             s,
             Type::Record {
                 fields, open: true, ..
             },
-        ) if fields.is_empty() && s_is_app_con(s, "Dict") => true,
+        ) if fields.is_empty() && s_is_app_con(s, "block") => true,
 
         // ── Function ─────────────────────────────────────────────────────────
         (Type::Function(a, b), Type::Function(c, d)) => {
@@ -371,7 +371,7 @@ fn is_app_subtype(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
         if sn == tn {
             return match sn {
                 // Covariant built-in constructors.
-                "List" | "IO" | "Dict" | "NonEmpty" => is_subtype_co(si, ti, assumed),
+                "List" | "IO" | "block" | "NonEmpty" => is_subtype_co(si, ti, assumed),
                 // Unknown constructor — invariant.
                 _ => si == ti,
             };
@@ -569,18 +569,18 @@ fn is_consistent_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool
             *t_open || !s_has_required_extra || s_is_open
         }
 
-        // Dict consistency.
-        (s, t) if s_is_app_con(s, "Dict") && s_is_app_con(t, "Dict") => {
-            is_consistent_co(s.as_dict().unwrap(), t.as_dict().unwrap(), assumed)
+        // block consistency.
+        (s, t) if s_is_app_con(s, "block") && s_is_app_con(t, "block") => {
+            is_consistent_co(s.as_block().unwrap(), t.as_block().unwrap(), assumed)
         }
-        (Type::Record { fields, .. }, t) if s_is_app_con(t, "Dict") => {
-            let b = t.as_dict().unwrap();
+        (Type::Record { fields, .. }, t) if s_is_app_con(t, "block") => {
+            let b = t.as_block().unwrap();
             fields
                 .values()
                 .all(|fp| is_consistent_co(fp.ty(), b, assumed))
         }
-        (s, Type::Record { fields, .. }) if s_is_app_con(s, "Dict") => {
-            let a = s.as_dict().unwrap();
+        (s, Type::Record { fields, .. }) if s_is_app_con(s, "block") => {
+            let a = s.as_block().unwrap();
             fields
                 .values()
                 .all(|fp| is_consistent_co(a, fp.ty(), assumed))
@@ -1108,10 +1108,10 @@ mod tests {
             &Type::ordered_dict(Type::String, Type::Number),
             &Type::ordered_dict(Type::Number, Type::Number)
         ));
-        // Not the block type `Dict(T)`, nor a set.
+        // Not the block type `block(T)`, nor a set.
         assert!(!is_subtype(
             &Type::ordered_dict(Type::String, Type::Number),
-            &Type::dict(Type::Number)
+            &Type::block(Type::Number)
         ));
         assert!(!is_subtype(
             &Type::ordered_dict(Type::Any, Type::Any),
@@ -1334,67 +1334,67 @@ mod tests {
         assert!(is_subtype(&l, &tr));
     }
 
-    // ── Dict subtyping ───────────────────────────────────────────────────────
+    // ── block subtyping ───────────────────────────────────────────────────────
 
-    fn dict(t: Type) -> Type {
-        Type::dict(t)
+    fn block(t: Type) -> Type {
+        Type::block(t)
     }
 
     #[test]
-    fn dict_covariant() {
-        assert!(is_subtype(&dict(Type::Never), &dict(Type::Number)));
-        assert!(is_subtype(&dict(Type::Number), &dict(Type::Number)));
-        assert!(is_subtype(&dict(Type::Number), &dict(Type::Top)));
-        assert!(!is_subtype(&dict(Type::Number), &dict(Type::String)));
+    fn block_covariant() {
+        assert!(is_subtype(&block(Type::Never), &block(Type::Number)));
+        assert!(is_subtype(&block(Type::Number), &block(Type::Number)));
+        assert!(is_subtype(&block(Type::Number), &block(Type::Top)));
+        assert!(!is_subtype(&block(Type::Number), &block(Type::String)));
     }
 
     #[test]
-    fn closed_record_subtype_of_dict() {
+    fn closed_record_subtype_of_block() {
         let r = closed(&[("a", Type::Number), ("b", Type::Number)]);
-        assert!(is_subtype(&r, &dict(Type::Number)));
+        assert!(is_subtype(&r, &block(Type::Number)));
     }
 
     #[test]
-    fn closed_record_not_subtype_of_wrong_dict() {
+    fn closed_record_not_subtype_of_wrong_block() {
         let r = closed(&[("a", Type::Number), ("b", Type::String)]);
-        assert!(!is_subtype(&r, &dict(Type::Number)));
+        assert!(!is_subtype(&r, &block(Type::Number)));
     }
 
     #[test]
-    fn open_record_not_subtype_of_dict() {
+    fn open_record_not_subtype_of_block() {
         let r = open(&[("a", Type::Number)]);
-        assert!(!is_subtype(&r, &dict(Type::Number)));
+        assert!(!is_subtype(&r, &block(Type::Number)));
     }
 
     #[test]
-    fn dict_subtype_of_empty_open_record() {
+    fn block_subtype_of_empty_open_record() {
         let any_block = open(&[]);
-        assert!(is_subtype(&dict(Type::Number), &any_block));
-        assert!(is_subtype(&dict(Type::String), &any_block));
+        assert!(is_subtype(&block(Type::Number), &any_block));
+        assert!(is_subtype(&block(Type::String), &any_block));
     }
 
     #[test]
-    fn dict_not_subtype_of_named_field_record() {
+    fn block_not_subtype_of_named_field_record() {
         let r = closed(&[("x", Type::Number)]);
-        assert!(!is_subtype(&dict(Type::Number), &r));
+        assert!(!is_subtype(&block(Type::Number), &r));
     }
 
     #[test]
-    fn dict_consistent_with_same_dict() {
-        assert!(is_consistent(&dict(Type::Number), &dict(Type::Number)));
+    fn block_consistent_with_same_block() {
+        assert!(is_consistent(&block(Type::Number), &block(Type::Number)));
     }
 
     #[test]
-    fn dict_consistent_with_any_dict() {
-        assert!(is_consistent(&dict(Type::Any), &dict(Type::Number)));
-        assert!(is_consistent(&dict(Type::Number), &dict(Type::Any)));
+    fn block_consistent_with_any_block() {
+        assert!(is_consistent(&block(Type::Any), &block(Type::Number)));
+        assert!(is_consistent(&block(Type::Number), &block(Type::Any)));
     }
 
     #[test]
-    fn dict_consistent_with_empty_open_record() {
+    fn block_consistent_with_empty_open_record() {
         let any_block = open(&[]);
-        assert!(is_consistent(&dict(Type::Number), &any_block));
-        assert!(is_consistent(&any_block, &dict(Type::Number)));
+        assert!(is_consistent(&block(Type::Number), &any_block));
+        assert!(is_consistent(&any_block, &block(Type::Number)));
     }
 
     // ── Row variable subtyping ────────────────────────────────────────────────

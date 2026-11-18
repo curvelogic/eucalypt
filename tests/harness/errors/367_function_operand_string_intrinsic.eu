@@ -1,0 +1,3 @@
+` "A string intrinsic handed an under-applied call blames the call, not the intrinsic (eu-oaz72.151)"
+add(a, b): a + b
+p: str.to-upper(add(1))

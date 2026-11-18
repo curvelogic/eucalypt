@@ -12,7 +12,7 @@ use crate::common::sourcemap::Smid;
 use crate::eval::memory::{
     alloc::StgObject,
     array::Array,
-    collect::{CollectorHeapView, CollectorScope, GcScannable, OpaqueHeapBytes, ScanPtr},
+    collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr},
     symbol::SymbolId,
     syntax::RefPtr,
 };
@@ -87,6 +87,9 @@ pub enum BcContinuation {
         or_else: CodeRef,
         /// Environment of handlers.
         environment: RefPtr<BcEnvFrame>,
+        /// Source annotation live when the continuation was pushed,
+        /// restored when it resumes (eu-oaz72.122).
+        annotation: Smid,
     },
     /// Force-and-discard: once the scrutinee reaches WHNF, enter `body` in
     /// the original environment.
@@ -107,6 +110,9 @@ pub enum BcContinuation {
         smid: Smid,
         /// Pre-resolved default closure (returned when key is absent).
         default_closure: BcClosure,
+        /// Source annotation live when the continuation was pushed,
+        /// restored when it resumes (eu-oaz72.122).
+        annotation: Smid,
     },
     /// Marks the end of an emitter capture.
     CaptureEnd,
@@ -188,14 +194,7 @@ impl GcScannable for BcContinuation {
                 // The branch table is a heap `Array`, so its backing is
                 // marked/evacuated — but its entries are inert `CodeRef`s,
                 // so (unlike the HeapSyn continuation) no entry is traced.
-                if marker.mark_array(branch_table) {
-                    if let Some(backing_ptr) = branch_table.allocated_data() {
-                        out.push(ScanPtr::from_non_null(
-                            scope,
-                            backing_ptr.cast::<OpaqueHeapBytes>(),
-                        ));
-                    }
-                }
+                marker.scan_backing(branch_table, scope, out);
                 // `fallback` is an inert `CodeRef` — not traced.
                 if marker.mark(*environment) {
                     out.push(ScanPtr::from_non_null(scope, *environment));
@@ -215,13 +214,7 @@ impl GcScannable for BcContinuation {
                 }
             }
             BcContinuation::ApplyTo { args, .. } => {
-                if marker.mark_array(args) {
-                    if let Some(backing_ptr) = args.allocated_data() {
-                        out.push(ScanPtr::from_non_null(
-                            scope,
-                            backing_ptr.cast::<OpaqueHeapBytes>(),
-                        ));
-                    }
+                if marker.scan_backing(args, scope, out) {
                     for arg in args.iter() {
                         out.push(ScanPtr::new(scope, arg));
                     }
@@ -276,13 +269,7 @@ impl GcScannable for BcContinuation {
             } => {
                 // Update the backing ptr if the branch_table was evacuated.
                 // Entries are inert `CodeRef`s and need no per-entry fixup.
-                if let Some(old_ptr) = branch_table.allocated_data() {
-                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
-                        // SAFETY: new_ptr is a valid evacuated copy of the same
-                        // backing allocation.
-                        unsafe { branch_table.set_backing_ptr(new_ptr.cast()) };
-                    }
-                }
+                heap.update_backing(branch_table);
                 if let Some(new) = heap.forwarded_to(*environment) {
                     *environment = new;
                 }
@@ -300,13 +287,7 @@ impl GcScannable for BcContinuation {
                 }
             }
             BcContinuation::ApplyTo { args, .. } => {
-                if let Some(old_ptr) = args.allocated_data() {
-                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
-                        // SAFETY: new_ptr is a valid evacuated copy of the same
-                        // backing allocation.
-                        unsafe { args.set_backing_ptr(new_ptr.cast()) };
-                    }
-                }
+                heap.update_backing(args);
                 for closure in args.iter_mut() {
                     closure.scan_and_update(heap);
                 }

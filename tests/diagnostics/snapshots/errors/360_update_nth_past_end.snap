@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/360_update_nth_past_end
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/360_update_nth_past_end.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/360_update_nth_past_end.eu:4:14
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: index 3 out of range for list of length 3
+  ┌─ tests/harness/errors/360_update_nth_past_end.eu:4:14
+  │
+4 │ x: [1, 2, 3] update-nth(3, inc)
+  │              ^^^^^^^^^^^^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - x at 360_update_nth_past_end.eu:4:14

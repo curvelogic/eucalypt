@@ -9,7 +9,7 @@ use std::{collections::VecDeque, mem::size_of, ptr::NonNull};
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
 use super::{
-    array::Array,
+    array::HeapBacked,
     header::AllocHeader,
     heap::{BlockBaseSet, Heap},
 };
@@ -229,6 +229,56 @@ impl<'guard> CollectorHeapView<'guard> {
     }
 }
 
+impl<'a> CollectorHeapView<'a> {
+    /// Mark a container's backing buffer and, if it was not already
+    /// marked, queue it as opaque bytes so the evacuating collector can
+    /// move it (the backing has its own header but no tracing of its own).
+    ///
+    /// Returns whether the backing was newly marked. A caller whose
+    /// elements hold heap pointers traces them only then, so a backing
+    /// shared by several arrays is traced once, through whichever reaches
+    /// it first. That is sound only if every array sharing a backing of
+    /// traced elements has the same length. Environment frames share a
+    /// backing only at full length (`EnvironmentFrame::shared_bindings_full`
+    /// and `cell`); `EnvironmentFrame::shared_bindings(n)` can return a
+    /// shorter view and must not be used to share traced bindings. A
+    /// reshaped `HeapNdArray` shares a backing of `f64`s, which has nothing
+    /// to trace.
+    pub fn scan_backing<B: HeapBacked>(
+        &mut self,
+        backed: &B,
+        scope: &'a dyn CollectorScope,
+        out: &mut Vec<ScanPtr<'a>>,
+    ) -> bool {
+        let Some(backing) = backed.allocated_data() else {
+            return false;
+        };
+        let newly = self.mark_backing(backing, B::MARK_KIND);
+        if newly {
+            out.push(ScanPtr::from_non_null(
+                scope,
+                backing.cast::<OpaqueHeapBytes>(),
+            ));
+        }
+        newly
+    }
+
+    /// Rewrite a container's backing pointer if the collector evacuated
+    /// its buffer: the update-phase half of [`Self::scan_backing`].
+    ///
+    /// Callers that hold traced elements update them after this, so they
+    /// read the elements at the new location.
+    pub fn update_backing<B: HeapBacked>(&self, backed: &mut B) {
+        if let Some(old_ptr) = backed.allocated_data() {
+            if let Some(new_ptr) = self.forwarded_to(old_ptr) {
+                // SAFETY: `new_ptr` is the evacuated copy of the same backing
+                // allocation, with the same capacity and element layout.
+                unsafe { backed.set_backing_bytes(new_ptr) };
+            }
+        }
+    }
+}
+
 impl CollectorHeapView<'_> {
     pub fn reset(&mut self) {
         self.heap.reset_region_marks();
@@ -339,12 +389,18 @@ impl CollectorHeapView<'_> {
     /// Returns `true` if the object was newly marked (i.e. it should be
     /// pushed onto the scan queue as an `OpaqueHeapBytes` object).
     pub fn mark_raw_bytes(&mut self, ptr: NonNull<u8>) -> bool {
+        self.mark_backing(ptr, "raw bytes")
+    }
+
+    /// Mark a separately allocated backing buffer, covering every line its
+    /// bytes span; `kind` names it in forwarding-check panics.
+    fn mark_backing(&mut self, ptr: NonNull<u8>, kind: &'static str) -> bool {
         debug_assert!(ptr != NonNull::dangling());
         debug_assert!(ptr.as_ptr() as usize != usize::MAX);
         // Poison is checked only by `mark`: here only a forwarding check
         // has anything to do.
         if self.forwarding != ForwardingCheck::Off {
-            if let Some(newly) = self.debug_mark(ptr, "raw bytes", false) {
+            if let Some(newly) = self.debug_mark(ptr, kind, false) {
                 return newly;
             }
         }
@@ -353,29 +409,6 @@ impl CollectorHeapView<'_> {
             self.heap.mark_lines_for_bytes(ptr);
             self.heap.note_live_bytes(self.heap.allocation_bytes(ptr));
             true
-        } else {
-            false
-        }
-    }
-
-    /// Mark object if not already marked and return whether marked
-    pub fn mark_array<T: Clone>(&mut self, arr: &Array<T>) -> bool {
-        if let Some(ptr) = arr.allocated_data() {
-            debug_assert!(ptr != NonNull::dangling());
-            debug_assert!(ptr.as_ptr() as usize != usize::MAX);
-            if self.forwarding != ForwardingCheck::Off {
-                if let Some(newly) = self.debug_mark(ptr.cast(), "array backing", false) {
-                    return newly;
-                }
-            }
-            if !self.heap.is_marked(ptr) {
-                self.heap.mark_object(ptr);
-                self.heap.mark_lines_for_bytes(ptr);
-                self.heap.note_live_bytes(self.heap.allocation_bytes(ptr));
-                true
-            } else {
-                false
-            }
         } else {
             false
         }
@@ -895,7 +928,7 @@ fn verify_mark_integrity(roots: &dyn GcScannable, heap: &mut Heap, forwarding: F
 /// methods as marking, with a private visited set in place of mark bits
 /// (every object is already marked, so marking alone would visit nothing).
 /// Every pointer `scan` reports passes through `mark`, `mark_raw_bytes` or
-/// `mark_array`, which panic if it still points at an old copy: one that
+/// `scan_backing`, which panic if it still points at an old copy: one that
 /// `scan` reports but `scan_and_update` does not rewrite. Runs before
 /// `release_evacuated_lines`, so the old copies are still intact.
 ///
@@ -962,6 +995,8 @@ fn try_evacuate(
 #[cfg(test)]
 pub mod tests {
     use std::iter::repeat_with;
+
+    use crate::eval::memory::array::Array;
 
     use crate::eval::memory::{
         alloc::{ScopedAllocator, StgObject},
@@ -1044,13 +1079,7 @@ pub mod tests {
             match self {
                 TestObj::Leaf(_) | TestObj::Unupdated(_) | TestObj::StaleBytes(_) => {}
                 TestObj::StaleElements(arr) => {
-                    if let Some(old_ptr) = arr.allocated_data() {
-                        if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
-                            // SAFETY: new_ptr is a valid evacuated copy of
-                            // the same backing allocation.
-                            unsafe { arr.set_backing_ptr(new_ptr.cast()) };
-                        }
-                    }
+                    heap.update_backing(arr);
                 }
                 TestObj::StaleBacking(arr) => {
                     for p in arr.iter_mut() {
@@ -1083,13 +1112,7 @@ pub mod tests {
         marker: &mut CollectorHeapView<'a>,
         out: &mut Vec<ScanPtr<'a>>,
     ) {
-        if marker.mark_array(arr) {
-            if let Some(backing_ptr) = arr.allocated_data() {
-                out.push(ScanPtr::from_non_null(
-                    scope,
-                    backing_ptr.cast::<OpaqueHeapBytes>(),
-                ));
-            }
+        if marker.scan_backing(arr, scope, out) {
             for p in arr.iter() {
                 if marker.mark(*p) {
                     out.push(ScanPtr::from_non_null(scope, *p));
@@ -1099,13 +1122,7 @@ pub mod tests {
     }
 
     fn update_ptr_array(arr: &mut Array<RefPtr<TestObj>>, heap: &CollectorHeapView<'_>) {
-        if let Some(old_ptr) = arr.allocated_data() {
-            if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
-                // SAFETY: new_ptr is a valid evacuated copy of the same
-                // backing allocation.
-                unsafe { arr.set_backing_ptr(new_ptr.cast()) };
-            }
-        }
+        heap.update_backing(arr);
         for p in arr.iter_mut() {
             if let Some(new) = heap.forwarded_to(*p) {
                 *p = new;
@@ -1601,7 +1618,7 @@ pub mod tests {
     }
 
     /// A stale element of a pointer array is reached only because
-    /// `mark_array` records its backing as visited in the post-update
+    /// `scan_backing` records its backing as visited in the post-update
     /// traversal (everything is already marked) (eu-oaz72.136).
     #[test]
     #[should_panic(expected = "GC VERIFY: marking met a forwarded header after the update phase")]
@@ -1612,7 +1629,7 @@ pub mod tests {
         evacuate_head_block_verified(&mut heap, TestObj::StaleElements(arr));
     }
 
-    /// A stale array backing pointer trips `mark_array`'s check
+    /// A stale array backing pointer trips `scan_backing`'s check
     /// (eu-oaz72.136).
     #[test]
     #[should_panic(expected = "(type array backing) was evacuated")]

@@ -1,0 +1,5 @@
+# A `type:` annotation written as an s-string (`s"..."`, the prelude's own
+# form) with the deprecated `Dict(T)` warns too: desugaring keeps the old
+# spelling for the checker to see (eu-oaz72.129).
+` { type: s"Dict(number)" }
+scores: { alice: 95 bob: 87 }

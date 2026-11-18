@@ -1,0 +1,2 @@
+exit: 1
+stderr: "(?s)expected a primitive value, found a function.*errors[/\\]368_function_operand_comparison\.eu:3:4"

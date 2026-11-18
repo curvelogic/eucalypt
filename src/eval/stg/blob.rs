@@ -203,16 +203,19 @@ pub struct PreludeBlob {
     ///
     /// **Not a "core"** (see the module-level naming convention above): each
     /// entry is `(name, tagged_lambda)` where the lambda is tagged
-    /// `Lam(_, true, _)` (inlinable combinator) and every inter-prelude
-    /// reference has already been substituted in at blob-generation time —
-    /// a derived, pre-expanded artefact, not a faithful stage snapshot.
+    /// `Lam(_, true, _)` (inlinable combinator) and inter-prelude
+    /// references to other inlinables have been substituted in at
+    /// blob-generation time — a derived, pre-expanded artefact, not a
+    /// faithful stage snapshot.
     /// Injected as Let bindings before the inline pass so the existing
     /// inliner can distribute and beta-reduce prelude calls even when the
     /// full prelude source is not loaded (blob path).
     ///
-    /// Bindings are self-contained: their bodies only reference intrinsics
-    /// and the lambda's own parameters.  Any remaining inter-prelude
-    /// `Var::Free` references resolve at compile time via `Ref::G`.
+    /// Bodies are not all closed. A reference stays a `Var::Free` name, and
+    /// resolves at compile time via `Ref::G`, when it is a self-recursive
+    /// inlinable's reference to itself, or when substituting it would have
+    /// captured a name under an inner let (pre-expansion is
+    /// capture-avoiding, as on the source path: eu-oaz72.189).
     #[serde(default)]
     pub inlinable_bindings: Vec<(String, RcExpr)>,
 

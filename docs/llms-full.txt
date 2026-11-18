@@ -2354,7 +2354,7 @@ both are errors; render `d dict.to-list` to output such a dict as
 
 The type checker writes the type of a dict as `dict(k, v)`, with keys of
 type `k` and values of type `v`; bare `dict` is `dict(any, any)`. It is a
-different type from `Dict(T)`, the type of a block whose values all have
+different type from `block(T)`, the type of a block whose values all have
 type `T`. See [Type Checking](type-checking.md#dictk-v).
 
 ## Equality
@@ -2423,7 +2423,20 @@ If you require C-style escapes, you can use C-strings:
 multiline: c"first line\nsecond line"
 ```
 
-C-strings also support interpolation with `{...}`.
+C-strings also support interpolation with `{...}`. In a c-string a
+literal brace is written with a backslash, `\{` or `\}`: doubling
+(`{{`, `}}`) is **not** an escape there, so `c"{{x}}"` opens an
+interpolation that holds a stray `{` and is a parse error.
+
+```eu
+n: 3
+braces: c"\{n\} is {n}"
+```
+
+```yaml
+n: 3
+braces: '{n} is 3'
+```
 
 ## Basic Interpolation
 
@@ -2481,8 +2494,9 @@ label: '99'
 > result: "{sum}"
 > ```
 >
-> Anything else inside the braces — a second name, as in `"{ a b }"` —
-> is a parse error. Whitespace around the name and the format
+> Anything else inside the braces — a second name, as in `"{ a b }"`,
+> or a dot with no name on one side, as in `"{.x}"` or `"{x.}"` — is a
+> parse error. Whitespace around the name and the format
 > specifier is ignored: `"{ n : %06d }"` is `"{n:%06d}"`.
 
 ## Escaping Braces
@@ -2775,6 +2789,8 @@ table: rows map(format-row)
 - Escape literal braces by doubling them: `{{` and `}}`. This works
   straight after an interpolation too: `"{x}}}"` is the value of `x`
   followed by `}`
+- In a c-string, write a literal brace as `\{` or `\}`; `{{` is not an
+  escape there
 - The `str` namespace provides splitting, joining, case conversion,
   matching, and more
 
@@ -5261,6 +5277,20 @@ absolute path or a git import), eucalypt resolves it by searching in this order:
 
 If the file is found in the source-relative directory it is used immediately and
 the global lib path is not consulted.
+
+If the file is found in neither place, the import is an error — with one
+exception. The libraries shipped inside eucalypt (`prelude.eu`, `lens.eu`,
+`state.eu`, `do.eu`, `reflect.eu`, `contract.eu`, `markup.eu`, `test.eu`) are
+imported by their bare file name, as in `{ import: "lens.eu" }`. That exact
+name, or the name without `.eu`, falls back to the shipped library when no
+such file exists and the import is read as eucalypt. A file of your own with
+that name, found by the search above, takes priority. Any other import is
+only ever a file: `"lib/lens.eu"`, `"./lens.eu"`, `"lens.yaml"` or a data
+import such as `"text@lens.eu"` that does not exist is a `could not read`
+error, never the shipped library. (Inside a file fetched by a git import,
+relative imports are fetched from the same repository instead; see
+[Git Imports](#git-imports).) A shipped library can also be named directly
+as a resource: `"resource:lens"`.
 
 ### Transitive resolution
 
@@ -7978,12 +8008,13 @@ Literal types are most useful in **discriminated unions** — type aliases
 where a tag field distinguishes variants:
 
 ```eu,notest
-{ types: { Shape: c"{{type: \"circle\", radius: number, ..}} | {{type: \"rect\", w: number, h: number, ..}}" } }
+{ types: { Shape: c"\{type: \"circle\", radius: number, ..\} | \{type: \"rect\", w: number, h: number, ..\}" } }
 ```
 
 Because writing complex union types inline is verbose, defining a `types:`
 alias is the recommended approach. (Note the `c"..."` **c-string** — see
-*Writing literal types in annotation strings* below.)
+*Writing literal types in annotation strings* below. In a c-string a
+literal brace is written `\{` and `\}`: `{{` is not an escape there.)
 
 **Subtyping rules**:
 - `"foo"` is consistent with `string` — a literal satisfies a string parameter
@@ -8090,6 +8121,22 @@ second(pair) # type: number  (index 1)
 Any user-defined function whose body is `xs tail head` (or `xs tail tail head`,
 etc.) acquires the same precise projection typing automatically.
 
+`drop` with a literal count keeps the shape of what is left, so a
+heterogeneous list such as an imported XML element can be mapped or
+filtered after its tag and attributes are dropped. A binding that is
+just `drop(n)` for a literal `n` (or an alias of one) is treated the same
+way:
+
+```eu,notest
+el: [:item, {}, [:a, {}], [:b, {}]]
+content: drop(2)
+el drop(2)   # type: ((:a, {..}), (:b, {..}))
+el content   # type: ((:a, {..}), (:b, {..}))
+el drop(9)   # type: [any]  (nothing left)
+```
+
+A count that is not a literal falls back to `drop`'s own type, `[a]`.
+
 ### Prefix-lists
 
 A **prefix-list** sits between a fixed tuple and a homogeneous list: a
@@ -8175,39 +8222,46 @@ lookup(:naem, person)   # warning: unknown record key :naem (key typo in closed 
 - **Closed record + known key** → exact field type.
 - **Closed record + absent key** → `any` + a static warning (key typo caught before runtime).
 - **Open record + absent key** → `any`, no warning (the key may be present at runtime).
-- **`Dict(V)` + any literal key** → `V`.
+- **`block(V)` + any literal key** → `V`.
 - **Non-literal key** → `any` (key value unknown at check time; may fail at runtime).
 
-### Dict
+### block(T)
 
-`Dict(T)` represents a homogeneous block — a block where every value has
+`block(T)` represents a homogeneous block — a block where every value has
 the same type `T`. Use this when you know what the values are but not what
 the keys are:
 
 ```eu,notest
-` { type: "Dict(number)" }
+` { type: "block(number)" }
 scores: { alice: 95 bob: 87 carol: 92 }
 ```
 
-Key prelude functions are annotated with `Dict` types:
+Bare `block` means `block(any)`: any block at all, the same as `{..}`.
 
-| Function     | Type                              |
-|--------------|-----------------------------------|
-| `map-values` | `(a -> b) -> Dict(a) -> Dict(b)`  |
-| `values`     | `Dict(a) -> [a]`                  |
-| `keys`       | `Dict(a) -> [symbol]`             |
-| `group-by`   | `(a -> any) -> [a] -> Dict([a])`  |
+Key prelude functions are annotated with `block` types:
 
-A closed record is a subtype of the corresponding `Dict` type when all
-its field values share a common type. An open or annotated-Dict record is
-consistent with `Dict(T)` for gradual typing purposes.
+| Function     | Type                                |
+|--------------|-------------------------------------|
+| `map-values` | `(a -> b) -> block(a) -> block(b)`  |
+| `values`     | `block(a) -> [a]`                   |
+| `keys`       | `block(a) -> [symbol]`              |
+| `group-by`   | `(a -> any) -> [a] -> block([a])`   |
+
+A closed record is a subtype of the corresponding `block(T)` type when
+all its field values share a common type. An open record, or a record
+annotated `block(T)`, is consistent with `block(T)` for gradual typing
+purposes.
+
+`Dict(T)` is the old spelling of `block(T)`. It is still accepted for one
+release and means the same type, but each annotation or alias that uses it
+draws a warning pointing to `block(T)`.
 
 ### dict(k, v)
 
 `dict(k, v)` — lowercase, with two parameters — is the type of a
 [dict](dicts.md), the persistent dictionary ordered by key, with keys of
 type `k` and values of type `v`. It is a different type from the block type
-`Dict(T)` above. Bare `dict` means `dict(any, any)`. A dict is persistent,
+`block(T)` above. Bare `dict` means `dict(any, any)`. A dict is persistent,
 so `dict(k, v)` is covariant in both parameters: a `dict(number, never)` is
 a `dict(number, string)`.
 
@@ -8261,7 +8315,7 @@ remaining fields.
 #### Inference for unannotated block combinators (B9)
 
 When a lambda parameter is **used as a block** — projected (`.field`),
-merged (`merge`/`over`), or passed to a block-typed function — the
+merged (`merge`), or passed to a block-typed function — the
 checker allocates a fresh row variable for it automatically, even
 without an explicit `type:` annotation.
 
@@ -8277,6 +8331,22 @@ result: base f(ext)   # result : {x: number, y: string}
 The checker uses a **use-driven** approach: only parameters that appear
 in a block position acquire row variables. Parameters used arithmetically
 (`x + y`) stay `any`, avoiding spurious warnings.
+
+A projection that only runs when the parameter is already a block does
+not count. In a branch guarded by `block?` on that parameter, the
+parameter is left `any`, so other arguments are still accepted. The
+guarded branch is the first arm of `then` or `if` under `x block?` (the
+second under `x block? not`), the second argument of `and(x block?, …)`,
+or the second argument of `or(x block? not, …)`. `cond` clauses are not
+recognised:
+
+```eu,notest
+h(x): x block? then(x.a, 0)
+h(3)           # no warning: x.a only runs for a block
+```
+
+A projection on the unguarded side, or of a different parameter inside
+the guarded branch, still counts.
 
 ### Functions
 
@@ -8311,13 +8381,13 @@ no special syntax is needed. Define recursive aliases with the `types:`
 metadata key:
 
 ```eu,notest
-{ types: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
+{ types: { Json: "number | string | bool | null | [Json] | block(Json)" } }
 
 ` { type: "Json → string" }
 describe: str.from
 ```
 
-`Json` unfolds to `number | string | bool | null | [Json] | Dict(Json)`,
+`Json` unfolds to `number | string | bool | null | [Json] | block(Json)`,
 and any value whose type is a subtype of any variant passes without
 warning.  The type always *displays* as its alias name (`Json`) — never
 as the (infinite) unfolded form.
@@ -8379,7 +8449,7 @@ the type string) still works for kind-`*` variables.
 | `forall (m :: * -> *) a. m a -> m a` | Identity for any unary functor |
 | `forall a. a -> a`  | Polymorphic identity                       |
 
-The built-in constructors `List`, `IO`, `Dict`, `NonEmpty`, `Random`,
+The built-in constructors `List`, `IO`, `block`, `NonEmpty`, `Random`,
 and `State` all have kind `* -> *`.  `Lens` and `Traversal` have kind
 `* -> * -> *`.
 
@@ -8404,7 +8474,7 @@ Partial functions use the postfix `?` sugar in their type signatures:
 ```
 nth      : number → [a] → a?         # may raise an error if index out of range
 parse-as : symbol → string → any?    # may raise an error if string is not valid
-lookup   : symbol → Dict(a) → a?     # may raise an error if key not found
+lookup   : symbol → block(a) → a?     # may raise an error if key not found
 ```
 
 `T?` is display sugar for `T | ExecutionError`.  The two forms are
@@ -8995,7 +9065,7 @@ b: { tags: [1, 2] }     match?(spec)   # => false
 | Closed record            | `{k: T}`                                         |
 | Named row variable       | `{k: T, ..r}` (`{{k: T, ..r}}` in string)       |
 | Row concatenation        | `{..r, ..s}` (`{{..r, ..s}}` in string)          |
-| Homogeneous dict         | `Dict(T)`                                        |
+| Homogeneous block        | `block(T)`; bare `block` = `{..}`                |
 | Ordered dict (`dict.*`)  | `dict(k, v)`; bare `dict` = `dict(any, any)`     |
 | IO action                | `IO(T)`                                          |
 | Lens                     | `Lens(a, b)`                                     |
@@ -9302,17 +9372,9 @@ specs and deliberately differs on closed ones.
 
 ## What is not covered
 
-- **`Dict(T)`, `NonEmpty([T])` and recursive types are accepted without
+- **`block(T)`, `NonEmpty([T])` and recursive types are accepted without
   checking**, matching `as-spec`, so the two agree about what conforms for
   these. Extending them is future work, and will extend both together.
-- **Literal types are the one place `validate` and `as-spec` disagree.**
-  `validate` checks a literal (`"prod"`, `:ok`) by equality, as you would
-  expect. `as-spec` has no arm for literal types, so it falls through to
-  "matches anything" — `s"\"prod\"" as-spec` accepts any value at all. That
-  is a known defect on the `as-spec` side; `validate` does the right
-  thing rather than replicating it. Until it is fixed, do
-  not expect `data match?(spec as-spec)` and `(data validate(spec)) nil?`
-  to agree on a spec containing a literal type.
 - **Data-file blame** — reporting `config.yaml:12` rather than the `ensure`
   call site — needs every importer to carry per-value source provenance.
   Today only the YAML reader (which also serves JSON) does; offering it for
@@ -11655,7 +11717,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
+| `rotate(n, l)` | Rotate list `l` left by `n` positions, wrapping when `n` exceeds the length; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`. An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |
@@ -11950,7 +12012,7 @@ character.
 | `ceiling` | Round number upwards to nearest integer |
 | `⌈⌉` | Ceiling bracket notation, round `n` upwards to nearest integer |
 | `⌊⌋` | Floor bracket notation, round `n` downwards to nearest integer |
-| `pow(b, e)` | Raise `b` to the power `e` |
+| `pow(b, e)` | Raise `b` to the power `e`; an integer base with a non-negative integer exponent gives an integer, or a numeric-overflow error when the result is out of range; a negative exponent gives a float, and a zero base with a negative exponent is an error |
 | `div(a, b)` | Floor division; same as `a / b` |
 | `mod(a, b)` | Floor modulus; same as `a % b` |
 | `quot(a, b)` | Truncation division; rounds toward zero |
@@ -12244,8 +12306,8 @@ x: random.int(100, stream)
 | `vec.of` | Convert list `xs` of primitive values to a vec for O(1) indexed access |
 | `vec.from-list` | Alias of `vec.of`: convert list `xs` of primitive values to a vec |
 | `vec.len` | Return the number of elements in vec `v` |
-| `vec.nth` | Return the element at index `n` (0-based) in vec `v` |
-| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v` |
+| `vec.nth` | Return the element at index `n` (0-based) in vec `v`; an index past the end, negative or not an integer is an error |
+| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v`; indices past the end are clamped to the length, and a negative or non-integer index is an error |
 | `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement; a negative `n` samples nothing; a non-integer `n` is an error |
 | `vec.shuffle(v, stream)` | Random monad action: return vec `v` in random order |
 | `vec.to-list` | Convert vec `v` back to a cons-list |
@@ -12477,7 +12539,7 @@ has no metadata at all.
 | `update?(k?, f, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `let` | Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha |
 | `for` | List monad for list comprehensions. Each binding draws from a list; subsequent bindings can depend on earlier ones. Use [x] filter(pred?) for guards |
-| `as-spec(t)` | Convert type-data to a match?-compatible pattern. Primitive types become predicates, records become block patterns, lists become list predicates, unions become disjunctive predicates, partials accept null or the inner type |
+| `as-spec(t)` | Convert type-data to a match?-compatible pattern. Primitive types become predicates, records become block patterns, lists become list predicates, unions become disjunctive predicates, partials accept null or the inner type, and literal types match exactly their one string or symbol |
 | `parse-args(defaults, args)` | Parse command-line argument list against a defaults block. Each key in `defaults` defines an option with its default value. Field metadata configures parsing: `short` (symbol for short flag), `doc` (description), `flag` (true for boolean toggle). Returns the `defaults` block updated with parsed values, plus an `args` key containing positional arguments as a list. Unknown options cause a runtime error. Use `--help` for auto-generated help text |
 
 ---
@@ -13166,6 +13228,14 @@ The formatter has two modes:
 - **Reformat mode** (`--reformat`) - Full reformatting that applies
   consistent style throughout
 
+In reformat mode a block (of up to three declarations, with no nested
+block or declaration metadata) or a list goes on one line when it fits
+within the width from the column where it starts, leaving one column for a
+separator or bracket after it; otherwise it is laid out one item per line.
+The formatter does not break other expressions, so a line can still pass
+the width when a long expression or string leaves no block or list to
+break.
+
 ## Type Checking
 
 The `check` subcommand runs the type checker without evaluating:
@@ -13191,9 +13261,21 @@ eucalypt source:
 eu doc file.eu                    # Markdown output to stdout
 eu doc --format json file.eu      # JSON Schema output
 eu doc --prelude                  # Document the embedded prelude
-eu doc --check file.eu            # Report documentation coverage (exit 1 if < 100%)
+eu doc --check file.eu            # Report documentation coverage
 eu doc --output-dir out/ file.eu  # Write categorised Markdown files to a directory
 ```
+
+A top-level block (`name: { ... }`) is documented as a namespace, and its
+members are documented with it. A member whose value is itself a block is a
+nested namespace when that member, or any public member within it, has a
+docstring; its members are rendered one heading level deeper and counted by
+`--check`. Markdown has six heading levels, so members nested deeper than
+that are rendered at the sixth level under their fully-qualified name. A
+non-public member (`:internal` or `:suppress`) is neither rendered nor
+counted, and neither is anything inside it. A
+member whose block is used only for scoping (`m: { helper: 1 }.result`),
+and any block returned by a function, is documented without its contents.
+The coverage report is informational: it exits 0 whatever the coverage.
 
 ### Options
 
@@ -14547,8 +14629,8 @@ non-function binding emits a warning and is skipped.
 | `{{k: T, ..r}}`    | named row variable (extra fields in r) |
 | `{{..r, ..s}}`     | row concatenation (union of r and s)   |
 | `{{k: T}}`         | closed record                          |
-| `block`            | any block (no known shape)             |
-| `Dict(T)`          | homogeneous block — all values type T  |
+| `block`            | any block (no known shape), = `{..}`   |
+| `block(T)`         | homogeneous block — all values type T (`Dict(T)` deprecated) |
 | `"value"`          | literal string — subtype of `string`; c-string escapes for the quotes: `c"\"value\""` |
 | `:name`            | literal symbol — subtype of `symbol`   |
 | `A -> B`           | function                               |
@@ -14590,7 +14672,7 @@ prelude functions are partial by nature:
 ```
 nth      : number → [a] → a?         # out-of-range index
 parse-as : symbol → string → any?    # invalid input format
-lookup   : symbol → Dict(a) → a?     # key not found
+lookup   : symbol → block(a) → a?     # key not found
 ```
 
 A partial result flowing into `any` (unannotated code) is **silent** —
@@ -15097,7 +15179,7 @@ A dict renders as a mapping in key order (number keys as their rendered
 text, string keys as their text, symbol keys as their name); a list key, or
 two keys with the same text (`1` and `"1"`), is an error, so render
 `dict.to-list` for those. Type: `dict(k, v)`, bare `dict` = `dict(any, any)`;
-not the block type `Dict(T)`.
+not the block type `block(T)`.
 
 ### 3.3 String Functions (str namespace)
 
@@ -15237,9 +15319,8 @@ catenation) — navigate with `(xs nth(2)).port` or a lens.
 - A malformed **spec** raises `panic("validate: not a type spec")` — a
   different error from a contract violation, so a schema typo cannot
   masquerade as bad data.
-- Literal types (`"prod"`, `:ok`) are checked by equality here but **not**
-  by `as-spec`, which matches anything for them (a known
-  defect).
+- Literal types (`"prod"`, `:ok`) are checked by equality, here and by
+  `as-spec` alike.
 
 See [Structural Contracts](../guide/contracts.md).
 
@@ -18539,8 +18620,8 @@ origin: { x: 0, y: 0 }
 | `{k: T, ..}`       | open record (at least k: T)            |
 | `{k: T, ..r}`      | named row variable (in string: `{{k: T, ..r}}`) |
 | `{..r, ..s}`       | row concatenation (in string: `{{..r, ..s}}`)   |
-| `block`            | any block (no known shape)             |
-| `Dict(T)`          | homogeneous block — all values type T  |
+| `block`            | any block (no known shape), = `{..}`   |
+| `block(T)`         | homogeneous block — all values type T (`Dict(T)` deprecated) |
 | `Name` (capitalised) | type alias — defined via `types: { Name: "..." }` |
 | `"value"`          | literal string type (subtype of `string`); c-string escapes for the quotes: `c"\"value\""` |
 | `:name`            | literal symbol type (subtype of `symbol`)      |

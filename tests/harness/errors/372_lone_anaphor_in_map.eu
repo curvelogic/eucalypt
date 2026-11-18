@@ -1,0 +1,3 @@
+` "A lone anaphor in a call inside a map argument still gets its note (eu-oaz72.141)"
+xs: [1, 2]
+x: [0, 1] map(xs nth(_))

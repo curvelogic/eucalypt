@@ -1,0 +1,6 @@
+# A `types:` alias written with the deprecated `Dict(T)` also warns
+# (eu-oaz72.129); the alias itself still resolves to `block(number)`.
+{ types: { Scores: "Dict(number)" } }
+
+` { type: "Scores" }
+scores: { alice: 95 bob: 87 }

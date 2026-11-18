@@ -1,0 +1,64 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/372_lone_anaphor_in_map
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/372_lone_anaphor_in_map.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/372_lone_anaphor_in_map.eu:3:18
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 0
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'map'
+  ┌─ tests/harness/errors/372_lone_anaphor_in_map.eu:3:18
+  │
+3 │ x: [0, 1] map(xs nth(_))
+  │                  ^^^^^^ expected a → b, found number?
+
+error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
+  ┌─ tests/harness/errors/372_lone_anaphor_in_map.eu:3:18
+  │
+3 │ x: [0, 1] map(xs nth(_))
+  │                  ^^^^^^
+  │
+  = note: in 'nth(_)', '_' is the whole argument, so the argument is the identity function: an expression anaphor's scope ends at the parentheses round it
+  = while evaluating (outermost first):
+    - in 'nth' (prelude)
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/372_lone_anaphor_in_map.eu:3:18
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'map'
+  ┌─ tests/harness/errors/372_lone_anaphor_in_map.eu:3:18
+  │
+3 │ x: [0, 1] map(xs nth(_))
+  │                  ^^^^^^ expected a → b, found number?
+
+error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
+  ┌─ tests/harness/errors/372_lone_anaphor_in_map.eu:3:18
+  │
+3 │ x: [0, 1] map(xs nth(_))
+  │                  ^^^^^^
+  │
+  = note: in 'nth(_)', '_' is the whole argument, so the argument is the identity function: an expression anaphor's scope ends at the parentheses round it
