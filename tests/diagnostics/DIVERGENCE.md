@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**60 of 357 fixtures diverge.**
+**63 of 369 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -71,6 +71,9 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/352_dict_update_strict_evaluates` | user tests/harness/errors/352_dict_update_strict_evaluates.eu:6:10 | user tests/harness/errors/352_dict_update_strict_evaluates.eu:6:10 | 2 (2 user) | 2 (2 user) |
 | `errors/363_array_get_negative` | user tests/harness/errors/363_array_get_negative.eu:2:40 | user tests/harness/errors/363_array_get_negative.eu:2:40 | 0 (0 user) | 0 (0 user) |
 | `errors/364_array_empty_shape_too_large` | user tests/harness/errors/364_array_empty_shape_too_large.eu:2:4 | user tests/harness/errors/364_array_empty_shape_too_large.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/367_function_operand_string_intrinsic` | user tests/harness/errors/367_function_operand_string_intrinsic.eu:3:17 | user tests/harness/errors/367_function_operand_string_intrinsic.eu:3:17 | 1 (1 user) | 1 (1 user) |
+| `errors/369_type_data_set_element` | user tests/harness/errors/369_type_data_set_element.eu:2:4 | user tests/harness/errors/369_type_data_set_element.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/372_lone_anaphor_in_map` | user tests/harness/errors/372_lone_anaphor_in_map.eu:3:18 | user tests/harness/errors/372_lone_anaphor_in_map.eu:3:18 | 1 (0 user) | 0 (0 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
 | `many-decls/huge_decls_type_warning` | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | 1 (1 user) | 1 (1 user) |
 | `many-decls/many_decls_nested_user_fn` | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | 2 (1 user) | 2 (1 user) |

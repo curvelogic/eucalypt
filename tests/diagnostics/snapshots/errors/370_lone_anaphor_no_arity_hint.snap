@@ -1,0 +1,31 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/370_lone_anaphor_no_arity_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/370_lone_anaphor_no_arity_hint.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/370_lone_anaphor_no_arity_hint.eu:3:4
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
+  ┌─ tests/harness/errors/370_lone_anaphor_no_arity_hint.eu:3:4
+  │
+3 │   x: f("a  b",
+  │ ╭────^
+4 │ │      _)
+  │ ╰───────^
+  │
+  = note: in 'f("a  b", _)', '_' is the whole of argument 2, so that argument is the identity function: an expression anaphor's scope ends at the commas and parentheses round it
+  = while evaluating (outermost first):
+    - x at 370_lone_anaphor_no_arity_hint.eu:3:4

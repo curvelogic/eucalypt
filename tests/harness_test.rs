@@ -4863,6 +4863,51 @@ pub fn test_typecheck_146_block_guard_wrong_polarity_warns() {
     }
 }
 
+/// `Dict(T)` is a deprecated alias for the block type `block(T)`
+/// (eu-oaz72.129): an annotation using it warns, pointing to `block(T)`.
+#[test]
+pub fn test_typecheck_147_dict_block_type_deprecated_warns() {
+    run_typecheck_test("147_dict_block_type_deprecated_warns.eu");
+}
+
+/// A `types:` alias spelled with `Dict(T)` warns too (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_148_dict_alias_deprecated_warns() {
+    run_typecheck_test("148_dict_alias_deprecated_warns.eu");
+}
+
+/// `block(T)` is homogeneous: a mismatched value is reported against
+/// `block(number)` (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_149_block_type_mismatch_warns() {
+    run_typecheck_test("149_block_type_mismatch_warns.eu");
+}
+
+/// An s-string `type:` annotation using `Dict(T)` warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_151_dict_sstring_deprecated_warns() {
+    run_typecheck_test("151_dict_sstring_deprecated_warns.eu");
+}
+
+/// An s-string `types:` alias using `Dict(T)` warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_152_dict_sstring_alias_deprecated_warns() {
+    run_typecheck_test("152_dict_sstring_alias_deprecated_warns.eu");
+}
+
+/// `Dict(T)` as a record field's type warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_153_dict_record_field_deprecated_warns() {
+    run_typecheck_test("153_dict_record_field_deprecated_warns.eu");
+}
+
+/// Well-typed `block(T)` and bare `block` code checks clean, with no
+/// deprecation warning (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_150_block_type_no_warning() {
+    run_typecheck_test("150_block_type_no_warning.eu");
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]
@@ -5498,6 +5543,61 @@ pub fn test_error_364_array_empty_shape_too_large() {
     run_error_test(&error_opts("364_array_empty_shape_too_large.eu"));
 }
 
+/// An intrinsic passed point-free is blamed at its use site when it fails
+/// later (eu-oaz72.119).
+#[test]
+pub fn test_error_365_point_free_intrinsic_location() {
+    run_error_test(&error_opts("365_point_free_intrinsic_location.eu"));
+}
+
+/// A case with no fallback that receives a number blames the case, not the
+/// code that last computed a value (eu-oaz72.122).
+#[test]
+pub fn test_error_366_case_native_stale_annotation() {
+    run_error_test(&error_opts("366_case_native_stale_annotation.eu"));
+}
+
+/// A string intrinsic handed an under-applied call blames the call
+/// (eu-oaz72.151).
+#[test]
+pub fn test_error_367_function_operand_string_intrinsic() {
+    run_error_test(&error_opts("367_function_operand_string_intrinsic.eu"));
+}
+
+/// A comparison handed an under-applied call blames the call
+/// (eu-oaz72.151).
+#[test]
+pub fn test_error_368_function_operand_comparison() {
+    run_error_test(&error_opts("368_function_operand_comparison.eu"));
+}
+
+/// Type data is not accepted as a set element (eu-oaz72.144).
+#[test]
+pub fn test_error_369_type_data_set_element() {
+    run_error_test(&error_opts("369_type_data_set_element.eu"));
+}
+
+/// The lone-anaphor note replaces the remaining-arguments hint, and quotes
+/// a multi-line call on one line, keeping a string's spaces (eu-oaz72.141).
+#[test]
+pub fn test_error_370_lone_anaphor_no_arity_hint() {
+    run_error_test(&error_opts("370_lone_anaphor_no_arity_hint.eu"));
+}
+
+/// A lone anaphor passed on to another function is labelled at its call in
+/// both prelude modes (eu-oaz72.141).
+#[test]
+pub fn test_error_371_lone_anaphor_passed_on() {
+    run_error_test(&error_opts("371_lone_anaphor_passed_on.eu"));
+}
+
+/// A lone anaphor in a call inside a `map` argument gets its note
+/// (eu-oaz72.141).
+#[test]
+pub fn test_error_372_lone_anaphor_in_map() {
+    run_error_test(&error_opts("372_lone_anaphor_in_map.eu"));
+}
+
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
 pub fn test_error_275_non_integer_take() {
@@ -5538,6 +5638,30 @@ pub fn test_error_341_non_number_merge_intervals() {
 #[test]
 pub fn test_error_342_list_bound_merge_intervals() {
     run_error_test(&error_opts("342_list_bound_merge_intervals.eu"));
+}
+
+/// A three-element `merge-intervals` interval is an error naming it (eu-oaz72.190, decision 67).
+#[test]
+pub fn test_error_373_three_element_interval_merge_intervals() {
+    run_error_test(&error_opts("373_three_element_interval_merge_intervals.eu"));
+}
+
+/// A one-element `merge-intervals` interval is an error naming it (eu-oaz72.190, decision 67).
+#[test]
+pub fn test_error_374_one_element_interval_merge_intervals() {
+    run_error_test(&error_opts("374_one_element_interval_merge_intervals.eu"));
+}
+
+/// An empty `merge-intervals` interval is an error naming it (eu-oaz72.190, decision 67).
+#[test]
+pub fn test_error_375_empty_interval_merge_intervals() {
+    run_error_test(&error_opts("375_empty_interval_merge_intervals.eu"));
+}
+
+/// An infinite `merge-intervals` interval is an error naming it, without walking the whole interval (eu-oaz72.190).
+#[test]
+pub fn test_error_376_infinite_interval_merge_intervals() {
+    run_error_test(&error_opts("376_infinite_interval_merge_intervals.eu"));
 }
 
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).

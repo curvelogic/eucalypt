@@ -362,8 +362,8 @@ non-function binding emits a warning and is skipped.
 | `{{k: T, ..r}}`    | named row variable (extra fields in r) |
 | `{{..r, ..s}}`     | row concatenation (union of r and s)   |
 | `{{k: T}}`         | closed record                          |
-| `block`            | any block (no known shape)             |
-| `Dict(T)`          | homogeneous block — all values type T  |
+| `block`            | any block (no known shape), = `{..}`   |
+| `block(T)`         | homogeneous block — all values type T (`Dict(T)` deprecated) |
 | `"value"`          | literal string — subtype of `string`; c-string escapes for the quotes: `c"\"value\""` |
 | `:name`            | literal symbol — subtype of `symbol`   |
 | `A -> B`           | function                               |
@@ -405,7 +405,7 @@ prelude functions are partial by nature:
 ```
 nth      : number → [a] → a?         # out-of-range index
 parse-as : symbol → string → any?    # invalid input format
-lookup   : symbol → Dict(a) → a?     # key not found
+lookup   : symbol → block(a) → a?     # key not found
 ```
 
 A partial result flowing into `any` (unannotated code) is **silent** —
@@ -912,7 +912,7 @@ A dict renders as a mapping in key order (number keys as their rendered
 text, string keys as their text, symbol keys as their name); a list key, or
 two keys with the same text (`1` and `"1"`), is an error, so render
 `dict.to-list` for those. Type: `dict(k, v)`, bare `dict` = `dict(any, any)`;
-not the block type `Dict(T)`.
+not the block type `block(T)`.
 
 ### 3.3 String Functions (str namespace)
 
@@ -1408,7 +1408,7 @@ These **do exist** and are commonly available:
 - `enumerate(xs)` — `[[0, x0], [1, x1], ...]`; `find(p?, xs)` — first match or `null`; `index-of(x, xs)` — 0-based index or `null`
 - `frequencies(xs)` — dict of element → count (elements must be valid dict keys)
 - `combinations(n, xs)`, `permutations(xs)` — lazy lists of lists, in input order; `combinations(0, xs)` is `[[]]`, `permutations([])` is `[[]]`
-- `merge-intervals(is)` — closed integer `[lo, hi]` intervals; overlapping or adjacent ones merge (`lo2 <= hi1 + 1`: `[1, 3]` + `[4, 6]` give `[1, 6]`, `[1, 3]` + `[5, 6]` stay separate); a non-number or non-integer bound, or an inverted interval (`lo > hi`), is an error naming `merge-intervals`
+- `merge-intervals(is)` — closed integer `[lo, hi]` intervals; overlapping or adjacent ones merge (`lo2 <= hi1 + 1`: `[1, 3]` + `[4, 6]` give `[1, 6]`, `[1, 3]` + `[5, 6]` stay separate); an interval list without exactly two elements, a non-number or non-integer bound, or an inverted interval (`lo > hi`), is an error naming `merge-intervals`
 - `str.reverse(s)` — reverse by character
 - `str.to-upper(s)` / `str.to-lower(s)` — case conversion (not `str.upper` / `str.lower`)
 

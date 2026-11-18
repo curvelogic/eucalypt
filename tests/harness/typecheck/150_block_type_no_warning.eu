@@ -1,0 +1,13 @@
+# `block(T)` with well-typed values, prelude functions annotated with
+# `block(a)` (`map-values`, `values`, `lookup`), and bare `block` (any
+# block) all check without warnings, and produce no deprecation warning.
+` { type: "block(number)" }
+scores: { alice: 95 bob: 87 }
+
+` { type: "block → [symbol]" }
+names(b): b keys
+
+bumped: scores map-values(_ + 10)
+total: scores values sum
+alice: scores lookup(:alice) + 1
+all: names(scores)

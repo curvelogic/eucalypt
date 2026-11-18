@@ -1,0 +1,2 @@
+exit: 1
+stderr: "merge-intervals interval of length 1 must be a pair \[lo, hi\]"
