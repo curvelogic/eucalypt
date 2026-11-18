@@ -1,10 +1,17 @@
 # Garbage Collection Implementation
 
-This document describes the current state of Eucalypt's Immix-style garbage collector implementation.
+This document describes Eucalypt's Immix-style garbage collector as it
+stands in `src/eval/memory/`. Where a section names a function, the code
+is the authority.
 
 ## Overview
 
-Eucalypt uses a generational, mark-and-sweep garbage collector based on the Immix algorithm. The implementation provides automatic memory management for the STG (Spineless Tagless G-machine) runtime with support for multiple object size classes and block recycling.
+Eucalypt uses a single-generation, stop-the-world, mark-region collector
+modelled on Immix. Memory is carved into blocks and lines; marking records
+live lines as well as live objects; sweeping is lazy, done block by block
+as the allocator needs space; and each collection decides whether to mark
+in place or to evacuate (copy out) the live objects of sparse and
+fragmented blocks. There is no generational or concurrent collection.
 
 ## Architecture
 
@@ -13,7 +20,8 @@ Eucalypt uses a generational, mark-and-sweep garbage collector based on the Immi
 The GC uses a block-based allocation strategy with the following hierarchy:
 
 - **Blocks**: 32KB (2^15 bytes) memory regions
-- **Lines**: 128-byte (2^7 bytes) allocation units within blocks  
+- **Lines**: 128-byte (2^7 bytes) units within blocks, each with a bit in
+  the block's line map
 - **Objects**: Variable-sized objects with 16-byte headers
 
 ```
@@ -24,94 +32,198 @@ Block (32KB)
 └── Line 255      ┘
 ```
 
+*Implementation*: `BLOCK_SIZE_BITS`, `LINE_SIZE_BITS` and `LINE_COUNT` in
+`src/eval/memory/bump.rs`; `Block` in `src/eval/memory/block.rs`.
+
 ### Size Classes
 
-Objects are categorized into three size classes:
+Objects (header included, rounded up to 16 bytes) fall into three size
+classes:
 
-1. **Small** (< 128 bytes): Fit within a single line
-2. **Medium** (128B - 32KB): Span multiple lines within a block
-3. **Large** (> 32KB): Allocated in dedicated Large Object Blocks (LOBs)
+1. **Small** (under 128 bytes): fit within a single line
+2. **Medium** (128 bytes to under 32KB): span lines within a block
+3. **Large** (32KB and over): each gets a dedicated large object block
+   (LOB)
 
-*Implementation*: `src/eval/memory/heap.rs:29-51`
+*Implementation*: `SizeClass::for_size` in `src/eval/memory/heap.rs`.
 
 ### Object Headers
 
-Every allocated object has a 16-byte header containing:
+Every allocated object has a 16-byte header (`#[repr(C, align(16))]`, so
+16 bytes on wasm32 too) containing:
 
-- **Mark bits** (2 bits): Current mark state and forwarding flag
-- **Size field** (32 bits): For untyped byte allocations
-- **Forwarding pointer** (64 bits): For potential moving collection
+- **Header bits** (2 bits): the mark bit and the forwarded bit
+- **Length** (32 bits): the object's payload bytes, excluding header and
+  padding; marking and evacuation use it to find the lines an object spans
+- **Forwarding pointer**: set when evacuation copies the object, pointing
+  at the new copy
 
-*Implementation*: `src/eval/memory/header.rs:61-69`
+*Implementation*: `AllocHeader` and `HeaderBits` in
+`src/eval/memory/header.rs`.
 
 ## Allocation Strategy
 
 ### Bump Allocation
 
 Each block uses downward bump allocation with:
-- **Cursor**: Current allocation position
-- **Lower limit**: Boundary of current usable region
-- **Line map**: Bitmap tracking which lines contain live objects
+- **Cursor**: Current allocation position, moving down
+- **Lower limit**: Bottom of the current hole
+- **Line map**: Bitmap of the lines the last mark found live
 
-*Implementation*: `src/eval/memory/bump.rs:181-191`
+When the cursor reaches the lower limit, `bump` asks the line map for the
+next hole below it.
+
+*Implementation*: `BumpBlock::bump` and `LineMap::find_hole` in
+`src/eval/memory/bump.rs`.
 
 ### Block Management
 
-The heap maintains several block categories:
+`HeapState` holds every block, in these lists:
 
-- **Head block**: Active small object allocation
-- **Overflow block**: Active medium object allocation  
-- **Rest blocks**: Previously used, pending collection
-- **Recycled blocks**: Reclaimed with usable holes
-- **LOBs**: Large object storage
+- **`head`**: the block small objects (and medium ones that fit its
+  current hole) are bumped into
+- **`overflow`**: the block for medium objects that do not fit the head's
+  hole
+- **`rest`**: blocks retired from `head` or `overflow` and evacuation
+  targets, since the last collection, and blocks a sweep found with no
+  hole
+- **`unswept`**: blocks awaiting lazy sweep; at the end of a collection
+  every block in `rest` and `recycled` goes here (`head` and `overflow`
+  stay in service)
+- **`recycled`**: swept blocks with usable holes — partly used ones at the
+  front, fully free ones at the back
+- **`lobs`** and **`recycled_lobs`**: large object blocks in use and
+  available for reuse
+- **`evacuation_target`** and **`filled_evacuation_blocks`**: fresh blocks
+  receiving evacuated copies during a collection
 
-*Implementation*: `src/eval/memory/heap.rs:54-65`
+*Implementation*: `HeapState` in `src/eval/memory/heap.rs`.
 
 ### Allocation Paths
 
-**All allocations** flow through the GC system via:
+**All allocations** flow through the `Allocator` implementation for `Heap`:
 
-1. `Heap::alloc<T>()` - Typed objects (`src/eval/memory/heap.rs:240`)
-2. `Heap::alloc_bytes()` - Arrays/vectors (`src/eval/memory/heap.rs:261`)
+1. `Heap::alloc<T>()` - typed objects
+2. `Heap::alloc_bytes()` - zeroed byte regions (array and vector backing
+   stores)
+3. `Heap::alloc_bytes_uninit()` - byte regions the caller fills before
+   reading
 
-Both paths:
-- Calculate total size (header + object)
-- Find appropriate space based on size class
-- Write header and object data
-- Return typed pointer
+Each one rounds header plus payload up to 16 bytes, finds space with
+`find_space`, writes the header with the heap's current mark state set as
+*unmarked*, and returns a pointer to the payload.
+
+`try_allocate` routes by size class:
+
+- **Large**: a LOB, reusing a recycled one where it wastes at most half
+  its space
+- **Medium** larger than the head's current hole: the overflow block; when
+  full, `replace_overflow` takes a fully free swept block (lazily sweeping
+  `unswept` to find one), then a recycled block with a large enough hole,
+  then a fresh block
+- **Otherwise**: the head block; when full, `replace_head_targeted` lazily
+  sweeps if `recycled` is empty, then takes the best-scoring of the first
+  16 recycled blocks (the first recycled block if none scores above
+  zero), or a fresh block only if `recycled` is still empty
+
+If `try_allocate` fails, `find_space` makes one *emergency collection*
+attempt (`attempt_emergency_collection`, at most once per 100 ms): it sweeps
+the blocks still in `unswept` and retries. It runs no mark phase. A system
+allocation failure for a fresh block aborts the process
+(`BumpBlock::new`).
+
+*Implementation*: `impl Allocator for Heap`, `Heap::find_space`,
+`Heap::try_allocate` and `Heap::perform_emergency_sweep` in
+`src/eval/memory/heap.rs`.
 
 ## Collection Algorithm
 
+`collect` in `src/eval/memory/collect.rs` asks
+`Heap::analyze_collection_strategy` for a strategy (see *Choosing blocks to
+evacuate* below), then runs one of two paths. Both are stop-the-world and
+single-threaded, and both trace precisely from the machine's roots: the
+bytecode machine state implements `GcScannable`
+(`src/eval/bytecode/machine.rs`).
+
 ### Mark Phase
 
-Uses tricolor marking with breadth-first traversal:
+Marking is a breadth-first traversal over a work queue:
 
-1. **Reset** all line maps in blocks
-2. **Root scanning** from machine state (stack, globals, locals)
-3. **Transitive closure** following object references
-4. **Line marking** for objects and backing storage
+1. **Reset** the line maps of every bump block (`CollectorHeapView::reset`)
+2. **Scan the roots**, queueing each object they reach
+3. **Scan queued objects** until the queue is empty; each `scan` marks the
+   objects it reports and queues those newly marked
 
-*Implementation*: `src/eval/memory/collect.rs:123-144`
+Marking an object sets its header's mark bit and marks every line its
+header and payload span, finding the block's line map by its base address
+(`HeapState::mark_region_in_block`, through the `line_map_index` for most
+blocks). It also adds the object's bytes to the live
+volume the next collection trigger is set from.
+
+*Implementation*: `CollectorHeapView::mark`, `mark_raw_bytes` and
+`mark_array`, and `collect_mark_in_place`, in `src/eval/memory/collect.rs`.
+
+### Evacuation
+
+When the strategy names candidate blocks, `collect_with_evacuation`
+replaces the mark-in-place path:
+
+1. **Mark and evacuate**: as above, but each heap object taken from the
+   queue in a candidate block, unless the block is pinned, is copied
+   (header and payload) into a fresh evacuation target block; the old
+   header gets the forwarded bit and a forwarding pointer, and the new copy
+   is marked. Every heap object visited is recorded for the next step.
+2. **Update**: the roots, then every recorded object (its new copy where
+   it moved), rewrite their pointers to forwarded objects
+   (`GcScannable::scan_and_update`).
+3. **Release**: `HeapState::release_evacuated_lines` redraws each candidate
+   block's line map without the old copies, so their lines are free in this
+   collection; `finalise_evacuation` moves the target blocks to `rest`.
+4. **Sweep**: as for mark in place.
+
+An object stays where it is if its block is pinned or no target space can
+be had. Large objects are never evacuated.
+
+*Implementation*: `collect_with_evacuation`, `try_evacuate` and
+`CollectorHeapView::evacuate` in `src/eval/memory/collect.rs`.
+
+### Pinning
+
+Code that holds a raw pointer into the heap across an allocation pins its
+block: `MutatorHeapView::pin` returns a `PinGuard` that unpins on drop.
+Pins are counted per block, and pinned blocks are never evacuation
+candidates. For example, `src/eval/stg/support.rs` pins a string while an
+intrinsic reads it.
+
+*Implementation*: `Heap::pin_block`, `Heap::unpin_block` and
+`Heap::is_block_pinned` in `src/eval/memory/heap.rs`; `PinGuard` in
+`src/eval/memory/mutator.rs`.
 
 ### Sweep Phase
 
-Conservative Immix sweep with hole identification:
+Sweeping is lazy. At the end of a collection `defer_sweep` moves every
+block in `rest` and `recycled` to `unswept`; large object blocks, which
+have no line map, are swept there and then (`sweep_large_objects`). An
+unswept block is swept only when the allocator wants a block
+(`lazy_sweep_next`, `take_free_block`) or an emergency collection runs.
+Sweeping a block (`BumpBlock::recycle`) finds its holes from its line
+map: a hole needs two or more consecutive free lines, and the top line of
+each hole is left out (Immix's conservative line marking). Blocks with a
+hole go to `recycled`; the rest go to `rest`.
 
-1. **Scan line maps** in each block
-2. **Identify holes** requiring 2+ consecutive free lines
-3. **Apply conservative marking** (exclude boundary lines)
-4. **Move recyclable blocks** to recycled list
-
-*Implementation*: `src/eval/memory/bump.rs:295-306`
+*Implementation*: `HeapState::defer_sweep`, `HeapState::lazy_sweep_next`
+and `HeapState::sweep_large_objects` in `src/eval/memory/heap.rs`;
+`BumpBlock::recycle` and `LineMap::find_hole` in `src/eval/memory/bump.rs`.
 
 ### Mark State Management
 
-Uses global mark bit flipping to avoid clearing marks:
-- **MARK_STATE**: Global atomic boolean indicating current "marked" value
-- **flip_mark_state()**: Called after each collection
-- **Header marking**: Compares object mark bit with current MARK_STATE
+Marks are never cleared: each `Heap` holds a mark state that flips after
+every collection, and an object is marked when its mark bit equals the
+current state. New objects are allocated unmarked for the current state.
 
-*Implementation*: `src/eval/memory/mark.rs`
+*Implementation*: `Heap::mark_state` and `Heap::flip_mark_state` in
+`src/eval/memory/heap.rs`. (`src/eval/memory/mark.rs` is an empty
+placeholder left from when the mark state was a process-wide global.)
 
 ## Collection Triggering
 
@@ -155,8 +267,8 @@ policy hid by rarely collecting.
 Before each collection `Heap::analyze_collection_strategy` grades every bump
 block (`head`, `overflow`, `rest`, `unswept` and `recycled`) by the lines the
 last mark left marked: sparse up to 25%, fragmented up to 75%. Most blocks
-sit in `unswept` or `recycled` by then, since every block goes to `unswept`
-after a collection.
+sit in `unswept` or `recycled` by then, since every block but `head` and
+`overflow` goes to `unswept` after a collection.
 
 1. Under 10% of blocks sparse or fragmented: mark in place.
 2. 30% or more: mark in place unless the footprint passes 3/4 of the heap
@@ -213,87 +325,96 @@ test of whether a forwarding check is on; no extra pass runs.
 *Implementation*: `ForwardingCheck`, `CollectorHeapView::debug_mark` and
 `verify_no_forwarded_references` in `src/eval/memory/collect.rs`.
 
-### No Emergency Collection
-
-**Critical limitation**: Allocation failures cause panics rather than triggering emergency collection:
-
-```rust
-.expect("aargh")  // heap.rs:313,317
-```
-
 ### Collection Frequency
 
-- **Check interval**: Every 500 VM execution steps
+- **Check interval**: Every 500 VM execution steps (`gc_poll`)
 - **Default behaviour**: Collection on allocation volume (see above)
 - **Final collection**: At the end of a run, only if the volume trigger has been reached (`policy_requires_collection`)
 
 ## Memory Management Integration
 
-### STG Machine Integration
+### Bytecode Machine Integration
 
-The GC integrates with the STG machine through:
+The GC integrates with the bytecode machine through:
 
-- **Root scanning**: Machine state implements `GcScannable`
+- **Root scanning**: the machine state implements `GcScannable`
 - **Allocation scoping**: `MutatorHeapView` provides safe allocation
-- **Collection timing**: Integrated with VM execution loop
+- **Collection timing**: `gc_poll` in the execution loop
 
 ### Object Tracing
 
-Objects implement `GcScannable` trait:
-- **scan()** method returns referenced objects
-- **Collector scope** ensures lifetime safety
-- **Polymorphic scanning** handles different object types
+Heap objects implement the `GcScannable` trait:
 
-*Implementation*: `src/eval/memory/collect.rs:47-53`
+- **`scan`** marks the objects an object references and reports those
+  newly marked for scanning
+- **`scan_and_update`** rewrites those references to forwarded objects
+  after an evacuation; a reference `scan` reports but `scan_and_update`
+  misses is the use-after-free `EU_GC_VERIFY` exists to catch
+- **Collector scope** ensures lifetime safety
+
+*Implementation*: `GcScannable` and `ScanPtr` in
+`src/eval/memory/collect.rs`.
 
 ## Performance Characteristics
 
 ### Allocation Performance
 
-- **Bump allocation**: O(1) for small/medium objects
-- **Block recycling**: Efficient hole-finding algorithm
-- **Size-based routing**: Optimal strategy per size class
+- **Bump allocation**: O(1) for small and medium objects within a hole
+- **Block replacement**: bounded scans of the recycled list (the first 16
+  blocks for the head, 8 for the overflow block)
+- **Size-based routing**: a strategy per size class
 
 ### Collection Performance
 
-- **Mark phase**: Proportional to live object count
-- **Sweep phase**: Proportional to total block count
-- **Pause times**: Single-threaded stop-the-world collection
+- **Mark phase**: proportional to the live heap
+- **Evacuation**: bounded by `evacuation_budget_lines` (an eighth of the
+  heap's bump blocks, but at least four blocks, in lines) of copying,
+  except under `EU_GC_STRESS`, which has no budget; an evacuating
+  collection also runs an update pass over every live object
+- **Sweep**: lazy, one block at a time as the allocator needs one; large
+  objects are swept at the end of each collection
+- **Pause times**: single-threaded stop-the-world collection
 
-### Memory Utilization
+### Memory Utilisation
 
-- **Conservative marking**: May retain some garbage near live objects
-- **Block recycling**: Reduces allocation overhead
-- **Fragmentation**: Managed through hole coalescing
+- **Conservative line marking**: a hole loses its top line, and a line
+  stays live while any object in it is
+- **Block recycling**: holes in partly used blocks are reused before the
+  heap grows
+- **Fragmentation**: addressed by evacuation when 10% to under 30% of
+  blocks are sparse or fragmented, or 30% or more under heap-limit
+  pressure (see *Choosing blocks to evacuate*); under a limit, once the
+  blocks held pass 3/4 of it, fully free blocks are returned to the
+  system (`enforce_footprint_limit`)
 
 ## Testing and Validation
 
 ### Unit Tests
 
-Current test coverage includes:
+The `tests` modules of `src/eval/memory/collect.rs`,
+`src/eval/memory/heap.rs` and `src/eval/memory/bump.rs` cover allocation,
+mark-in-place and evacuating collection, pointer update through every
+pointer shape, the forwarding checks, pinning, large object churn, the
+collection strategy (`test_collection_strategy_*`) and the trigger
+policy.
 
-- **Basic allocation**: Simple object allocation and retrieval
-- **Multi-block allocation**: Stress testing block management
-- **Collection cycles**: Mark-sweep correctness validation
-- **Large objects**: LOB allocation and collection
+### GC-Verified Harness
 
-*Implementation*: `src/eval/memory/collect.rs:164-259`
+CI's `test-gc-verified` job runs the whole harness with
+`EU_GC_VERIFY=2`, `EU_GC_STRESS=1` (evacuate every unpinned block on every
+collection) and `EU_GC_POISON=1`. To reproduce it locally:
+
+```bash
+cargo build --release
+EU_GC_VERIFY=2 EU_GC_STRESS=1 EU_GC_POISON=1 \
+  timeout 600 ./target/release/eu test --allow-io tests/harness
+```
 
 ### Benchmark Tests
 
-Available benchmark programs:
-
-- `004_generations.eu`: Multi-generational allocation patterns
-- Other benchmarks in `tests/harness/bench/`
-
-### Missing Test Coverage
-
-**Critical gaps identified**:
-
-1. **Long-running tests**: No sustained allocation testing
-2. **Emergency scenarios**: No OOM recovery testing  
-3. **Performance regression**: No GC timing benchmarks
-4. **Leak detection**: No long-term memory usage validation
+Allocation-heavy benchmark programs in `tests/harness/bench/` include
+`004_generations.eu`, `007_short_lived.eu`, `008_long_lived_graph.eu` and
+`009_fragmentation.eu`.
 
 ## Limitations
 
@@ -303,186 +424,73 @@ Available benchmark programs:
 
 ### Configuration
 - **Fixed parameters**: Collection thresholds are not user-configurable
-- **Manual heap limits**: Users can set heap limits via command line options
+- **Heap limit**: `--heap-limit-mib` bounds live data and the footprint
 
 ### Algorithm Differences from Full Immix
-- **No evacuation**: Objects are not moved during collection
-- **Mark-in-place only**: No adaptive choice between marking and evacuation
-- **Conservative marking**: Line-based marking without precise object boundaries
+- **No generations**: every collection traces the whole live heap
+- **Evacuation is rarer**: Immix defragments opportunistically whenever
+  the heap is fragmented; here a heap with 30% or more of its blocks sparse or
+  fragmented is evacuated only under heap-limit pressure, because an
+  evacuating collection pays for an update pass over every live object
+- **Separate update pass**: Immix updates references as it traces; here
+  the update runs after marking, over the recorded live objects
+- **No reserved headroom**: evacuation copies into fresh blocks rather
+  than a set of blocks reserved for it
+- **Block-level pinning**: pinning holds a whole block in place rather
+  than a single object
+- **Large objects never move**
 
-## Current Implementation
-
-The implementation includes the following components:
-
-### Memory Management
-- Block-based allocation with line maps for tracking object locations
-- Three-tier size classification (small/medium/large objects)
-- Mark-and-sweep collection algorithm without object evacuation
-- Block recycling with hole detection and reuse
-- Large object allocation with size-optimised boundaries
-
-### Integration
-- STG machine integration for root scanning
-- Object header management with mark state tracking  
-- Array and vector allocation support
-- Emergency collection on memory exhaustion
-
-### Error Handling
-- Graceful handling of allocation failures
-- Emergency collection attempts before reporting OOM
-- Detailed error context including heap state information
-
-## Code Organization
+## Code Organisation
 
 The GC implementation spans several modules:
 
 ```
 src/eval/memory/
 ├── mod.rs              # Module declarations
-├── heap.rs             # Main heap and allocation logic
-├── collect.rs          # Mark-and-sweep collector
-├── bump.rs             # Block allocation and line maps
-├── header.rs           # Object header management
-├── mark.rs             # Mark state management
-├── mutator.rs          # Mutator heap access
+├── heap.rs             # Heap, block lists, allocation, trigger and strategy
+├── collect.rs          # Mark, evacuation and update phases; GcScannable
+├── bump.rs             # Bump blocks, line maps and hole finding
+├── block.rs            # Raw block allocation
+├── lob.rs              # Large object blocks
+├── header.rs           # Object header
+├── mark.rs             # Empty placeholder (mark state is per heap)
+├── mutator.rs          # Mutator heap access and pinning
 ├── alloc.rs            # Allocation traits
 ├── array.rs            # Array/vector support
-├── block.rs            # Low-level block management
-├── lob.rs              # Large object blocks
-└── ...
+├── gc_debug.rs         # EU_GC_POISON / EU_GC_VERIFY switches
+├── gc_verify.rs        # EU_GC_VERIFY=2 structural checks
+└── ...                 # Heap object types (strings, dicts, sets, …)
 ```
 
-## Usage and Behavior
+## Usage and Behaviour
 
 ### Allocation Patterns
-- Small objects (< 128 bytes) are allocated within single lines
-- Medium objects (128 bytes - 32KB) span multiple lines within blocks
-- Large objects (> 32KB) receive dedicated allocation blocks
+- Small objects (under 128 bytes) are allocated within single lines
+- Medium objects (128 bytes to under 32KB) span multiple lines within blocks
+- Large objects (32KB and over) receive dedicated allocation blocks
 
 ### Collection Triggering
-- Collection occurs after an allocation volume set from the live volume
-- Emergency collection attempts when allocation fails
-- Explicit collection can be triggered programmatically
+- Collection occurs after an allocation volume set from the live volume,
+  or under a heap limit once the blocks held pass a footprint threshold
+- An allocation failure gets one emergency sweep of the unswept blocks
+  before it is reported
 
 ### Memory Layout Optimisation
-- Objects are aligned to 16-byte boundaries for cache efficiency
-- Large objects use tiered size boundaries (16KB, 64KB, 256KB) to reduce waste
-- Block recycling prioritises blocks with larger available holes
+- Allocations are aligned to 16-byte boundaries
+- Large object blocks are rounded up to 16KB up to 128KB, to 64KB up to
+  1MB, and to 256KB above that (`LargeObjectBlock::efficient_size_for` in
+  `src/eval/memory/lob.rs`)
+- Head replacement prefers the recycled block whose holes best suit the
+  allocation (`BumpBlock::allocation_suitability_score`)
 
 ## Command Line Interface
 
 GC-related options:
 
-- `--heap-limit-mib <SIZE>`: Set heap limit in MiB; live data beyond 7/8 of it is an error
-- `--heap-dump-at-gc`: Dump heap state during collection (debugging)
+- `--heap-limit-mib <SIZE>`: Set heap limit in MiB (default 32768; 0 for
+  unbounded); live data beyond 7/8 of it is an error
 - `-S, --statistics`: Print execution metrics including GC stats
 
-## Analysis Against Immix Standards
-
-### Research Summary
-
-Based on analysis of the original Immix paper (Blackburn & McKinley, 2008) and comparison with open-source implementations, several important disparities have been identified in Eucalypt's implementation.
-
-### Specification Compliance
-
-**✅ Correct Implementations:**
-- **Block size**: 32KB (matches original paper specification)
-- **Line size**: 128 bytes (consistent across all Immix implementations)
-- **Conservative line marking**: Properly requires 2+ consecutive free lines for holes
-- **Downward bump allocation**: Correct allocation direction within blocks
-- **Line map organization**: Proper bitmap implementation for line marking
-- **Memory layout**: Correct block/line hierarchy
-
-**⚠️ Significant Disparities:**
-
-#### 1. **Missing Opportunistic Defragmentation** (Critical)
-- **Standard Immix**: Core innovation is opportunistic evacuation of fragmented blocks
-- **Eucalypt**: No evacuation or moving collection implemented
-- **Impact**: Loses primary performance advantage of Immix over mark-sweep
-- **Evidence**: Headers have forwarding fields but they're never used
-
-#### 2. **Eager vs Lazy Sweeping** (Performance Impact)
-- **Standard Immix**: Lazy sweeping - blocks swept just before allocation
-- **Eucalypt**: Eager sweeping - all blocks swept immediately after marking
-- **Impact**: Higher collection pause times, less responsive allocation
-
-#### 3. **Conservative Marking Interpretation** (Semantic Difference)
-- **Standard Immix**: Conservative refers to stack/root scanning without precise type info
-- **Eucalypt**: Conservative refers to line boundary exclusion during hole detection
-- **Impact**: Different meaning of "conservative" - both valid but semantically different
-
-#### 4. **Fragmentation Detection** (Missing Core Feature)
-- **Standard Immix**: Decides whether to evacuate based on fragmentation analysis
-- **Eucalypt**: No fragmentation detection or evacuation decisions
-- **Impact**: Cannot adapt collection strategy to heap state
-
-### Algorithm Classification
-
-**Current Status**: Eucalypt implements a "Mark-Sweep with Line Maps" collector rather than true Immix.
-
-**Missing Core Immix Features:**
-- Opportunistic defragmentation
-- Block evacuation
-- Fragmentation-based collection decisions
-- Moving/copying collection phases
-- Lazy sweeping optimisation
-
-### Performance Implications
-
-**Retained Benefits:**
-- Efficient allocation through bump allocation
-- Good cache locality from line-based organization
-- Effective hole identification and reuse
-
-**Lost Benefits:**
-- Defragmentation to combat fragmentation
-- Adaptive collection based on heap state
-- Lower pause times from lazy sweeping
-- Space efficiency improvements from compaction
-
-### Technical Quality Assessment
-
-**Code Quality**: ⭐⭐⭐⭐⭐ Excellent
-- Clean, well-structured implementation
-- Proper safety invariants
-- Good abstraction boundaries
-- Comprehensive unit tests
-
-**Algorithm Completeness**: ⭐⭐⭐ Partial  
-- Implements ~60% of full Immix algorithm
-- Missing core performance innovations
-- Solid foundation for full implementation
-
-**Stability**: Functional with error handling
-- Graceful handling of memory exhaustion scenarios
-- Emergency collection fallback mechanisms
-- Comprehensive test coverage for allocation and collection scenarios
-
-### Implementation Recommendations
-
-#### Immediate Improvements (Current Algorithm)
-1. **Lazy sweeping**: Sweep blocks just before allocation
-2. **Better collection policy**: More sophisticated triggering
-3. **Error handling**: Graceful OOM recovery
-
-#### Full Immix Implementation (Major Enhancement)
-1. **Fragmentation detection**: Track fragmented vs dense blocks
-2. **Evacuation phase**: Implement object moving during collection
-3. **Adaptive collection**: Choose mark-in-place vs evacuation per cycle
-4. **Conservative root scanning**: Stack scanning without precise types
-
-### Conclusion
-
-Eucalypt's GC implementation is a mark-sweep collector that uses Immix-inspired memory organisation. While it doesn't implement the full Immix algorithm (particularly the evacuation phase), it provides functional memory management for the STG runtime.
-
-**Current Status:**
-- Implements block-based allocation with line-level tracking
-- Provides mark-and-sweep collection without object movement
-- Includes optimisations for large object allocation and block recycling
-- Handles memory exhaustion through emergency collection mechanisms
-
-**Relationship to Immix Algorithm:**
-The implementation captures Immix's memory layout benefits (cache-friendly block organisation, efficient hole detection) but omits the core evacuation phase that distinguishes Immix from traditional mark-sweep collectors. This results in a hybrid approach that combines Immix memory organisation with mark-in-place collection.
-
-**Practical Considerations:**
-For eucalypt's typical workloads (configuration processing, template rendering, data transformation), the current implementation provides adequate memory management. The lack of evacuation limits performance gains for long-running or heavily fragmented applications, but this matches eucalypt's primary use cases.
+GC-related environment variables (`EU_GC_POISON`, `EU_GC_VERIFY`,
+`EU_GC_STRESS`) are described above; `CLAUDE.md` also covers
+`EU_GC_POISON` and `EU_GC_VERIFY`.
