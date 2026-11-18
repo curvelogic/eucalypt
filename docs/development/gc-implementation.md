@@ -84,10 +84,12 @@ next hole below it.
   current hole) are bumped into
 - **`overflow`**: the block for medium objects that do not fit the head's
   hole
-- **`rest`**: blocks retired from `head` or `overflow`, and evacuation
-  targets, since the last collection
-- **`unswept`**: blocks awaiting lazy sweep; every bump block goes here at
-  the end of a collection
+- **`rest`**: blocks retired from `head` or `overflow` and evacuation
+  targets, since the last collection, and blocks a sweep found with no
+  hole
+- **`unswept`**: blocks awaiting lazy sweep; at the end of a collection
+  every block in `rest` and `recycled` goes here (`head` and `overflow`
+  stay in service)
 - **`recycled`**: swept blocks with usable holes — partly used ones at the
   front, fully free ones at the back
 - **`lobs`** and **`recycled_lobs`**: large object blocks in use and
@@ -121,7 +123,8 @@ Each one rounds header plus payload up to 16 bytes, finds space with
   then a fresh block
 - **Otherwise**: the head block; when full, `replace_head_targeted` lazily
   sweeps if `recycled` is empty, then takes the best-scoring of the first
-  16 recycled blocks, or a fresh block
+  16 recycled blocks (the first recycled block if none scores above
+  zero), or a fresh block only if `recycled` is still empty
 
 If `try_allocate` fails, `find_space` makes one *emergency collection*
 attempt (`attempt_emergency_collection`, at most once per 100 ms): it sweeps
@@ -264,8 +267,8 @@ policy hid by rarely collecting.
 Before each collection `Heap::analyze_collection_strategy` grades every bump
 block (`head`, `overflow`, `rest`, `unswept` and `recycled`) by the lines the
 last mark left marked: sparse up to 25%, fragmented up to 75%. Most blocks
-sit in `unswept` or `recycled` by then, since every block goes to `unswept`
-after a collection.
+sit in `unswept` or `recycled` by then, since every block but `head` and
+`overflow` goes to `unswept` after a collection.
 
 1. Under 10% of blocks sparse or fragmented: mark in place.
 2. 30% or more: mark in place unless the footprint passes 3/4 of the heap
@@ -330,7 +333,7 @@ test of whether a forwarding check is on; no extra pass runs.
 
 ## Memory Management Integration
 
-### STG Machine Integration
+### Bytecode Machine Integration
 
 The GC integrates with the bytecode machine through:
 
@@ -365,8 +368,9 @@ Heap objects implement the `GcScannable` trait:
 
 - **Mark phase**: proportional to the live heap
 - **Evacuation**: bounded by `evacuation_budget_lines` (an eighth of the
-  heap's lines) of copying, but an evacuating collection also runs an
-  update pass over every live object
+  heap's bump blocks, but at least four blocks, in lines) of copying,
+  except under `EU_GC_STRESS`, which has no budget; an evacuating
+  collection also runs an update pass over every live object
 - **Sweep**: lazy, one block at a time as the allocator needs one; large
   objects are swept at the end of each collection
 - **Pause times**: single-threaded stop-the-world collection
@@ -377,9 +381,11 @@ Heap objects implement the `GcScannable` trait:
   stays live while any object in it is
 - **Block recycling**: holes in partly used blocks are reused before the
   heap grows
-- **Fragmentation**: addressed by evacuation when the footprint presses on
-  the heap limit (see *Choosing blocks to evacuate*); fully free blocks
-  are returned to the system under a limit (`enforce_footprint_limit`)
+- **Fragmentation**: addressed by evacuation when 10% to under 30% of
+  blocks are sparse or fragmented, or 30% or more under heap-limit
+  pressure (see *Choosing blocks to evacuate*); under a limit, once the
+  blocks held pass 3/4 of it, fully free blocks are returned to the
+  system (`enforce_footprint_limit`)
 
 ## Testing and Validation
 
@@ -486,4 +492,5 @@ GC-related options:
 - `-S, --statistics`: Print execution metrics including GC stats
 
 GC-related environment variables (`EU_GC_POISON`, `EU_GC_VERIFY`,
-`EU_GC_STRESS`) are described above and in `CLAUDE.md`.
+`EU_GC_STRESS`) are described above; `CLAUDE.md` also covers
+`EU_GC_POISON` and `EU_GC_VERIFY`.

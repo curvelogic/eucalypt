@@ -76,8 +76,8 @@ Fix with parens around the catenation: `(k > 0) ∧ (xs non-nil?)`, `(xs tail) +
 
 Choose parameter order to support partial application and pipeline style:
 
-- Put the "data" or "collection" parameter **last** so that partially applied functions slot into pipelines: `count-paths(graph, start, forbidden)` lets `forbidden-sets par-map(count-paths(parse-graph(data), "svr"))` vary only the forbidden set.
-- Put "configuration" or "small" parameters **first** so they can be fixed early: `pts map(rank-point(rx, ry))`, `edges filter(spans?(j))`.
+- Put the "data" or "collection" parameter **last** so that partially applied functions slot into pipelines: `rank-point(rx, ry, [x, y])` takes the point last, so `pts map(rank-point(rx, ry))` reads as a pipeline step.
+- Put "configuration" or "small" parameters **first** so they can be fixed early: `edges filter(spans?(j))`, `forbidden-sets par-map(count-paths(parse-graph(data), "svr"))`.
 - If a function will be used as a `foldl` accumulator, match the `(acc, elem)` signature: `upgrade-with(ok?, p, best, q)` allows `qs foldl-strict(upgrade-with(ok?, p), 0)`.
 
 The examples above are from `examples/aoc25/` (days 9 and 11). In miniature:

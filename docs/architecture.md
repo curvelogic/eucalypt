@@ -634,13 +634,15 @@ fragmented blocks.
 2. Breadth-first root scanning from machine state
 3. Transitive closure following object references
 4. Mark lines containing live objects; when evacuating, copy each live
-   object in a candidate block to a fresh block and forward its old header
+   object in an unpinned candidate block to a fresh block and forward its
+   old header
 
 **Update phase** (evacuating collections only): rewrite every pointer to a
 forwarded object, then free the candidate blocks' evacuated lines.
 
 **Sweep phase** (lazy):
-1. Move every block to the unswept list
+1. Move every block except the current head and overflow blocks to the
+   unswept list
 2. Sweep a block only when the allocator needs one: identify holes (2+
    consecutive free lines) from its line map, and file it as recycled
 3. Free dead large objects at once
