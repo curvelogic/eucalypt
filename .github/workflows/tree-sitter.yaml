@@ -117,3 +117,12 @@ jobs:
       - name: Run tests
         run: npm test
         working-directory: editors/vscode
+
+      # The TextMate grammar's prelude name lists must be regenerated from
+      # lib/prelude.eu whenever it changes; --check fails if the committed
+      # grammar differs from the generator's output in any way. Pure Node:
+      # no eu binary is needed. This workflow has no path filters, so the
+      # job runs whenever lib/prelude.eu changes.
+      - name: Check prelude names are up to date
+        run: node scripts/generate-prelude-names.js --check
+        working-directory: editors/vscode
