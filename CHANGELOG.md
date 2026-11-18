@@ -9,10 +9,39 @@ persistent ordered `dict` that doubles as a priority queue, sets rebuilt on
 it, loops and folds that run in constant stack, a garbage collector that
 runs on allocation volume with all collection storage in the GC heap, new
 number and string helpers, a profiler, sharper diagnostics, and consolidated
-editor highlighting (eu-ioz21). Several changes and fixes make programs
-that used to succeed now fail with an error, so read Changed and Fixed
-before upgrading; the most likely to be noticed are marked
-*upgrade-visible*.
+editor highlighting (eu-ioz21). Several changes and fixes alter what an
+existing program does; they are listed first, under *Upgrade-visible
+changes*, and described in full under Changed and Fixed.
+
+### Upgrade-visible changes
+
+Each of these can change the output of, or fail, a program or pipeline
+that ran under 0.15, even where it was made as a bug fix.
+
+- **New errors where a value was silently accepted:**
+  - leftover tokens in a string interpolation, such as `"{ a b }"`, and stray dots, such as `"{.x}"` and `"{x.}"`, are parse errors (eu-oaz72.50, eu-oaz72.139);
+  - a missing import is a `could not read` error rather than a silent load of the shipped library with the same name, and a missing `prelude:` path is an error (eu-7tlbg, eu-oaz72.181);
+  - integer `^` past the 64-bit range is a `numeric overflow` error, not an imprecise float (eu-oaz72.12);
+  - a non-integer count, index or array dimension is an error in list, vec and array functions, as are negative vec indices and a `window` size or step that is not positive (eu-oaz72.58, eu-oaz72.88, eu-oaz72.96, eu-oaz72.49);
+  - `update-nth` past the end is an out-of-range error (eu-oaz72.100);
+  - a bitwise operand of `9223372036854775808.0` is an out-of-range error (eu-oaz72.24);
+  - a heap that stays over `--heap-limit-mib` stops with `heap limit exceeded` (eu-oaz72.4, eu-oaz72.73).
+- **Different results:**
+  - `=`, `!=` and the ordering operators compare an integer with a float exactly (eu-oaz72.116);
+  - `as-spec` of a literal string or symbol type matches only that value (eu-pub3r);
+  - `number?` and `string?` are true for computed values (eu-oaz72.58, eu-oaz72.93);
+  - `drop` past the end gives `[]`, and `take`, `drop` and `split-at` with a negative count give an empty result or the list unchanged rather than hanging (eu-oaz72.71, eu-oaz72.35, eu-oaz72.43);
+  - `rotate(n)` with `n` past the length wraps (eu-oaz72.100);
+  - `"07" num` is `7` and YAML `a: 07` imports as the number 7, where both were errors; `0o` and `0x` YAML integers and floats such as `.5` now import too (eu-oaz72.11, eu-oaz72.120);
+  - integer arithmetic with an operand above the i64 maximum stays exact (eu-oaz72.113);
+  - EDN `N` integers within the 64-bit range import as numbers (eu-1yv37);
+  - sets order symbols by name, and set and vec integers render as integers (eu-oaz72.21, eu-oaz72.10).
+- **Evaluation order:** `reduce`, `iterate`, `scanl`, `sum`, `product`, `count`, `max-of` and `min-of` now evaluate each step, so an error in a step they used to skip is raised; a walk past the second cell of an `iota` whose start errors raises that error (eu-oaz72.165, eu-oaz72.78, eu-oaz72.85).
+- **Tools:**
+  - `eu test` tests every file it is given and fails a target with checks that never runs, so a run that exited 0 may exit 1 (eu-oaz72.45, eu-oaz72.65);
+  - `str.fmt` and the prelude signatures that now parenthesise unions give new type warnings, which fail `--strict` (eu-oaz72.31, eu-oaz72.137);
+  - `eu fmt --reformat` lays out nested blocks and lists differently (eu-oaz72.150);
+  - tree-sitter highlighting, and `cargo xtask highlight-html` output, changes (eu-ioz21.1).
 
 ### Added
 
@@ -70,8 +99,9 @@ before upgrading; the most likely to be noticed are marked
 - **A closed output pipe ends `eu` quietly (eu-oaz72.39)** — `eu test FILE | head -1`, and the `eu dump`, `list-targets`, `eu doc`, `eu fmt` and `eu error` output, panicked when the reader closed the pipe. They now exit 0 with nothing on stderr, as rendering already did.
 - **Destructuring and inlining no longer capture user names (eu-oaz72.182, eu-oaz72.191)** — a parameter named `__p0` or `__p1` could read a destructured argument instead of its own value, and the inliner could substitute an expression under a nested binding of a name it referred to. Both now leave user names alone.
 - **The assignment-style check agrees across prelude modes (eu-oaz72.134)** — with the pre-compiled prelude, `xs tail head = 2 && true` was rejected before evaluation as a declaration of `head`, while with `--source-prelude` `r: result = 42` gave only an unresolved-variable error. Both modes now give the same result.
-- **Type checker false warnings (eu-oaz72.13, eu-oaz72.127, eu-oaz72.168, eu-oaz72.169, eu-oaz72.170, eu-oaz72.172, eu-oaz72.174)** — `eu check --strict` no longer warns on valid uses of `str.matches`, symbols inside tuples (`cons([2, :d], [[3, :c]])`), `drop` and `filter` on a list whose elements differ in shape (such as imported XML), `str.matches-of`, `interleave`, `map(lookup(:k))` over a list of records with differing fields, derived monad combinators on identity-like monads (`expected a number, found number`), or a function with a list-destructuring parameter holding a block pattern.
+- **Type checker false warnings (eu-oaz72.13, eu-oaz72.127, eu-oaz72.168, eu-oaz72.169, eu-oaz72.170, eu-oaz72.172, eu-oaz72.174, eu-oaz72.194)** — `eu check --strict` no longer warns on valid uses of `str.matches`, symbols inside tuples (`cons([2, :d], [[3, :c]])`), `drop` and `filter` on a list whose elements differ in shape (such as imported XML), `str.matches-of`, `interleave`, `map(lookup(:k))` over a list of records with differing fields, derived monad combinators on identity-like monads (`expected a number, found number`), a function with a list-destructuring parameter holding a block pattern, or a parameter projected only on a `block?`-guarded branch (`h(x): x block? then(x.a, 0)` called as `h(3)`).
 - **Error messages print numbers exactly (eu-oaz72.154, eu-oaz72.155, eu-oaz72.156, eu-oaz72.160)** — a large whole float in an error message was rounded to its shortest form, so 2^63 appeared as `9223372036854776000`; it now appears with its exact digits, and huge values in index and other errors are capped rather than printed in full.
+- **Errors keep the user call site with `--source-prelude` (eu-oaz72.202)** — with the prelude compiled from source, errors such as `IO operations are not permitted` lost their location, because prelude code replaced the user call site as the fallback location. They now point at the user's call, as with the pre-compiled prelude.
 - **An under-applied function is reported at its own location (eu-oaz72.121)** — when a function arrived where a value was wanted, the error pointed at the consuming intrinsic rather than at the call that left the function under-applied.
 - **`ch.n` and `ch.t` are one character on any checkout (eu-oaz72.152)** — on a Windows checkout that converts line endings, `ch.n` became `"\r\n"`. `str.join-on` and the other joins now also accept a computed separator such as `ch.of-code-point(10)`.
 - **`eu fmt` keeps comments (eu-oaz72.57)** — reformatting dropped comments inside blocks, lists and argument lists and after the last declaration, and conservative mode changed whitespace inside string interpolations. Both are kept, and deeply nested input no longer takes quadratic time to lay out.
