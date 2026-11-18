@@ -245,7 +245,7 @@ test-type-str: {
   t9: (s"number?" to-data type-str) = "number?"
   t10: (s"number → string" to-data type-str) = "number → string"
   t11: (s"a" to-data type-str) = "a"
-  t12: (s"Dict(number)" to-data type-str) = "Dict(number)"
+  t12: (s"block(number)" to-data type-str) = "block(number)"
   t13: (s"{a: {b: number}, ..}" to-data type-str) = "{{a: {{b: number}}, ..}}"
 
   ` "type-str is total over the tag vocabulary: an unrecognised tag renders as

@@ -5,7 +5,7 @@
 //!
 //! ## Higher-kinded types (B1)
 //!
-//! Parametric type constructors (`List`, `IO`, `Dict`, …) are now represented
+//! Parametric type constructors (`List`, `IO`, `block`, …) are now represented
 //! uniformly via `Con` + `App` rather than dedicated enum variants.  The smart
 //! constructors (`Type::list`, `Type::io`, …) build the applied form; `Display`
 //! re-sugars it back to the familiar notation.
@@ -116,7 +116,7 @@ impl fmt::Display for Kind {
 /// Return the kind of a built-in named type constructor, or `None` for unknown.
 pub fn constructor_kind(name: &str) -> Option<Kind> {
     match name {
-        "List" | "IO" | "Dict" | "NonEmpty" => Some(Kind::star_to_star()),
+        "List" | "IO" | "block" | "NonEmpty" => Some(Kind::star_to_star()),
         "Lens" | "Traversal" | "dict" => Some(Kind::star_to_star_to_star()),
         _ => None,
     }
@@ -278,7 +278,7 @@ pub enum Type {
     // ── Constructor representation ───────────────────────────────────────────
     /// A named type constructor.
     ///
-    /// Built-in constructors: `List`, `IO`, `Dict`, `NonEmpty`, `Lens`,
+    /// Built-in constructors: `List`, `IO`, `block`, `NonEmpty`, `Lens`,
     /// `Traversal`, `dict`.  User-defined constructors may also appear here.
     Con(String),
 
@@ -364,14 +364,14 @@ impl Type {
         Type::App(Box::new(Type::Con("IO".into())), Box::new(inner))
     }
 
-    /// `Dict(inner)` — homogeneous block with values of type `inner`.
-    pub fn dict(inner: Type) -> Self {
-        Type::App(Box::new(Type::Con("Dict".into())), Box::new(inner))
+    /// `block(inner)` — homogeneous block with values of type `inner`.
+    pub fn block(inner: Type) -> Self {
+        Type::App(Box::new(Type::Con("block".into())), Box::new(inner))
     }
 
     /// `dict(k, v)` — persistent dict ordered by key, with keys of type `k`
     /// and values of type `v` (the runtime dict, not the block type
-    /// `Dict(T)`).
+    /// `block(T)`).
     pub fn ordered_dict(k: Type, v: Type) -> Self {
         Type::App(
             Box::new(Type::App(Box::new(Type::Con("dict".into())), Box::new(k))),
@@ -475,10 +475,10 @@ impl Type {
             .map(|(_, t)| t)
     }
 
-    /// If `self` is `App(Con("Dict"), inner)`, return `inner`.
-    pub fn as_dict(&self) -> Option<&Type> {
+    /// If `self` is `App(Con("block"), inner)`, return `inner`.
+    pub fn as_block(&self) -> Option<&Type> {
         self.as_applied_single()
-            .filter(|(n, _)| *n == "Dict")
+            .filter(|(n, _)| *n == "block")
             .map(|(_, t)| t)
     }
 
@@ -499,10 +499,10 @@ impl Type {
     }
 
     /// If `self` is a single-argument built-in constructor application
-    /// (List, IO, Dict, or NonEmpty), return the inner type.
+    /// (List, IO, block, or NonEmpty), return the inner type.
     pub fn as_unary_con_inner(&self) -> Option<&Type> {
         self.as_applied_single()
-            .filter(|(n, _)| matches!(*n, "List" | "IO" | "Dict" | "NonEmpty"))
+            .filter(|(n, _)| matches!(*n, "List" | "IO" | "block" | "NonEmpty"))
             .map(|(_, t)| t)
     }
 
@@ -744,7 +744,7 @@ fn fmt_app(f: &mut fmt::Formatter<'_>, head: &Type, arg: &Type) -> fmt::Result {
         match name.as_str() {
             "List" => return write!(f, "[{arg}]"),
             "IO" => return write!(f, "IO({arg})"),
-            "Dict" => return write!(f, "Dict({arg})"),
+            "block" => return write!(f, "block({arg})"),
             "NonEmpty" => return write!(f, "NonEmpty([{arg}])"),
             "Random" => return write!(f, "Random({arg})"),
             "State" => return write!(f, "State({arg})"),
@@ -1052,7 +1052,7 @@ mod tests {
 
     #[test]
     fn display_dict() {
-        assert_eq!(Type::dict(Type::Number).to_string(), "Dict(number)");
+        assert_eq!(Type::block(Type::Number).to_string(), "block(number)");
     }
 
     #[test]
@@ -1277,14 +1277,14 @@ mod tests {
 
     #[test]
     fn display_dict_number() {
-        assert_eq!(Type::dict(Type::Number).to_string(), "Dict(number)");
+        assert_eq!(Type::block(Type::Number).to_string(), "block(number)");
     }
 
     #[test]
     fn display_dict_list() {
         assert_eq!(
-            Type::dict(Type::list(Type::Number)).to_string(),
-            "Dict([number])"
+            Type::block(Type::list(Type::Number)).to_string(),
+            "block([number])"
         );
     }
 
@@ -1348,9 +1348,9 @@ mod tests {
 
     #[test]
     fn humanise_dict_with_fresh_var() {
-        let ty = Type::dict(Type::Var(TypeVarId("_t0".into()), Kind::Star));
+        let ty = Type::block(Type::Var(TypeVarId("_t0".into()), Kind::Star));
         let h = humanise(&ty);
-        assert_eq!(h.to_string(), "Dict(a)");
+        assert_eq!(h.to_string(), "block(a)");
     }
 
     #[test]
@@ -1411,7 +1411,7 @@ mod tests {
     fn kind_of_con_list_is_star_to_star() {
         assert_eq!(kind_of(&Type::Con("List".into())), Kind::star_to_star());
         assert_eq!(kind_of(&Type::Con("IO".into())), Kind::star_to_star());
-        assert_eq!(kind_of(&Type::Con("Dict".into())), Kind::star_to_star());
+        assert_eq!(kind_of(&Type::Con("block".into())), Kind::star_to_star());
     }
 
     #[test]

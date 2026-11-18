@@ -819,6 +819,7 @@ impl Checker {
                 for b in &scope.pattern {
                     if let Some(type_str) = extract_string_literal(&b.expr) {
                         if let Ok(ty) = parse::parse_type(&type_str) {
+                            self.warn_deprecated_syntax(b.expr.smid(), &type_str);
                             self.register_alias(b.name.clone(), ty);
                         }
                     }
@@ -831,6 +832,7 @@ impl Checker {
                 for (alias_name, type_str_expr) in b.iter() {
                     if let Some(type_str) = extract_string_literal(type_str_expr) {
                         if let Ok(ty) = parse::parse_type(&type_str) {
+                            self.warn_deprecated_syntax(type_str_expr.smid(), &type_str);
                             self.register_alias(alias_name.clone(), ty);
                         }
                     }
@@ -933,12 +935,15 @@ impl Checker {
         };
 
         match parse::parse_scheme(&type_str) {
-            Ok((parsed, constraints)) => Some((
-                self.resolve_aliases_in_type(parsed),
-                constraints,
-                asserted,
-                is_hint,
-            )),
+            Ok((parsed, constraints)) => {
+                self.warn_deprecated_syntax(meta.smid(), &type_str);
+                Some((
+                    self.resolve_aliases_in_type(parsed),
+                    constraints,
+                    asserted,
+                    is_hint,
+                ))
+            }
             Err(e) => {
                 self.warn_invalid_annotation(meta.smid(), &e);
                 None
@@ -963,6 +968,20 @@ impl Checker {
         if self.warned_annotation_smids.insert(smid) {
             self.warnings
                 .push(TypeWarning::new(format!("invalid type annotation: {err}")).at(smid));
+        }
+    }
+
+    /// Emit a warning for each deprecated construct in a successfully
+    /// parsed annotation or alias string, such as the block type's old
+    /// spelling `block(T)` (eu-oaz72.129). Deduplicated by `Smid` like
+    /// [`Self::warn_invalid_annotation`]: a string either fails to parse or
+    /// parses, so the two never compete for the same `Smid`.
+    fn warn_deprecated_syntax(&mut self, smid: Smid, type_str: &str) {
+        let notes = parse::deprecation_notes(type_str);
+        if !notes.is_empty() && self.warned_annotation_smids.insert(smid) {
+            for note in notes {
+                self.warnings.push(TypeWarning::new(note).at(smid));
+            }
         }
     }
 
@@ -1397,7 +1416,7 @@ impl Checker {
         // When `lookup` / `LOOKUP` is applied to a literal-symbol key and a
         // known record type, return the precise field type (or warn on a key
         // typo in a closed record).  This fires before the generic annotation
-        // path so that the precise field type overrides the `Dict(a) → a`
+        // path so that the precise field type overrides the `block(a) → a`
         // annotation.
         //
         // The type checker runs before inlining, so the head may be either:
@@ -1681,7 +1700,7 @@ impl Checker {
     ///    the substitution to resolve it to a concrete type.
     ///
     /// Returns `None` when the hint cannot be parsed, the wrapper type is
-    /// not a recognised container (`List`, `IO`, `Dict`, `NonEmpty`), or
+    /// not a recognised container (`List`, `IO`, `block`, `NonEmpty`), or
     /// the unification fails (e.g. `val_type = string` vs wrapper `[a]`).
     fn infer_elem_type_from_hint_str(&mut self, hint_str: &str, val_type: &Type) -> Option<Type> {
         let parsed = parse::parse_type(hint_str).ok()?;
@@ -1690,14 +1709,14 @@ impl Checker {
         let freshened = freshen(&scheme, &mut self.var_counter);
 
         // Extract the inner type variable from the freshened wrapper.
-        // Accepts List, IO, Dict, and NonEmpty containers — all represented as
+        // Accepts List, IO, block, and NonEmpty containers — all represented as
         // App(Con("X"), T) in the new HKT representation.
-        // Accepts List, IO, Dict, and NonEmpty containers — all represented as
+        // Accepts List, IO, block, and NonEmpty containers — all represented as
         // App(Con("X"), T) in the new HKT representation.
         let inner = freshened
             .as_list()
             .or_else(|| freshened.as_io())
-            .or_else(|| freshened.as_dict())
+            .or_else(|| freshened.as_block())
             .or_else(|| freshened.as_non_empty())
             .cloned()?;
 
@@ -2723,7 +2742,7 @@ impl Checker {
     /// | closed `Record` | yes | — | field type |
     /// | closed `Record` | — | yes | `any` + key-typo warning |
     /// | open `Record` or row-variable `Record` | — | yes | `any`, no warning |
-    /// | `Dict(v)` | — | — | `v` |
+    /// | `block(v)` | — | — | `v` |
     /// | other | — | — | `any` |
     fn synthesise_lookup_with_literal_key(
         &mut self,
@@ -2754,7 +2773,7 @@ impl Checker {
                 }
             }
             other => {
-                if let Some(val_type) = other.as_dict() {
+                if let Some(val_type) = other.as_block() {
                     val_type.clone()
                 } else {
                     Type::Any
@@ -3808,6 +3827,9 @@ pub fn parse_operator_overloads(
     for (name, (type_str, smid)) in raw {
         match parse::parse_scheme(type_str) {
             Ok((ty, constraints)) => {
+                for note in parse::deprecation_notes(type_str) {
+                    warnings.push(TypeWarning::new(note).at(*smid));
+                }
                 let mut scheme = infer_scheme(ty);
                 scheme.constraints = constraints;
                 overloads.insert(name.clone(), scheme);

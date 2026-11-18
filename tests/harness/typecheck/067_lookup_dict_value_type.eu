@@ -1,7 +1,7 @@
-# lookup(:key, Dict(number)) returns number — verified by using the result in a
+# lookup(:key, block(number)) returns number — verified by using the result in a
 # numeric context without warning.
 
-` { type: "!Dict(number)" }
+` { type: "!block(number)" }
 scores: { alice: 42, bob: 37 }
 
 ` { type: "number → number" }

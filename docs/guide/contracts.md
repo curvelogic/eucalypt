@@ -282,7 +282,7 @@ specs and deliberately differs on closed ones.
 
 ## What is not covered
 
-- **`Dict(T)`, `NonEmpty([T])` and recursive types are accepted without
+- **`block(T)`, `NonEmpty([T])` and recursive types are accepted without
   checking**, matching `as-spec`, so the two agree about what conforms for
   these. Extending them is future work, and will extend both together.
 - **Literal types are the one place `validate` and `as-spec` disagree.**
