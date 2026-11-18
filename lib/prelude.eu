@@ -1781,17 +1781,25 @@ permutations(xs): {
     export: :suppress }
 __picks(front, xs): xs nil? then([], cons([head(xs), front ++ tail(xs)], __picks(front ++ [head(xs)], tail(xs))))
 
-` { doc: "`merge-intervals(is)` - merge closed integer intervals `[lo, hi]`: sort by `lo`, then merge those that overlap or are adjacent. Sorted intervals `[lo1, hi1]` and `[lo2, hi2]` merge when `lo2 <= hi1 + 1`, so `[1, 3]` and `[3, 5]` give `[1, 5]`, `[1, 3]` and `[4, 6]` give `[1, 6]`, and `[1, 3]` and `[5, 6]` stay separate. Nested intervals are absorbed. Empty input gives `[]`. A non-number or non-integer bound, or an inverted interval (`lo > hi`), is an error naming `merge-intervals`."
+` { doc: "`merge-intervals(is)` - merge closed integer intervals `[lo, hi]`: sort by `lo`, then merge those that overlap or are adjacent. Sorted intervals `[lo1, hi1]` and `[lo2, hi2]` merge when `lo2 <= hi1 + 1`, so `[1, 3]` and `[3, 5]` give `[1, 5]`, `[1, 3]` and `[4, 6]` give `[1, 6]`, and `[1, 3]` and `[5, 6]` stay separate. Nested intervals are absorbed. Empty input gives `[]`. An interval that is not a pair, a non-number or non-integer bound, or an inverted interval (`lo > hi`), is an error naming `merge-intervals`."
     type: s"[[number]] → [[number]]" }
 merge-intervals(is): __require-int-bounds(is, __merge-sorted(is sort-by-num(first)))
 
-` { doc: "`__require-int-bounds(is, v)` - internal: `v`, or an error naming `merge-intervals` when an interval in `is` has a non-number or non-integer bound, or `lo > hi`."
+` { doc: "`__require-int-bounds(is, v)` - internal: `v`, or an error naming `merge-intervals` when an interval in `is` is not a pair, has a non-number or non-integer bound, or has `lo > hi`."
     export: :suppress }
 __require-int-bounds(is, v): is foldr(__check-interval, v)
 
-` { doc: "`__check-interval([lo, hi], v)` - internal: `v`, or an error naming `merge-intervals` when `lo` or `hi` is not an integer, or `lo > hi`."
+` { doc: "`__check-interval(i, v)` - internal: `v`, or an error naming `merge-intervals` when the interval list `i` does not have exactly two elements, or its bounds fail `__check-pair`."
     export: :suppress }
-__check-interval([lo, hi], v): __check-bound(lo, __check-bound(hi, (lo > hi) then(panic("merge-intervals interval [{lo}, {hi}] is inverted: lo must not exceed hi"), v)))
+__check-interval(i, v): (i list?) then(__check-length(i count, i, v), __check-pair(i, v))
+
+` { doc: "`__check-length(n, i, v)` - internal: `__check-pair(i, v)` when the interval `i` has `n = 2` elements, else an error naming `merge-intervals`."
+    export: :suppress }
+__check-length(n, i, v): (n = 2) then(__check-pair(i, v), panic("merge-intervals interval of length {n} must be a pair [lo, hi]"))
+
+` { doc: "`__check-pair([lo, hi], v)` - internal: `v`, or an error naming `merge-intervals` when `lo` or `hi` is not an integer, or `lo > hi`."
+    export: :suppress }
+__check-pair([lo, hi], v): __check-bound(lo, __check-bound(hi, (lo > hi) then(panic("merge-intervals interval [{lo}, {hi}] is inverted: lo must not exceed hi"), v)))
 
 ` { doc: "`__check-bound(b, v)` - internal: `v`, or an error naming `merge-intervals` when `b` is not an integer."
     export: :suppress }

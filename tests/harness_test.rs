@@ -5546,6 +5546,24 @@ pub fn test_error_342_list_bound_merge_intervals() {
     run_error_test(&error_opts("342_list_bound_merge_intervals.eu"));
 }
 
+/// A three-element `merge-intervals` interval is an error naming it (eu-oaz72.190, decision 67).
+#[test]
+pub fn test_error_365_three_element_interval_merge_intervals() {
+    run_error_test(&error_opts("365_three_element_interval_merge_intervals.eu"));
+}
+
+/// A one-element `merge-intervals` interval is an error naming it (eu-oaz72.190, decision 67).
+#[test]
+pub fn test_error_366_one_element_interval_merge_intervals() {
+    run_error_test(&error_opts("366_one_element_interval_merge_intervals.eu"));
+}
+
+/// A empty `merge-intervals` interval is an error naming it (eu-oaz72.190, decision 67).
+#[test]
+pub fn test_error_367_empty_interval_merge_intervals() {
+    run_error_test(&error_opts("367_empty_interval_merge_intervals.eu"));
+}
+
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).
 #[test]
 pub fn test_error_336_non_integer_combinations() {
