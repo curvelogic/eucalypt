@@ -1,5 +1,6 @@
 //! Format command handler for `eu fmt`
 
+use crate::common::pipe::ignore_broken_pipe;
 use crate::driver::options::EucalyptOptions;
 use crate::syntax::export::format::{format_source, needs_formatting, FormatterConfig};
 use std::fs;
@@ -120,10 +121,6 @@ fn format_stdin(config: &FormatterConfig, opt: &EucalyptOptions) -> Result<i32, 
 /// it wanted — so it is treated as success; any other write failure is
 /// reported.
 fn write_stdout(formatted: &str) -> Result<(), String> {
-    match io::stdout().write_all(formatted.as_bytes()) {
-        Err(e) if e.kind() != io::ErrorKind::BrokenPipe => {
-            Err(format!("Failed to write to stdout: {e}"))
-        }
-        _ => Ok(()),
-    }
+    ignore_broken_pipe(io::stdout().write_all(formatted.as_bytes()))
+        .map_err(|e| format!("Failed to write to stdout: {e}"))
 }

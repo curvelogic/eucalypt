@@ -97,7 +97,7 @@ fn run() -> i32 {
     if opt.test() {
         match tester::test(&opt) {
             Ok(exit) => return exit,
-            Err(e) => return failure_exit_code(e),
+            Err(e) => return report_failure(e),
         }
     }
 
@@ -134,10 +134,10 @@ fn run() -> i32 {
     // No files, no -e, and stdin is a terminal — show help.
     if opt.explicit_inputs.is_empty() && opt.evaluate.is_none() && std::io::stdin().is_terminal() {
         use clap::CommandFactory;
-        eucalypt::driver::options::EucalyptCli::command()
+        let printed = eucalypt::driver::options::EucalyptCli::command()
             .print_help()
-            .ok();
-        return match writeln!(std::io::stdout()) {
+            .and_then(|()| writeln!(std::io::stdout()));
+        return match printed {
             Err(e) => failure_exit_code(e.into()),
             Ok(()) => 0,
         };
@@ -310,16 +310,28 @@ fn run() -> i32 {
 
 /// Report a driver error on stderr and return exit code 2.
 ///
-/// A closed stdout pipe (`eu test … | head`) is not a failure — the reader
-/// has what it wanted — so it exits 0 silently, as rendering already does
-/// for a broken pipe (eu-1tkk.7.25).
+/// A closed stdout pipe (`eu doc … | head`, `eu --explain | head`) is not a
+/// failure — the reader has what it wanted — so it exits 0 silently, as
+/// rendering already does for a broken pipe (eu-1tkk.7.25).
+///
+/// `eu test` does not come here: its exit code is the suite's verdict, so it
+/// absorbs a closed pipe itself and still runs every test, and any error it
+/// does return goes to [`report_failure`].
 fn failure_exit_code(e: EucalyptError) -> i32 {
     if e.is_broken_pipe() {
         0
     } else {
-        eprintln!("{e}");
-        2
+        report_failure(e)
     }
+}
+
+/// Report a driver error on stderr and return exit code 2, whatever it is.
+///
+/// For a command whose exit code is a verdict (`eu test`), no error may
+/// become a silent success, a broken pipe included.
+fn report_failure(e: EucalyptError) -> i32 {
+    eprintln!("{e}");
+    2
 }
 
 /// Optionally dump stats to stderr and/or write JSON file, then return exit code.
