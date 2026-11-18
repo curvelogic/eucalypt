@@ -289,9 +289,9 @@ scripts/check-emacs-mode.sh FILE.eu... # or a corpus of your own
 
 It compiles the grammar from `editors/tree-sitter-eucalypt/src` into a
 library in a temporary directory, with the suffix Emacs looks for on the
-platform (`.so`, `.dylib` or `.dll`), compiles every query the mode uses, and fontifies each
-file at levels 1 to 4 in `emacs --batch`, failing on any query error or if
-level 3 and 4 faces are not applied. It needs Emacs 29+ with tree-sitter
+platform (`.so`, `.dylib` or `.dll`), compiles every query the mode
+uses, and fontifies each file at levels 1 to 4 in `emacs --batch`,
+failing on any query error or if level 3 and 4 faces are not applied. It needs Emacs 29+ with tree-sitter
 and a C compiler; without them it prints `SKIP` and exits 0, or exits 2
 under `--require` (for CI, where they must be present).
 
