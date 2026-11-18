@@ -13,6 +13,11 @@
 (l >= r): __GTE(l, r)
 (l <= r): __LTE(l, r)
 
+` { doc: "Test-only: `l ⊢ r` is `r`, at precedence 45, between :cmp (50) and :eq (40). `∣` and `∤` bind at :eq, looser than `⊢`, so `3 ∣ 5 ⊢ 6` is `3 ∣ 6`; at :cmp it would be `(3 ∣ 5) ⊢ 6`, i.e. `6` (eu-oaz72.81)."
+    associates: :left
+    precedence: 45 }
+(l ⊢ r): r
+
 integer-arithmetic: {
   trues: {
     a: 4 > 2
@@ -146,6 +151,9 @@ divisibility: {
     with-and: 2 ∣ 4 ∧ 3 ∤ 4
     with-or: 5 ∣ 4 ∨ 2 ∣ 4
     left-assoc-with-eq: 2 ∣ 4 = true
+    # `⊢` sits between :cmp and :eq, so these hold only at :eq
+    divides-looser-than-cmp: (3 ∣ 5 ⊢ 6) = true
+    not-divides-looser-than-cmp: (5 ∤ 3 ⊢ 10) = false
   }
 
   pipelines: {
