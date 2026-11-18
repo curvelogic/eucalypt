@@ -1,0 +1,4 @@
+` "A precise tuple path (drop, tail, second) that falls through on a non-tuple argument reports each warning inside that argument once, not twice (eu-oaz72.174)."
+dropped: (range(0, 3) map(str.len)) drop(1)
+tailed: (range(0, 3) map(str.len)) tail
+seconded: (range(0, 3) map(str.len)) second

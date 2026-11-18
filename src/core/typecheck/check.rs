@@ -323,6 +323,14 @@ pub struct Checker {
     /// Memoised tuple-drop classification per binding: `Some(n)` when the
     /// binding is `drop(n)` for a literal count `n`, or an alias of one.
     drop_shapes: HashMap<BoundKey, Option<usize>>,
+    /// Types of application arguments already synthesised by a precise
+    /// typing path (head/tail, drop, projection) that then fell through to
+    /// the generic path, keyed by the argument's node address.  The generic
+    /// path takes the type from here instead of synthesising the argument a
+    /// second time, which would repeat every warning inside it (and, for
+    /// nested calls, multiply the work).  Entries live only for the
+    /// application that made them: `synthesise_app` removes them on return.
+    presynthesised: HashMap<usize, Type>,
 
     /// When `true`, the outermost scope frame is preserved rather than
     /// popped when `synthesise(Let)` would otherwise call `pop_scope`.
@@ -382,6 +390,7 @@ impl Checker {
             branch_shapes: HashMap::new(),
             projection_shapes: HashMap::new(),
             drop_shapes: HashMap::new(),
+            presynthesised: HashMap::new(),
             keep_root_scope: false,
             seed_branch_shapes: HashMap::new(),
             operator_overloads: HashMap::new(),
@@ -980,6 +989,9 @@ impl Checker {
 
     /// Synthesise the type of `expr`, recursing to gather warnings along the way.
     pub fn synthesise(&mut self, expr: &RcExpr) -> Type {
+        if let Some(ty) = self.presynthesised.remove(&expr_key(expr)) {
+            return ty;
+        }
         match &*expr.inner {
             // ── Literals ─────────────────────────────────────────────────────
             Expr::Literal(_, prim) => synthesise_primitive(prim),
@@ -1332,6 +1344,27 @@ impl Checker {
     /// We flatten `func` into `(head, prefix_args)` and prepend to `args` so
     /// the full argument list `[a, b, x]` is visible for recognition.
     fn synthesise_app(&mut self, smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
+        let ty = self.synthesise_app_inner(smid, func, args);
+        // Drop any argument type a precise path stored but the generic path
+        // did not consume, so it cannot leak to a later synthesis of the same
+        // node in another context.
+        let (_, prefix_args) = flatten_app_spine(func);
+        for arg in prefix_args.into_iter().chain(args.iter()) {
+            self.presynthesised.remove(&expr_key(arg));
+        }
+        ty
+    }
+
+    /// Synthesise an argument for a precise typing path that may fall through
+    /// to the generic application path, recording the type so the generic
+    /// path reuses it rather than synthesising the argument again.
+    fn synthesise_once(&mut self, arg: &RcExpr) -> Type {
+        let ty = self.synthesise(arg);
+        self.presynthesised.insert(expr_key(arg), ty.clone());
+        ty
+    }
+
+    fn synthesise_app_inner(&mut self, smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
         // ── String interpolation (JOIN) ─────────────────────────────────────
         //
         // The desugarer produces `App(Intrinsic("JOIN"), [List(…), sep])` for
@@ -1395,7 +1428,7 @@ impl Checker {
         // only fires when there is exactly one argument.
         if spine_args.len() == 1 {
             if let Some(proj) = is_head_or_tail(head) {
-                let arg_type = self.synthesise(spine_args[0]);
+                let arg_type = self.synthesise_once(spine_args[0]);
                 if let Some(result) = apply_head_tail_to_tuple(proj, &arg_type) {
                     return result;
                 }
@@ -1436,7 +1469,7 @@ impl Checker {
         // Covers both a direct call (`xs drop(2)`) and a binding classified
         // as a dropper (`content: drop(2)`, then `xs content`).
         if let Some((count, target)) = self.recognise_tuple_drop(head, &spine_args) {
-            let arg_type = self.synthesise(target);
+            let arg_type = self.synthesise_once(target);
             if let Some(result) = apply_drop_to_tuple(count, &arg_type) {
                 return result;
             }
@@ -1453,7 +1486,7 @@ impl Checker {
         // this path covers index ≥ 1 (and also 0 for completeness via bound vars).
         if spine_args.len() == 1 {
             if let Some(index) = self.recognise_projection_index(head) {
-                let synth = self.synthesise(spine_args[0]);
+                let synth = self.synthesise_once(spine_args[0]);
                 // Unfold a recursive alias one step so a `Mu`-wrapped prefix-list
                 // (the markup `Element` shape) is projected precisely.
                 let arg_type = match &synth {
@@ -2664,9 +2697,6 @@ impl Checker {
         }
     }
 
-    /// Classify a single-param lambda body as a projection of its parameter.
-    ///
-    /// Matches `HEAD_fn(TAIL_fn^n(param))` and returns the index `n`.
     /// Recognise a tuple drop in head position and return its literal count
     /// and the expression it is applied to.
     ///
@@ -2715,6 +2745,9 @@ impl Checker {
         }
     }
 
+    /// Classify a single-param lambda body as a projection of its parameter.
+    ///
+    /// Matches `HEAD_fn(TAIL_fn^n(param))` and returns the index `n`.
     fn classify_proj_lam_body(&self, param_name: &str, body: &RcExpr) -> Option<usize> {
         let peeled = peel_meta(body);
         // Body must be App(head_fn, [inner]).
@@ -3097,6 +3130,10 @@ fn is_tail_fn(expr: &RcExpr) -> bool {
 /// Returns `None` when `arg_type` is neither shape (caller falls through to the
 /// generic annotation path).
 fn apply_head_tail_to_tuple(proj: HeadTailProjection, arg_type: &Type) -> Option<Type> {
+    // `tail` is `drop(1)`.
+    if let HeadTailProjection::Tail = proj {
+        return apply_drop_to_tuple(1, arg_type);
+    }
     // Unfold a recursive alias one step so projection sees the underlying shape
     // (the markup `Element` alias is `Mu`-wrapped because its tail is
     // self-referential).  Unfolding a `Mu(List(_))` yields a `List` which this
@@ -3106,26 +3143,16 @@ fn apply_head_tail_to_tuple(proj: HeadTailProjection, arg_type: &Type) -> Option
         return apply_head_tail_to_tuple(proj, &unfolded);
     }
     match arg_type {
-        Type::Tuple(elems) => match proj {
-            HeadTailProjection::Head => elems.first().cloned(),
-            HeadTailProjection::Tail => {
-                if elems.len() <= 1 {
-                    // tail of a singleton (or degenerate zero-elem) tuple is the empty list.
-                    Some(Type::list(Type::Any))
-                } else {
-                    Some(Type::Tuple(elems[1..].to_vec()))
-                }
-            }
-        },
-        Type::PrefixList { prefix, tail } => match proj {
-            HeadTailProjection::Head => prefix.first().cloned(),
-            HeadTailProjection::Tail => Some(Type::prefix_list(
-                prefix[1..].to_vec(),
-                tail.as_ref().clone(),
-            )),
-        },
+        Type::Tuple(elems) => elems.first().cloned(),
+        Type::PrefixList { prefix, .. } => prefix.first().cloned(),
         _ => None,
     }
+}
+
+/// The address of an expression node, identifying it for the lifetime of
+/// the checked tree (see `Checker::presynthesised`).
+fn expr_key(expr: &RcExpr) -> usize {
+    std::rc::Rc::as_ptr(&expr.inner) as usize
 }
 
 /// Return `true` when `expr` is the prelude `drop` (a bound or, in
@@ -3161,7 +3188,6 @@ fn apply_drop_to_tuple(count: usize, arg_type: &Type) -> Option<Type> {
         return apply_drop_to_tuple(count, &unfolded);
     }
     match arg_type {
-        Type::Tuple(elems) if count == 0 => Some(Type::Tuple(elems.clone())),
         Type::Tuple(elems) if count >= elems.len() => Some(Type::list(Type::Any)),
         Type::Tuple(elems) => Some(Type::Tuple(elems[count..].to_vec())),
         Type::PrefixList { prefix, tail } if count <= prefix.len() => Some(Type::prefix_list(

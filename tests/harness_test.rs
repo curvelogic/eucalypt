@@ -4780,6 +4780,25 @@ pub fn test_typecheck_141_tuple_drop_suffix_mismatch_warns() {
     run_typecheck_test("141_tuple_drop_suffix_mismatch_warns.eu");
 }
 
+/// A precise tuple path that falls through on a non-tuple argument must not
+/// synthesise that argument twice: each of the three warnings appears once
+/// (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_142_tuple_projection_fallthrough_warns_once() {
+    let file = "142_tuple_projection_fallthrough_warns_once.eu";
+    run_typecheck_test(file);
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", &format!("tests/harness/typecheck/{file}")])
+        .output()
+        .expect("failed to run eu check");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let warnings = stderr
+        .lines()
+        .filter(|l| l.contains("expected [string], found [number]"))
+        .count();
+    assert_eq!(warnings, 3, "expected one warning per binding:\n{stderr}");
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]
