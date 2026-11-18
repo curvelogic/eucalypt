@@ -621,6 +621,7 @@ impl<'a> Executor<'a> {
                     heap_mib,
                     stg_settings.test_mode,
                 )?;
+                m.set_user_location_mask(self.source_map.user_location_mask());
                 if opt.profile() {
                     m.enable_profiler(opt.profile_folded().is_some());
                 }
