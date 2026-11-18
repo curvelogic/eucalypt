@@ -19,7 +19,7 @@ use crate::{
         expr::*,
         rt,
         transform::dynamise,
-        typecheck::parse::{parse_scheme, render_scheme},
+        typecheck::parse::{deprecation_notes, parse_scheme, render_scheme},
     },
     syntax::rowan::{
         ast::{self as rowan_ast, AstToken, Element, HasSoup},
@@ -72,7 +72,7 @@ struct FieldBinding {
 
 /// Entry for a destructuring block let: synthetic param + field bindings.
 struct DestructureEntry {
-    /// Synthetic parameter name (e.g. `__p0`)
+    /// Synthetic parameter name (e.g. `__p'0`)
     synthetic_name: String,
     /// Field bindings to generate
     fields: Vec<FieldBinding>,
@@ -96,7 +96,7 @@ struct ListTailBinding {
 
 /// Entry for a destructuring list let: synthetic param + element bindings.
 struct ListDestructureEntry {
-    /// Synthetic parameter name (e.g. `__p0`)
+    /// Synthetic parameter name (e.g. `__p'0`)
     synthetic_name: String,
     /// Element bindings at each position
     elements: Vec<ListElementBinding>,
@@ -306,10 +306,24 @@ impl DestructureLet {
     }
 }
 
+/// Name of the `n`th synthetic binder introduced by destructuring
+/// parameter patterns.
+///
+/// Destructuring is desugared while user references are still resolved
+/// by name, so a synthetic binder captures any user reference spelled the
+/// same way (eu-oaz72.191).  The name therefore contains `'`, which no
+/// source identifier can contain: unquoted identifiers and operators
+/// exclude it, and single-quoted identifiers are delimited by it with no
+/// escape.
+pub(crate) fn synthetic_param_name(n: usize) -> String {
+    format!("__p'{n}")
+}
+
 /// Desugar a function body with support for destructuring parameter patterns.
 ///
 /// For simple parameter patterns, this behaves like `desugar_declaration_body`.
-/// For block patterns, a synthetic parameter (`__pN`) is introduced as the
+/// For block patterns, a synthetic parameter (`__p'N`, see
+/// [`synthetic_param_name`]) is introduced as the
 /// lambda binder, and let bindings for each field are added around the body.
 /// For list patterns, the same synthetic-parameter approach is used, with
 /// `LIST.NTH` calls for each positional element.
@@ -327,7 +341,7 @@ fn desugar_declaration_body_with_patterns(
     let mut all_env_names: Vec<String> = Vec::new();
     let mut lambda_param_names: Vec<String> = Vec::new();
     // Raw data for block patterns: (synthetic_name, [(field_name, binding_var_name)])
-    // binding_var_name is either a user-visible name (Simple) or a synthetic __pN (nested).
+    // binding_var_name is either a user-visible name (Simple) or a synthetic `__p'N` (nested).
     let mut block_raw: Vec<(String, Vec<(String, String)>)> = Vec::new();
     // Raw data for list patterns: (synthetic_name, [element_var_names], tail_name?)
     let mut list_raw: Vec<(String, Vec<String>, Option<String>)> = Vec::new();
@@ -349,7 +363,7 @@ fn desugar_declaration_body_with_patterns(
                 lambda_param_names.push(name.clone());
             }
             nested => {
-                let synthetic_name = format!("__p{}", synthetic_counter);
+                let synthetic_name = synthetic_param_name(synthetic_counter);
                 synthetic_counter += 1;
                 all_env_names.push(synthetic_name.clone());
                 lambda_param_names.push(synthetic_name.clone());
@@ -370,7 +384,7 @@ fn desugar_declaration_body_with_patterns(
                             element_names.push(name.clone());
                         }
                         nested => {
-                            let nested_name = format!("__p{}", synthetic_counter);
+                            let nested_name = synthetic_param_name(synthetic_counter);
                             synthetic_counter += 1;
                             all_env_names.push(nested_name.clone());
                             element_names.push(nested_name.clone());
@@ -397,7 +411,7 @@ fn desugar_declaration_body_with_patterns(
                             field_var_names.push((field_name, binding_name));
                         }
                         nested => {
-                            let nested_name = format!("__p{}", synthetic_counter);
+                            let nested_name = synthetic_param_name(synthetic_counter);
                             synthetic_counter += 1;
                             all_env_names.push(nested_name.clone());
                             field_var_names.push((field_name, nested_name.clone()));
@@ -535,13 +549,13 @@ fn desugar_declaration_body_with_patterns(
             }
             DestructureLet::List(entry) => {
                 // Each binding uses HEAD/TAIL chaining:
-                //   a = HEAD(__p0)
-                //   b = HEAD(TAIL(__p0))
-                //   c = HEAD(TAIL(TAIL(__p0)))
+                //   a = HEAD(__p'0)
+                //   b = HEAD(TAIL(__p'0))
+                //   c = HEAD(TAIL(TAIL(__p'0)))
                 //
                 // For head/tail patterns, the tail binding uses TAIL applied
                 // `drop_count` times:
-                //   xs = TAIL(TAIL(__p0))   (for [a, b : xs])
+                //   xs = TAIL(TAIL(__p'0))   (for [a, b : xs])
                 //
                 // This correctly handles lists built by the STG compiler
                 // where the nil tail is a global ref, not a local ref.
@@ -662,6 +676,14 @@ impl Desugarable for rowan_ast::Literal {
                         // Uses parse_scheme to handle the full type-DSL including
                         // operator constraints (e.g. `>(a, a) => a → a → a`).
                         match parse_scheme(text) {
+                            // A string using a deprecated spelling (the block
+                            // type's old `Dict(T)`) keeps its source text, so
+                            // that the type checker still sees the old
+                            // spelling and warns (eu-oaz72.129); it parses to
+                            // the same type either way.
+                            Ok(_) if !deprecation_notes(text).is_empty() => {
+                                Primitive::TypeData(text.trim().to_string())
+                            }
                             Ok((ty, constraints)) => {
                                 Primitive::TypeData(render_scheme(&ty, &constraints))
                             }

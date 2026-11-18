@@ -8,7 +8,12 @@
         The literal is kept out of the result block's keys deliberately:
         rendering it to YAML is now a deliberate error (eu-1tkk.7.20), so
         exposing it as a binding would fail the target for an unrelated
-        reason." }
+        reason.
+
+        eu-1yv37: the importer rejected the `N` form the exporter now
+        writes, so eu emitted EDN it could not read back. The round trip
+        below re-imports the emitted text and compares it with the
+        original value." }
 
 ` { target: :test }
 test: {
@@ -33,6 +38,16 @@ test: {
   # i64::MAX itself is the boundary: still a plain integer.
   t-boundary: (9223372036854775807 render-as(:edn)) = c"9223372036854775807\n"
 
-  RESULT: [t-edn-exact, t-edn-not-rounded, t-json, t-text, t-small, t-boundary]
+  # Genuine round trip: export to EDN, re-import the emitted text, and
+  # compare with the original (eu-1yv37). The JSON rendering pins the
+  # exact digits independently of numeric equality.
+  t-round-trip: (edn-out parse-as(:edn)) = 9999999999999999999
+  t-round-trip-digits: (edn-out parse-as(:edn) render-as(:json)) = c"9999999999999999999\n"
+
+  ` "A `N`-suffixed integer within i64 range imports as that integer."
+  t-small-bigint: ("5N" parse-as(:edn)) = 5
+
+  RESULT: [t-edn-exact, t-edn-not-rounded, t-json, t-text, t-small, t-boundary,
+           t-round-trip, t-round-trip-digits, t-small-bigint]
     all-true? then(:PASS, :FAIL)
 }

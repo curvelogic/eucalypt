@@ -202,22 +202,24 @@ neighbours-checks: {
   ]
 }
 
-` "Integral float indices are accepted; negative and non-integer ones are errors (eu-oaz72.88)"
+` "Integral float indices and offsets are accepted; negative indices and non-integer indices or offsets are errors (eu-oaz72.88, eu-oaz72.97)"
 integral-index-checks: {
   ` :suppress
   a: arr.from-flat([2, 2], [1, 2, 3, 4])
   trues: [
     (a arr.get([1.0, 0])) = 3,
-    (a arr.slice(0, 1.0) arr.to-list) = [3, 4]
+    (a arr.slice(0, 1.0) arr.to-list) = [3, 4],
+    (a arr.neighbours([0, 0], [[1.0, 0], [0, -1.0]])) = [3]
   ]
 }
 
-` "Shapes and offsets at the edges: whole-number floats are dimensions, a zero dimension gives an empty array, and an offset too large for any coordinate is out of bounds (eu-oaz72.96)"
+` "Shapes and offsets at the edges: whole-number floats are dimensions, a zero dimension gives an empty array, and an offset too large for any coordinate is out of bounds (eu-oaz72.96). The non-zero dimensions of an empty shape are bounded wherever the zero is (so [0, 10000, 10000], not [0, 100000, 100000]): arr.transpose does not re-validate a shape, and would turn [0, 100000, 100000] into [100000, 100000, 0], which would hang rendering"
 edge-checks: {
   trues: [
     (arr.zeros[2.0, 3] arr.shape) = [2, 3],
     (arr.zeros[0, 3] arr.length) = 0,
-    (arr.zeros[0, 100000, 100000] arr.length) = 0,
+    (arr.zeros[0, 10000, 10000] arr.length) = 0,
+    (arr.zeros[3, 0] arr.shape) = [3, 0],
     (arr.fill([0], 7) arr.to-list) = [],
     (arr.from-flat([2, 2], [1, 2, 3, 4]) arr.reshape[4.0] arr.shape) = [4],
     (arr.from-flat([3], [10, 20, 30]) arr.neighbours([1], [[100000000000000000000], [1]])) = [30]
@@ -244,6 +246,23 @@ heap-build-checks: {
     ((m + 1) arr.get[1, 2]) = 7,
     ((10 - m) arr.get[1, 2]) = 4,
     (arr.fill([2, 2], 3) arr.to-list) = [3, 3, 3, 3]
+  ]
+}
+
+` "A reshaped array shares its source's data backing (eu-oaz72.163): both read correctly after allocation churn has run collections, and setting an element of either copies rather than writing through. The array is small (300 values) so its backing is an ordinary, evacuable object rather than a large one: under EU_GC_STRESS and EU_GC_VERIFY (CI's GC-verified harness) a missed forward of the shared backing fails here."
+reshape-share-checks: {
+  big: arr.from-flat([30, 10], range(0, 300))
+  r: big arr.reshape[10, 30]
+  churn: range(0, 200000) map(_ * 2) foldl-strict(+, 0)
+  trues: [
+    (r arr.get[9, 29]) = 299,
+    churn = 39999800000,
+    (r arr.get[5, 7]) = 157,
+    (big arr.get[15, 7]) = 157,
+    (r arr.set([0, 0], -1) arr.get[0, 0]) = -1,
+    (big arr.get[0, 0]) = 0,
+    (r arr.get[0, 0]) = 0,
+    (r arr.reshape[300] arr.get[299]) = 299
   ]
 }
 
@@ -276,7 +295,8 @@ pass: [
   neighbours-checks.trues all-true?,
   integral-index-checks.trues all-true?,
   edge-checks.trues all-true?,
-  heap-build-checks.trues all-true?
+  heap-build-checks.trues all-true?,
+  reshape-share-checks.trues all-true?
 ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)

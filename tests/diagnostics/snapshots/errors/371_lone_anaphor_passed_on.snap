@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/371_lone_anaphor_passed_on
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/371_lone_anaphor_passed_on.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/371_lone_anaphor_passed_on.eu:3:6
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
+  ┌─ tests/harness/errors/371_lone_anaphor_passed_on.eu:3:6
+  │
+3 │ x: g(inc(_))
+  │      ^^^^^^
+  │
+  = note: in 'inc(_)', '_' is the whole argument, so the argument is the identity function: an expression anaphor's scope ends at the parentheses round it
+  = while evaluating (outermost first):
+    - x at 371_lone_anaphor_passed_on.eu:3:4

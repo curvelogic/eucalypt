@@ -42,6 +42,8 @@ pub struct LspTestSession {
     prelude_table: SymbolTable,
     pipeline_rx: Receiver<PipelineResult>,
     pipeline_tx: Sender<PipelineResult>,
+    /// The debounce thread pipeline runs go through, as in the server.
+    debouncer: super::debounce::Debouncer<super::PipelineJob>,
     cancel: Arc<AtomicBool>,
     /// Query store tracking parse results, pipeline results, and the
     /// import graph.
@@ -66,6 +68,7 @@ impl LspTestSession {
             prelude_table: symbol_table::prelude_symbols(&prelude_uri),
             pipeline_rx,
             pipeline_tx,
+            debouncer: super::pipeline_debouncer().expect("start the LSP debounce thread"),
             cancel: Arc::new(AtomicBool::new(false)),
             queries: QueryStore::new(),
             last_pipeline_error: None,
@@ -426,6 +429,20 @@ impl LspTestSession {
             .unwrap_or_default()
     }
 
+    /// The type-warning diagnostics the server would publish for the
+    /// cached pipeline result, positioned against the document text.
+    pub fn type_diagnostics(&self) -> Vec<lsp_types::Diagnostic> {
+        self.cached_pipeline()
+            .map(|c| {
+                super::diagnostics::diagnostics_from_type_warnings(
+                    &self.content,
+                    &c.warnings,
+                    &c.source_map,
+                )
+            })
+            .unwrap_or_default()
+    }
+
     /// Message of the cached result's `prelude:` override error, if any.
     pub fn prelude_error(&self) -> Option<String> {
         let file_id = FileId::from_url(&self.uri);
@@ -526,7 +543,7 @@ impl LspTestSession {
     }
 
     /// Parse and check whether the green node changed; if so, cancel
-    /// any previous pipeline run and spawn a new one.
+    /// any previous pipeline run and schedule a new one.
     fn maybe_spawn_pipeline(&mut self) {
         let parse = parse_unit(&self.content);
         let new_green = parse.syntax_node().green().into_owned();
@@ -557,7 +574,7 @@ impl LspTestSession {
         let tx = self.pipeline_tx.clone();
         let uri = self.uri.clone();
 
-        super::spawn_pipeline(uri, text, path, tx, cancel);
+        super::schedule_pipeline(&self.debouncer, uri, text, path, tx, cancel);
     }
 
     // ── Query store accessors for tests ─────────────────────────────────────

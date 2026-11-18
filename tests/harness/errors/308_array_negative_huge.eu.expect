@@ -1,2 +1,2 @@
 exit: 1
-stderr: "negative array index or dimension: -1.0715086071862673e.301"
+stderr: "arr.slice index -1.0715086071862673e.301 must be non-negative"

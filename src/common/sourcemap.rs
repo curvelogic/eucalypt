@@ -699,6 +699,28 @@ impl SourceMap {
         !self.resource_file_ids.contains(&file_id)
     }
 
+    /// A bitset over Smid indices marking every Smid that resolves to a
+    /// user-authored file (see [`SourceMap::is_user_file`]): bit `i` of word
+    /// `i / 64` is set when the Smid whose [`Smid::get`] is `i` belongs to
+    /// a user file.
+    ///
+    /// The bytecode machine consults it on every annotation change to keep
+    /// [`crate::eval::bytecode`]'s last *user* location, so it must be a
+    /// flat lookup rather than a `SourceInfo` walk (eu-oaz72.202). Smids
+    /// minted after the mask is built, synthetic Smids (no file) and
+    /// `Smid::global_slot` identities are never marked.
+    pub fn user_location_mask(&self) -> Vec<u64> {
+        let len = self.foreign_floor + self.source.len();
+        let mut mask = vec![0u64; len.div_ceil(64)];
+        for (i, info) in self.source.iter().enumerate() {
+            if info.file.is_some_and(|f| self.is_user_file(f)) {
+                let idx = self.foreign_floor + i;
+                mask[idx / 64] |= 1u64 << (idx % 64);
+            }
+        }
+        mask
+    }
+
     /// Merge declared blame classifications into the name-keyed table
     /// [`SourceMap::classify_frame`] consults (eu-1tkk.7.12).
     ///

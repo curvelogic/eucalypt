@@ -29,7 +29,7 @@ use crate::core::expr::RcExpr;
 use crate::core::typecheck::{
     check::{
         parse_operator_overloads, type_check, type_check_for_prelude, type_check_full,
-        type_check_with_operator_overloads, type_check_with_seed,
+        type_check_with_operator_overloads, type_check_with_seed, PreludeSummary, TypeCheckResult,
     },
     parse,
 };
@@ -406,14 +406,10 @@ fn type_check_path_with_seed(
         return pipeline_error("eliminate", &e);
     }
 
-    let deprecation_warnings =
-        check_deprecated_references(&loader.core().expr, &loader.core().deprecations);
-    let core_expr = loader.core().expr.clone();
-    let mut warnings = type_check_with_seed(&core_expr, &ui.type_summary);
-    warnings.extend(deprecation_warnings);
+    let result = type_check_loaded_core(&loader, CoreCheckMode::Seeded(&ui.type_summary));
     let (_, source_map, _, _, _) = loader.complete();
     PathCheckResult {
-        warnings,
+        warnings: result.warnings,
         types: std::collections::HashMap::new(),
         source_map,
     }
@@ -451,17 +447,69 @@ pub(crate) fn type_check_path_merged(
         return pipeline_error("eliminate", &e);
     }
 
-    let deprecation_warnings =
-        check_deprecated_references(&loader.core().expr, &loader.core().deprecations);
-    let core_expr = loader.core().expr.clone();
-    let mut result = type_check_full(&core_expr);
-    result.warnings.extend(deprecation_warnings);
+    let result = type_check_loaded_core(&loader, CoreCheckMode::Full);
     let (_, source_map, _, _, _) = loader.complete();
     PathCheckResult {
         warnings: result.warnings,
         types: result.types,
         source_map,
     }
+}
+
+/// Which checker [`type_check_loaded_core`] runs over the loaded core.
+pub(crate) enum CoreCheckMode<'a> {
+    /// An unseeded checker that also returns inferred types, lambda
+    /// parameter types and aliases (the LSP and the merged path fallback).
+    Full,
+    /// A checker seeded with a cached prelude summary (warnings only).
+    Seeded(&'a PreludeSummary),
+    /// An unseeded checker given the operator overloads parsed from the
+    /// loader's pre-cook operator interface (warnings only). Requires
+    /// `extract_operators` to have run before cook; annotation warnings
+    /// from parsing the overloads are reported after the type warnings.
+    Operators,
+}
+
+/// Run the deprecation reference check and then the type checker over the
+/// loader's pruned core, returning one result whose warnings are the type
+/// warnings followed by the deprecation warnings.
+///
+/// This is the single place that sequences the two checks for `eu check`,
+/// evaluation's warning pass and the LSP. Deprecation references are read
+/// from the pruned core (after `eliminate`), so unreferenced deprecated
+/// bindings do not warn. Fields other than `warnings` are empty except in
+/// [`CoreCheckMode::Full`].
+pub(crate) fn type_check_loaded_core(
+    loader: &SourceLoader,
+    mode: CoreCheckMode,
+) -> TypeCheckResult {
+    let deprecation_warnings =
+        check_deprecated_references(&loader.core().expr, &loader.core().deprecations);
+    let core_expr = &loader.core().expr;
+    let warnings_only = |warnings| TypeCheckResult {
+        warnings,
+        types: HashMap::new(),
+        lambda_params: HashMap::new(),
+        aliases: HashMap::new(),
+    };
+    let mut result = match mode {
+        CoreCheckMode::Full => type_check_full(core_expr),
+        CoreCheckMode::Seeded(summary) => warnings_only(type_check_with_seed(core_expr, summary)),
+        CoreCheckMode::Operators => {
+            let operator_type_strings = loader.unit_interface().operator_type_strings();
+            let (operator_overloads, operator_annotation_warnings) =
+                parse_operator_overloads(&operator_type_strings);
+            let mut warnings = if operator_overloads.is_empty() {
+                type_check(core_expr).0
+            } else {
+                type_check_with_operator_overloads(core_expr, operator_overloads)
+            };
+            warnings.extend(operator_annotation_warnings);
+            warnings_only(warnings)
+        }
+    };
+    result.warnings.extend(deprecation_warnings);
+    result
 }
 
 /// Result of running the type checker through the full pipeline.
@@ -528,9 +576,6 @@ pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eu
     // e.g. `<(a, a) => a → a → a` is satisfiable for the argument types.
     loader.extract_operators();
     loader.extract_visibility();
-    let operator_type_strings = loader.unit_interface().operator_type_strings();
-    let (operator_overloads, operator_annotation_warnings) =
-        parse_operator_overloads(&operator_type_strings);
 
     // Cook (resolve operator precedence).
     loader.cook()?;
@@ -542,19 +587,9 @@ pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eu
     // chance to populate `CoreBinding::demand` with cardinality information.
     loader.extract_demands();
 
-    // Run the deprecation reference checker before cook strips metadata.
-    let deprecation_warnings =
-        check_deprecated_references(&loader.core().expr, &loader.core().deprecations);
-
-    // Run the type checker, seeded with the pre-cook operator overloads.
-    let core_expr = loader.core().expr.clone();
-    let mut warnings = if operator_overloads.is_empty() {
-        type_check(&core_expr).0
-    } else {
-        type_check_with_operator_overloads(&core_expr, operator_overloads)
-    };
-    warnings.extend(operator_annotation_warnings);
-    warnings.extend(deprecation_warnings);
+    // Run the deprecation reference checker and the type checker, seeded
+    // with the pre-cook operator overloads.
+    let warnings = type_check_loaded_core(&loader, CoreCheckMode::Operators).warnings;
 
     // Run content verifier to catch static errors (e.g. trivial self-assignment).
     let core_errors = loader.verify().unwrap_or_default();
@@ -739,25 +774,12 @@ pub fn run_type_checker_from_blob_core(
 
     loader.extract_operators();
     loader.extract_visibility();
-    let operator_type_strings = loader.unit_interface().operator_type_strings();
-    let (operator_overloads, operator_annotation_warnings) =
-        parse_operator_overloads(&operator_type_strings);
 
     loader.cook()?;
     loader.eliminate()?;
     loader.extract_demands();
 
-    let deprecation_warnings =
-        check_deprecated_references(&loader.core().expr, &loader.core().deprecations);
-
-    let core_expr = loader.core().expr.clone();
-    let mut warnings = if operator_overloads.is_empty() {
-        type_check(&core_expr).0
-    } else {
-        type_check_with_operator_overloads(&core_expr, operator_overloads)
-    };
-    warnings.extend(operator_annotation_warnings);
-    warnings.extend(deprecation_warnings);
+    let warnings = type_check_loaded_core(&loader, CoreCheckMode::Operators).warnings;
 
     let core_errors = loader.verify().unwrap_or_default();
 

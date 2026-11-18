@@ -2704,22 +2704,17 @@ pub fn test_error_168() {
 /// source position — which clobbered the real user call site that had been
 /// recorded moments earlier.
 ///
-/// **Blob-only, deliberately**: every test below is gated on
-/// `#[cfg(prelude_blob_ok)]` (set by `build.rs` only when a fresh
-/// `lib/prelude.blob` was embedded — see the pattern established in
-/// `src/eval/stg/blob.rs` and `tests/diagnostics_blame_plumbing_test.rs`,
-/// eu-1tkk.7.11). `Smid::global_slot` identities — the thing this fix
-/// corrects for — only exist on the blob path; CI's plain "Test Suite" job
-/// runs `cargo test` without generating a blob first, so `eu` falls back to
-/// compiling the prelude from source at runtime and every prelude Smid is a
-/// real (non-tagged) source position instead. Checked directly against the
-/// released 0.13.2 binary: in `--source-prelude` mode 0.13.2 shows a
-/// **prelude** location (`[prelude]:84:14`), not a user one — and
-/// eu-1tkk.7.8 deliberately suppresses a non-user-file primary label, so
-/// 0.14 showing no location in source-prelude mode is correct behaviour
-/// under that invariant, not a regression. Do not "fix" the source-prelude
-/// path by weakening the suppression rule to make these assertions pass
-/// unconditionally.
+/// **Both prelude modes** (eu-oaz72.202): these tests once carried
+/// `#[cfg(prelude_blob_ok)]`, on the reasoning that source-prelude mode
+/// legitimately showed no location. It did not: in that mode prelude code
+/// carries real prelude locations, which overwrote the user call site in the
+/// machine's fallback register, so the error lost its location in source
+/// mode alone — a source/blob divergence. The machine now keeps the last
+/// *user-file* location as the fallback, so both modes report the call
+/// site. The suppression of non-user primary labels (eu-1tkk.7.8) is
+/// unchanged. Without the cfg gate they run in both CI configurations
+/// (blob, and no blob — the source prelude); they also pass with a blob
+/// present under `EU_SOURCE_PRELUDE=1`, which no CI job runs today.
 ///
 /// `072_io_fail.eu`, `094_io_no_flag.eu`, `106_io_check_fail.eu` and
 /// `168_io_shell_missing_cmd.eu` each already have a `test_error_*` function
@@ -2731,7 +2726,6 @@ pub fn test_error_168() {
 /// assert the primary label names the fixture's own file and the call
 /// site's line:column, matching blob-mode 0.13.2 exactly.
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_072_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/072_io_fail.eu"])
@@ -2751,7 +2745,6 @@ pub fn test_error_072_not_allowed_has_location() {
 }
 
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_094_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/094_io_no_flag.eu", "-t", "result"])
@@ -2771,7 +2764,6 @@ pub fn test_error_094_not_allowed_has_location() {
 }
 
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_106_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/106_io_check_fail.eu"])
@@ -2791,7 +2783,6 @@ pub fn test_error_106_not_allowed_has_location() {
 }
 
 #[test]
-#[cfg(prelude_blob_ok)]
 pub fn test_error_168_not_allowed_has_location() {
     let output = std::process::Command::new(eu_binary())
         .args(["tests/harness/errors/168_io_shell_missing_cmd.eu"])
@@ -3460,6 +3451,33 @@ pub fn test_242_fmt_leading_docstring() {
 
     let source = std::fs::read_to_string(format!("tests/harness/{name}")).unwrap();
     let formatted = reformat_round_trip(name, &source);
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join(name);
+    std::fs::write(&path, formatted).unwrap();
+    let reformatted_opts = EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str(path.to_str().unwrap()).unwrap()])
+        .build();
+    run_test(&reformatted_opts);
+}
+
+#[test]
+/// eu-oaz72.150: `eu fmt --reformat` laid out nested blocks and lists on one
+/// line by their own width, ignoring the column they start at, so nested
+/// lines passed the width. Every line of the reformatted file fits in 80
+/// columns, a second pass changes nothing, and the reformatted copy passes.
+pub fn test_337_fmt_line_width() {
+    let name = "337_fmt_line_width.eu";
+    run_test(&opts(name));
+
+    let source = std::fs::read_to_string(format!("tests/harness/{name}")).unwrap();
+    let formatted = reformat_round_trip(name, &source);
+    for line in formatted.lines() {
+        assert!(
+            line.chars().count() <= 80,
+            "{name}: reformatted line is wider than 80 columns: {line:?}\n{formatted}"
+        );
+    }
 
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join(name);
@@ -4752,6 +4770,141 @@ pub fn test_typecheck_137_block_param_nested_projection_warns() {
     run_typecheck_test("137_block_param_nested_projection_warns.eu");
 }
 
+/// An annotated block-returning function called inside a block does not make
+/// the enclosing parameter a block: the valid call checks clean (eu-oaz72.184).
+#[test]
+pub fn test_typecheck_138_block_fn_call_in_block_no_warning() {
+    run_typecheck_test("138_block_fn_call_in_block_no_warning.eu");
+}
+
+/// A real block parameter projected through a sibling binding still warns on
+/// a non-block (eu-oaz72.184).
+#[test]
+pub fn test_typecheck_139_block_fn_call_in_block_mismatch_warns() {
+    run_typecheck_test("139_block_fn_call_in_block_mismatch_warns.eu");
+}
+
+/// `drop` with a literal count keeps a heterogeneous list's tuple shape, so
+/// mapping, filtering and indexing the suffix checks clean (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_140_tuple_drop_keeps_shape_no_warning() {
+    run_typecheck_test("140_tuple_drop_keeps_shape_no_warning.eu");
+}
+
+/// A genuine non-list left in a dropped tuple suffix still warns
+/// (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_141_tuple_drop_suffix_mismatch_warns() {
+    run_typecheck_test("141_tuple_drop_suffix_mismatch_warns.eu");
+}
+
+/// A precise tuple path that falls through on a non-tuple argument must not
+/// synthesise that argument twice: each of the three warnings appears once
+/// (eu-oaz72.174).
+#[test]
+pub fn test_typecheck_142_tuple_projection_fallthrough_warns_once() {
+    let file = "142_tuple_projection_fallthrough_warns_once.eu";
+    run_typecheck_test(file);
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", &format!("tests/harness/typecheck/{file}")])
+        .output()
+        .expect("failed to run eu check");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let warnings = stderr
+        .lines()
+        .filter(|l| l.contains("expected [string], found [number]"))
+        .count();
+    assert_eq!(warnings, 3, "expected one warning per binding:\n{stderr}");
+}
+
+/// A projection guarded by `block?` on the same parameter is not a block use:
+/// non-block arguments check clean under `then`, `if`, a negated guard, `and`
+/// and `or` (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_143_block_guard_param_no_warning() {
+    run_typecheck_test("143_block_guard_param_no_warning.eu");
+}
+
+/// A projection on the unguarded side of a `block?` test still makes the
+/// parameter a block (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_144_block_guard_unguarded_use_warns() {
+    run_typecheck_test("144_block_guard_unguarded_use_warns.eu");
+}
+
+/// A `block?` guard on one parameter does not excuse projecting another
+/// (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_145_block_guard_other_param_warns() {
+    run_typecheck_test("145_block_guard_other_param_warns.eu");
+}
+
+/// A `block?` guard of the wrong polarity (`or(x block?, …)`,
+/// `and(x block? not, …)`) protects nothing: both calls warn
+/// (eu-oaz72.194).
+#[test]
+pub fn test_typecheck_146_block_guard_wrong_polarity_warns() {
+    let file = "146_block_guard_wrong_polarity_warns.eu";
+    run_typecheck_test(file);
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", &format!("tests/harness/typecheck/{file}")])
+        .output()
+        .expect("failed to run eu check");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for name in ["h-or", "h-and-not"] {
+        let pattern = format!("type mismatch calling '{name}'");
+        assert!(
+            stderr.contains(&pattern),
+            "expected \"{pattern}\" in stderr:\n{stderr}"
+        );
+    }
+}
+
+/// `Dict(T)` is a deprecated alias for the block type `block(T)`
+/// (eu-oaz72.129): an annotation using it warns, pointing to `block(T)`.
+#[test]
+pub fn test_typecheck_147_dict_block_type_deprecated_warns() {
+    run_typecheck_test("147_dict_block_type_deprecated_warns.eu");
+}
+
+/// A `types:` alias spelled with `Dict(T)` warns too (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_148_dict_alias_deprecated_warns() {
+    run_typecheck_test("148_dict_alias_deprecated_warns.eu");
+}
+
+/// `block(T)` is homogeneous: a mismatched value is reported against
+/// `block(number)` (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_149_block_type_mismatch_warns() {
+    run_typecheck_test("149_block_type_mismatch_warns.eu");
+}
+
+/// An s-string `type:` annotation using `Dict(T)` warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_151_dict_sstring_deprecated_warns() {
+    run_typecheck_test("151_dict_sstring_deprecated_warns.eu");
+}
+
+/// An s-string `types:` alias using `Dict(T)` warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_152_dict_sstring_alias_deprecated_warns() {
+    run_typecheck_test("152_dict_sstring_alias_deprecated_warns.eu");
+}
+
+/// `Dict(T)` as a record field's type warns (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_153_dict_record_field_deprecated_warns() {
+    run_typecheck_test("153_dict_record_field_deprecated_warns.eu");
+}
+
+/// Well-typed `block(T)` and bare `block` code checks clean, with no
+/// deprecation warning (eu-oaz72.129).
+#[test]
+pub fn test_typecheck_150_block_type_no_warning() {
+    run_typecheck_test("150_block_type_no_warning.eu");
+}
+
 /// Idiomatic uses of the eu-oaz72.26 helpers are strict-clean; `index-of`
 /// must accept a mixed-type list.
 #[test]
@@ -4812,12 +4965,47 @@ pub fn test_doc_nested_namespaces() {
         .expect("failed to run eu doc");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(output.status.code(), Some(0), "{stdout}");
-    for pattern in ["#### `deep(x)`", "Deep function doc."] {
+    for pattern in [
+        "#### `deep(x)`",
+        "Deep function doc.",
+        // An undocumented sub-namespace keeps its documented members.
+        "#### `loud(x)`",
+        "Quiet member doc.",
+        // Headings clamp at level six rather than dropping deeper members.
+        "###### `l5`",
+        "###### `l1.l2.l3.l4.l5.l6`",
+        "###### `l1.l2.l3.l4.l5.l6.bottom(x)`\n\nBelow the last heading level.",
+    ] {
         assert!(stdout.contains(pattern), "missing {pattern:?}:\n{stdout}");
     }
-    for hidden in ["helper-hidden", "data-hidden"] {
+    for hidden in ["helper-hidden", "data-hidden", "private-hidden", "#######"] {
         assert!(!stdout.contains(hidden), "leaked {hidden:?}:\n{stdout}");
     }
+}
+
+/// `eu doc --check` counts namespace members at every depth it renders.
+#[test]
+pub fn test_doc_nested_namespaces_coverage() {
+    let output = std::process::Command::new(eu_binary())
+        .args([
+            "doc",
+            "--check",
+            "tests/harness/doc/003_nested_namespaces.eu",
+        ])
+        .output()
+        .expect("failed to run eu doc --check");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(0), "{stdout}");
+    assert!(
+        stdout.contains("12/15 public bindings documented"),
+        "unexpected coverage:\n{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Undocumented:\n  - outer.cfg-undoc\n  - outer.cfg-private\n  - outer.quiet\n"
+        ),
+        "unexpected undocumented list:\n{stdout}"
+    );
 }
 
 /// `eu doc` extracts type annotations and renders them in a code block.
@@ -5333,6 +5521,80 @@ pub fn test_error_277_array_slice_non_integer() {
     run_error_test(&error_opts("277_array_slice_non_integer.eu"));
 }
 
+/// `arr.neighbours` offsets are not truncated (eu-oaz72.97).
+#[test]
+pub fn test_error_362_array_neighbours_non_integer_offset() {
+    run_error_test(&error_opts("362_array_neighbours_non_integer_offset.eu"));
+}
+
+/// A negative array coordinate error names the function (eu-oaz72.97).
+#[test]
+pub fn test_error_363_array_get_negative() {
+    run_error_test(&error_opts("363_array_get_negative.eu"));
+}
+
+/// An empty shape with too many sub-arrays is rejected at construction
+/// rather than rendering endlessly (eu-oaz72.99).
+#[test]
+pub fn test_error_364_array_empty_shape_too_large() {
+    run_error_test(&error_opts("364_array_empty_shape_too_large.eu"));
+}
+
+/// An intrinsic passed point-free is blamed at its use site when it fails
+/// later (eu-oaz72.119).
+#[test]
+pub fn test_error_365_point_free_intrinsic_location() {
+    run_error_test(&error_opts("365_point_free_intrinsic_location.eu"));
+}
+
+/// A case with no fallback that receives a number blames the case, not the
+/// code that last computed a value (eu-oaz72.122).
+#[test]
+pub fn test_error_366_case_native_stale_annotation() {
+    run_error_test(&error_opts("366_case_native_stale_annotation.eu"));
+}
+
+/// A string intrinsic handed an under-applied call blames the call
+/// (eu-oaz72.151).
+#[test]
+pub fn test_error_367_function_operand_string_intrinsic() {
+    run_error_test(&error_opts("367_function_operand_string_intrinsic.eu"));
+}
+
+/// A comparison handed an under-applied call blames the call
+/// (eu-oaz72.151).
+#[test]
+pub fn test_error_368_function_operand_comparison() {
+    run_error_test(&error_opts("368_function_operand_comparison.eu"));
+}
+
+/// Type data is not accepted as a set element (eu-oaz72.144).
+#[test]
+pub fn test_error_369_type_data_set_element() {
+    run_error_test(&error_opts("369_type_data_set_element.eu"));
+}
+
+/// The lone-anaphor note replaces the remaining-arguments hint, and quotes
+/// a multi-line call on one line, keeping a string's spaces (eu-oaz72.141).
+#[test]
+pub fn test_error_370_lone_anaphor_no_arity_hint() {
+    run_error_test(&error_opts("370_lone_anaphor_no_arity_hint.eu"));
+}
+
+/// A lone anaphor passed on to another function is labelled at its call in
+/// both prelude modes (eu-oaz72.141).
+#[test]
+pub fn test_error_371_lone_anaphor_passed_on() {
+    run_error_test(&error_opts("371_lone_anaphor_passed_on.eu"));
+}
+
+/// A lone anaphor in a call inside a `map` argument gets its note
+/// (eu-oaz72.141).
+#[test]
+pub fn test_error_372_lone_anaphor_in_map() {
+    run_error_test(&error_opts("372_lone_anaphor_in_map.eu"));
+}
+
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
 #[test]
 pub fn test_error_275_non_integer_take() {
@@ -5409,6 +5671,13 @@ pub fn test_error_275_non_integer_nth() {
 #[test]
 pub fn test_error_275_non_integer_update_nth() {
     run_error_test(&error_opts("275_non_integer_update_nth.eu"));
+}
+
+/// An index past the end is an out-of-range error from `update-nth`
+/// (eu-oaz72.100), not a destructuring error.
+#[test]
+pub fn test_error_360_update_nth_past_end() {
+    run_error_test(&error_opts("360_update_nth_past_end.eu"));
 }
 
 /// A non-integer count, index, size or step is an error (eu-oaz72.58).
@@ -5547,6 +5816,28 @@ pub fn test_error_290_set_of_random_stream_element() {
 #[test]
 pub fn test_error_284_interpolation_two_names() {
     run_error_test(&error_opts("284_interpolation_two_names.eu"));
+}
+
+/// `{{` is not an escape in a c-string: `c"{{}}"` is a parse error whose
+/// help names `\{`, never a silent wrong answer (eu-oaz72.128).
+#[test]
+pub fn test_error_343_cstring_doubled_brace() {
+    run_error_test(&error_opts("343_cstring_doubled_brace.eu"));
+}
+
+/// `{{` before dotted content in a c-string (`c"{{a.b}}"`) gets the
+/// c-string help too, not the plain-string "escape it by doubling"
+/// (eu-oaz72.128).
+#[test]
+pub fn test_error_361_cstring_doubled_brace_dotted() {
+    run_error_test(&error_opts("361_cstring_doubled_brace_dotted.eu"));
+}
+
+/// A leading dot in a string interpolation is a parse error: `{.x}` used
+/// to read silently as `{x}` (eu-oaz72.139).
+#[test]
+pub fn test_error_344_interpolation_stray_dot() {
+    run_error_test(&error_opts("344_interpolation_stray_dot.eu"));
 }
 
 #[test]
@@ -5736,6 +6027,33 @@ pub fn test_error_347_missing_prelude_path() {
 }
 
 #[test]
+pub fn test_error_351_mixed_width_overflow() {
+    run_error_test(&error_opts("351_mixed_width_overflow.eu"));
+}
+
+#[test]
+pub fn test_error_352_dict_update_strict_evaluates() {
+    run_error_test(&error_opts("352_dict_update_strict_evaluates.eu"));
+}
+
+#[test]
+pub fn test_error_348_import_missing_file_named_like_library() {
+    run_error_test(&error_opts("348_import_missing_file_named_like_library.eu"));
+}
+
+#[test]
+pub fn test_error_349_data_import_missing_file_named_like_library() {
+    run_error_test(&error_opts(
+        "349_data_import_missing_file_named_like_library.eu",
+    ));
+}
+
+#[test]
+pub fn test_error_350_data_import_after_library_import() {
+    run_error_test(&error_opts("350_data_import_after_library_import.eu"));
+}
+
+#[test]
 pub fn test_error_332_scanl_applies_op_at_cell() {
     run_error_test(&error_opts("332_scanl_applies_op_at_cell.eu"));
 }
@@ -5822,4 +6140,9 @@ pub fn test_missing_prelude_path_is_an_error() {
             "{args:?}:\n{stderr}"
         );
     }
+}
+
+#[test]
+pub fn test_336_list_split_on() {
+    run_test(&opts("336_list_split_on.eu"));
 }

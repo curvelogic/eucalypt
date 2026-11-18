@@ -13,6 +13,11 @@
 (l >= r): __GTE(l, r)
 (l <= r): __LTE(l, r)
 
+` { doc: "Test-only: `l ⊢ r` is `r`, at precedence 45, between :cmp (50) and :eq (40). `∣` and `∤` bind at :eq, looser than `⊢`, so `3 ∣ 5 ⊢ 6` is `3 ∣ 6`; at :cmp it would be `(3 ∣ 5) ⊢ 6`, i.e. `6` (eu-oaz72.81)."
+    associates: :left
+    precedence: 45 }
+(l ⊢ r): r
+
 integer-arithmetic: {
   trues: {
     a: 4 > 2
@@ -146,6 +151,9 @@ divisibility: {
     with-and: 2 ∣ 4 ∧ 3 ∤ 4
     with-or: 5 ∣ 4 ∨ 2 ∣ 4
     left-assoc-with-eq: 2 ∣ 4 = true
+    # `⊢` sits between :cmp and :eq, so these hold only at :eq
+    divides-looser-than-cmp: (3 ∣ 5 ⊢ 6) = true
+    not-divides-looser-than-cmp: (5 ∤ 3 ⊢ 10) = false
   }
 
   pipelines: {
@@ -195,4 +203,19 @@ exact-comparison: {
   pass: (trues values all-true?) ∧ (falses values map(not) all-true?)
 }
 
-RESULT: (integer-arithmetic.pass ∧ floating-point-arithmetic.pass ∧ mixed-arithmetic.pass ∧ divisibility.pass ∧ exact-comparison.pass) then(:PASS, :FAIL)
+` { doc: "Integer arithmetic mixing a value above the i64 maximum with an i64 is exact and stays an integer (rendered here with `str.of`, so a float result fails)." }
+mixed-width-integers: {
+  checks: {
+    add-neg: ((9223372036854775808 + -1) str.of) = "9223372036854775807"
+    add-neg-umax: ((18446744073709551615 + -5) str.of) = "18446744073709551610"
+    sub-to-small: ((18446744073709551615 - 18446744073709551614) str.of) = "1"
+    sub-to-neg: ((9223372036854775808 - 9223372036854775809) str.of) = "-1"
+    mul-neg: ((9223372036854775808 * -1) str.of) = "-9223372036854775808"
+    div-neg: ((18446744073709551615 / -5) str.of) = "-3689348814741910323"
+    mod-neg: ((18446744073709551615 % -7) str.of) = "-6"
+  }
+
+  pass: checks values all-true?
+}
+
+RESULT: (integer-arithmetic.pass ∧ floating-point-arithmetic.pass ∧ mixed-arithmetic.pass ∧ divisibility.pass ∧ exact-comparison.pass ∧ mixed-width-integers.pass) then(:PASS, :FAIL)

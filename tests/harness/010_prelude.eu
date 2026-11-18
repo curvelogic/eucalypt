@@ -271,6 +271,20 @@ tests: {
     pass: [t1, t2, t3, t4] all-true?
   }
 
+  ` "list split-on, including empty groups"
+  split-on-tests: {
+    third-of-four?(i): (i % 4) = 3
+    empty: ([] split-on(zero?)) = [[]]
+    no-match: ([1, 2] split-on(zero?)) = [[1, 2]]
+    middle: ([1, 2, 0, 3, 0, 0, 4] split-on(zero?)) = [[1, 2], [3], [], [4]]
+    leading: ([0, 1] split-on(zero?)) = [[], [1]]
+    trailing: ([1, 0] split-on(zero?)) = [[1], []]
+    all-match: ([0, 0] split-on(zero?)) = [[], [], []]
+    lines: (["a", "", "b", "c", ""] split-on(= "")) = [["a"], ["b", "c"], []]
+    order: (range(0, 10) split-on(third-of-four?)) = [[0, 1, 2], [4, 5, 6], [8, 9]]
+    pass: [empty, no-match, middle, leading, trailing, all-match, lines, order] all-true?
+  }
+
 }
 
 RESULT: tests filter-values(has(:pass)) all(_.pass) then(:PASS, :FAIL)

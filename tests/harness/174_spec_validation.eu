@@ -175,6 +175,45 @@ test-union-as-spec: {
     all-true? then(:PASS, :FAIL)
 }
 
+` { target: :test-literal-as-spec
+    doc: "eu-pub3r: `as-spec` of a literal string or symbol type matches exactly that one value, as `validate` does; before the fix both fell through to `any?` and matched everything." }
+test-literal-as-spec: {
+  prod: c"\"prod\"" __TYPE_FROM_STRING
+  ok: s":ok"
+
+  ` "String literal: the literal matches; other strings, a same-named symbol and a number do not"
+  t1: "prod" match?(prod as-spec)
+  t2: not("dev" match?(prod as-spec))
+  t3: not(:prod match?(prod as-spec))
+  t4: not(1 match?(prod as-spec))
+
+  ` "Symbol literal: the literal matches; other symbols and a same-named string do not"
+  t5: :ok match?(ok as-spec)
+  t6: not(:error match?(ok as-spec))
+  t7: not("ok" match?(ok as-spec))
+
+  ` "Literal unions and a discriminant field in an open record"
+  t8: :a match?(s":a | :b" as-spec)
+  t9: not(:c match?(s":a | :b" as-spec))
+  t10: { kind: :circle, r: 1 } match?(s"{kind: :circle, ..}" as-spec)
+  t11: not({ kind: :rect, r: 1 } match?(s"{kind: :circle, ..}" as-spec))
+
+  ` "Agreement with validate on literal types"
+  agrees(spec, v): ((v validate(spec)) nil?) = (v match?(spec as-spec))
+  t12: agrees(prod, "prod")
+  t13: agrees(prod, "dev")
+  t14: agrees(prod, :prod)
+  t15: agrees(ok, :ok)
+  t16: agrees(ok, :error)
+  t17: agrees(ok, "ok")
+  t18: agrees(s":a | :b", :b)
+  t19: agrees(s":a | :b", :c)
+
+  RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15,
+           t16, t17, t18, t19]
+    all-true? then(:PASS, :FAIL)
+}
+
 ` { target: :test-projection-closedness
     doc: "eu-u9xj.1: the `t-record` projection carries record closedness, so `from-data` of `to-data` keeps the open marker." }
 test-projection-closedness: {
@@ -245,7 +284,7 @@ test-type-str: {
   t9: (s"number?" to-data type-str) = "number?"
   t10: (s"number → string" to-data type-str) = "number → string"
   t11: (s"a" to-data type-str) = "a"
-  t12: (s"Dict(number)" to-data type-str) = "Dict(number)"
+  t12: (s"block(number)" to-data type-str) = "block(number)"
   t13: (s"{a: {b: number}, ..}" to-data type-str) = "{{a: {{b: number}}, ..}}"
 
   ` "type-str is total over the tag vocabulary: an unrecognised tag renders as
@@ -257,8 +296,26 @@ test-type-str: {
   t15: (s"{a: number, ..}" to-data from-data) = s"{a: number, ..}"
   t16: (s"[number]" to-data from-data) = s"[number]"
 
+  ` "dict(k, v) renders in its own DSL form, nested and round-tripping."
+  t17: (s"dict(number, string)" to-data type-str) = "dict(number, string)"
+  t18: (s"dict" to-data type-str) = "dict(any, any)"
+  t19: (s"[dict(symbol, dict(number, [string]))]" to-data type-str)
+         = "[dict(symbol, dict(number, [string]))]"
+  t20: (s"dict(string, number)" to-data from-data) = s"dict(string, number)"
+
+  ` "The block type's old constructor name `:Dict` is still accepted for one
+    release and renders in the new spelling (eu-oaz72.129)."
+  t21: ([:t-app, [:t-con, :Dict], s"number" to-data] type-str) = "block(number)"
+  t22: ([:t-app, [:t-con, :Dict], s"number" to-data] from-data) = s"block(number)"
+  t23: (s"block(number)" to-data second) = [:t-con, :block]
+
+  ` "An s-string in the deprecated spelling is the same type-data value as
+    the new one at runtime (eu-oaz72.129)."
+  t24: (s"Dict(number)") = (s"block(number)")
+  t25: (s"[Dict(number)]" to-data type-str) = "[block(number)]"
+
   RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15,
-           t16]
+           t16, t17, t18, t19, t20, t21, t22, t23, t24, t25]
     all-true? then(:PASS, :FAIL)
 }
 

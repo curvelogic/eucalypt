@@ -497,6 +497,31 @@ impl Context<'_> {
         }
     }
 
+    /// The demand signature demand analysis left on the core let binding
+    /// `bound_var` refers to (`CoreBinding::signature`), found by the same
+    /// walk as [`Context::lookup`]. A lambda parameter, or a binding with
+    /// no signature, has none. Keyed by the binder rather than its name,
+    /// so bindings that share a name keep their own signatures
+    /// (eu-oaz72.66).
+    pub fn signature(&self, bound_var: &BoundVar) -> Option<&[crate::core::demand::Demand]> {
+        self.signature_at(bound_var.scope, bound_var.binder)
+    }
+
+    fn signature_at(&self, scope: u32, binder: u32) -> Option<&[crate::core::demand::Demand]> {
+        if self.is_synthetic() {
+            self.next?.signature_at(scope, binder)
+        } else if scope == 0 {
+            match &*self.scope.as_ref()?.inner {
+                Expr::Let(_, let_scope, _) => {
+                    let_scope.pattern.get(binder as usize)?.signature.as_deref()
+                }
+                _ => None,
+            }
+        } else {
+            self.next?.signature_at(scope - 1, binder)
+        }
+    }
+
     pub fn local(&self, bound_var: &BoundVar) -> Result<Rc<StgSyn>, CompileError> {
         Ok(dsl::atom(self.lookup(bound_var)?))
     }
@@ -554,11 +579,6 @@ pub struct Compiler<'rt> {
     /// This is how user code compiled independently of the prelude references
     /// the pre-loaded prelude global slots.
     prelude_globals: Option<HashMap<String, usize>>,
-    /// Per-user-function demand signatures from the analysis pass.
-    ///
-    /// Maps binding name → per-argument demand vector. Used when
-    /// compiling `App(user_function, args)` to set per-argument demands.
-    user_demand_sigs: crate::core::analyse_demand::NamedSignatureTable,
     /// Demand signatures of the prelude globals, by prelude slot.
     ///
     /// `prelude_demand_sigs[slot]` is the signature the demand analysis
@@ -1127,6 +1147,53 @@ impl ProtoSyntax for Holder {
     }
 }
 
+/// An intrinsic passed as an argument in user code, eta-expanded into
+/// an annotated lambda carrying the reference's own source location
+/// (eu-oaz72.119).
+///
+/// An intrinsic passed point-free (`xs map(num)`) is otherwise the bare
+/// global wrapper, which carries no user location: when the intrinsic
+/// later fails inside a prelude combinator, the machine's live annotation
+/// is a prelude one (or none) and the error renders without a primary
+/// label. Wrapping the reference as `λ(x1..xn). ann(smid, G(n)(x1..xn))`
+/// makes entering it set the use site as the live annotation, exactly as
+/// a user-written lambda does. Behaviour is otherwise identical: the
+/// lambda has the intrinsic's arity and tail-calls its global.
+///
+/// Cost: the wrapper is let-bound where the call is compiled, so each
+/// evaluation of that call allocates one small closure with no free
+/// variables. That is exactly the cost of the user writing the eta-expanded
+/// form themselves (`xs map(x -> num(x))`), and it is paid once per call,
+/// not per element. It arises only in annotated user code: the prelude
+/// (blob or source) is compiled without annotations and keeps bare
+/// globals. Hoisting the wrapper to a global would need the compiler to
+/// add globals for user code, which it has no mechanism for.
+pub struct ProtoIntrinsicRef {
+    index: usize,
+    arity: u8,
+    smid: Smid,
+}
+
+impl ProtoSyntax for ProtoIntrinsicRef {
+    fn take_lambda_form(
+        &mut self,
+        _compiler: &Compiler,
+        _context: &Context,
+    ) -> Result<LambdaForm, CompileError> {
+        let args = (0..self.arity as usize).map(dsl::lref).collect();
+        let body = dsl::ann(self.smid, dsl::app(dsl::gref(self.index), args));
+        Ok(dsl::annotated_lambda(self.arity, body, self.smid))
+    }
+
+    fn take_syntax(
+        &mut self,
+        _compiler: &Compiler,
+        _context: &Context,
+    ) -> Result<Rc<StgSyn>, CompileError> {
+        unreachable!("ProtoIntrinsicRef is always taken as a lambda form")
+    }
+}
+
 /// A function application using local let bindings
 pub struct ProtoAppGroup {
     f: RcExpr,
@@ -1170,6 +1237,7 @@ impl ProtoSyntax for ProtoAppGroup {
         let mut intrinsic_index = None;
         let mut intrinsic_name: Option<&str> = None;
         let mut callee_name: Option<&str> = None;
+        let mut callee_signature: Option<&[crate::core::demand::Demand]> = None;
         let mut prelude_slot: Option<usize> = None;
         let mut local_binder = LetBinder::synthetic_let(context);
 
@@ -1177,8 +1245,10 @@ impl ProtoSyntax for ProtoAppGroup {
         let f_index: Box<dyn ProtoReference> = match &*self.f.inner {
             Expr::Var(s, v) => match v {
                 Var::Bound(bv) => {
-                    // Preserve the binding name for user demand signature lookup.
+                    // The name identifies a self-recursive call; the
+                    // signature is the one on the binding `bv` refers to.
                     callee_name = bv.name.as_deref();
+                    callee_signature = context.signature(bv);
                     Box::new(ProtoVar::new(bv.clone()))
                 }
                 Var::Free(name) => {
@@ -1206,12 +1276,12 @@ impl ProtoSyntax for ProtoAppGroup {
 
         // Look up per-argument demands by what the callee is: an intrinsic
         // takes its catalogue signature; a bound variable (a user binding,
-        // or a prelude binding in source mode) takes the analysis' named
-        // signature; a free variable resolved to a prelude global takes the
-        // signature derived for that global's slot when the blob was built.
-        // Keying the last two by the callee's identity keeps a user helper's
-        // signature off a same-named prelude global, and a prelude signature
-        // off a same-named user binding (eu-oaz72.77).
+        // or a prelude binding in source mode) takes the signature the
+        // analysis left on the binding it refers to (eu-oaz72.66); a free
+        // variable resolved to a prelude global takes the signature derived
+        // for that global's slot when the blob was built (eu-oaz72.77).
+        // Keying each by the callee's identity rather than its name keeps
+        // one binding's signature off another of the same name.
         //
         // A signature describes a saturated call: only then does the
         // callee's body run and force its strict parameters.  A partial
@@ -1225,9 +1295,7 @@ impl ProtoSyntax for ProtoAppGroup {
                     .prelude_demand_sigs
                     .get(slot)
                     .and_then(|sig| sig.as_deref()),
-                None => callee_name
-                    .and_then(|name| compiler.user_demand_sigs.get(name))
-                    .map(|v| v.as_slice()),
+                None => callee_signature,
             })
             .filter(|sigs| self.args.len() >= sigs.len());
 
@@ -1248,11 +1316,9 @@ impl ProtoSyntax for ProtoAppGroup {
                         compiler.resolve_free_var(*s, name)?,
                     ))),
                 },
-                Expr::Intrinsic(_, bif) => {
-                    let global_index = intrinsics::index(bif)
-                        .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
-                    arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
-                }
+                Expr::Intrinsic(s, bif) => arg_indexes.push(Box::new(ProtoRef::new(
+                    compiler.compile_intrinsic_ref(&mut local_binder, *s, bif)?,
+                ))),
                 _ => {
                     // Use the per-argument demand from the intrinsic signature table.
                     // Falls back to Demand::default() for unknown intrinsics or
@@ -1317,7 +1383,7 @@ impl ProtoSyntax for ProtoAppGroup {
                 // 2. Arity > 0 and matches arg count exactly
                 //
                 // Demand signatures are only recorded for let-bound lambdas
-                // (user_demand_sigs), prelude lambdas (derived per slot at
+                // (`CoreBinding::signature`), prelude lambdas (derived per slot at
                 // blob build) and intrinsics, so their presence reliably
                 // indicates a lambda whose arity is correct at resolution
                 // time.  The VM also
@@ -1502,7 +1568,9 @@ pub fn compile_boxed_literal(prim: &Primitive) -> Rc<StgSyn> {
         Primitive::Num(n) => dsl::box_num(n.clone()),
         Primitive::Bool(b) => dsl::bool_(*b),
         Primitive::Null => dsl::unit(),
-        Primitive::TypeData(s) => dsl::box_type_data(s),
+        Primitive::TypeData(s) => {
+            dsl::box_type_data(crate::core::typecheck::parse::canonical_type_data(s))
+        }
     }
 }
 
@@ -1684,7 +1752,6 @@ impl<'rt> Compiler<'rt> {
             intrinsics,
             intrinsic_demand_sigs,
             prelude_globals,
-            user_demand_sigs: Default::default(),
             prelude_demand_sigs: Default::default(),
         }
     }
@@ -1699,15 +1766,6 @@ impl<'rt> Compiler<'rt> {
     /// resolves to, if it names a prelude global.
     fn prelude_slot(&self, name: &str) -> Option<usize> {
         self.prelude_globals.as_ref()?.get(name).copied()
-    }
-
-    /// Set the user function demand signature table.
-    pub fn with_user_demand_sigs(
-        mut self,
-        sigs: crate::core::analyse_demand::NamedSignatureTable,
-    ) -> Self {
-        self.user_demand_sigs = sigs;
-        self
     }
 
     /// Resolve a free variable name to a global slot reference.
@@ -1968,6 +2026,33 @@ impl<'rt> Compiler<'rt> {
                 self.compile_binding(binder, body.clone(), *s, Demand::default(), self_recurse)
             }
             _ => Err(CompileError::UnexpectedExpression(expr.smid())),
+        }
+    }
+
+    /// Reference an intrinsic passed as an argument: its global, or, in
+    /// annotated user code with a valid use-site Smid, an annotated
+    /// eta-expansion of it bound in `binder` (see `ProtoIntrinsicRef`).
+    ///
+    /// Only argument position is expanded. An intrinsic that is the value
+    /// of a binding or block member (`size: __DICT.SIZE` in a prelude
+    /// namespace compiled into the user unit) keeps the bare global: an
+    /// annotated wrapper there would install the prelude definition's
+    /// location whenever the member is called, displacing the user's call
+    /// site from the live annotation.
+    fn compile_intrinsic_ref(
+        &self,
+        binder: &mut LetBinder,
+        smid: Smid,
+        name: &str,
+    ) -> Result<Ref, CompileError> {
+        let index = intrinsics::index(name)
+            .ok_or_else(|| CompileError::UnknownIntrinsic(name.to_string()))?;
+        let arity = intrinsics::intrinsic(index).arity();
+        match u8::try_from(arity) {
+            Ok(arity) if arity > 0 && self.generate_annotations() && smid.is_valid() => {
+                binder.add_deferred(Box::new(ProtoIntrinsicRef { index, arity, smid }))
+            }
+            _ => Ok(dsl::gref(index)),
         }
     }
 

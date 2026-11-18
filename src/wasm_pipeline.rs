@@ -354,6 +354,9 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
         stg_settings.test_mode,
     )
     .map_err(|e| execution_error_to_pipeline_error(e, &files, &source_map))?;
+    // Keep the error-reporting fallback on user locations (eu-oaz72.202), as
+    // the CLI driver does: WASM always compiles the prelude from source.
+    machine.set_user_location_mask(source_map.user_location_mask());
 
     let ret = machine.run(Some(MAX_STEPS));
     let stream_end = machine.take_emitter().stream_end();
@@ -395,14 +398,14 @@ struct Library {
 }
 
 /// The library name an import gives, if it is a eucalypt import that
-/// could name one: `lens.eu` (the CLI falls back to a baked-in library by
-/// file stem) or `resource:lens`.
+/// could name one: `lens.eu` (the canonical file name, which the CLI
+/// falls back to the baked-in library for) or `resource:lens`.
 fn import_library_name(import: &Input) -> Option<&str> {
     if import.format() != "eu" {
         return None;
     }
     match import.locator() {
-        Locator::Fs(path) => path.file_stem()?.to_str(),
+        Locator::Fs(path) => Resources::library_for_import_path(path),
         Locator::Resource(name) => Some(name.as_str()),
         _ => None,
     }
@@ -596,6 +599,7 @@ fn parse_error_range(error: &rowan::ParseError) -> Option<::rowan::TextRange> {
         PE::EmptyExpression { range } => Some(*range),
         PE::UnclosedStringInterpolation { range } => Some(*range),
         PE::InvalidStringInterpolation { range } => Some(*range),
+        PE::DoubledBraceInCString { range } => Some(*range),
         PE::InvalidZdtLiteral { range, .. } => Some(*range),
         PE::InvalidDoubleColon { range } => Some(*range),
         PE::UnclosedBracketExpr { range } => Some(*range),
@@ -609,6 +613,18 @@ fn parse_error_range(error: &rowan::ParseError) -> Option<::rowan::TextRange> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// eu-oaz72.202: WASM always compiles the prelude from source, so an
+    /// error raised in prelude code (here `head` inside `++`) must still
+    /// fall back to the user's line, as the CLI's blob mode does.
+    #[test]
+    fn test_prelude_error_falls_back_to_user_location() {
+        let err = evaluate_unit("greeting: \"Hello, \" ++ \"World!\"", "json").unwrap_err();
+        let loc = err
+            .location
+            .unwrap_or_else(|| panic!("no location for: {}", err.message));
+        assert_eq!(loc.line, 1, "error was: {}", err.message);
+    }
 
     // ── Unit mode (declaration-style, like a .eu file) ──────────────
 
@@ -757,6 +773,30 @@ x: 1"#,
         .unwrap_err();
         assert!(err.message.contains("cannot import"), "{}", err.message);
         assert!(err.notes.unwrap()[0].contains("lens.eu"));
+    }
+
+    /// eu-7tlbg: only the canonical file name reaches a library; a path
+    /// that merely shares its stem is a file, which cannot be imported here.
+    #[test]
+    fn test_import_of_a_path_sharing_a_library_stem_fails_clearly() {
+        for import in ["sub/lens.eu", "./lens.eu", "sub/lens"] {
+            let err =
+                evaluate_unit(&format!("{{ import: \"{import}\" }}\nx: 1"), "json").unwrap_err();
+            assert!(
+                err.message.contains("cannot import"),
+                "{import}: {}",
+                err.message
+            );
+        }
+    }
+
+    /// eu-7tlbg parity with the CLI: a data import never reaches a library,
+    /// even under its canonical name. The browser has no files, so this is
+    /// a `cannot import` error (the CLI's is `could not read`).
+    #[test]
+    fn test_data_import_of_a_library_name_fails_clearly() {
+        let err = evaluate_unit("{ import: \"cfg=text@lens.eu\" }\nx: cfg", "json").unwrap_err();
+        assert!(err.message.contains("cannot import"), "{}", err.message);
     }
 
     #[test]

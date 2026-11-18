@@ -1,0 +1,2 @@
+` "A negative arr.get coordinate is an error naming the function (eu-oaz72.97)"
+r: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([0, -1])
