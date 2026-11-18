@@ -1,9 +1,9 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/369_type_data_set_element
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/369_type_data_set_element.eu
-prelude-modes: identical
+prelude-modes: divergent
 
-=== both prelude modes ===
+=== blob prelude ===
 exit: 1
 errors: 1
 warnings: 0
@@ -23,6 +23,30 @@ error[EU-EVAL-TYPE]: type data cannot be a set element: set elements must be num
   │
 2 │ a: set.of[s"number"]
   │    ^^^^^^^^^^^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - a at 369_type_data_set_element.eu:2:4
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/369_type_data_set_element.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type data cannot be a set element: set elements must be numbers, strings or symbols, or lists of them
+  ┌─ tests/harness/errors/369_type_data_set_element.eu:2:4
+  │
+2 │ a: set.of[s"number"]
+  │    ^^^
   │
   = while evaluating (outermost first):
     - a at 369_type_data_set_element.eu:2:4
