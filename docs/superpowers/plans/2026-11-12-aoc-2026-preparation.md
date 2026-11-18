@@ -213,23 +213,28 @@ eu-oaz72.12, eu-oaz72.11, eu-oaz72.10); the evidenced diagnostic notes
 panic fixes (eu-oaz72.2, eu-oaz72.3, eu-oaz72.6, eu-oaz72.9); the profiler
 (eu-oaz72.37); the cookbook and prelude reference (eu-oaz72.16,
 eu-oaz72.17); the Emacs commands and font-lock from `highlights.scm`
-(eu-oaz72.7, eu-oaz72.19, eu-ioz21.3); the tree-sitter grammar fixes and
-its WASM build (eu-oaz72.18, eu-oaz72.14, eu-ioz21.1, eu-ioz21.5,
-eu-ioz21.2); and the web playground's highlighting (eu-ioz21.6).
+(eu-oaz72.7, eu-oaz72.19, eu-ioz21.3) and the Emacs fidelity fixes
+(eu-oaz72.8); the tree-sitter grammar fixes and its WASM build
+(eu-oaz72.18, eu-oaz72.14, eu-ioz21.1, eu-ioz21.5, eu-ioz21.2); the web
+playground's highlighting (eu-ioz21.6); the WASM API's extra import files
+and step limit (eu-oaz72.20.1); the `block(T)` type (eu-oaz72.129); the
+list-retention fix for folds (eu-oaz72.175); and the re-baselined
+`examples/aoc25/PERFORMANCE.md` (eu-oaz72.38).
 
 **In 0.16.0's scope, still in progress at release.** Owner decision 60
 put eu-oaz72.8 (Emacs fidelity), eu-oaz72.14 (tree-sitter mis-parses, now
 closed) and eu-oaz72.38 (the 2025 revisit) in 0.16.0 and raised the
 tooling fixes eu-oaz72.131, eu-oaz72.166 (closed), eu-oaz72.185 (closed)
 and eu-ioz21.13 to P2. Owner decision 61 put the WASM API's extra import
-files and step limit (eu-oaz72.20.1) in 0.16.0. Of these, eu-oaz72.8,
-eu-oaz72.38, eu-oaz72.20.1, eu-oaz72.131 and eu-ioz21.13 are still open
-or in progress on 2026-11-18; whether they hold the release is the
-owner's call.
+files and step limit (eu-oaz72.20.1) in 0.16.0. eu-oaz72.8 and
+eu-oaz72.20.1 have since merged and are closed. eu-oaz72.38's
+re-baseline of `PERFORMANCE.md` has merged but the bead is still in
+progress, and eu-oaz72.131 and eu-ioz21.13 are open, on 2026-11-18;
+whether they hold the release is the owner's call.
 
 **Other open work.** Strict accumulation in demand analysis
-(eu-oaz72.27), the prelude-body demand analysis follow-through
-(eu-oaz72.175), `vec`/`set` booleans and null (eu-oaz72.30), the docs
+(eu-oaz72.27), eu-oaz72.175 (its list-retention fix has merged; the bead
+is still in progress), `vec`/`set` booleans and null (eu-oaz72.30), the docs
 highlighting work (eu-ioz21.4), and the P3 follow-ups filed from review.
 
 **Out of 0.16, now 0.17.** By owner decision 60: the DS4 and DS5 designs
