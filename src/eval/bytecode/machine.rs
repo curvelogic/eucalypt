@@ -707,13 +707,15 @@ fn gc_poll(
 /// Enter a WHNF sub-evaluation: suspend the caller's continuation stack and
 /// stash its `current` value (both become GC roots for the sub-run), seat
 /// `value` as the new `current`, and clear the termination / yield flags.
-/// Returns the caller's `terminated` flag for [`exit_whnf_subrun`] to restore.
+/// Returns the caller's `terminated` flag and annotation register for
+/// [`exit_whnf_subrun`] to restore.
 ///
 /// This is the single shared entry half of the stash/suspend/swap/restore
 /// choreography used by both `run_to_whnf` (a BIF forcing a thunk) and
 /// `evaluate_to_whnf_for_io` (the io-run driver forcing a spec field), so the
 /// protocol can no longer drift between them (eu-apn7).
-fn enter_whnf_subrun(state: &mut BcMachineState, value: BcValue) -> bool {
+fn enter_whnf_subrun(state: &mut BcMachineState, value: BcValue) -> SubrunSaved {
+    let saved_annotation = state.annotation;
     let saved_stack = std::mem::take(&mut state.stack);
     state.suspended_stacks.push(saved_stack);
     let saved_current = std::mem::replace(&mut state.current, value);
@@ -724,11 +726,27 @@ fn enter_whnf_subrun(state: &mut BcMachineState, value: BcValue) -> bool {
     // Any metadata recorded by an earlier force belongs to an earlier value;
     // `take_stripped_meta` reports on *this* sub-run only.
     state.stripped_meta = None;
-    saved_terminated
+    SubrunSaved {
+        terminated: saved_terminated,
+        annotation: saved_annotation,
+    }
+}
+
+/// The caller state [`enter_whnf_subrun`] saves for [`exit_whnf_subrun`].
+#[derive(Clone, Copy)]
+struct SubrunSaved {
+    /// The caller's `terminated` flag (the thunk path restores it).
+    terminated: bool,
+    /// The caller's annotation register: the sub-run leaves it wherever the
+    /// forced code ended, so the intrinsic's own later dispatch (and any
+    /// error it raises) would otherwise carry the forced code's location
+    /// (eu-oaz72.146).
+    annotation: Smid,
 }
 
 /// Exit a WHNF sub-evaluation: pop the stashed `current` and suspended stack
-/// and restore them, then the requested post-run flags.
+/// and restore them and the caller's annotation register, then the
+/// requested post-run flags.
 ///
 /// INVARIANT (eu-apn7): the caller's stack / current / flags are restored
 /// **before** `run_result` is propagated, so an intrinsic that swallows a
@@ -744,6 +762,7 @@ fn enter_whnf_subrun(state: &mut BcMachineState, value: BcValue) -> bool {
 fn exit_whnf_subrun(
     state: &mut BcMachineState,
     run_result: Result<(), ExecutionError>,
+    saved: SubrunSaved,
     post_terminated: bool,
     post_yielded_io: bool,
     yield_err_msg: &'static str,
@@ -759,6 +778,7 @@ fn exit_whnf_subrun(
     state.terminated = post_terminated;
     state.yielded_io = post_yielded_io;
     state.stack = saved_stack;
+    state.annotation = saved.annotation;
 
     // Restore-before-propagate: state is now the caller's; only now unwind.
     run_result?;
@@ -3901,11 +3921,12 @@ impl BytecodeMachine<'_> {
         // the yield state (`terminated`/`yielded_io` = true) on exit so the
         // driver sees a consistent post-yield machine, whether or not the
         // sub-run errored.
-        let _ = enter_whnf_subrun(&mut self.state, value);
+        let saved = enter_whnf_subrun(&mut self.state, value);
         let run_result = self.drive_whnf();
         exit_whnf_subrun(
             &mut self.state,
             run_result,
+            saved,
             true,
             true,
             "bytecode: IO spec field evaluation unexpectedly yielded an IO constructor",
@@ -4726,12 +4747,13 @@ impl BcBifContext<'_, '_> {
             .profiler
             .is_some()
             .then(|| profile_location(self.state, self.heap));
-        let saved_terminated = enter_whnf_subrun(self.state, value);
+        let saved = enter_whnf_subrun(self.state, value);
         let run_result = self.drive_to_whnf(force_site);
         exit_whnf_subrun(
             self.state,
             run_result,
-            saved_terminated,
+            saved,
+            saved.terminated,
             false,
             "bytecode: thunk evaluation unexpectedly yielded an IO constructor",
         )
@@ -4767,41 +4789,51 @@ impl BcBifContext<'_, '_> {
             }
             self.metrics.tick();
             self.metrics.stack(self.state.stack.len());
-            {
-                // SAFETY: the view borrows the heap for this scope only and is
-                // dropped before any `&mut self.heap` use; this mirrors the
-                // HeapSyn `bif_view` aliasing (`vm.rs`).
-                let view = unsafe { MutatorHeapView::from_raw_heap(self.heap as *const Heap) };
-                // Mirror the sub-evaluation step map_err (vm.rs
-                // `evaluate_to_whnf_impl`): wrap the step error with traces
-                // here. The nested BIF error (below) is left raw, matching the
-                // HeapSyn sub-evaluation loop — it is wrapped once at the outer
-                // BIF site when it unwinds.
-                let res = if self.predecode {
-                    step_predecoded(self.state, view, self.program, self.decoded)
-                } else {
-                    step(self.state, view, self.program, self.decoded)
-                };
-                if let Err(e) = res {
-                    return Err(attach_trace(self.state, view, e));
-                }
-            }
-            if let Some(idx) = self.state.pending_bif.take() {
-                self.dispatch_pending_bif(idx, &mut null)?;
-            }
-            // Capture-emitter lifecycle inside the force sub-run (eu-fgl0).
-            // A `render-as` forced by an intrinsic sets `pending_capture_start`;
-            // consume it here (previously the sub-loop ignored it, letting it
-            // leak into the outer dispatch, which then pushed a spurious late
-            // capture emitter — a divergence from HeapSyn). This mirrors
-            // HeapSyn's `evaluate_to_whnf_impl` (vm.rs) exactly, keeping the two
-            // engines byte-identical.
-            self.run_subrun_capture_lifecycle()?;
+            // As in `run_loop`, a dispatch is profiled before its error
+            // propagates, so a failing dispatch is still charged
+            // (eu-oaz72.146).
+            let dispatched = self.subrun_dispatch(&mut null);
             if PROFILE {
                 profile_tick(self.state, self.heap);
             }
+            dispatched?;
         }
         Ok(())
+    }
+
+    /// One dispatch of the `run_to_whnf` sub-run: a step, the intrinsic it
+    /// left pending, and the capture lifecycle.
+    fn subrun_dispatch(&mut self, null: &mut NullEmitter) -> Result<(), ExecutionError> {
+        {
+            // SAFETY: the view borrows the heap for this scope only and is
+            // dropped before any `&mut self.heap` use; this mirrors the
+            // HeapSyn `bif_view` aliasing (`vm.rs`).
+            let view = unsafe { MutatorHeapView::from_raw_heap(self.heap as *const Heap) };
+            // Mirror the sub-evaluation step map_err (vm.rs
+            // `evaluate_to_whnf_impl`): wrap the step error with traces
+            // here. The nested BIF error (below) is left raw, matching the
+            // HeapSyn sub-evaluation loop — it is wrapped once at the outer
+            // BIF site when it unwinds.
+            let res = if self.predecode {
+                step_predecoded(self.state, view, self.program, self.decoded)
+            } else {
+                step(self.state, view, self.program, self.decoded)
+            };
+            if let Err(e) = res {
+                return Err(attach_trace(self.state, view, e));
+            }
+        }
+        if let Some(idx) = self.state.pending_bif.take() {
+            self.dispatch_pending_bif(idx, null)?;
+        }
+        // Capture-emitter lifecycle inside the force sub-run (eu-fgl0).
+        // A `render-as` forced by an intrinsic sets `pending_capture_start`;
+        // consume it here (previously the sub-loop ignored it, letting it
+        // leak into the outer dispatch, which then pushed a spurious late
+        // capture emitter — a divergence from HeapSyn). This mirrors
+        // HeapSyn's `evaluate_to_whnf_impl` (vm.rs) exactly, keeping the two
+        // engines byte-identical.
+        self.run_subrun_capture_lifecycle()
     }
 
     /// Consume any `pending_capture_start` that fired during a force sub-run,
@@ -6700,7 +6732,7 @@ mod tests {
         state.terminated = true; // the caller's saved flag
 
         // Enter a sub-run for value `2`; the caller stack is suspended.
-        let saved_terminated = enter_whnf_subrun(&mut state, BcValue::Native(num(2)));
+        let saved = enter_whnf_subrun(&mut state, BcValue::Native(num(2)));
         assert!(state.stack.is_empty(), "enter suspends the caller stack");
         assert!(!state.terminated, "enter clears the termination flag");
 
@@ -6714,7 +6746,14 @@ mod tests {
 
         // Exit with a sub-run error.
         let err = ExecutionError::Panic(Smid::default(), "sub-run failed".to_string());
-        let result = exit_whnf_subrun(&mut state, Err(err), saved_terminated, false, "unused");
+        let result = exit_whnf_subrun(
+            &mut state,
+            Err(err),
+            saved,
+            saved.terminated,
+            false,
+            "unused",
+        );
 
         assert!(result.is_err(), "the sub-run error must still propagate");
         // …but only AFTER the caller's state was restored:
@@ -6739,7 +6778,7 @@ mod tests {
             _ => panic!("caller current not restored"),
         }
         assert_eq!(
-            state.terminated, saved_terminated,
+            state.terminated, saved.terminated,
             "caller termination flag restored"
         );
     }
@@ -7220,9 +7259,13 @@ mod tests {
     ///
     /// Fault injection: removing the `profile_enter_force` call in
     /// `drive_to_whnf` fails the pre-force assertion (the intrinsic's
-    /// allocations move to the thunk); removing `exit_force` fails the
-    /// post-force assertion (the intrinsic's later work lands on the thunk's
-    /// annotation); sampling `stack_trace_capped` instead of `profile_trace`
+    /// allocations and bytes move to the thunk); dropping the annotation
+    /// restore in `exit_whnf_subrun` fails the restored-register assertion;
+    /// moving `Profiler::enter_force`'s byte charge to the thunk fails the
+    /// byte assertions (eu-oaz72.146). Removing `exit_force` is caught by
+    /// `profiled_force_with_invalid_annotation_charges_the_fallback_site`,
+    /// since the restored register already charges this test's post-force
+    /// work correctly; sampling `stack_trace_capped` instead of `profile_trace`
     /// in `profile_tick` fails the folded-stack assertion.
     #[test]
     fn profiled_force_attributes_intrinsic_and_thunk_separately() {
@@ -7247,6 +7290,7 @@ mod tests {
         let thunk = m.state.current;
         m.state.current = BcValue::Native(num(0));
         m.enable_profiler(true);
+        let bytes_start = m.heap.bytes_allocated();
 
         // A caller frame suspended under the force.
         let args = MutatorHeapView::new(&m.heap).array(&[]);
@@ -7259,32 +7303,26 @@ mod tests {
         // forcing.
         m.state.annotation = intrinsic_site;
         m.state.allocs += 7;
+        intrinsic_alloc(&m, "the intrinsic's allocation before the force");
+        let bytes_before_force = m.heap.bytes_allocated();
         if let Some(p) = m.state.profiler.as_deref_mut() {
             // The first record inside the force takes a folded sample.
             p.set_ticks(crate::eval::bytecode::profile::FOLDED_SAMPLE_INTERVAL - 1);
         }
         {
-            let mut ctx = BcBifContext {
-                state: &mut m.state,
-                program: &m.program,
-                symbol_pool: &mut m.symbol_pool,
-                rcache: &mut m.rcache,
-                test_mode: m.test_mode,
-                heap: &mut m.heap,
-                intrinsics: &m.intrinsics,
-                metrics: &mut m.metrics,
-                clock: &mut m.clock,
-                dump_heap: m.dump_heap,
-                predecode: m.predecode,
-                decoded: &m.decoded,
-            };
-            let forced = ctx.force(AbiClosure::Byte(thunk)).unwrap();
-            let AbiClosure::Byte(v) = forced;
+            let AbiClosure::Byte(v) = force_in(&mut m, thunk).unwrap();
             assert!(matches!(v, BcValue::Native(_)), "thunk forced to WHNF");
         }
+        assert_eq!(
+            m.state.annotation, intrinsic_site,
+            "the force restores the intrinsic's annotation register"
+        );
+        let bytes_after_force = m.heap.bytes_allocated();
 
         // Back in the intrinsic: it allocates more, then its dispatch ends.
         m.state.allocs += 3;
+        intrinsic_alloc(&m, "the intrinsic's allocation after the force");
+        let bytes_end = m.heap.bytes_allocated();
         profile_tick(&mut m.state, &m.heap);
 
         let p = m.profiler().unwrap();
@@ -7310,6 +7348,22 @@ mod tests {
             p.locations()
         );
         assert!(thunk_counts.ticks >= 1, "the thunk's dispatches are ticked");
+        assert!(
+            bytes_after_force > bytes_before_force,
+            "the thunk's let allocates on the heap"
+        );
+        assert_eq!(
+            intrinsic.bytes,
+            (bytes_before_force - bytes_start) + (bytes_end - bytes_after_force),
+            "the intrinsic's bytes before and after the force stay on its site: {:?}",
+            p.locations()
+        );
+        assert_eq!(
+            thunk_counts.bytes,
+            bytes_after_force - bytes_before_force,
+            "the forced thunk's bytes are charged to the thunk: {:?}",
+            p.locations()
+        );
 
         let folded = p.folded_samples().unwrap();
         assert!(
@@ -7317,6 +7371,124 @@ mod tests {
                 .keys()
                 .any(|trace| trace.first() == Some(&thunk_site) && trace.contains(&caller_site)),
             "a sample inside the force keeps the suspended caller frame: {folded:?}"
+        );
+    }
+
+    /// Allocate a string on `m`'s heap, standing in for an intrinsic's own
+    /// allocation, so the profiler sees real bytes.
+    fn intrinsic_alloc(m: &BytecodeMachine<'static>, text: &str) {
+        let view = MutatorHeapView::new(&m.heap);
+        view.alloc(HeapString::from_str(&view, text)).unwrap();
+    }
+
+    /// Force `thunk` as an intrinsic would (`BcBifContext::force`).
+    fn force_in(
+        m: &mut BytecodeMachine<'static>,
+        thunk: BcValue,
+    ) -> Result<AbiClosure, ExecutionError> {
+        let mut ctx = BcBifContext {
+            state: &mut m.state,
+            program: &m.program,
+            symbol_pool: &mut m.symbol_pool,
+            rcache: &mut m.rcache,
+            test_mode: m.test_mode,
+            heap: &mut m.heap,
+            intrinsics: &m.intrinsics,
+            metrics: &mut m.metrics,
+            clock: &mut m.clock,
+            dump_heap: m.dump_heap,
+            predecode: m.predecode,
+            decoded: &m.decoded,
+        };
+        ctx.force(AbiClosure::Byte(thunk))
+    }
+
+    /// eu-oaz72.146: an intrinsic dispatched with no valid annotation is
+    /// charged, through the force, to the location its dispatch falls back
+    /// to (the last valid annotation), not to the forced thunk, and its
+    /// annotation register is left invalid as it found it.
+    ///
+    /// Fault injection: dropping the annotation restore in
+    /// `exit_whnf_subrun`, or the `resume` set by `Profiler::exit_force`
+    /// (the post-force record then falls back to the thunk's annotation),
+    /// fails this test.
+    #[test]
+    fn profiled_force_with_invalid_annotation_charges_the_fallback_site() {
+        let intrinsic_site = Smid::fake(7011);
+        let thunk_site = Smid::fake(7012);
+        let syn = dsl::ann(
+            thunk_site,
+            dsl::let_(
+                vec![dsl::thunk(dsl::atom(dsl::num(5)))],
+                dsl::atom(dsl::num(1)),
+            ),
+        );
+        let (prog, root, gforms) = encode(&syn, &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+        let thunk = m.state.current;
+        m.state.current = BcValue::Native(num(0));
+        m.enable_profiler(false);
+        let bytes_start = m.heap.bytes_allocated();
+
+        m.state.annotation = Smid::default();
+        m.state.last_annotation = intrinsic_site;
+        m.state.allocs += 4;
+        intrinsic_alloc(&m, "before");
+        let bytes_before_force = m.heap.bytes_allocated();
+        force_in(&mut m, thunk).unwrap();
+        assert!(
+            !m.state.annotation.is_valid(),
+            "the force restores the invalid annotation register"
+        );
+        let bytes_after_force = m.heap.bytes_allocated();
+        m.state.allocs += 5;
+        intrinsic_alloc(&m, "after");
+        let bytes_end = m.heap.bytes_allocated();
+        profile_tick(&mut m.state, &m.heap);
+
+        let p = m.profiler().unwrap();
+        let at = |s: Smid| p.locations().get(&s).copied().unwrap_or_default();
+        let intrinsic = at(intrinsic_site);
+        assert_eq!(intrinsic.allocs, 9, "{:?}", p.locations());
+        assert_eq!(intrinsic.ticks, 1, "{:?}", p.locations());
+        assert_eq!(
+            intrinsic.bytes,
+            (bytes_before_force - bytes_start) + (bytes_end - bytes_after_force),
+            "{:?}",
+            p.locations()
+        );
+        assert_eq!(at(thunk_site).allocs, 1, "{:?}", p.locations());
+        assert!(
+            !p.locations().contains_key(&Smid::default()),
+            "nothing is charged to an invalid location: {:?}",
+            p.locations()
+        );
+    }
+
+    /// eu-oaz72.146: a force sub-run profiles every dispatch it counts,
+    /// including one that fails, as the top-level loops do.
+    ///
+    /// Fault injection: moving the `?` in `drive_to_whnf_loop` back above
+    /// `profile_tick` fails this test (one tick short).
+    #[test]
+    fn profiled_force_ticks_a_failing_dispatch() {
+        let thunk_site = Smid::fake(7021);
+        // Applying a number fails.
+        let syn = dsl::ann(thunk_site, dsl::app(dsl::num(3), vec![dsl::num(1)]));
+        let (prog, root, gforms) = encode(&syn, &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+        let thunk = m.state.current;
+        m.state.current = BcValue::Native(num(0));
+        m.state.annotation = Smid::fake(7020);
+        m.enable_profiler(false);
+        let ticks_before = m.metrics.ticks();
+        assert!(force_in(&mut m, thunk).is_err(), "the forced code fails");
+        let dispatched = m.metrics.ticks() - ticks_before;
+        assert!(dispatched >= 1);
+        assert_eq!(
+            m.profiler().unwrap().ticks(),
+            dispatched,
+            "every dispatch of the sub-run is profiled, the failing one too"
         );
     }
 }

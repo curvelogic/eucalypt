@@ -89,8 +89,10 @@ dot-lookup: {
 # namespace block, about 350 allocations (engine: `Op::LookupLit`,
 # eu-oaz72.94). Rebuilding a block is one tick, so the budget counts
 # allocations: about 50 per read when shared (either prelude mode), 400
-# when rebuilt.
-len-plus(i): str.len("ab") + i
+# when rebuilt. The read depends on the loop variable, so no hoisting or
+# common-subexpression pass can lift it out of the loop and pass the
+# budget vacuously (eu-oaz72.103).
+len-plus(i): str.len(str.of(i)) + i
 len-total: range(0, 1000) map(len-plus) sum
 
 ` "the namespace is built once however often it is read"
@@ -100,5 +102,6 @@ built-once(context): (context.stats.allocs < 200000) then(:PASS, :FAIL)
     verify: [:values, :built-once] }
 namespace-lookup: {
   sum: len-total
-  expected: 1000 * 2 + 499500
+  # 10 one-digit, 90 two-digit and 900 three-digit numbers
+  expected: 10 + 90 * 2 + 900 * 3 + 499500
 }
