@@ -4,6 +4,7 @@
 //! is assigned (see `ExecutionError::code` and its siblings), add an entry
 //! both here and in that file so the two stay in sync.
 
+use crate::common::pipe::ignore_broken_pipe;
 use crate::driver::options::EucalyptOptions;
 use std::io::Write;
 
@@ -163,12 +164,9 @@ pub fn run(opt: &EucalyptOptions) -> Result<i32, String> {
         Some(entry) => {
             // A closed pipe (`eu error E… | head`) is not a failure; any
             // other write failure is reported rather than panicking.
-            match writeln!(std::io::stdout(), "{entry}") {
-                Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => {
-                    Err(format!("eu error: failed to write to stdout: {e}"))
-                }
-                _ => Ok(0),
-            }
+            ignore_broken_pipe(writeln!(std::io::stdout(), "{entry}"))
+                .map(|()| 0)
+                .map_err(|e| format!("eu error: failed to write to stdout: {e}"))
         }
         None => {
             eprintln!("eu error: unknown error code '{code}'");

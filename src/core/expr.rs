@@ -1182,13 +1182,15 @@ impl RcExpr {
     /// inline pass does **not** use it: it needs the depth-aware,
     /// capture-avoiding `substs_depth` in `core::inline::reduce`.
     ///
-    /// Other callers: `xtask` (prelude blob generation), which pre-expands
-    /// inlinable bindings once at blob-generation time. Its replacements
-    /// are closed apart from a self-recursive inlinable's free reference to
-    /// itself, which is substituted at the same scope, so scope-blindness
-    /// does not bite there. (This differs from the source-prelude path,
-    /// which pre-expands on every compile with the capture-avoiding
-    /// `substs_depth`; the two are not the same code.) And `instantiate_lets`, whose result is only ever
+    /// Neither does blob pre-expansion: `xtask prelude-compile` calls
+    /// `core::inline::reduce::pre_expand_blob_inlines`, which uses the same
+    /// `substs_depth` as the source path, because its replacements are not
+    /// all closed (a self-recursive inlinable keeps a `Var::Free` reference
+    /// to itself, which an inner let binding that name would capture).
+    ///
+    /// Callers: `xtask` substitutes the `if` intrinsic alias, whose
+    /// replacement is a bare intrinsic (closed, with no free names), into
+    /// candidate bodies; and `instantiate_lets`, whose result is only ever
     /// read for literal metadata values and never re-closed into a scope,
     /// so a mis-scoped or captured reference there yields a non-literal
     /// that extraction rejects.

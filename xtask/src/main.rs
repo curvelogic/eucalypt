@@ -366,31 +366,14 @@ fn cmd_prelude_compile() -> Result<()> {
         inlinable_bindings.len()
     );
 
-    // Pre-expand: substitute collected definitions into each other so the blob
-    // carries fully-resolved expressions (no Var::Free). Since the fixed-point
-    // collects in dependency order (round 0 first), a single forward pass
-    // suffices.
-    //
-    // The inlinable_bindings are pre-expanded: all Var::Free references to
-    // other set members are substituted with their definitions at blob
-    // generation time. This means the runtime inline pass sees them as
-    // immediately closed bodies (no multi-pass resolution needed).
-    let mut resolved_map: HashMap<String, RcExpr> = HashMap::new();
-    let mut resolved_bindings: Vec<(String, RcExpr)> = Vec::new();
-    for (name, body) in &inlinable_bindings {
-        let subs: Vec<(String, RcExpr)> = resolved_map
-            .iter()
-            .map(|(n, e)| (n.clone(), e.clone()))
-            .collect();
-        let expanded = if subs.is_empty() {
-            body.clone()
-        } else {
-            body.substs(&subs)
-        };
-        resolved_map.insert(name.clone(), expanded.clone());
-        resolved_bindings.push((name.clone(), expanded));
-    }
-    let inlinable_bindings = resolved_bindings;
+    // Pre-expand: substitute collected definitions into each other so the
+    // runtime inline pass sees them already resolved (no multi-pass
+    // resolution needed). The fixed point collects in dependency order, so a
+    // single forward pass suffices. It substitutes capture-avoidingly, as the
+    // source path does, so the two cannot diverge (eu-oaz72.189).
+    let inlinable_bindings =
+        eucalypt::core::inline::reduce::pre_expand_blob_inlines(inlinable_bindings)
+            .context("pre-expanding inlinable bindings")?;
 
     // ── 5. Build name→slot mapping from peeled bindings ──────────────────────
     let name_to_slot: HashMap<String, usize> = binding_bodies

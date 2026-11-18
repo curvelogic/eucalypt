@@ -76,6 +76,13 @@ fn grandchild_holding_pipes_returns_at_deadline() {
         elapsed < Duration::from_secs(15),
         "blocked on grandchild-held pipes for {elapsed:?}"
     );
+    // The child exits at once, so only a grandchild still holding the pipes
+    // keeps the drain from seeing EOF until the deadline: without this the
+    // test would pass on a platform where no grandchild was spawned.
+    assert!(
+        elapsed >= Duration::from_millis(1500),
+        "returned after {elapsed:?}: no grandchild held the pipes open"
+    );
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("hi"));
 }

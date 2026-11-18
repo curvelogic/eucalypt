@@ -296,6 +296,37 @@ fn pre_expand_inlines(
     Ok(inlines)
 }
 
+/// Pre-expand the prelude blob's inlinable bindings into one another
+/// (`cargo xtask prelude-compile`), so the blob carries them already
+/// resolved.
+///
+/// `bindings` come in dependency order (the fixed point that collects them
+/// adds a binding only once everything it refers to is in), so one forward
+/// pass suffices: each binding has every earlier one substituted into it.
+///
+/// It substitutes with the same capture-avoiding [`substs_depth`] as the
+/// source path's `pre_expand_inlines`. A scope-blind substitution would
+/// differ from the source path in one corner: a self-recursive inlinable
+/// `N` keeps a `Var::Free(N)` reference to itself, so a copy of it (or of
+/// any inlinable it was expanded into) is not closed; placed under an inner
+/// let of a later binding that binds the name `N`, re-closing that let
+/// would capture the reference. Here, as in the source path, the copy is
+/// withheld below such a let and the reference by name is kept.
+pub fn pre_expand_blob_inlines(
+    bindings: Vec<(String, RcExpr)>,
+) -> Result<Vec<(String, RcExpr)>, CoreError> {
+    let mut resolved: Vec<(String, RcExpr)> = Vec::with_capacity(bindings.len());
+    for (name, body) in bindings {
+        let expanded = if resolved.is_empty() {
+            body
+        } else {
+            substs_depth(&body, &resolved, Capture::Avoid)?
+        };
+        resolved.push((name, expanded));
+    }
+    Ok(resolved)
+}
+
 /// Distribute inline lambdas to call site
 fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
@@ -963,6 +994,40 @@ pub mod tests {
         binding::verify(&inlined).unwrap();
         // The copy is withheld under the nested `k`: still a reference.
         assert_eq!(alpha_norm(inlined), alpha_norm(original));
+    }
+
+    /// eu-oaz72.189: blob pre-expansion must not place a copy of a
+    /// self-recursive inlinable `n` (whose body still refers to `n` by name)
+    /// under a later binding's inner let that binds `n`, as the source path
+    /// does not.
+    #[test]
+    pub fn test_pre_expand_blob_inlines_avoids_capture() {
+        let (n, m, b, x, y) = (free("n"), free("m"), free("b"), free("x"), free("y"));
+        // n(x): n(x) — self-recursive, so its body keeps `Var::Free(n)`.
+        let n_def = inline(vec![x.clone()], app(var(n.clone()), vec![var(x.clone())]));
+        // b(y): { n: 5 }.(n(y)) — the inner let binds the name `n`.
+        let b_def = |call: RcExpr| {
+            inline(
+                vec![y.clone()],
+                let_(vec![(n.clone(), num(5))], app(call, vec![var(y.clone())])),
+            )
+        };
+        // m(y): n(y) — not under any let, so `n` is expanded into it.
+        let m_def = inline(vec![y.clone()], app(var(n.clone()), vec![var(y.clone())]));
+        let out = pre_expand_blob_inlines(vec![
+            (n.clone(), n_def),
+            (m.clone(), m_def.clone()),
+            (b.clone(), b_def(var(m.clone()))),
+        ])
+        .unwrap();
+        // `m` is expanded: the reference to `n` becomes `n`'s body.
+        assert_ne!(alpha_norm(out[1].1.clone()), alpha_norm(m_def));
+        // Under `b`'s inner `n`, the expansion of `m` (which refers to `n`
+        // by name) is withheld: `b` is unchanged.
+        assert_eq!(
+            alpha_norm(out[2].1.clone()),
+            alpha_norm(b_def(var(m.clone())))
+        );
     }
 
     /// eu-oaz72.179: pre-expansion copies one open inlinable sibling into
