@@ -1,10 +1,71 @@
 # AoC 2025 Performance Analysis
 
-Performance characteristics of the AoC 2025 eucalypt example programs, benchmarked on ARM64 (Apple Silicon). All timings are 5-run medians of `VM-Mutator` from `--statistics-file`. Tick counts and allocation figures come from eucalypt's built-in statistics output. Stats files in `stats/` record the JSON from the median run.
+Performance characteristics of the AoC 2025 eucalypt example programs. The current baseline (0.16, below) is wall time of the whole `eu` process on a 4-core Linux container, from a release build that embeds the prelude blob; earlier baselines (0.14 and before) were taken on ARM64 (Apple Silicon), the 0.10/0.11 ones as 5-run medians of `VM-Mutator` from `--statistics-file`. Tick counts and allocation figures come from eucalypt's built-in statistics output. Stats files in `stats/` record the JSON from the median sequential run of the current baseline.
 
 ---
 
-## Summary (0.14 re-baseline, 2026-08-04)
+## Summary (0.16 re-baseline, 2026-11-18)
+
+Re-baselined on master after the 0.16 revisions of every solution (worklist
+peel, bounded pair generation, coordinate compression, dicts, sets,
+`foldl-strict`; see each `dayNN.eu`). **Every part now finishes**: the four
+former >600s timeouts run in 2.7–5.7s sequential. Method, deviations and raw
+data: `docs/superpowers/reports/2026-11-18-aoc25-rebaseline.md`.
+
+Wall is median-of-7 with min–max range, from one clean release build that
+embeds the prelude blob (as released binaries do). Parts with a `par-*` site
+ran as interleaved pairs: *seq* forces the sequential fallback
+(`EU_PP_THRESHOLD=999999999`), *par* is the default (`par-*` forks; 4 cores).
+Ticks, allocations and GCs are from the median sequential run and are
+deterministic. Every figure is **measured-single**: one session, a 4-core
+container rather than a quiet machine (load average 1.3–2.5).
+
+Two "before" columns: the 0.14 figures (14-core M3 Max, so wall is not
+comparable across machines; small programs read slower here for that reason
+alone) and the pre-revision solutions timed on this binary and machine
+(median-of-5, same method), which isolates the effect of the revisions.
+
+| Example | Previous: 0.14 seq / par (M3 Max) | Pre-revision, this machine: seq / par | 0.16 seq | 0.16 par | Par speedup | Ticks | Allocs | GCs | Confidence |
+|---------|-----------------------------------|---------------------------------------|----------|----------|-------------|-------|--------|-----|------------|
+| day01-p1 | 0.098s (2%) / — | 0.165s (0.158–0.186) / — | 0.173s (0.168–0.239) | — | — | 1,418,095 | 256,738 | 1 | measured-single (sub-200ms) |
+| day01-p2 | 0.104s (11%) / — | 0.194s (0.166–0.207) / — | 0.185s (0.180–0.227) | — | — | 1,700,993 | 326,189 | 2 | measured-single (sub-200ms) |
+| day02-p1 | 0.034s (9%) / — | 0.076s (0.072–0.081) / — | 0.076s (0.075–0.094) | — | — | 153,405 | 33,279 | 0 | measured-single (sub-200ms) |
+| day02-p2 | 0.048s (2%) / — | 0.098s (0.096–0.128) / — | 0.093s (0.091–0.100) | — | — | 669,588 | 127,902 | 0 | measured-single (sub-200ms) |
+| day03-p1 | 0.338s (2%) / — | 0.271s (0.262–0.290) / — | 0.247s (0.240–0.254) | — | — | 6,481,666 | 1,061,679 | 6 | measured-single |
+| day03-p2 | 0.716s (3%) / — | 0.423s (0.417–0.434) / — | 0.252s (0.246–0.278) | — | — | 6,649,189 | 1,093,601 | 7 | measured-single |
+| day04-p1 | 0.615s (3%) / 0.104s (9%) | 1.150s (1.145–1.187) / 0.471s (0.467–0.490) | 1.094s (1.084–1.193) | 0.444s (0.395–0.504) | 2.47× | 19,427,518 | 3,463,993 | 7 | measured-single |
+| day04-p2 | >600s / — | >600s (not re-run) / — | 2.667s (2.462–2.954) | 2.720s (2.490–2.874) | 0.98× | 36,563,010 | 6,999,682 | 6 | measured-single |
+| day05-p1 | 0.489s (2%) / 0.107s (11%) | 0.505s (0.496–0.521) / 0.255s (0.247–0.261) | 0.110s (0.107–0.152) | — | — | 724,968 | 114,861 | 0 | measured-single (sub-200ms) |
+| day05-p2 | 0.063s (5%) / — | 0.127s (0.107–0.155) / — | 0.098s (0.093–0.100) | — | — | 428,389 | 70,992 | 0 | measured-single (sub-200ms) |
+| day06-p1 | 0.073s (4%) / — | 0.140s (0.138–0.140) / — | 0.138s (0.136–0.178) | — | — | 1,402,830 | 223,694 | 1 | measured-single (sub-200ms) |
+| day06-p2 | 0.310s (3%) / — | 0.705s (0.695–0.750) / — | 0.258s (0.248–0.294) | — | — | 5,100,655 | 766,071 | 5 | measured-single |
+| day07-p1 | 0.358s (1%) / — | 0.671s (0.653–0.715) / — | 0.188s (0.180–0.231) | — | — | 3,124,021 | 441,750 | 3 | measured-single (sub-200ms) |
+| day07-p2 | 0.337s (3%) / — | 0.717s (0.705–0.733) / — | 0.188s (0.181–0.197) | — | — | 3,060,126 | 432,824 | 3 | measured-single (sub-200ms) |
+| day08-p1 | 3.445s (1%) / 0.712s (12%) | 5.068s (4.816–5.269) / 2.604s (2.573–2.665) | 3.144s (2.905–3.269) | 1.695s (1.640–1.733) | 1.86× | 56,789,283 | 10,005,933 | 3 | measured-single |
+| day08-p2 | >600s / — | >600s (not re-run) / — | 4.577s (4.391–4.755) | 2.202s (2.122–2.243) | 2.08× | 86,264,511 | 14,538,105 | 24 | measured-single |
+| day09-p1 | 2.002s (3%) / 0.478s (7%) | 1.973s (1.944–2.159) / 1.289s (1.210–1.356) | 1.037s (0.981–1.073) | 0.743s (0.686–0.772) | 1.39× | 34,994,019 | 5,173,548 | 32 | measured-single |
+| day09-p2 | >600s / — | >600s (not re-run) / — | 4.627s (4.562–4.746) | 3.439s (3.229–3.580) | 1.35× | 107,719,965 | 15,421,464 | 82 | measured-single |
+| day10-p1 | 7.858s (3%) / 1.091s (43%) | 6.787s (6.609–7.170) / 2.630s (2.550–2.696) | 1.250s (1.237–1.339) | 0.606s (0.589–0.667) | 2.06× | 25,968,458 | 5,582,301 | 24 | measured-single |
+| day10-p2 | >600s / — | >600s (not re-run) / — | 5.638s (5.288–5.884) | 2.876s (2.753–2.974) | 1.96× | 133,543,871 | 25,571,739 | 63 | measured-single |
+| day11-p1 | 0.150s (2%) / — | 0.256s (0.255–0.259) / — | 0.082s (0.080–0.108) | 0.082s (0.080–0.110) | 1.00× | 202,506 | 31,219 | 0 | measured-single (sub-200ms, par arm sub-200ms) |
+| day11-p2 | 4.429s (3%) / 1.161s (2%) | 10.419s (10.196–10.967) / 5.457s (5.235–5.703) | 0.160s (0.157–0.179) | 0.125s (0.123–0.153) | 1.28× | 1,978,696 | 301,851 | 2 | measured-single (sub-200ms, par arm sub-200ms) |
+| day12-p1 | 0.106s (3%) / — | 0.185s (0.178–0.188) / — | 0.156s (0.153–0.164) | — | — | 1,710,323 | 304,003 | 1 | measured-single (sub-200ms) |
+
+Notes:
+
+- Sub-200ms figures are dominated by startup (about 0.06s for `eu -e 1`
+  here) and are not used in ratio analysis.
+- day04-p2, day08-p2, day09-p2 and day10-p2 pre-revision solutions were not
+  re-run: they timed out at 600s in every earlier baseline.
+- day05-p1 no longer has a `par-*` site (the 0.16 solution is a dict range
+  lookup, 0.11s), so it has no parallel arm. day04-p2 and day11-p1 run no
+  `par-*` call on their path, so their two arms are equal within noise.
+- The list-retention fix (#1268) is **not** in this baseline. Re-run with
+  `scripts/aoc25-bench.py` (command in the report) once it lands.
+
+---
+
+## Previous summary (0.14 re-baseline, 2026-08-04)
 
 Re-baselined on 0.14 (bytecode engine default). Six examples now use the
 0.14 process parallelism combinators (`par-sum`, `par-max`, `par-map`,
@@ -17,31 +78,8 @@ parentheses. The machine carried moderate background load (load average
 is labelled **measured-single** (one session; not yet independently
 reproduced on a quiet machine).
 
-| Example | 0.11.0 wall (historical) | 0.14 sequential | 0.14 parallel (forced fork) | Speedup | Confidence |
-|---------|--------------------------|-----------------|------------------------------|---------|------------|
-| day01-p1 | 0.527s | 0.098s (2%) | — | — | measured-single |
-| day01-p2 | 0.500s | 0.104s (11%) | — | — | measured-single |
-| day02-p1 | 0.007s | 0.034s (9%) | — | — | measured-single |
-| day02-p2 | 0.030s | 0.048s (2%) | — | — | measured-single |
-| day03-p1 | 0.556s | 0.338s (2%) | — | — | measured-single |
-| day03-p2 | 1.149s | 0.716s (3%) | — | — | measured-single |
-| day04-p1 | 1.559s | 0.615s (3%) | 0.104s (9%) | 5.9× | measured-single (par arm sub-200ms) |
-| day04-p2 | >600s | >600s | — | — | measured-single (n=1 probe) |
-| day05-p1 | 1.462s | 0.489s (2%) | 0.107s (11%) | 4.6× | measured-single (par arm sub-200ms) |
-| day05-p2 | 0.028s | 0.063s (5%) | — | — | measured-single |
-| day06-p1 | 0.636s | 0.073s (4%) | — | — | measured-single |
-| day06-p2 | 3.966s | 0.310s (3%) | — | — | measured-single |
-| day07-p1 | 1.231s | 0.358s (1%) | — | — | measured-single |
-| day07-p2 | 2.495s | 0.337s (3%) | — | — | measured-single |
-| day08-p1 | 6.082s | 3.445s (1%) | 0.712s (12%) | 4.8× | measured-single |
-| day08-p2 | >600s | >600s | — | — | measured-single (n=1 probe) |
-| day09-p1 | 5.005s | 2.002s (3%) | 0.478s (7%) | 4.2× | measured-single |
-| day09-p2 | >600s | >600s | — | — | measured-single (n=1 probe) |
-| day10-p1 | 10.99s | 7.858s (3%) | 1.091s (43%*) | 7.2× | measured-single |
-| day10-p2 | >600s | >600s | — | — | measured-single (n=1 probe) |
-| day11-p1 | 1.593s | 0.150s (2%) | — | — | measured-single |
-| day11-p2 | 146.5s | 4.429s (3%) | 1.161s (2%) | 3.8× | measured-single |
-| day12-p1 | 0.197s | 0.106s (3%) | — | — | measured-single |
+The 0.14 figures are carried in the *Previous* column of the 0.16 table
+above; the 0.11.0 ones are in the historical summary below.
 
 \* day10-p1 parallel spread is one 1.55s outlier in five runs (others
 1.077–1.122s); the median is robust to it.
@@ -279,12 +317,15 @@ The 0.11.0 release introduced three code generation (CG) optimisations that redu
 
 ---
 
+*The per-day analyses below describe the 0.10/0.11 solutions and engines. Each section's 0.16.0 stats line is the current figure; several solutions have since been rewritten (see the header comment in each `dayNN.eu`).*
+
 ## day01 — part 1
 
 Single-pass fold over a sequence of 13 million instructions. Accumulates a position modulo 100, counting how many steps land on a multiple of 100. The fold is inherently sequential with no branching or data structure construction beyond the accumulator.
 
 **Stats (0.10.0):** 12,972,496 ticks | 2,251,752 allocs | 0 GC | ~0.60s
 **Stats (0.11.0):** 12,915,277 ticks | 2,251,752 allocs | 0 GC | ~0.53s (−10%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 1,418,095 ticks | 256,738 allocs | 1 GC | max stack 74 | 0.17s sequential (wall median-of-7, measured-single)
 
 *No CPU profile (< 0.5s threshold — profile not captured.)*
 
@@ -307,6 +348,7 @@ Single-pass fold tracking position, detecting when the position crosses a multip
 
 **Stats (0.10.0):** 13,450,743 ticks | 2,372,646 allocs | 0 GC | ~0.79s
 **Stats (0.11.0):** 13,382,554 ticks | 2,372,646 allocs | 0 GC | ~0.50s (−37%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 1,700,993 ticks | 326,189 allocs | 2 GC | max stack 22 | 0.19s sequential (wall median-of-7, measured-single)
 
 **Characteristics:** Same profile as part 1. Tick count is nearly identical (13.5M vs 13.0M), confirming the algorithm is the same shape.
 
@@ -324,6 +366,7 @@ Closed-form arithmetic: multiplies a pattern multiplier by the sum of a valid ra
 
 **Stats (0.10.0):** 326,750 ticks | 136,508 allocs | 0 GC | ~0.02s
 **Stats (0.11.0):** 322,348 ticks | 136,508 allocs | 0 GC | ~0.007s (−68%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 153,405 ticks | 33,279 allocs | 0 GC | max stack 30 | 0.08s sequential (wall median-of-7, measured-single)
 
 **Characteristics:** Trivially fast. Parse and startup dominate at this scale.
 
@@ -341,6 +384,7 @@ Inclusion-exclusion over prime factor subsets. Generates all subsets of prime fa
 
 **Stats (0.10.0):** 1,374,701 ticks | 613,779 allocs | 0 GC | ~0.07s
 **Stats (0.11.0):** 1,263,752 ticks | 613,779 allocs | 0 GC | ~0.030s (−54%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 669,588 ticks | 127,902 allocs | 0 GC | max stack 36 | 0.09s sequential (wall median-of-7, measured-single)
 
 **Characteristics:** Subset generation allocates proportionally to 2^(number of prime factors). For typical AoC inputs this is small. Moderate allocation density (1 alloc per 2.2 ticks).
 
@@ -358,6 +402,7 @@ Greedy digit selection via windowed recursion. Finds the largest digit in a vali
 
 **Stats (0.10.0):** 27,813,225 ticks | 11,553,241 allocs | 0 GC | ~1.03s
 **Stats (0.11.0):** 27,382,786 ticks | 11,553,241 allocs | 0 GC | ~0.56s (−46%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 6,481,666 ticks | 1,061,679 allocs | 6 GC | max stack 30 | 0.25s sequential (wall median-of-7, measured-single)
 
 **Characteristics:** Compute-bound with high allocation (1 alloc per 2.4 ticks). No GC pressure. Each recursive `cons(best, pick(k-1,...))` call creates a thunk for the tail, allocating proportionally to output size (~1,209 digits).
 
@@ -377,6 +422,7 @@ Same greedy algorithm extended to 12-digit selection. Higher constant factor but
 
 **Stats (0.10.0):** 57,806,510 ticks | 25,204,145 allocs | 0 GC | ~2.31s
 **Stats (0.11.0):** 56,836,818 ticks | 25,204,145 allocs | 0 GC | ~1.15s (−50%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 6,649,189 ticks | 1,093,601 allocs | 7 GC | max stack 30 | 0.25s sequential (wall median-of-7, measured-single)
 
 **Characteristics:** Structurally identical to part 1 with a larger selection target. Tick and alloc counts scale roughly with the additional selection rounds. 1 alloc per 2.3 ticks — same ratio as part 1.
 
@@ -394,6 +440,7 @@ Same greedy algorithm extended to 12-digit selection. Higher constant factor but
 
 **Stats (0.10.0):** 59,818,598 ticks | 19,880,379 allocs | 0 GC | ~2.45s
 **Stats (0.11.0):** 59,230,889 ticks | 19,880,379 allocs | 0 GC | ~1.56s (−36%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 19,427,518 ticks | 3,463,993 allocs | 7 GC | max stack 171 | 1.09s sequential, 0.44s parallel (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -423,6 +470,7 @@ Same greedy algorithm extended to 12-digit selection. Higher constant factor but
 Tail-recursive removal loop: each step calls `survivals(grid)` (the same 3×3 block-sum convolution as part 1), removes accessible rolls from the grid, and accumulates the count. Repeats until no accessible rolls remain.
 
 **Stats (0.10.0):** did not complete — terminated at 600s (timeout).
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 36,563,010 ticks | 6,999,682 allocs | 6 GC | max stack 11,982 | 2.67s sequential, 2.72s parallel (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -452,6 +500,7 @@ Filters an ID list against range predicates using functional filtering. Essentia
 
 **Stats (0.10.0):** 63,029,855 ticks | 14,067,690 allocs | 0 GC | ~2.14s
 **Stats (0.11.0):** 62,895,143 ticks | 14,067,690 allocs | 0 GC | ~1.46s (−32%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 724,968 ticks | 114,861 allocs | 0 GC | max stack 180 | 0.11s sequential (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -482,6 +531,7 @@ Sorts ranges, folds with merge logic to combine overlapping intervals, sums merg
 
 **Stats (0.10.0):** 1,264,646 ticks | 732,774 allocs | 0 GC | ~0.06s
 **Stats (0.11.0):** 1,260,793 ticks | 732,774 allocs | 0 GC | ~0.028s (−53%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 428,389 ticks | 70,992 allocs | 0 GC | max stack 173 | 0.10s sequential (wall median-of-7, measured-single)
 
 **Characteristics:** Fast. The merge fold is O(n log n) due to sorting, but n is small.
 
@@ -499,6 +549,7 @@ Transposes a row-oriented list of numbers into column problems, applies per-colu
 
 **Stats (0.10.0):** 16,739,291 ticks | 1,596,375 allocs | 0 GC | ~0.87s
 **Stats (0.11.0):** 16,727,001 ticks | 1,596,375 allocs | 0 GC | ~0.64s (−27%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 1,402,830 ticks | 223,694 allocs | 1 GC | max stack 25 | 0.14s sequential (wall median-of-7, measured-single)
 
 **Characteristics:** Moderate ticks with moderate allocation (1 alloc per 10.5 ticks). The work is computation-heavy with the per-column arithmetic driving both ticks and allocations.
 
@@ -518,6 +569,7 @@ Transposes a character grid, reverses columns, folds right-to-left grouping digi
 
 **Stats (0.10.0):** 126,966,700 ticks | 10,646,539 allocs | 0 GC | ~4.97s
 **Stats (0.11.0):** 126,918,682 ticks | 10,646,539 allocs | 0 GC | ~3.97s (−20%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 5,100,655 ticks | 766,071 allocs | 5 GC | max stack 3,798 | 0.26s sequential (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -548,6 +600,7 @@ Bit-vector beam propagation. Per-row fold detects splitter hits, emits left/righ
 
 **Stats (0.10.0):** 45,674,239 ticks | 16,354,405 allocs | 0 GC | ~1.89s
 **Stats (0.11.0):** 45,470,121 ticks | 16,354,405 allocs | 0 GC | ~1.23s (−35%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 3,124,021 ticks | 441,750 allocs | 3 GC | max stack 454 | 0.19s sequential (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -577,6 +630,7 @@ Same bit-vector beam structure as part 1 but sums beam counts rather than taking
 
 **Stats (0.10.0):** 29,811,429 ticks | 10,369,387 allocs | 0 GC | ~3.26s
 **Stats (0.11.0):** 29,729,386 ticks | 10,369,387 allocs | 0 GC | ~2.49s (−23%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 3,060,126 ticks | 432,824 allocs | 3 GC | max stack 1,362 | 0.19s sequential (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -607,6 +661,7 @@ X-sorted windowing to reduce pairs to O(n×w); union-find on k closest edges, wi
 
 **Stats (0.10.0):** 249,873,053 ticks | 118,607,830 allocs | 0 GC | ~11.5s
 **Stats (0.11.0):** 247,753,409 ticks | 118,607,839 allocs | 0 GC | ~6.08s (−47%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 56,789,283 ticks | 10,005,933 allocs | 3 GC | max stack 138,717 | 3.14s sequential, 1.69s parallel (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -636,6 +691,7 @@ X-sorted windowing to reduce pairs to O(n×w); union-find on k closest edges, wi
 MST via Kruskal on the full candidate set. `solve2-n(999, data)` uses window size w=999 (vs w=150 for part 1), expanding candidate pairs from ~75,000 to n×(n−1)/2 ≈ 499,500 for n=1,000 points. All pairs are materialised, sorted by `sort-nums`, and passed to `graph.kruskal-edges` to build the complete MST. The bridge is identified by `last-edge-idx`: `graph.kruskal-edges(n) (reverse ; nth(1))`.
 
 **Stats (0.10.0):** did not complete — terminated at 600s (timeout).
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 86,264,511 ticks | 14,538,105 allocs | 24 GC | max stack 26,460 | 4.58s sequential, 2.20s parallel (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -664,6 +720,7 @@ Pairwise brute-force via `tails` with `foldl`. Computes area for each head-to-ta
 
 **Stats (0.10.0):** 210,273,177 ticks | 81,203,655 allocs | 0 GC | ~8.52s
 **Stats (0.11.0):** 208,578,165 ticks | 81,203,655 allocs | 0 GC | ~5.01s (−41%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 34,994,019 ticks | 5,173,548 allocs | 32 GC | max stack 510 | 1.04s sequential, 0.74s parallel (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -693,6 +750,7 @@ Pairwise brute-force via `tails` with `foldl`. Computes area for each head-to-ta
 Largest-inscribed-rectangle sweep over a rectilinear polygon. `levels.from-points` partitions the 496-point polygon into cross-sections (levels) at each distinct y-coordinate. `search.find-max` sweeps all level pairs as (start, end) candidates: an outer fold iterates start levels, an inner `foldl` sweeps from start downward narrowing the corridor at each step. Pruning skips pairs where the maximum possible area cannot beat the current best.
 
 **Stats (0.10.0):** did not complete — terminated at 600s (timeout).
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 107,719,965 ticks | 15,421,464 allocs | 82 GC | max stack 61,538 | 4.63s sequential, 3.44s parallel (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -722,6 +780,7 @@ DFS subset enumeration over GF(2). Finds minimum k-size subsets via XOR-based ta
 
 **Stats (0.10.0):** 544,089,317 ticks | 228,950,942 allocs | 0 GC | ~21.9s
 **Stats (0.11.0):** 535,960,349 ticks | 228,950,942 allocs | 0 GC | ~10.99s (−50%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 25,968,458 ticks | 5,582,301 allocs | 24 GC | max stack 195 | 1.25s sequential, 0.61s parallel (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -751,6 +810,7 @@ DFS subset enumeration over GF(2). Finds minimum k-size subsets via XOR-based ta
 Branch-and-bound integer linear programme solver. For each machine `[joltage, buttons]`, `solve-machine2` performs: (1) float Gaussian elimination (`gauss.forward`) to find pivot/free columns and compute slopes and bounds; (2) integer Bareiss elimination (`gauss-int.forward`) for exact back-substitution; (3) branch-and-bound search over free variables with cost-based pruning (`search(0, [], 0, INF)`). For machines with many free variables, the search is exponential.
 
 **Stats (0.10.0):** did not complete — terminated at 600s (timeout).
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 133,543,871 ticks | 25,571,739 allocs | 63 GC | max stack 195 | 5.64s sequential, 2.88s parallel (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -780,6 +840,7 @@ DFS topological sort on a DAG followed by DP path counting in reverse topologica
 
 **Stats (0.10.0):** 66,419,641 ticks | 489,584 allocs | 0 GC | ~1.50s
 **Stats (0.11.0):** 66,410,797 ticks | 489,584 allocs | 0 GC | ~1.59s (+6%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 202,506 ticks | 31,219 allocs | 0 GC | max stack 610 | 0.08s sequential, 0.08s parallel (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -811,6 +872,7 @@ Inclusion-exclusion with graph variant generation. Four independent DP passes co
 
 **Stats (0.10.0):** 3,066,607,903 ticks | 6,232,604 allocs | 0 GC | ~144s
 **Stats (0.11.0):** 3,066,527,933 ticks | 6,232,604 allocs | 0 GC | ~146.5s (+2%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 1,978,696 ticks | 301,851 allocs | 2 GC | max stack 609 | 0.16s sequential, 0.13s parallel (wall median-of-7, measured-single)
 
 **CPU profile (top 5):**
 
@@ -843,6 +905,7 @@ Area check and box dimension filter. Counts feasible regions passing geometric c
 
 **Stats (0.10.0):** 6,779,263 ticks | 2,415,033 allocs | 0 GC | ~0.20s
 **Stats (0.11.0):** 6,745,268 ticks | 2,415,033 allocs | 0 GC | ~0.197s (−2%)
+**Stats (0.16.0, 2026-11-18, Linux 4-core):** 1,710,323 ticks | 304,003 allocs | 1 GC | max stack 1,084 | 0.16s sequential (wall median-of-7, measured-single)
 
 **Characteristics:** Fast. Moderate allocation density (1 alloc per 2.8 ticks). No GC pressure.
 
@@ -855,6 +918,8 @@ Area check and box dimension filter. Counts feasible regions passing geometric c
 ---
 
 ## Cross-cutting Observations
+
+*Historical (0.10/0.11 engines and solutions). For current figures see the 0.16 summary at the top.*
 
 ### Flat closures (env walk)
 
