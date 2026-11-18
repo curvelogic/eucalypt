@@ -41,6 +41,8 @@ case \"$*\" in *slow*) sleep 1; printf 'late\\n'; printf 'late\\n' >&2; exit 0 ;
 case \"$1\" in
   fmt)
     case \"$input\" in *bad*) printf 'error: unexpected token\\n' >&2; exit 1 ;; esac
+    case \"$*\" in *silent*) exit 0 ;; esac
+    case \"$input\" in *CASE*) printf '%s\\n' \"$input\" | tr A-Z a-z; exit 0 ;; esac
     printf '%s\\n' \"$input\" | sed 's/:  */: /'
     exit 0 ;;
   list-targets)
@@ -340,7 +342,17 @@ Fails, rather than prompting, if the location does not resolve to a file."
   (should (equal (eucalypt--args-target '("--target=foo" "m.eu")) "foo"))
   (should (equal (eucalypt--args-target '("-t" "bar" "-t" "foo")) "foo"))
   (should (null (eucalypt--args-target '("m.eu" "-j"))))
-  (should (null (eucalypt--args-target '("m.eu" "-t")))))
+  (should (null (eucalypt--args-target '("m.eu" "-t"))))
+  ;; Clustered short options, and values that look like `-t'.
+  (should (equal (eucalypt--args-target '("-It" "foo")) "foo"))
+  (should (equal (eucalypt--args-target '("-jtfoo")) "foo"))
+  (should (null (eucalypt--args-target '("-e" "-tfoo" "m.eu"))))
+  (should (null (eucalypt--args-target '("--" "-t" "foo"))))
+  ;; The format scanner reads the same forms.
+  (should (eq (eucalypt--infer-output-format-from-args '("-jxtoml")) 'toml))
+  (should (eq (eucalypt--infer-output-format-from-args '("-Ix" "json")) 'json))
+  (should (eq (eucalypt--infer-output-format-from-args '("-x=edn")) 'edn))
+  (should (eq (eucalypt--infer-output-format-from-args '("-Nj")) 'json)))
 
 (ert-deftest eucalypt-test-run-target-format-from-call ()
   "The output format follows the target this call runs, not an earlier listing."
@@ -361,6 +373,11 @@ Fails, rather than prompting, if the location does not resolve to a file."
           (eucalypt-test--wait (call-interactively #'eucalypt-run-target))))
       (with-current-buffer eucalypt--command-output-buffer
         (should (eq major-mode 'js-mode)))
+      ;; Arguments that choose a format need no listing.
+      (let ((eucalypt-eu-global-opts "-x text"))
+        (eucalypt-test--wait (eucalypt-run-target "foo")))
+      (with-current-buffer eucalypt--command-output-buffer
+        (should (eq major-mode 'text-mode)))
       ;; Given the target list, the call does not list the targets again.
       (eucalypt-test--wait
        (eucalypt-run-target "foo" nil '(("foo" :format nil :doc ""))))
@@ -369,6 +386,7 @@ Fails, rather than prompting, if the location does not resolve to a file."
     (should (equal (mapcar #'eucalypt-test--args (eucalypt-test--log log))
                    '(("list-targets" "m.eu") ("m.eu" "-t" "foo")
                      ("list-targets" "m.eu") ("m.eu" "-t" "foo")
+                     ("-x" "text" "m.eu" "-t" "foo")
                      ("m.eu" "-t" "foo"))))))
 
 (ert-deftest eucalypt-test-format-buffer ()
@@ -393,6 +411,22 @@ Fails, rather than prompting, if the location does not resolve to a file."
       (should (equal (cdr (assoc "no_color" call)) "1"))
       (should (equal (eucalypt-test--args call) '("fmt" "--width" "100")))
       (should (equal (cdr (assoc "stdin" call)) "a:    1|b:   nosuch|")))))
+
+(ert-deftest eucalypt-test-format-buffer-edge-cases ()
+  "Case-only changes apply, narrowing is ignored, and bad arguments are refused."
+  (eucalypt-test--with-stub
+    (with-current-buffer (eucalypt-test--visit dir)
+      (erase-buffer)
+      (insert "x: 1\nY: CASE\n")
+      (narrow-to-region 1 3)
+      (eucalypt-format-buffer)
+      (widen)
+      (should (equal (buffer-string) "x: 1\ny: case\n"))
+      (let ((eucalypt-fmt-args '("--check")))
+        (should-error (eucalypt-format-buffer) :type 'user-error))
+      (let ((eucalypt-fmt-args '("silent")))
+        (should-error (eucalypt-format-buffer) :type 'user-error))
+      (should (equal (buffer-string) "x: 1\ny: case\n")))))
 
 (ert-deftest eucalypt-test-format-buffer-failure ()
   "A failing `eu fmt' leaves the buffer alone and shows its errors."
