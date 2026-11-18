@@ -24,5 +24,5 @@ error: unexpected content in block pattern
 2 │ f{3, k: kk}: kk
   │   ^
   │
-  = a block pattern binds fields: shorthand names (`x`) or declarations (`x: a`, `x: [a, b]`, `x: {a b}`)
-  = separate fields with commas, e.g. `f{x: a, y}: a + y`
+  = a block pattern holds only fields: shorthand names (`x`) and `field: pattern` declarations (`x: a`, `x: [a, b]`, `x: {a b}`)
+  = literals, other expressions and function or operator declarations cannot appear in a block pattern

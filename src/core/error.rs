@@ -205,10 +205,12 @@ impl CoreError {
             }
             CoreError::InvalidBlockPatternContent(_) => {
                 source_map.diagnostic(self).with_notes(vec![
-                    "a block pattern binds fields: shorthand names (`x`) or declarations \
-                     (`x: a`, `x: [a, b]`, `x: {a b}`)"
+                    "a block pattern holds only fields: shorthand names (`x`) and \
+                     `field: pattern` declarations (`x: a`, `x: [a, b]`, `x: {a b}`)"
                         .to_string(),
-                    "separate fields with commas, e.g. `f{x: a, y}: a + y`".to_string(),
+                    "literals, other expressions and function or operator declarations \
+                     cannot appear in a block pattern"
+                        .to_string(),
                 ])
             }
             CoreError::VersionRequirementFailed(_, version, constraint) => {

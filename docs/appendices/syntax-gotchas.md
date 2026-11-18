@@ -890,11 +890,11 @@ result: { :io r: io.return(42) }.r
 ### A Shorthand Field After a Rename Needs a Comma
 
 In a block pattern, as in a block literal, a declaration's body runs
-until the next comma or declaration. A shorthand field written after a
-rename without a comma is read as part of the rename's pattern:
+until the next comma or declaration. Without a comma, a shorthand field
+written after a rename becomes part of the rename's body:
 
 ```eu,notest
-# WRONG — `height x` is read as the pattern for `y`; `x` is not bound
+# WRONG — the body of `y` is `height x`; neither `height` nor `x` is bound
 describe{y: height x}: "x={x} h={height}"
 
 # CORRECT — a comma ends the rename
@@ -904,10 +904,19 @@ describe{y: height, x}: "x={x} h={height}"
 Before the first declaration, commas between shorthand fields are
 optional (`{x y}` and `{x, y}` are the same).
 
-### Only Names and `field: pattern` Declarations Are Fields
+### A Field Body That Is Not a Pattern Binds the Field's Own Name
 
-A block pattern contains shorthand names and `field: pattern`
-declarations, where the pattern is a name, a list pattern or a block
-pattern. Anything else, such as a literal (`f{3, k: kk}`) or a function
-declaration (`f{k: kk, g(x): x}`), is reported as "unexpected content in
-block pattern".
+The body of a `field: pattern` declaration should be a name, a list
+pattern or a block pattern. Any other body (`height x`, `3`, `[1, b]`)
+is currently ignored without a diagnostic, and the field is bound under
+its own name instead: `f{y: height x}` binds `y`, not `height`, so a
+use of `height` fails as an unresolved variable. Whether this should
+become an error is an open decision (eu-ioz21.16).
+
+### Stray Content in a Block Pattern Is an Error
+
+Outside field bodies, a block pattern holds only shorthand names and
+`field: pattern` declarations. A literal or other expression among the
+shorthand names (`f{3, k: kk}`, `f{k: kk, 3}`) or a function or
+operator declaration (`f{k: kk, g(x): x}`) is reported as "unexpected
+content in block pattern".

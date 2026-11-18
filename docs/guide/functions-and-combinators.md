@@ -89,8 +89,9 @@ result: x=1 h=5
 ```
 
 Fields may come in any order. A shorthand field after a rename needs a
-comma before it, because without one it would be read as part of the
-rename's pattern (`{y: height x}` reads `height x` as one expression):
+comma before it: as in a block literal, a declaration's body runs to the
+next comma or declaration, so `{y: height x}` makes `height x` the body
+of `y`, and `x` is not a field (see the syntax gotchas):
 
 ```eu
 describe-after{y: height, x}: "x={x} h={height}"
