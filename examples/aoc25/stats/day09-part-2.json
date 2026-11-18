@@ -1,1 +1,36 @@
-{"status": "timeout", "timeout_seconds": 600}
+{
+  "blocks_allocated": 21547,
+  "blocks_recycled": 0,
+  "blocks_used": 21545,
+  "collections_count": 82,
+  "lobs_allocated": 1,
+  "machine_allocs": 15421464,
+  "machine_max_stack": 61538,
+  "machine_ticks": 107719965,
+  "peak_heap_blocks": 21547,
+  "timings": {
+    "VM-CollectorMark": 0.689004387,
+    "VM-CollectorSweep": 0.006611944,
+    "VM-Mutator": 3.812428931,
+    "VM-Total": 4.5080452619999996,
+    "bytecode-eval": 4.508110206,
+    "bytecode-render": 0.000012527,
+    "cook": 0.001057821,
+    "demand-analysis": 0.000797533,
+    "eliminate": 0.000077195,
+    "eliminate-1": 0.00053832,
+    "eliminate-2": 0.000724692,
+    "fuse-destructure": 0.000067511,
+    "hoist": 0.00038026,
+    "inline": 0.016446864,
+    "merge": 0.000310325,
+    "parse": 0.001925966,
+    "reflatten": 0.000265897,
+    "retarget": 0.000205836,
+    "split-letrecs": 0.000168899,
+    "stg-compile": 0.001720637,
+    "translate": 0.000745041
+  },
+  "total_mark_time_secs": 0.689004387,
+  "total_sweep_time_secs": 0.006611944
+}
