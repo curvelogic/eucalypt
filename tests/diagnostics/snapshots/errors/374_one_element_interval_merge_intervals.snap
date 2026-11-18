@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/366_one_element_interval_merge_intervals
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/366_one_element_interval_merge_intervals.eu
+fixture: errors/374_one_element_interval_merge_intervals
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/374_one_element_interval_merge_intervals.eu
 prelude-modes: identical
 
 === both prelude modes ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/366_one_element_interval_merge_intervals.eu:2:4
+primary: user tests/harness/errors/374_one_element_interval_merge_intervals.eu:2:4
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
@@ -19,10 +19,10 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: merge-intervals interval of length 1 must be a pair [lo, hi]
-  ┌─ tests/harness/errors/366_one_element_interval_merge_intervals.eu:2:4
+  ┌─ tests/harness/errors/374_one_element_interval_merge_intervals.eu:2:4
   │
 2 │ x: merge-intervals[[1, 2], [1]]
   │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
-    - x at 366_one_element_interval_merge_intervals.eu:2:4
+    - x at 374_one_element_interval_merge_intervals.eu:2:4
