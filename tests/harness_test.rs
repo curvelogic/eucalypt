@@ -4752,6 +4752,20 @@ pub fn test_typecheck_137_block_param_nested_projection_warns() {
     run_typecheck_test("137_block_param_nested_projection_warns.eu");
 }
 
+/// An annotated block-returning function called inside a block does not make
+/// the enclosing parameter a block: the valid call checks clean (eu-oaz72.184).
+#[test]
+pub fn test_typecheck_138_block_fn_call_in_block_no_warning() {
+    run_typecheck_test("138_block_fn_call_in_block_no_warning.eu");
+}
+
+/// A real block parameter projected through a sibling binding still warns on
+/// a non-block (eu-oaz72.184).
+#[test]
+pub fn test_typecheck_139_block_fn_call_in_block_mismatch_warns() {
+    run_typecheck_test("139_block_fn_call_in_block_mismatch_warns.eu");
+}
+
 /// `drop` with a literal count keeps a heterogeneous list's tuple shape, so
 /// mapping, filtering and indexing the suffix checks clean (eu-oaz72.174).
 #[test]
@@ -5824,4 +5838,9 @@ pub fn test_missing_prelude_path_is_an_error() {
             "{args:?}:\n{stderr}"
         );
     }
+}
+
+#[test]
+pub fn test_336_list_split_on() {
+    run_test(&opts("336_list_split_on.eu"));
 }

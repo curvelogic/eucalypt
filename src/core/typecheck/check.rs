@@ -2878,7 +2878,7 @@ fn collect_block_uses(expr: &RcExpr, depth: usize, flags: &mut Vec<bool>) {
         // Let binding: a let is recursive, so both the binding values and the
         // body sit inside the let's own scope (depth+1).  Scanning the values
         // at `depth` would mistake references to the let's own binders (e.g.
-        // the `__p1` introduced by list-destructuring parameters) for the
+        // the `__p'1` introduced by list-destructuring parameters) for the
         // enclosing lambda's parameters.
         Expr::Let(_, inner_scope, _) => {
             for b in &inner_scope.pattern {
