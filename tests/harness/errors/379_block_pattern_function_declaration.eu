@@ -1,0 +1,3 @@
+` "Error test: a function declaration in a block pattern is not a field (eu-ioz21.14)"
+f{k: kk, g(x): x}: kk
+RESULT: f{k: 1}

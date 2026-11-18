@@ -882,3 +882,32 @@ result: { :io }.42
 # CORRECT
 result: { :io r: io.return(42) }.r
 ```
+
+---
+
+## Block Pattern Gotchas
+
+### A Shorthand Field After a Rename Needs a Comma
+
+In a block pattern, as in a block literal, a declaration's body runs
+until the next comma or declaration. A shorthand field written after a
+rename without a comma is read as part of the rename's pattern:
+
+```eu,notest
+# WRONG — `height x` is read as the pattern for `y`; `x` is not bound
+describe{y: height x}: "x={x} h={height}"
+
+# CORRECT — a comma ends the rename
+describe{y: height, x}: "x={x} h={height}"
+```
+
+Before the first declaration, commas between shorthand fields are
+optional (`{x y}` and `{x, y}` are the same).
+
+### Only Names and `field: pattern` Declarations Are Fields
+
+A block pattern contains shorthand names and `field: pattern`
+declarations, where the pattern is a name, a list pattern or a block
+pattern. Anything else, such as a literal (`f{3, k: kk}`) or a function
+declaration (`f{k: kk, g(x): x}`), is reported as "unexpected content in
+block pattern".

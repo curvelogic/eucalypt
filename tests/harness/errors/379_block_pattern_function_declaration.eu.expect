@@ -1,0 +1,3 @@
+exit: 1
+stderr: "unexpected content in block pattern"
+location: 2:10

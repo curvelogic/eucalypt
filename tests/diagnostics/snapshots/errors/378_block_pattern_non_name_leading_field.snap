@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/378_block_pattern_non_name_leading_field
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/378_block_pattern_non_name_leading_field.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/378_block_pattern_non_name_leading_field.eu:2:3
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unexpected content in block pattern
+  ┌─ tests/harness/errors/378_block_pattern_non_name_leading_field.eu:2:3
+  │
+2 │ f{3, k: kk}: kk
+  │   ^
+  │
+  = a block pattern binds fields: shorthand names (`x`) or declarations (`x: a`, `x: [a, b]`, `x: {a b}`)
+  = separate fields with commas, e.g. `f{x: a, y}: a + y`

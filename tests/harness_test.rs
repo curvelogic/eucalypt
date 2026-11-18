@@ -5667,6 +5667,16 @@ pub fn test_error_377_block_pattern_non_name_field() {
     run_error_test(&error_opts("377_block_pattern_non_name_field.eu"));
 }
 
+#[test]
+pub fn test_error_378_block_pattern_non_name_leading_field() {
+    run_error_test(&error_opts("378_block_pattern_non_name_leading_field.eu"));
+}
+
+#[test]
+pub fn test_error_379_block_pattern_function_declaration() {
+    run_error_test(&error_opts("379_block_pattern_function_declaration.eu"));
+}
+
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).
 #[test]
 pub fn test_error_336_non_integer_combinations() {

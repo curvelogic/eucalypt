@@ -155,24 +155,22 @@ fn parse_block_pattern(
         if let Some(meta) = rowan_ast::BlockMetadata::cast(child.clone()) {
             // Shorthand names before any declaration (e.g. `x y` in `{x y}`)
             if let Some(soup) = meta.soup() {
-                for element in soup.elements() {
-                    if let rowan_ast::Element::Name(name) = element {
-                        if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) =
-                            name.identifier()
-                        {
-                            let field_name = normal.value().to_string();
-                            fields.push((field_name.clone(), ParamPattern::Simple(field_name)));
-                        }
-                    }
-                }
+                parse_block_pattern_shorthands(soup.syntax(), desugarer, &mut fields)?;
             }
         } else if let Some(decl) = rowan_ast::Declaration::cast(child.clone()) {
             // Rename/nested fields (e.g. `x: a  y: b  z: [a, b]`)
-            if let Some(field) = parse_block_pattern_declaration(&decl, desugarer)? {
-                fields.push(field);
-            }
+            fields.push(parse_block_pattern_declaration(&decl, desugarer)?);
         } else if child.kind() == SyntaxKind::ERROR_STOWAWAYS {
-            // Shorthand names after a declaration (e.g. `x` in `{y: b, x}`)
+            // Shorthand names after a declaration (e.g. `x` in `{y: b, x}`).
+            //
+            // ERROR_STOWAWAYS is the parser's error-recovery node, but the
+            // parser cannot tell a pattern block from a block literal, so
+            // this is where it keeps trailing names in both.  Reading them
+            // here, in the one place that knows the block is a pattern, is
+            // sound because nothing reports them as surplus first:
+            // `DeclarationHead::validate` does not descend into parameter
+            // patterns.  If head validation ever recurses, it must exempt
+            // pattern blocks or this form becomes a parse error.
             parse_block_pattern_shorthands(&child, desugarer, &mut fields)?;
         }
     }
@@ -181,15 +179,24 @@ fn parse_block_pattern(
 }
 
 /// Read a rename or nested field declaration in a block pattern.
+///
+/// Only a property declaration (`field: pattern`) is a field.  Any other
+/// declaration (a function `g(x): …`, an operator) is reported as
+/// [`CoreError::InvalidBlockPatternContent`] at its head.
 fn parse_block_pattern_declaration(
     decl: &rowan_ast::Declaration,
     desugarer: &mut Desugarer,
-) -> Result<Option<(String, ParamPattern)>, CoreError> {
-    let Some(head) = decl.head() else {
-        return Ok(None);
-    };
-    let rowan_ast::DeclarationKind::Property(prop) = head.classify_declaration() else {
-        return Ok(None);
+) -> Result<(String, ParamPattern), CoreError> {
+    let head = decl.head();
+    let prop = match head.as_ref().map(|h| h.classify_declaration()) {
+        Some(rowan_ast::DeclarationKind::Property(prop)) => prop,
+        _ => {
+            let range = head
+                .map(|h| h.syntax().text_range())
+                .unwrap_or_else(|| decl.syntax().text_range());
+            let smid = desugarer.new_smid(text_range_to_span(range));
+            return Err(CoreError::InvalidBlockPatternContent(smid));
+        }
     };
     let field_name = prop.value().to_string();
     let value_pattern = if let Some(body_soup) = decl.body().and_then(|b| b.soup()) {
@@ -222,12 +229,13 @@ fn parse_block_pattern_declaration(
         // No body in declaration — field name = binding name (shorthand)
         ParamPattern::Simple(field_name.clone())
     };
-    Ok(Some((field_name, value_pattern)))
+    Ok((field_name, value_pattern))
 }
 
-/// Read the shorthand field names in loose content after a declaration
-/// in a block pattern (`x z` in `{y: b, x, z}`), appending them to
-/// `fields`.
+/// Read the shorthand field names in a block pattern, appending them to
+/// `fields`: either the block metadata soup before the first declaration
+/// (`x y` in `{x y, k: a}`) or loose content after a declaration (`x z`
+/// in `{y: b, x, z}`).
 ///
 /// Commas and trivia separate the names.  Anything else is not a field
 /// of the pattern and is reported as an
