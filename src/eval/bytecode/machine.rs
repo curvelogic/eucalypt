@@ -1407,7 +1407,7 @@ pub fn return_data(
             // onto every continuation created for the *next* binding, blaming
             // the first annotated declaration in the unit for a failure
             // anywhere after it (eu-og3u6). Errors raised in the unannotated
-            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // window fall back to `state.fallback_annotation()` (see `attach_trace`),
             // which is what preserves the locations eu-0lvf recovered.
             state.set_annotation(annotation);
         }
@@ -1686,7 +1686,7 @@ pub fn return_native(
             // onto every continuation created for the *next* binding, blaming
             // the first annotated declaration in the unit for a failure
             // anywhere after it (eu-og3u6). Errors raised in the unannotated
-            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // window fall back to `state.fallback_annotation()` (see `attach_trace`),
             // which is what preserves the locations eu-0lvf recovered.
             state.set_annotation(annotation);
         }
@@ -1859,7 +1859,7 @@ pub fn return_fun(
             // onto every continuation created for the *next* binding, blaming
             // the first annotated declaration in the unit for a failure
             // anywhere after it (eu-og3u6). Errors raised in the unannotated
-            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // window fall back to `state.fallback_annotation()` (see `attach_trace`),
             // which is what preserves the locations eu-0lvf recovered.
             state.set_annotation(annotation);
         }

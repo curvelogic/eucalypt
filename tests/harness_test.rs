@@ -2712,8 +2712,9 @@ pub fn test_error_168() {
 /// mode alone — a source/blob divergence. The machine now keeps the last
 /// *user-file* location as the fallback, so both modes report the call
 /// site. The suppression of non-user primary labels (eu-1tkk.7.8) is
-/// unchanged. Running without the cfg gate means they gate in every
-/// configuration: blob, `EU_SOURCE_PRELUDE=1` with a blob, and no blob.
+/// unchanged. Without the cfg gate they run in both CI configurations
+/// (blob, and no blob — the source prelude); they also pass with a blob
+/// present under `EU_SOURCE_PRELUDE=1`, which no CI job runs today.
 ///
 /// `072_io_fail.eu`, `094_io_no_flag.eu`, `106_io_check_fail.eu` and
 /// `168_io_shell_missing_cmd.eu` each already have a `test_error_*` function
