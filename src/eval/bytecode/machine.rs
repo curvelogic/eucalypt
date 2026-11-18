@@ -707,15 +707,13 @@ fn gc_poll(
 /// Enter a WHNF sub-evaluation: suspend the caller's continuation stack and
 /// stash its `current` value (both become GC roots for the sub-run), seat
 /// `value` as the new `current`, and clear the termination / yield flags.
-/// Returns the caller's `terminated` flag and annotation register for
-/// [`exit_whnf_subrun`] to restore.
+/// Returns the caller's `terminated` flag for [`exit_whnf_subrun`] to restore.
 ///
 /// This is the single shared entry half of the stash/suspend/swap/restore
 /// choreography used by both `run_to_whnf` (a BIF forcing a thunk) and
 /// `evaluate_to_whnf_for_io` (the io-run driver forcing a spec field), so the
 /// protocol can no longer drift between them (eu-apn7).
-fn enter_whnf_subrun(state: &mut BcMachineState, value: BcValue) -> SubrunSaved {
-    let saved_annotation = state.annotation;
+fn enter_whnf_subrun(state: &mut BcMachineState, value: BcValue) -> bool {
     let saved_stack = std::mem::take(&mut state.stack);
     state.suspended_stacks.push(saved_stack);
     let saved_current = std::mem::replace(&mut state.current, value);
@@ -726,27 +724,11 @@ fn enter_whnf_subrun(state: &mut BcMachineState, value: BcValue) -> SubrunSaved 
     // Any metadata recorded by an earlier force belongs to an earlier value;
     // `take_stripped_meta` reports on *this* sub-run only.
     state.stripped_meta = None;
-    SubrunSaved {
-        terminated: saved_terminated,
-        annotation: saved_annotation,
-    }
-}
-
-/// The caller state [`enter_whnf_subrun`] saves for [`exit_whnf_subrun`].
-#[derive(Clone, Copy)]
-struct SubrunSaved {
-    /// The caller's `terminated` flag (the thunk path restores it).
-    terminated: bool,
-    /// The caller's annotation register: the sub-run leaves it wherever the
-    /// forced code ended, so the intrinsic's own later dispatch (and any
-    /// error it raises) would otherwise carry the forced code's location
-    /// (eu-oaz72.146).
-    annotation: Smid,
+    saved_terminated
 }
 
 /// Exit a WHNF sub-evaluation: pop the stashed `current` and suspended stack
-/// and restore them and the caller's annotation register, then the
-/// requested post-run flags.
+/// and restore them, then the requested post-run flags.
 ///
 /// INVARIANT (eu-apn7): the caller's stack / current / flags are restored
 /// **before** `run_result` is propagated, so an intrinsic that swallows a
@@ -762,7 +744,6 @@ struct SubrunSaved {
 fn exit_whnf_subrun(
     state: &mut BcMachineState,
     run_result: Result<(), ExecutionError>,
-    saved: SubrunSaved,
     post_terminated: bool,
     post_yielded_io: bool,
     yield_err_msg: &'static str,
@@ -778,7 +759,6 @@ fn exit_whnf_subrun(
     state.terminated = post_terminated;
     state.yielded_io = post_yielded_io;
     state.stack = saved_stack;
-    state.annotation = saved.annotation;
 
     // Restore-before-propagate: state is now the caller's; only now unwind.
     run_result?;
@@ -3921,12 +3901,11 @@ impl BytecodeMachine<'_> {
         // the yield state (`terminated`/`yielded_io` = true) on exit so the
         // driver sees a consistent post-yield machine, whether or not the
         // sub-run errored.
-        let saved = enter_whnf_subrun(&mut self.state, value);
+        let _ = enter_whnf_subrun(&mut self.state, value);
         let run_result = self.drive_whnf();
         exit_whnf_subrun(
             &mut self.state,
             run_result,
-            saved,
             true,
             true,
             "bytecode: IO spec field evaluation unexpectedly yielded an IO constructor",
@@ -4747,13 +4726,12 @@ impl BcBifContext<'_, '_> {
             .profiler
             .is_some()
             .then(|| profile_location(self.state, self.heap));
-        let saved = enter_whnf_subrun(self.state, value);
+        let saved_terminated = enter_whnf_subrun(self.state, value);
         let run_result = self.drive_to_whnf(force_site);
         exit_whnf_subrun(
             self.state,
             run_result,
-            saved,
-            saved.terminated,
+            saved_terminated,
             false,
             "bytecode: thunk evaluation unexpectedly yielded an IO constructor",
         )
@@ -6732,7 +6710,7 @@ mod tests {
         state.terminated = true; // the caller's saved flag
 
         // Enter a sub-run for value `2`; the caller stack is suspended.
-        let saved = enter_whnf_subrun(&mut state, BcValue::Native(num(2)));
+        let saved_terminated = enter_whnf_subrun(&mut state, BcValue::Native(num(2)));
         assert!(state.stack.is_empty(), "enter suspends the caller stack");
         assert!(!state.terminated, "enter clears the termination flag");
 
@@ -6746,14 +6724,7 @@ mod tests {
 
         // Exit with a sub-run error.
         let err = ExecutionError::Panic(Smid::default(), "sub-run failed".to_string());
-        let result = exit_whnf_subrun(
-            &mut state,
-            Err(err),
-            saved,
-            saved.terminated,
-            false,
-            "unused",
-        );
+        let result = exit_whnf_subrun(&mut state, Err(err), saved_terminated, false, "unused");
 
         assert!(result.is_err(), "the sub-run error must still propagate");
         // …but only AFTER the caller's state was restored:
@@ -6778,7 +6749,7 @@ mod tests {
             _ => panic!("caller current not restored"),
         }
         assert_eq!(
-            state.terminated, saved.terminated,
+            state.terminated, saved_terminated,
             "caller termination flag restored"
         );
     }
@@ -7259,13 +7230,10 @@ mod tests {
     ///
     /// Fault injection: removing the `profile_enter_force` call in
     /// `drive_to_whnf` fails the pre-force assertion (the intrinsic's
-    /// allocations and bytes move to the thunk); dropping the annotation
-    /// restore in `exit_whnf_subrun` fails the restored-register assertion;
-    /// moving `Profiler::enter_force`'s byte charge to the thunk fails the
-    /// byte assertions (eu-oaz72.146). Removing `exit_force` is caught by
-    /// `profiled_force_with_invalid_annotation_charges_the_fallback_site`,
-    /// since the restored register already charges this test's post-force
-    /// work correctly; sampling `stack_trace_capped` instead of `profile_trace`
+    /// allocations and bytes move to the thunk); removing `exit_force` fails
+    /// the post-force assertion (the intrinsic's later work lands on the
+    /// thunk's annotation); moving `Profiler::enter_force`'s byte charge to
+    /// the thunk fails the byte assertions (eu-oaz72.146); sampling `stack_trace_capped` instead of `profile_trace`
     /// in `profile_tick` fails the folded-stack assertion.
     #[test]
     fn profiled_force_attributes_intrinsic_and_thunk_separately() {
@@ -7313,10 +7281,6 @@ mod tests {
             let AbiClosure::Byte(v) = force_in(&mut m, thunk).unwrap();
             assert!(matches!(v, BcValue::Native(_)), "thunk forced to WHNF");
         }
-        assert_eq!(
-            m.state.annotation, intrinsic_site,
-            "the force restores the intrinsic's annotation register"
-        );
         let bytes_after_force = m.heap.bytes_allocated();
 
         // Back in the intrinsic: it allocates more, then its dispatch ends.
@@ -7405,12 +7369,10 @@ mod tests {
 
     /// eu-oaz72.146: an intrinsic dispatched with no valid annotation is
     /// charged, through the force, to the location its dispatch falls back
-    /// to (the last valid annotation), not to the forced thunk, and its
-    /// annotation register is left invalid as it found it.
+    /// to (the last valid annotation), not to the forced thunk.
     ///
-    /// Fault injection: dropping the annotation restore in
-    /// `exit_whnf_subrun`, or the `resume` set by `Profiler::exit_force`
-    /// (the post-force record then falls back to the thunk's annotation),
+    /// Fault injection: dropping the `resume` set by `Profiler::exit_force`
+    /// (the post-force record then falls back to the thunk's annotation)
     /// fails this test.
     #[test]
     fn profiled_force_with_invalid_annotation_charges_the_fallback_site() {
@@ -7436,10 +7398,6 @@ mod tests {
         intrinsic_alloc(&m, "before");
         let bytes_before_force = m.heap.bytes_allocated();
         force_in(&mut m, thunk).unwrap();
-        assert!(
-            !m.state.annotation.is_valid(),
-            "the force restores the invalid annotation register"
-        );
         let bytes_after_force = m.heap.bytes_allocated();
         m.state.allocs += 5;
         intrinsic_alloc(&m, "after");
