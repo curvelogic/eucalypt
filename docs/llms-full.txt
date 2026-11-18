@@ -2423,7 +2423,20 @@ If you require C-style escapes, you can use C-strings:
 multiline: c"first line\nsecond line"
 ```
 
-C-strings also support interpolation with `{...}`.
+C-strings also support interpolation with `{...}`. In a c-string a
+literal brace is written with a backslash, `\{` or `\}`: doubling
+(`{{`, `}}`) is **not** an escape there, so `c"{{x}}"` opens an
+interpolation that holds a stray `{` and is a parse error.
+
+```eu
+n: 3
+braces: c"\{n\} is {n}"
+```
+
+```yaml
+n: 3
+braces: '{n} is 3'
+```
 
 ## Basic Interpolation
 
@@ -2481,8 +2494,9 @@ label: '99'
 > result: "{sum}"
 > ```
 >
-> Anything else inside the braces — a second name, as in `"{ a b }"` —
-> is a parse error. Whitespace around the name and the format
+> Anything else inside the braces — a second name, as in `"{ a b }"`,
+> or a dot with no name on one side, as in `"{.x}"` or `"{x.}"` — is a
+> parse error. Whitespace around the name and the format
 > specifier is ignored: `"{ n : %06d }"` is `"{n:%06d}"`.
 
 ## Escaping Braces
@@ -2775,6 +2789,8 @@ table: rows map(format-row)
 - Escape literal braces by doubling them: `{{` and `}}`. This works
   straight after an interpolation too: `"{x}}}"` is the value of `x`
   followed by `}`
+- In a c-string, write a literal brace as `\{` or `\}`; `{{` is not an
+  escape there
 - The `str` namespace provides splitting, joining, case conversion,
   matching, and more
 
@@ -5261,6 +5277,20 @@ absolute path or a git import), eucalypt resolves it by searching in this order:
 
 If the file is found in the source-relative directory it is used immediately and
 the global lib path is not consulted.
+
+If the file is found in neither place, the import is an error — with one
+exception. The libraries shipped inside eucalypt (`prelude.eu`, `lens.eu`,
+`state.eu`, `do.eu`, `reflect.eu`, `contract.eu`, `markup.eu`, `test.eu`) are
+imported by their bare file name, as in `{ import: "lens.eu" }`. That exact
+name, or the name without `.eu`, falls back to the shipped library when no
+such file exists and the import is read as eucalypt. A file of your own with
+that name, found by the search above, takes priority. Any other import is
+only ever a file: `"lib/lens.eu"`, `"./lens.eu"`, `"lens.yaml"` or a data
+import such as `"text@lens.eu"` that does not exist is a `could not read`
+error, never the shipped library. (Inside a file fetched by a git import,
+relative imports are fetched from the same repository instead; see
+[Git Imports](#git-imports).) A shipped library can also be named directly
+as a resource: `"resource:lens"`.
 
 ### Transitive resolution
 
@@ -7978,12 +8008,13 @@ Literal types are most useful in **discriminated unions** — type aliases
 where a tag field distinguishes variants:
 
 ```eu,notest
-{ types: { Shape: c"{{type: \"circle\", radius: number, ..}} | {{type: \"rect\", w: number, h: number, ..}}" } }
+{ types: { Shape: c"\{type: \"circle\", radius: number, ..\} | \{type: \"rect\", w: number, h: number, ..\}" } }
 ```
 
 Because writing complex union types inline is verbose, defining a `types:`
 alias is the recommended approach. (Note the `c"..."` **c-string** — see
-*Writing literal types in annotation strings* below.)
+*Writing literal types in annotation strings* below. In a c-string a
+literal brace is written `\{` and `\}`: `{{` is not an escape there.)
 
 **Subtyping rules**:
 - `"foo"` is consistent with `string` — a literal satisfies a string parameter
@@ -11655,7 +11686,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
+| `rotate(n, l)` | Rotate list `l` left by `n` positions, wrapping when `n` exceeds the length; `l` unchanged when `n` <= 0; a non-integer `n` is an error |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`. An error if `n` is out of range, negative or not an integer |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`. Returns `l` unchanged if no element matches |
@@ -11950,7 +11981,7 @@ character.
 | `ceiling` | Round number upwards to nearest integer |
 | `⌈⌉` | Ceiling bracket notation, round `n` upwards to nearest integer |
 | `⌊⌋` | Floor bracket notation, round `n` downwards to nearest integer |
-| `pow(b, e)` | Raise `b` to the power `e` |
+| `pow(b, e)` | Raise `b` to the power `e`; an integer base with a non-negative integer exponent gives an integer, or a numeric-overflow error when the result is out of range; a negative exponent gives a float, and a zero base with a negative exponent is an error |
 | `div(a, b)` | Floor division; same as `a / b` |
 | `mod(a, b)` | Floor modulus; same as `a % b` |
 | `quot(a, b)` | Truncation division; rounds toward zero |
@@ -12244,8 +12275,8 @@ x: random.int(100, stream)
 | `vec.of` | Convert list `xs` of primitive values to a vec for O(1) indexed access |
 | `vec.from-list` | Alias of `vec.of`: convert list `xs` of primitive values to a vec |
 | `vec.len` | Return the number of elements in vec `v` |
-| `vec.nth` | Return the element at index `n` (0-based) in vec `v` |
-| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v` |
+| `vec.nth` | Return the element at index `n` (0-based) in vec `v`; an index past the end, negative or not an integer is an error |
+| `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v`; indices past the end are clamped to the length, and a negative or non-integer index is an error |
 | `vec.sample(n, v, stream)` | Random monad action: pick `n` random elements from vec `v` without replacement; a negative `n` samples nothing; a non-integer `n` is an error |
 | `vec.shuffle(v, stream)` | Random monad action: return vec `v` in random order |
 | `vec.to-list` | Convert vec `v` back to a cons-list |

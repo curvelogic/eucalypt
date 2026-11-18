@@ -1,0 +1,5 @@
+# Error test: `{{` before dotted content in a c-string is the same
+# mistake as c"{{}}" (343): the help must say how to write a literal
+# brace in a c-string (`\{`), never "escape it by doubling" (eu-oaz72.128).
+a: {b: 1}
+x: c"{{a.b}}"
