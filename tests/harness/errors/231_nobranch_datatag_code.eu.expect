@@ -1,2 +1,3 @@
 exit: 1
 stderr: "error\[EU-EVAL-TYPE\].*type mismatch: expected block, found number"
+location: 8:9

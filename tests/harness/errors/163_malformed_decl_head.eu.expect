@@ -1,2 +1,3 @@
 exit: 1
 stderr: "malformed declaration head"
+location: 3:11

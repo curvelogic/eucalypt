@@ -2,3 +2,4 @@
 r: vec.of[10, 20] vec.nth(0 - (2.0 ^ 63))
 exit: 1
 stderr: "vec.nth index -9223372036854775808 out of range: vec indices start at 0"
+location: 2:19

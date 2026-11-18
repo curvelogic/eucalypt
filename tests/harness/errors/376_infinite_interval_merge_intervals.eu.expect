@@ -1,2 +1,3 @@
 exit: 1
 stderr: "merge-intervals interval of length 3 or more must be a pair \[lo, hi\]"
+location: 2:4

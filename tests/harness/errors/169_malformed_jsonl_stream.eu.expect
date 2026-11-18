@@ -1,2 +1,3 @@
 exit: 1
 stderr: "malformed JSON in stream"
+location: 3:12

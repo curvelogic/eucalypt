@@ -1,2 +1,3 @@
 exit: 1
 stderr: "type mismatch: expected number, found symbol :foo"
+location: 6:9

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "expected CLOSE_PAREN"
+location: 3:18

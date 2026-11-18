@@ -1,2 +1,3 @@
 exit: 1
 stderr: "expected a .key, value. pair, found a list of 3 elements"
+location: 2:9

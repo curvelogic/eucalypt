@@ -1,2 +1,3 @@
 exit: 1
 stderr: "is not an escape in a c-string(.|\n)*help: write a literal brace in a c-string as"
+location: 5:7

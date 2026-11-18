@@ -1,2 +1,3 @@
 exit: 1
 stderr: "git imports require a commit SHA"
+no-location: the error is reported without a source label

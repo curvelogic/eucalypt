@@ -1,2 +1,3 @@
 exit: 1
 stderr: "invalid parenthesised expression"
+location: 1:5

@@ -1,2 +1,3 @@
 exit: 1
 stderr: "non-numeric value in number list"
+location: 10:9

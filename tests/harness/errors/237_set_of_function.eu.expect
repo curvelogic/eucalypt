@@ -1,2 +1,3 @@
 exit: 1
 stderr: "(?s)a function cannot be a set element: set elements must be numbers, strings or symbols.*errors[/\\]237_set_of_function\.eu:2:19"
+location: 2:19

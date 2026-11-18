@@ -1,2 +1,3 @@
 exit: 1
 stderr: "bad regex"
+location: 2:12

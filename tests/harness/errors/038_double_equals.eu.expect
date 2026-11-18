@@ -1,2 +1,3 @@
 exit: 1
 stderr: "eucalypt uses '=' for equality"
+location: 2:6

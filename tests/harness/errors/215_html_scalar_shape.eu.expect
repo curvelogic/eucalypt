@@ -5,3 +5,4 @@
 # No location assertion, for the same reason as 195 — see that sidecar.
 exit: 1
 stderr: "(?s)error\[EU-RENDER-SHAPE\].*cannot render this document as html: the value to render is a single scalar, but markup output needs a hiccup element"
+no-location: the error is reported without a source label

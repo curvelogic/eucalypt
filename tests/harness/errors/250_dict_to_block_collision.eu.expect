@@ -1,2 +1,3 @@
 exit: 1
 stderr: "dict keys .x. and :x both name block key 'x'"
+location: 2:36
