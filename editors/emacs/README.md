@@ -58,10 +58,15 @@ last one has finished is stopped.
 
 `eucalypt-eu-global-opts` and `eucalypt-eu-file-opts` (below) apply to
 `eucalypt-run`, `-run-target` and `-evaluate`; `eu test`, `eu check` and
-`eu list-targets` get the file alone. A target with a `format` in its
-metadata sets the output buffer's mode unless the arguments choose one.
-On a remote file (TRAMP), these commands run `eu` on the remote host,
-found on its path; the render commands below run locally.
+`eu list-targets` get the file alone (`eu list-targets` accepts file
+names only, no options, so a file that needs an option such as `-L` to
+load cannot list its targets; run it with `C-u C-c C-c` and add
+`-t TARGET` instead). A target
+with a `format` in its metadata sets the output buffer's mode unless the
+arguments choose one; the target is the one the final arguments select,
+so editing `-t` with `C-u` picks up the new target's format.
+On a remote file (TRAMP), all the commands here, including rendering and
+formatting below, run `eu` on the remote host, found on its path.
 
 To render text that is not saved to a file:
 
@@ -69,6 +74,14 @@ To render text that is not saved to a file:
   `eu@-`, or `yaml@-` and so on from the file extension), from the file's
   directory if it has one
 - `eucalypt-render-region` — the same for the active region
+
+To format the buffer:
+
+- `C-c C-f` — `eucalypt-format-buffer`: pipe the buffer to `eu fmt` (with
+  `eucalypt-fmt-args`) and replace it with the result, keeping point. If
+  `eu fmt` fails, the buffer is left unchanged and the errors are shown in
+  `*Eucalypt Errors*`. To format on save, add it to `before-save-hook`
+  locally in `eucalypt-mode-hook`.
 
 ### Unicode operator input
 
@@ -84,6 +97,8 @@ To render text that is not saved to a file:
   | `!` | `≠` | not-equal |
   | `-` | `∸` | unary minus |
   | `d` | `÷` | exact division |
+  | `\|` | `∣` | divides |
+  | `/` | `∤` | does not divide |
   | `b` | `•` | bullet anaphor |
   | `c` | `∘` | compose |
   | `e` | `∅` | empty |
@@ -112,6 +127,7 @@ To render text that is not saved to a file:
   | `\((` | `⟨` | | `\))` | `⟩` |
   | `\<<` | `«` | | `\>>` | `»` |
   | `\in` | `∈` | | `\!in` | `∉` |
+  | `\\|` | `∣` | | `\!\|` | `∤` |
   | `\{}` | `∅` | | `\!!` | `✓` |
   | `\-o` | `⊝` | | | |
 
@@ -208,6 +224,7 @@ All options are in the `eucalypt` customisation group (`M-x customize-group RET 
 | `eucalypt-eu-command` | `"eu"` | Path to the `eu` executable |
 | `eucalypt-eu-global-opts` | `""` | Default options passed to `eu` |
 | `eucalypt-eu-file-opts` | `nil` | Per-file options (set via file-local variables) |
+| `eucalypt-fmt-args` | `nil` | Extra arguments for `eu fmt` (e.g. `("--width" "100")`) |
 | `eucalypt-highlights-file` | `nil` | `highlights.scm` to derive font-lock from (nil: search beside the mode, then the repository) |
 
 ### Per-file options example
@@ -230,6 +247,7 @@ At the end of a `.eu` file:
 | `C-c C-t` | `eucalypt-test` | Run `eu test` on the file |
 | `C-c C-v` | `eucalypt-check` | Run `eu check` on the file |
 | `C-c C-k` | `eucalypt-render-buffer` | Render buffer through `eu` |
+| `C-c C-f` | `eucalypt-format-buffer` | Format buffer with `eu fmt` |
 | `C-c C-u` | `eucalypt-unicode-menu` | Unicode operator insertion menu |
 | `C-M-a` | `treesit-beginning-of-defun` | Go to start of declaration |
 | `C-M-e` | `treesit-end-of-defun` | Go to end of declaration |
