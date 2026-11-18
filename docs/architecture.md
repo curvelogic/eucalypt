@@ -616,8 +616,8 @@ Every object has a 16-byte header:
 ```rust
 pub struct AllocHeader {
     bits: HeaderBits,                  // Mark bit + forwarded flag
-    alloc_length: u32,                 // Object size
-    forwarded_to: Option<NonNull<()>>, // For potential evacuation
+    alloc_length: u32,                 // Payload bytes
+    forwarded_to: Option<NonNull<()>>, // Set when evacuation moves it
 }
 ```
 
@@ -625,21 +625,32 @@ pub struct AllocHeader {
 
 *Implementation*: `src/eval/memory/collect.rs`
 
+Each collection first chooses a strategy (`Heap::analyze_collection_strategy`):
+mark in place, or evacuate the live objects of selected sparse and
+fragmented blocks.
+
 **Mark phase:**
 1. Reset line maps across all blocks
 2. Breadth-first root scanning from machine state
 3. Transitive closure following object references
-4. Mark lines containing live objects
+4. Mark lines containing live objects; when evacuating, copy each live
+   object in a candidate block to a fresh block and forward its old header
 
-**Sweep phase:**
-1. Scan line maps in each block
-2. Identify holes (2+ consecutive free lines)
-3. Move recyclable blocks to recycled list
+**Update phase** (evacuating collections only): rewrite every pointer to a
+forwarded object, then free the candidate blocks' evacuated lines.
+
+**Sweep phase** (lazy):
+1. Move every block to the unswept list
+2. Sweep a block only when the allocator needs one: identify holes (2+
+   consecutive free lines) from its line map, and file it as recycled
+3. Free dead large objects at once
 
 **Collection triggering:**
-- When `--heap-limit-mib` is set and limit exceeded
+- By allocation volume since the last collection, set from the live
+  volume the last collection left; under `--heap-limit-mib`, also by the
+  blocks held
 - Check performed every 500 VM execution steps
-- Emergency collection on allocation failure
+- An allocation failure gets one emergency sweep of unswept blocks
 
 See `gc-implementation.md` for detailed analysis.
 
@@ -868,8 +879,10 @@ The memory layout provides:
 - Efficient bump allocation
 - Cache-friendly organisation
 - Effective hole reuse
+- Opportunistic evacuation of sparse and fragmented blocks
 
-*Current limitation*: No evacuation/compaction (mark-sweep only).
+*Current limitation*: Not generational, and evacuation of a heavily
+fragmented heap runs only under heap-limit pressure.
 
 See `gc-implementation.md` for detailed analysis.
 
