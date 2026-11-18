@@ -1,0 +1,7 @@
+` "Dropping a literal count from a tuple keeps the suffix precise, so a genuine non-list element left in it still warns when each element is taken as a list (eu-oaz72.174)."
+lit: [:abc, {}, [:foo, {}], 5]
+
+` "Tag of an element."
+tag: first
+
+bad: lit drop(2) map(tag)
