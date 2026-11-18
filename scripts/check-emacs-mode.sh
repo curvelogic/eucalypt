@@ -17,9 +17,10 @@
 # 29+; step 3 also needs tree-sitter support and a C compiler (the grammar
 # is compiled from the checked-in src/parser.c and src/scanner.c into a
 # temporary directory, so after editing grammar.js run `tree-sitter
-# generate` in editors/tree-sitter-eucalypt first). When a requirement is missing the remaining checks are
-# skipped with exit 0, or fail with exit 2 under --require (use that in
-# CI, where the tools must be present).
+# generate` in editors/tree-sitter-eucalypt first). When a requirement
+# is missing the remaining checks are skipped with exit 0, or fail with
+# exit 2 under --require (use that in CI, where the tools must be
+# present).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -58,9 +59,12 @@ command -v "$CC" >/dev/null 2>&1 || skip "C compiler not found (set CC)"
 "$EMACS" --batch -Q --eval '(kill-emacs (if (treesit-available-p) 0 1))' \
   >/dev/null 2>&1 || skip "$EMACS lacks tree-sitter support"
 
-# Name the library as this Emacs looks for it: .so, .dylib or .dll.
-suffix="$("$EMACS" --batch -Q --eval '(princ module-file-suffix)')"
-[[ -n "$suffix" ]] || skip "$EMACS reports no module-file-suffix"
+# Name the library as treesit looks for it: the first of this Emacs's
+# dynamic-library-suffixes (.so, .dylib or .dll). module-file-suffix is
+# not used: it is nil in an Emacs built without module support.
+suffix="$("$EMACS" --batch -Q \
+  --eval '(princ (or (car dynamic-library-suffixes) ""))')"
+[[ "$suffix" == .* ]] || skip "$EMACS reports no dynamic library suffix"
 grammar="$root/editors/tree-sitter-eucalypt"
 "$CC" -shared -fPIC -O1 -I"$grammar/src" \
   "$grammar/src/parser.c" "$grammar/src/scanner.c" \
