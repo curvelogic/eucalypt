@@ -316,7 +316,7 @@
                 "members": [
                   {
                     "type": "SYMBOL",
-                    "name": "declaration"
+                    "name": "block_pattern_field"
                   },
                   {
                     "type": "SYMBOL",

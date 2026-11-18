@@ -195,12 +195,10 @@
   (identifier) @parameter)
 
 ; Juxtaposed parameters — f{x y}:, f[a, b]: and f[h : t]:
+; (renamed or nested fields, f{x: px}: and f{k: {z}}:, are block_pattern_field
+; nodes, covered by the destructuring rules below)
 (block_param
   (identifier) @parameter)
-; and the bound name of a renamed field, f{x: px}:
-(block_param
-  (declaration
-    (soup . (name (identifier) @parameter) .)))
 (list_param
   (identifier) @parameter)
 
