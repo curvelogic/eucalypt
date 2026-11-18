@@ -431,14 +431,19 @@ mod tests {
 
     #[test]
     fn coverage_skips_inside_non_public_members() {
-        let src = "` \"Outer\"\nouter: {\n  ` \"Hid\"\n  hid: {\n    ` { doc: \"Priv\" export: :internal }\n    priv: {\n      ` \"A\"\n      a: 1\n      b: 2\n    }\n    ` \"Shown\"\n    shown: 3\n  }\n}\n";
+        // Extraction already drops the members of a non-public nested
+        // block, so mark one non-public after extraction to check that
+        // coverage, like rendering, does not look inside it.
+        let src = "` \"Outer\"\nouter: {\n  ` \"Hid\"\n  hid: {\n    ` \"Priv\"\n    priv: {\n      ` \"A\"\n      a: 1\n      ` \"B\"\n      b: 2\n    }\n    ` \"Shown\"\n    shown: 3\n  }\n}\n";
         let unit = parse_unit(src).tree();
-        let entries = extract_doc_entries(&unit);
+        let mut entries = extract_doc_entries(&unit);
+        let priv_entry = &mut entries[0].children[0].children[0];
+        assert_eq!(priv_entry.qualified_name(), "outer.hid.priv");
+        assert_eq!(priv_entry.children.len(), 2);
+        priv_entry.visibility = crate::driver::doc::DocVisibility::Internal;
         let md = render_markdown(&entries, "t", None);
         assert!(!md.contains("`a`") && !md.contains("`b`"), "{md}");
-        let cov = compute_coverage(&entries);
-        assert_eq!(cov.total, 3, "{:?}", cov.undocumented_names);
-        assert!(cov.undocumented_names.is_empty());
+        assert_eq!(compute_coverage(&entries).total, 3);
     }
 
     #[test]
