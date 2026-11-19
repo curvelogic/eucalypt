@@ -47,7 +47,9 @@ fn all_rust_sources() -> Vec<(String, String)> {
             // directory is not entered, as `read_source_roots` does not.
             if entry.file_type().is_ok_and(|t| t.is_dir()) {
                 walk(&path, out);
-            } else if path.extension().is_some_and(|e| e == "rs") {
+            } else if entry.file_type().is_ok_and(|t| t.is_file())
+                && path.extension().is_some_and(|e| e == "rs")
+            {
                 out.push(path);
             }
         }
@@ -368,7 +370,7 @@ fn every_front_end_source_is_hashed_or_excluded_with_a_reason() {
              FRONT_END_UNHASHED if nothing in it can change a generated blob (eu-d3ydw)"
         );
         assert!(
-            !(excluded && hashed.contains(path)),
+            !(excluded && (hashed.contains(path) || in_demand_analysis)),
             "{path} is both hashed and listed in FRONT_END_UNHASHED"
         );
     }

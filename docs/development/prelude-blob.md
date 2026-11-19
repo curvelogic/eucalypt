@@ -129,9 +129,9 @@ the core passes that `prelude-compile` runs before STG compilation
 and metadata, and the type-annotation renderer in
 `src/core/typecheck/parse.rs`, with the `types.rs` it uses, that the
 desugarer calls). Editing any of them marks a local blob stale in the same
-way (eu-d3ydw). The type checker
-proper, `src/core/verify/`, `src/core/simplify/` and the dump and error
-modules are left out, since nothing in them can change a generated blob;
+way (eu-d3ydw). The type checker proper, `src/core/verify/`,
+`src/core/simplify/`, `src/core/analyse/` and the dump and error modules
+are left out, since nothing in them can change a generated blob;
 `tests/wire_format_enforcement_test.rs` makes every file under `src/core`
 and `src/syntax` either hashed or excluded with a stated reason.
 

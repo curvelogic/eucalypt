@@ -730,8 +730,9 @@ hashed inputs are:
 - **`BYTECODE_WIRE_FORMAT_VERSION`** — the serialised code-stream layout, which
   nothing on disk reveals. This constant is hand-bumped, and only when the
   encoder's byte layout changes; intrinsic-table changes need no bump.
-- **The sources that build the blob** — the demand analysis and bytecode
-  encoder (`DEMAND_ANALYSIS_PATHS`), every STG source including the
+- **The sources that build the blob** — the demand analysis, re-flattening,
+  bytecode encoder and the `xtask` generator itself
+  (`DEMAND_ANALYSIS_PATHS`), every STG source including the
   hand-written intrinsic wrappers (`STG_SOURCE_ROOTS`), and the parser and
   core front end (`FRONT_END_SOURCE_ROOTS`), each with its path. See
   `docs/development/prelude-blob.md`.
