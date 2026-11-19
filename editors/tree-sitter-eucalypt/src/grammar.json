@@ -291,8 +291,55 @@
           "name": "operator_declaration"
         },
         {
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_bracket_head"
+          },
+          "named": true,
+          "value": "bracket_expr"
+        },
+        {
           "type": "SYMBOL",
           "name": "bracket_expr"
+        }
+      ]
+    },
+    "_bracket_head": {
+      "type": "PREC_DYNAMIC",
+      "value": 1,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "PATTERN",
+            "value": "[⟦⟨⟪⌈⌊⦃⦇⦉«‹【〔〖〘〚]"
+          },
+          {
+            "type": "SYMBOL",
+            "name": "_bracket_param"
+          },
+          {
+            "type": "PATTERN",
+            "value": "[⟧⟩⟫⌉⌋⦄⦈⦊»›】〕〗〙〛]"
+          }
+        ]
+      }
+    },
+    "_bracket_param": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "identifier"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "list_pattern"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "cons_pattern"
         }
       ]
     },
@@ -455,7 +502,28 @@
                 },
                 {
                   "type": "SYMBOL",
-                  "name": "identifier"
+                  "name": "_bracket_param"
+                },
+                {
+                  "type": "PATTERN",
+                  "value": "[⟧⟩⟫⌉⌋⦄⦈⦊»›】〕〗〙〛]"
+                }
+              ]
+            },
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "PATTERN",
+                  "value": "[⟦⟨⟪⌈⌊⦃⦇⦉«‹【〔〖〘〚]"
+                },
+                {
+                  "type": "STRING",
+                  "value": "{"
+                },
+                {
+                  "type": "STRING",
+                  "value": "}"
                 },
                 {
                   "type": "PATTERN",
@@ -1194,15 +1262,6 @@
                       }
                     ]
                   }
-                },
-                {
-                  "type": "ALIAS",
-                  "content": {
-                    "type": "SYMBOL",
-                    "name": "_bracket_cons_pattern"
-                  },
-                  "named": true,
-                  "value": "cons_pattern"
                 }
               ]
             },
@@ -1214,47 +1273,6 @@
         {
           "type": "PATTERN",
           "value": "[⟧⟩⟫⌉⌋⦄⦈⦊»›】〕〗〙〛]"
-        }
-      ]
-    },
-    "_bracket_cons_pattern": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "STRING",
-          "value": "["
-        },
-        {
-          "type": "SYMBOL",
-          "name": "identifier"
-        },
-        {
-          "type": "REPEAT",
-          "content": {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "STRING",
-                "value": ","
-              },
-              {
-                "type": "SYMBOL",
-                "name": "identifier"
-              }
-            ]
-          }
-        },
-        {
-          "type": "STRING",
-          "value": ":"
-        },
-        {
-          "type": "SYMBOL",
-          "name": "identifier"
-        },
-        {
-          "type": "STRING",
-          "value": "]"
         }
       ]
     },
@@ -2000,8 +2018,24 @@
       "soup"
     ],
     [
-      "_bracket_cons_pattern",
+      "_bracket_param",
       "name"
+    ],
+    [
+      "_param",
+      "name"
+    ],
+    [
+      "block_pattern",
+      "block"
+    ],
+    [
+      "operator_declaration",
+      "block"
+    ],
+    [
+      "declaration_head",
+      "block_pattern_field"
     ]
   ],
   "precedences": [],

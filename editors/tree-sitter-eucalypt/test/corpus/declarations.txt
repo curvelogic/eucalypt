@@ -1150,9 +1150,7 @@ report §2.3: bracket_expr was never reachable as a declaration_head)
   (declaration
     (declaration_head
       (bracket_expr
-        (soup
-          (name
-            (identifier)))))
+        (identifier)))
     (soup
       (name
         (identifier)))))
@@ -1170,11 +1168,8 @@ pass — the ⌈[x]⌉/⌊[x]⌋ ceiling/floor notation declared in lib/prelude.
   (declaration
     (declaration_head
       (bracket_expr
-        (soup
-          (list
-            (soup
-              (name
-                (identifier)))))))
+        (list_pattern
+          (identifier))))
     (soup
       (name
         (identifier)))))
@@ -1573,9 +1568,7 @@ a: x
   (declaration
     (declaration_head
       (bracket_expr
-        (soup
-          (name
-            (identifier)))))
+        (identifier)))
     (soup
       (name
         (identifier)))))
@@ -2039,3 +2032,259 @@ h{p: {q: [r : t]}  s: s2}: r
     (soup
       (name
         (identifier)))))
+
+================================================================================
+Bracket-pair head, plain name parameter (eu-jd7l4)
+================================================================================
+
+⟦ x ⟧: x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Bracket-pair head, list pattern parameter (eu-jd7l4)
+================================================================================
+
+⌈ [a, b] ⌉: a
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (list_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Bracket-pair head, cons pattern parameter (eu-jd7l4)
+================================================================================
+
+⌈ [f: lists] ⌉: f
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (cons_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Bracket-pair head, shorthand block pattern in a list (eu-jd7l4)
+================================================================================
+
+⟦ [{m}] ⟧: m
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (list_pattern
+          (block_pattern
+            (identifier)))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Bracket-pair head, renamed and shorthand block pattern fields in a list (eu-jd7l4)
+================================================================================
+
+⟪ [{k: kk, m}] ⟫: [kk, m]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (list_pattern
+          (block_pattern
+            (block_pattern_field
+              (identifier)
+              (identifier))
+            (identifier)))))
+    (soup
+      (list
+        (soup
+          (name
+            (identifier)))
+        (soup
+          (name
+            (identifier)))))))
+
+================================================================================
+Bracket-pair head, nested list and block patterns (eu-jd7l4)
+================================================================================
+
+« [[a, b], {c: [d, e]} : rest] »: d
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (cons_pattern
+          (list_pattern
+            (identifier)
+            (identifier))
+          (block_pattern
+            (block_pattern_field
+              (identifier)
+              (list_pattern
+                (identifier)
+                (identifier))))
+          (identifier))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Parenthesised bracket-pair head with a block pattern in a list (eu-jd7l4)
+================================================================================
+
+(⟦ [{m}] ⟧): m
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (list_pattern
+          (block_pattern
+            (identifier)))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Monadic bracket-pair head (eu-jd7l4)
+================================================================================
+
+⟦{}⟧: { :monad bind: b return: r }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (soup
+          (block))))
+    (soup
+      (block
+        (block_metadata
+          (symbol
+            (identifier)))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (name
+              (identifier))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (name
+              (identifier))))))))
+
+================================================================================
+Parenthesised monadic bracket-pair head (eu-jd7l4)
+================================================================================
+
+(⟦{}⟧): { :monad bind: b return: r }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (operator_declaration))
+    (soup
+      (block
+        (block_metadata
+          (symbol
+            (identifier)))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (name
+              (identifier))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (name
+              (identifier))))))))
+
+================================================================================
+Bracket expressions holding lists and blocks stay expressions (eu-jd7l4)
+================================================================================
+
+x: ⟦ [{m: 1}] ⟧ ⌈ [a, b] ⌉ ⟦ y ⟧
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (bracket_expr
+        (soup
+          (list
+            (soup
+              (block
+                (declaration
+                  (declaration_head
+                    (identifier))
+                  (soup
+                    (literal
+                      (number)))))))))
+      (bracket_expr
+        (soup
+          (list
+            (soup
+              (name
+                (identifier)))
+            (soup
+              (name
+                (identifier))))))
+      (bracket_expr
+        (soup
+          (name
+            (identifier)))))))
+
+================================================================================
+Bracket-pair head with a block pattern outside a list is an error (eu-jd7l4)
+:error
+================================================================================
+
+⟦ {m} ⟧: m
+
+--------------------------------------------------------------------------------
