@@ -58,8 +58,9 @@ module.exports = grammar({
     // patterns fork against the expression rules they resemble (eu-jd7l4).
     [$._bracket_param, $.name],
     // A plain or quoted name in a parameter or operator-operand position
-    // reads like a name in an expression until the head's ':', inside a
-    // bracket head as elsewhere (eu-aejhk).
+    // reads like a name in an expression until the head's ':' (eu-aejhk).
+    // _bracket_param lists identifier and quoted_identifier directly and
+    // is covered by the [_bracket_param, name] conflict above.
     [$._name, $.name],
     [$.block_pattern, $.block],
     [$.operator_declaration, $.block],

@@ -262,3 +262,29 @@ Two quoted names in one parameter are an error, as in Rowan (eu-aejhk)
 f('q' 'r'): 1
 
 --------------------------------------------------------------------------------
+
+================================================================================
+A quoted operator operand after a declaration ends it (eu-aejhk)
+================================================================================
+
+a: 1
+('l' +++ 'r'): 'l'
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number))))
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (quoted_identifier)
+        (operator)
+        (quoted_identifier)))
+    (soup
+      (name
+        (quoted_identifier)))))

@@ -23,3 +23,12 @@ m['a', b]: 'a'
 ('l' +++ 'r'): 'l'
 #^ parameter
 #        ^ parameter
+
+n(['a', b]): 'a'
+#  ^ parameter
+
+(! 'x'): 'x'
+#  ^ parameter
+
+('x' !!!): 'x'
+#^ parameter
