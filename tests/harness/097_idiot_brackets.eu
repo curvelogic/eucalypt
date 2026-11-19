@@ -21,10 +21,10 @@ zapp(fs, as): ((fs nil?) ∨ (as nil?)) then([], cons((fs head)(as head), zapp(f
 ⌈ [f: lists] ⌉: foldl(zapp, repeat(f), lists)
 
 ` "Single-block brackets: a block pattern inside a list pattern (eu-hvuqc)"
-〚 [{m}] 〛: m
+〚 [{m: v}] 〛: v
 
 ` "Renaming block pattern inside a list pattern"
-〔 [{k: kk, m}] 〕: [kk, m]
+〔 [{k: kk, m: mm}] 〕: [kk, mm]
 
 ` { target: :test }
 test: {
