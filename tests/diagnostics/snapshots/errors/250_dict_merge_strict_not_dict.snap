@@ -1,0 +1,68 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/250_dict_merge_strict_not_dict
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_merge_strict_not_dict.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/250_dict_merge_strict_not_dict.eu:2:9
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/250_dict_merge_strict_not_dict.eu:2:35
+  │
+2 │ result: dict.merge-with-strict(+, 5, dict.empty) dict.size
+  │                                   ^ expected dict(a, b), found number
+
+error[EU-EVAL-TYPE]: type mismatch: expected dict, found number 5
+  ┌─ tests/harness/errors/250_dict_merge_strict_not_dict.eu:2:9
+  │
+2 │ result: dict.merge-with-strict(+, 5, dict.empty) dict.size
+  │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │                                   │
+  │                                   expected dict(a, b), found number
+  │
+  = while evaluating (outermost first):
+    - result at 250_dict_merge_strict_not_dict.eu:2:50
+    - result at 250_dict_merge_strict_not_dict.eu:2:9
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/250_dict_merge_strict_not_dict.eu:2:9
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/250_dict_merge_strict_not_dict.eu:2:35
+  │
+2 │ result: dict.merge-with-strict(+, 5, dict.empty) dict.size
+  │                                   ^ expected dict(a, b), found number
+
+error[EU-EVAL-TYPE]: type mismatch: expected dict, found number 5
+  ┌─ tests/harness/errors/250_dict_merge_strict_not_dict.eu:2:9
+  │
+2 │ result: dict.merge-with-strict(+, 5, dict.empty) dict.size
+  │         ^^^^                      - expected dict(a, b), found number
+  │
+  = while evaluating (outermost first):
+    - result at 250_dict_merge_strict_not_dict.eu:2:50
+    - result at 250_dict_merge_strict_not_dict.eu:2:9

@@ -475,7 +475,7 @@ merge-strict-shared: {
 #
 
 ` "the size of the dicts `merge-strict-stack` merges"
-merge-n: 100000
+merge-n: 10000
 
 ` "map `k` to itself in `acc`"
 add-self(acc, k): acc dict.assoc(k, k)

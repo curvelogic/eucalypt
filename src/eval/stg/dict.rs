@@ -977,10 +977,13 @@ impl CallGlobal3 for DictMergeWith {}
 /// combined value `f(a_value, b_value)` is evaluated before the dict is
 /// returned (eu-oaz72.124).
 ///
-/// The wrapper forces `a` and `b`, builds the union with `DICT.MERGE_WITH`'s
-/// execute (combined values in memoising cells), then calls this
-/// intrinsic's execute on `[a, b, union]`, which lists the union's values at
-/// the keys `a` and `b` share, in `b`'s key order — the cells just built.
+/// The wrapper forces `b` and then `a`, the order the prelude fold it
+/// replaced used, so when both fail the error reported is `b`'s. It builds
+/// the union with `DICT.MERGE_WITH`'s execute (combined values in memoising
+/// cells), then calls this intrinsic's execute on `[a, b, union]`, which
+/// lists the union's values at the keys `a` and `b` share, in `b`'s key
+/// order — the cells just built. That is the fold's order too, and it
+/// decides which combined value's error is reported when several fail.
 /// `seqListThen` forces each in turn and returns the union, entering the
 /// next step as a tail call, so the stack stays constant however large `b`
 /// is. Forcing a cell updates it in place, so the stored values are the
@@ -998,17 +1001,17 @@ impl StgIntrinsic for DictMergeWithStrict {
         lambda(
             3, // [f a b]
             force(
-                local(1),
-                // [fa] [f a b]
+                local(2),
+                // [fb] [f a b]
                 force(
-                    local(3),
-                    // [fb] [fa] [f a b]
+                    local(2),
+                    // [fa] [fb] [f a b]
                     force(
-                        app_bif(merge, vec![lref(2), lref(1), lref(0)]),
-                        // [u] [fb] [fa] [f a b]
+                        app_bif(merge, vec![lref(2), lref(0), lref(1)]),
+                        // [u] [fa] [fb] [f a b]
                         force(
-                            app_bif(shared, vec![lref(2), lref(1), lref(0)]),
-                            // [cells] [u] [fb] [fa] [f a b]
+                            app_bif(shared, vec![lref(1), lref(2), lref(0)]),
+                            // [cells] [u] [fa] [fb] [f a b]
                             SeqListThen.global(lref(0), lref(1)),
                         ),
                     ),

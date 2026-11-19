@@ -3833,6 +3833,27 @@ pub fn test_error_250_dict_merge_strict() {
 }
 
 #[test]
+/// eu-oaz72.124: `dict.merge-with-strict` evaluates the combined value at every
+/// shared key, not only the first.
+pub fn test_error_250_dict_merge_strict_later() {
+    run_error_test(&error_opts("250_dict_merge_strict_later.eu"));
+}
+
+#[test]
+/// eu-oaz72.124: `dict.merge-with-strict` evaluates `b` before `a`, so when
+/// both fail the error is `b`'s.
+pub fn test_error_250_dict_merge_strict_order() {
+    run_error_test(&error_opts("250_dict_merge_strict_order.eu"));
+}
+
+#[test]
+/// eu-oaz72.124: `dict.merge-with-strict` rejects a non-dict `a` even when `b`
+/// is empty.
+pub fn test_error_250_dict_merge_strict_not_dict() {
+    run_error_test(&error_opts("250_dict_merge_strict_not_dict.eu"));
+}
+
+#[test]
 /// eu-oaz72.32: a non-primitive element in set.of / set.from-list raises the
 /// typed "expected a primitive value" error with help, as set.add does.
 pub fn test_error_241_set_of_non_primitive() {
