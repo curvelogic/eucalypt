@@ -300,10 +300,41 @@
           "value": "bracket_expr"
         },
         {
-          "type": "SYMBOL",
-          "name": "bracket_expr"
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_bracket_block_head"
+          },
+          "named": true,
+          "value": "bracket_expr"
         }
       ]
+    },
+    "_bracket_block_head": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "PATTERN",
+          "value": "[⟦⟨⟪⌈⌊⦃⦇⦉«‹【〔〖〘〚]"
+        },
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_bracket_block_soup"
+          },
+          "named": true,
+          "value": "soup"
+        },
+        {
+          "type": "PATTERN",
+          "value": "[⟧⟩⟫⌉⌋⦄⦈⦊»›】〕〗〙〛]"
+        }
+      ]
+    },
+    "_bracket_block_soup": {
+      "type": "SYMBOL",
+      "name": "block"
     },
     "_bracket_head": {
       "type": "PREC_DYNAMIC",
@@ -332,6 +363,10 @@
         {
           "type": "SYMBOL",
           "name": "identifier"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "quoted_identifier"
         },
         {
           "type": "SYMBOL",
@@ -2003,10 +2038,6 @@
       "name"
     ],
     [
-      "declaration_head",
-      "_element"
-    ],
-    [
       "operator_declaration",
       "name"
     ],
@@ -2036,6 +2067,10 @@
     [
       "declaration_head",
       "block_pattern_field"
+    ],
+    [
+      "_bracket_block_soup",
+      "_element"
     ]
   ],
   "precedences": [],

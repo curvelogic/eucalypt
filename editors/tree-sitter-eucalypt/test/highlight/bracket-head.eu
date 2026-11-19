@@ -1,6 +1,7 @@
 # Bracket-pair declaration heads (eu-jd7l4): the operand is always a list,
-# so a block pattern destructures a list item; every name it binds is a
-# parameter, as in rowan. Each bracket character is three bytes and the
+# so a block pattern destructures a list item. Every name in the pattern is
+# a parameter, as in rowan: the names it binds and the field keys of a
+# rename (k in {k: kk}). Each bracket character is three bytes and the
 # carets count bytes, so a caret sits two columns right of its name.
 
 ⟦ [{m}] ⟧: m
@@ -20,3 +21,6 @@
 
 (⟦ [{n}] ⟧): n
 #      ^ parameter
+
+⟨ 'q' ⟩: q
+#   ^ parameter

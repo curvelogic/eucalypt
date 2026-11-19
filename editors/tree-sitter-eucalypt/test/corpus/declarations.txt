@@ -2281,10 +2281,81 @@ x: ⟦ [{m: 1}] ⟧ ⌈ [a, b] ⌉ ⟦ y ⟧
             (identifier)))))))
 
 ================================================================================
-Bracket-pair head with a block pattern outside a list is an error (eu-jd7l4)
-:error
+Bracket-pair head, quoted name parameter (eu-jd7l4)
+================================================================================
+
+⟦ 'q' ⟧: q
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (quoted_identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Bracket-pair head with a non-empty block parses, as in Rowan (eu-jd7l4)
+================================================================================
+
+⟦{x: 1}⟧: 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (soup
+          (block
+            (declaration
+              (declaration_head
+                (identifier))
+              (soup
+                (literal
+                  (number))))))))
+    (soup
+      (literal
+        (number)))))
+
+================================================================================
+Bracket-pair head with a block pattern outside a list is an ERROR node (eu-jd7l4)
 ================================================================================
 
 ⟦ {m} ⟧: m
 
 --------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (soup
+          (block
+            (ERROR
+              (identifier))))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Bracket-pair head with two elements is an ERROR node (eu-jd7l4)
+================================================================================
+
+⟦ a b ⟧: 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (identifier)
+        (ERROR
+          (identifier))))
+    (soup
+      (literal
+        (number)))))

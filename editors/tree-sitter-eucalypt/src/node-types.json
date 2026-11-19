@@ -265,6 +265,10 @@
           "named": true
         },
         {
+          "type": "quoted_identifier",
+          "named": true
+        },
+        {
           "type": "soup",
           "named": true
         }
@@ -709,6 +713,10 @@
         },
         {
           "type": "operator",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         }
       ]

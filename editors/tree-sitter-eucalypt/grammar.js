@@ -51,7 +51,6 @@ module.exports = grammar({
 
   conflicts: $ => [
     [$.declaration_head, $.name],
-    [$.declaration_head, $._element],
     [$.operator_declaration, $.name],
     [$.operator_declaration, $.soup],
     [$.soup],
@@ -63,6 +62,7 @@ module.exports = grammar({
     [$.block_pattern, $.block],
     [$.operator_declaration, $.block],
     [$.declaration_head, $.block_pattern_field],
+    [$._bracket_block_soup, $._element],
   ],
 
   rules: {
@@ -147,15 +147,28 @@ module.exports = grammar({
       $.operator_declaration,
       // Bracket-pair ("idiot bracket") declarations: ⟦ x ⟧: x declares the
       // ⟦⟧ bracket pair as a function of x (audit report §2.3). The
-      // parameter is a pattern (see _bracket_head); the empty-block monad
-      // marker ⟦{}⟧: { :monad ... } is an ordinary bracket_expr.
+      // parameter is a pattern (see _bracket_head), or a single block, as
+      // in the monad marker ⟦{}⟧: { :monad ... } (_bracket_block_head).
       alias($._bracket_head, $.bracket_expr),
-      $.bracket_expr,
+      alias($._bracket_block_head, $.bracket_expr),
     ),
+
+    // A bracket-pair head holding one block: Rowan reads it as a monadic
+    // bracket pair (BracketBlockDef), and the desugarer rejects a non-empty
+    // block (eu-hvuqc). Any other content, as in ⟦ a b ⟧: or ⟦ 'q' ⟧:, is
+    // a malformed head, as in Rowan. The block keeps the bracket_expr shape
+    // an expression has, (bracket_expr (soup (block))).
+    _bracket_block_head: $ => seq(
+      BRACKET_OPEN_RE,
+      alias($._bracket_block_soup, $.soup),
+      BRACKET_CLOSE_RE,
+    ),
+
+    _bracket_block_soup: $ => $.block,
 
     // The head of a bracket-pair declaration, as the Rowan parser reads it
     // (classify_bracket_direct in src/syntax/rowan/ast.rs): one parameter,
-    // which is a plain name (⟦ x ⟧:) or a list or cons pattern whose
+    // which is a plain or quoted name (⟦ x ⟧:, ⟦ 'q' ⟧:) or a list or cons pattern whose
     // elements are any patterns, so ⟦ [{m}] ⟧:, ⟦ [{k: kk, m}] ⟧: and
     // ⌈ [f: lists] ⌉: destructure the operand (eu-jd7l4). A bracket pair's
     // operand is always a list, so a block pattern directly in the head is
@@ -172,6 +185,7 @@ module.exports = grammar({
 
     _bracket_param: $ => choice(
       $.identifier,
+      $.quoted_identifier,
       $.list_pattern,
       $.cons_pattern,
     ),
