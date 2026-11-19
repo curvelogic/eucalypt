@@ -155,9 +155,11 @@ module.exports = grammar({
 
     // A bracket-pair head holding one block: Rowan reads it as a monadic
     // bracket pair (BracketBlockDef), and the desugarer rejects a non-empty
-    // block (eu-hvuqc). Any other content, as in ⟦ a b ⟧: or ⟦ 'q' ⟧:, is
-    // a malformed head, as in Rowan. The block keeps the bracket_expr shape
-    // an expression has, (bracket_expr (soup (block))).
+    // block (eu-hvuqc). Any other content that is not a parameter (see
+    // _bracket_head) is rejected, as Rowan rejects it: ⟦ a b ⟧: is a
+    // malformed head, and ⟦ 1 ⟧: an invalid bracket parameter pattern. The
+    // block keeps the bracket_expr shape an expression has,
+    // (bracket_expr (soup (block))).
     _bracket_block_head: $ => seq(
       BRACKET_OPEN_RE,
       alias($._bracket_block_soup, $.soup),
@@ -168,8 +170,8 @@ module.exports = grammar({
 
     // The head of a bracket-pair declaration, as the Rowan parser reads it
     // (classify_bracket_direct in src/syntax/rowan/ast.rs): one parameter,
-    // which is a plain or quoted name (⟦ x ⟧:, ⟦ 'q' ⟧:) or a list or cons pattern whose
-    // elements are any patterns, so ⟦ [{m}] ⟧:, ⟦ [{k: kk, m}] ⟧: and
+    // which is a plain or quoted name (⟦ x ⟧:, ⟦ 'q' ⟧:) or a list or cons
+    // pattern whose elements are any patterns, so ⟦ [{m}] ⟧:, ⟦ [{k: kk, m}] ⟧: and
     // ⌈ [f: lists] ⌉: destructure the operand (eu-jd7l4). A bracket pair's
     // operand is always a list, so a block pattern directly in the head is
     // not a parameter: a non-empty block there is an error, and an empty
