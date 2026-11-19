@@ -1,8 +1,8 @@
 /target/
 **/*.rs.bk
 /.idea
-/tests/harness/.result/
-/tests/harness/**/.result/
+# `eu test` result directories, wherever a suite runs
+.result/
 /src/syntax/grammar.rs
 /src/syntax/string_pattern.rs
 
@@ -49,8 +49,6 @@ editors/vscode/*.vsix
 /book/
 #*#
 .playwright-mcp/
-lib/.result/
-lib/.result/
 # Emacs auto-save and lock files
 \#*\#
 .#*
@@ -70,5 +68,3 @@ lib/prelude.blob
 
 # Advent of Code puzzle inputs must not be published; readers supply their own
 /examples/aoc25/inputs/day??.txt
-/examples/aoc25/.result/
-/.result/
