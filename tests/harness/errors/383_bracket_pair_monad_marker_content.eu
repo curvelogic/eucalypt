@@ -1,0 +1,5 @@
+"Only an empty block marks a monadic bracket pair: content in it is not ignored."
+
+⟦{x}⟧: { :monad bind(m, f): f(m)  return(a): a }
+
+r: ⟦ a: 1  b: 2 ⟧.(a + b)

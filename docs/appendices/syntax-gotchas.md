@@ -827,6 +827,20 @@ destructuring:
 The prelude `⌈⌉` and `⌊⌋` bracket pairs do this automatically:
 they destructure `[x]` so `⌈3.7⌉` works as expected.
 
+### A Block Pattern Cannot Be the Bracket Parameter
+
+Because the argument is always a list, a block pattern as the whole
+parameter can never match, and `⟦{m}⟧: …` is reported as an error
+("a bracket pair parameter cannot be a block pattern"). An empty block,
+`⟦{}⟧: { :monad … }`, is reserved for declaring a monadic bracket pair.
+To destructure a single block item, put the block pattern in a list
+pattern:
+
+```eu,notest
+⟦ [{m}] ⟧: m
+⟦ {m: 1} ⟧   # => 1
+```
+
 ### Multi-Token Items Must Be Parenthesised
 
 Items inside idiot brackets are separated by whitespace. A compound

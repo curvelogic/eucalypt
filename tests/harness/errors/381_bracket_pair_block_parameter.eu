@@ -1,0 +1,5 @@
+"A block pattern cannot be a bracket pair parameter: the argument is a list."
+
+⟦{m}⟧: m
+
+r: ⟦ {m: 1} ⟧

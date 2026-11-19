@@ -5693,6 +5693,22 @@ pub fn test_error_380_block_pattern_function_declaration() {
     run_error_test(&error_opts("380_block_pattern_function_declaration.eu"));
 }
 
+/// A block pattern as a bracket pair parameter is a located error (eu-hvuqc).
+#[test]
+pub fn test_error_381_bracket_pair_block_parameter() {
+    run_error_test(&error_opts("381_bracket_pair_block_parameter.eu"));
+}
+
+#[test]
+pub fn test_error_382_bracket_pair_block_parameter_parens() {
+    run_error_test(&error_opts("382_bracket_pair_block_parameter_parens.eu"));
+}
+
+#[test]
+pub fn test_error_383_bracket_pair_monad_marker_content() {
+    run_error_test(&error_opts("383_bracket_pair_monad_marker_content.eu"));
+}
+
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).
 #[test]
 pub fn test_error_336_non_integer_combinations() {

@@ -94,6 +94,12 @@ pub enum CoreError {
     /// shorthand field names or declarations (e.g. `{x: a, y}`).
     #[error("unexpected content in block pattern")]
     InvalidBlockPatternContent(Smid),
+    /// A non-empty block as the parameter of a bracket pair declaration
+    /// (`⟦{m}⟧: m`).  A bracket pair's argument is always a list, so a
+    /// block pattern cannot bind there, and an empty block `⟦{}⟧` is the
+    /// marker for a monadic bracket pair.
+    #[error("a bracket pair parameter cannot be a block pattern")]
+    BracketPairBlockParameter(Smid),
 }
 
 impl HasSmid for CoreError {
@@ -118,6 +124,7 @@ impl HasSmid for CoreError {
             InvalidVersionConstraint(s, _, _) => s,
             AssignmentStyleDeclaration(s, _) => s,
             InvalidBlockPatternContent(s) => s,
+            BracketPairBlockParameter(s) => s,
             _ => Smid::default(),
         }
     }
@@ -210,6 +217,18 @@ impl CoreError {
                         .to_string(),
                     "literals, other expressions and function or operator declarations \
                      cannot appear in a block pattern"
+                        .to_string(),
+                ])
+            }
+            CoreError::BracketPairBlockParameter(_) => {
+                source_map.diagnostic(self).with_notes(vec![
+                    "a bracket pair always receives its items as a list, so its \
+                     parameter is a name (`⟦ xs ⟧`) or a list pattern (`⟦ [x, y] ⟧`)"
+                        .to_string(),
+                    "to destructure a single block item, put the block pattern in a \
+                     list pattern: `⟦ [{m}] ⟧: m`"
+                        .to_string(),
+                    "an empty block `⟦{}⟧: { :monad … }` declares a monadic bracket pair"
                         .to_string(),
                 ])
             }

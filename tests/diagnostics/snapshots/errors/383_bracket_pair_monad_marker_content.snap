@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/383_bracket_pair_monad_marker_content
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/383_bracket_pair_monad_marker_content.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/383_bracket_pair_monad_marker_content.eu:3:2
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: a bracket pair parameter cannot be a block pattern
+  ┌─ tests/harness/errors/383_bracket_pair_monad_marker_content.eu:3:2
+  │
+3 │ ⟦{x}⟧: { :monad bind(m, f): f(m)  return(a): a }
+  │  ^^^
+  │
+  = a bracket pair always receives its items as a list, so its parameter is a name (`⟦ xs ⟧`) or a list pattern (`⟦ [x, y] ⟧`)
+  = to destructure a single block item, put the block pattern in a list pattern: `⟦ [{m}] ⟧: m`
+  = an empty block `⟦{}⟧: { :monad … }` declares a monadic bracket pair

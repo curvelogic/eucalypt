@@ -1,0 +1,3 @@
+exit: 1
+stderr: "a bracket pair parameter cannot be a block pattern"
+location: 3:3
