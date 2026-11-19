@@ -5525,6 +5525,22 @@ pub fn test_tester_fails_unrun_checked_target() {
     assert_eq!(exit_code, 1);
 }
 
+/// A checked target nested inside a target that runs is still reported:
+/// its failing `RESULT` does not decide the outer verdict, so it would
+/// otherwise pass silently (eu-oaz72.69).
+#[test]
+pub fn test_tester_reports_nested_checked_target() {
+    let exit_code = tester::test(&opts("testdata/nested_checked_target.eu")).unwrap();
+    assert_eq!(exit_code, 1);
+}
+
+/// A `num` that fails inside a user function carets that `num` call,
+/// not the caller (eu-oaz72.118).
+#[test]
+pub fn test_error_377_num_call_site() {
+    run_error_test(&error_opts("377_num_call_site.eu"));
+}
+
 /// The divides operator `∣` inherits `%`'s zero-divisor error.
 #[test]
 pub fn test_error_273_divides_zero_divisor() {
@@ -5765,6 +5781,37 @@ pub fn test_error_375_empty_interval_merge_intervals() {
 #[test]
 pub fn test_error_376_infinite_interval_merge_intervals() {
     run_error_test(&error_opts("376_infinite_interval_merge_intervals.eu"));
+}
+
+#[test]
+pub fn test_error_378_block_pattern_non_name_field() {
+    run_error_test(&error_opts("378_block_pattern_non_name_field.eu"));
+}
+
+#[test]
+pub fn test_error_379_block_pattern_non_name_leading_field() {
+    run_error_test(&error_opts("379_block_pattern_non_name_leading_field.eu"));
+}
+
+#[test]
+pub fn test_error_380_block_pattern_function_declaration() {
+    run_error_test(&error_opts("380_block_pattern_function_declaration.eu"));
+}
+
+/// A block pattern as a bracket pair parameter is a located error (eu-hvuqc).
+#[test]
+pub fn test_error_381_bracket_pair_block_parameter() {
+    run_error_test(&error_opts("381_bracket_pair_block_parameter.eu"));
+}
+
+#[test]
+pub fn test_error_382_bracket_pair_block_parameter_parens() {
+    run_error_test(&error_opts("382_bracket_pair_block_parameter_parens.eu"));
+}
+
+#[test]
+pub fn test_error_383_bracket_pair_monad_marker_content() {
+    run_error_test(&error_opts("383_bracket_pair_monad_marker_content.eu"));
 }
 
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).

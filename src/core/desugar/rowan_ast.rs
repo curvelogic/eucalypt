@@ -23,6 +23,7 @@ use crate::{
     },
     syntax::rowan::{
         ast::{self as rowan_ast, AstToken, Element, HasSoup},
+        kind::{SyntaxKind, SyntaxNode},
         lex,
     },
 };
@@ -129,78 +130,143 @@ enum ParamPattern {
 /// Rowan `Block` AST node in a function parameter position.
 ///
 /// Block patterns may contain:
-/// - Shorthand names in block metadata: `{x y}` → `[(x, Simple(x)), (y, Simple(y))]`
+/// - Shorthand names: `{x y}` → `[(x, Simple(x)), (y, Simple(y))]`
 /// - Rename declarations: `{x: a  y: b}` → `[(x, Simple(a)), (y, Simple(b))]`
 /// - Nested patterns: `{x: [a, b]}` → `[(x, List([Simple(a), Simple(b)], None))]`
-/// - Mixed: `{x  y: b}` → `[(x, Simple(x)), (y, Simple(b))]`
-fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, ParamPattern)>, CoreError> {
+/// - Mixed, in any order: `{x  y: b}` or `{y: b, x}` →
+///   `[(x, Simple(x)), (y, Simple(b))]`
+///
+/// The parser reads a pattern block exactly as it reads a block literal.
+/// Shorthand names before the first declaration land in the block
+/// metadata, but shorthand names after a declaration (`{y: b, x}`) are not
+/// metadata: the parser keeps them as loose `ERROR_STOWAWAYS` content
+/// between declarations (in a block literal they are surplus content).
+/// In a pattern they are shorthand fields like any other, so the block's
+/// children are read in source order and both are collected (eu-ioz21.14).
+/// Loose content that is not a bare name is reported, rather than
+/// silently dropped.
+fn parse_block_pattern(
+    block: &rowan_ast::Block,
+    desugarer: &mut Desugarer,
+) -> Result<Vec<(String, ParamPattern)>, CoreError> {
     let mut fields: Vec<(String, ParamPattern)> = Vec::new();
 
-    // Extract shorthand names from block metadata soup (e.g. `x y` in `{x y}`)
-    if let Some(meta) = block.meta() {
-        if let Some(soup) = meta.soup() {
-            for element in soup.elements() {
-                if let rowan_ast::Element::Name(name) = element {
-                    if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier()
-                    {
-                        let field_name = normal.value().to_string();
-                        // Shorthand: field name = binding name
-                        fields.push((field_name.clone(), ParamPattern::Simple(field_name)));
-                    }
-                }
+    for child in block.syntax().children() {
+        if let Some(meta) = rowan_ast::BlockMetadata::cast(child.clone()) {
+            // Shorthand names before any declaration (e.g. `x y` in `{x y}`)
+            if let Some(soup) = meta.soup() {
+                parse_block_pattern_shorthands(soup.syntax(), desugarer, &mut fields)?;
             }
-        }
-    }
-
-    // Extract rename/nested fields from declarations (e.g. `x: a  y: b  z: [a, b]`)
-    for decl in block.declarations() {
-        if let Some(head) = decl.head() {
-            let kind = head.classify_declaration();
-            if let rowan_ast::DeclarationKind::Property(prop) = kind {
-                let field_name = prop.value().to_string();
-                let value_pattern = if let Some(body) = decl.body() {
-                    if let Some(body_soup) = body.soup() {
-                        match body_soup.singleton() {
-                            Some(rowan_ast::Element::Name(name)) => {
-                                if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) =
-                                    name.identifier()
-                                {
-                                    ParamPattern::Simple(normal.value().to_string())
-                                } else {
-                                    // Not a normal identifier — use field name as fallback
-                                    ParamPattern::Simple(field_name.clone())
-                                }
-                            }
-                            Some(rowan_ast::Element::List(list)) => {
-                                // Nested list pattern: `{x: [a, b]}`
-                                match parse_list_pattern(&list)? {
-                                    Some((heads, tail)) => ParamPattern::List(heads, tail),
-                                    None => ParamPattern::Simple(field_name.clone()),
-                                }
-                            }
-                            Some(rowan_ast::Element::Block(nested_block)) => {
-                                // Nested block pattern: `{x: {a b}}`
-                                let nested_fields = parse_block_pattern(&nested_block)?;
-                                ParamPattern::Block(nested_fields)
-                            }
-                            _ => {
-                                // Complex expression in body — use field name as fallback
-                                ParamPattern::Simple(field_name.clone())
-                            }
-                        }
-                    } else {
-                        ParamPattern::Simple(field_name.clone())
-                    }
-                } else {
-                    // No body in declaration — field name = binding name (shorthand)
-                    ParamPattern::Simple(field_name.clone())
-                };
-                fields.push((field_name, value_pattern));
-            }
+        } else if let Some(decl) = rowan_ast::Declaration::cast(child.clone()) {
+            // Rename/nested fields (e.g. `x: a  y: b  z: [a, b]`)
+            fields.push(parse_block_pattern_declaration(&decl, desugarer)?);
+        } else if child.kind() == SyntaxKind::ERROR_STOWAWAYS {
+            // Shorthand names after a declaration (e.g. `x` in `{y: b, x}`).
+            //
+            // ERROR_STOWAWAYS is the parser's error-recovery node, but the
+            // parser cannot tell a pattern block from a block literal, so
+            // this is where it keeps trailing names in both.  Reading them
+            // here, in the one place that knows the block is a pattern, is
+            // sound because nothing reports them as surplus first:
+            // `DeclarationHead::validate` does not descend into parameter
+            // patterns.  If head validation ever recurses, it must exempt
+            // pattern blocks or this form becomes a parse error.
+            parse_block_pattern_shorthands(&child, desugarer, &mut fields)?;
         }
     }
 
     Ok(fields)
+}
+
+/// The block inside a bracket pair declaration head (`{}` in `⟦{}⟧`).
+fn bracket_block_parameter(bracket: &rowan_ast::BracketExpr) -> Option<rowan_ast::Block> {
+    bracket.soup()?.elements().find_map(|e| match e {
+        rowan_ast::Element::Block(b) => Some(b),
+        _ => None,
+    })
+}
+
+/// Read a rename or nested field declaration in a block pattern.
+///
+/// Only a property declaration (`field: pattern`) is a field.  Any other
+/// declaration (a function `g(x): …`, an operator) is reported as
+/// [`CoreError::InvalidBlockPatternContent`] at its head.
+fn parse_block_pattern_declaration(
+    decl: &rowan_ast::Declaration,
+    desugarer: &mut Desugarer,
+) -> Result<(String, ParamPattern), CoreError> {
+    let head = decl.head();
+    let prop = match head.as_ref().map(|h| h.classify_declaration()) {
+        Some(rowan_ast::DeclarationKind::Property(prop)) => prop,
+        _ => {
+            let range = head
+                .map(|h| h.syntax().text_range())
+                .unwrap_or_else(|| decl.syntax().text_range());
+            let smid = desugarer.new_smid(text_range_to_span(range));
+            return Err(CoreError::InvalidBlockPatternContent(smid));
+        }
+    };
+    let field_name = prop.value().to_string();
+    let value_pattern = if let Some(body_soup) = decl.body().and_then(|b| b.soup()) {
+        match body_soup.singleton() {
+            Some(rowan_ast::Element::Name(name)) => {
+                if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+                    ParamPattern::Simple(normal.value().to_string())
+                } else {
+                    // Not a normal identifier — use field name as fallback
+                    ParamPattern::Simple(field_name.clone())
+                }
+            }
+            Some(rowan_ast::Element::List(list)) => {
+                // Nested list pattern: `{x: [a, b]}`
+                match parse_list_pattern(&list, desugarer)? {
+                    Some((heads, tail)) => ParamPattern::List(heads, tail),
+                    None => ParamPattern::Simple(field_name.clone()),
+                }
+            }
+            Some(rowan_ast::Element::Block(nested_block)) => {
+                // Nested block pattern: `{x: {a b}}`
+                ParamPattern::Block(parse_block_pattern(&nested_block, desugarer)?)
+            }
+            _ => {
+                // Complex expression in body — use field name as fallback
+                ParamPattern::Simple(field_name.clone())
+            }
+        }
+    } else {
+        // No body in declaration — field name = binding name (shorthand)
+        ParamPattern::Simple(field_name.clone())
+    };
+    Ok((field_name, value_pattern))
+}
+
+/// Read the shorthand field names in a block pattern, appending them to
+/// `fields`: either the block metadata soup before the first declaration
+/// (`x y` in `{x y, k: a}`) or loose content after a declaration (`x z`
+/// in `{y: b, x, z}`).
+///
+/// Commas and trivia separate the names.  Anything else is not a field
+/// of the pattern and is reported as an
+/// [`CoreError::InvalidBlockPatternContent`] at its location.
+fn parse_block_pattern_shorthands(
+    stowaways: &SyntaxNode,
+    desugarer: &mut Desugarer,
+    fields: &mut Vec<(String, ParamPattern)>,
+) -> Result<(), CoreError> {
+    for item in stowaways.children_with_tokens() {
+        if let Some(name) = item.as_node().cloned().and_then(rowan_ast::Name::cast) {
+            if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+                let field_name = normal.value().to_string();
+                fields.push((field_name.clone(), ParamPattern::Simple(field_name)));
+                continue;
+            }
+        } else if item.kind() == SyntaxKind::COMMA || item.kind().is_trivial() {
+            continue;
+        }
+        let smid = desugarer.new_smid(text_range_to_span(item.text_range()));
+        return Err(CoreError::InvalidBlockPatternContent(smid));
+    }
+    Ok(())
 }
 
 /// Parsed list pattern: (head elements, optional tail name).
@@ -214,7 +280,10 @@ type ListPattern = (Vec<ParamPattern>, Option<String>);
 ///
 /// Returns `(head_elements, tail)` where `tail` is `None` for
 /// fixed-length patterns and `Some(tail_name)` for head/tail patterns.
-fn parse_list_pattern(list: &rowan_ast::List) -> Result<Option<ListPattern>, CoreError> {
+fn parse_list_pattern(
+    list: &rowan_ast::List,
+    desugarer: &mut Desugarer,
+) -> Result<Option<ListPattern>, CoreError> {
     let has_colon = list.has_colon();
     let all_items: Vec<_> = list.items().collect();
 
@@ -226,7 +295,7 @@ fn parse_list_pattern(list: &rowan_ast::List) -> Result<Option<ListPattern>, Cor
         }
         let mut heads = Vec::new();
         for item in &all_items[..all_items.len() - 1] {
-            match parse_soup_as_pattern(item)? {
+            match parse_soup_as_pattern(item, desugarer)? {
                 Some(pat) => heads.push(pat),
                 None => return Ok(None),
             }
@@ -247,7 +316,7 @@ fn parse_list_pattern(list: &rowan_ast::List) -> Result<Option<ListPattern>, Cor
         // Fixed-length pattern: elements may be names or nested patterns
         let mut elements = Vec::new();
         for item in &all_items {
-            match parse_soup_as_pattern(item)? {
+            match parse_soup_as_pattern(item, desugarer)? {
                 Some(pat) => elements.push(pat),
                 None => return Ok(None),
             }
@@ -263,7 +332,10 @@ fn parse_list_pattern(list: &rowan_ast::List) -> Result<Option<ListPattern>, Cor
 /// Parse a single soup element as a pattern (name, nested list, or nested block).
 ///
 /// Returns `Err` for unsupported nesting, `Ok(None)` for non-pattern elements.
-fn parse_soup_as_pattern(soup: &rowan_ast::Soup) -> Result<Option<ParamPattern>, CoreError> {
+fn parse_soup_as_pattern(
+    soup: &rowan_ast::Soup,
+    desugarer: &mut Desugarer,
+) -> Result<Option<ParamPattern>, CoreError> {
     match soup.singleton() {
         Some(rowan_ast::Element::Name(name)) => {
             if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
@@ -272,11 +344,10 @@ fn parse_soup_as_pattern(soup: &rowan_ast::Soup) -> Result<Option<ParamPattern>,
                 Ok(None)
             }
         }
-        Some(rowan_ast::Element::List(list)) => {
-            Ok(parse_list_pattern(&list)?.map(|(heads, tail)| ParamPattern::List(heads, tail)))
-        }
+        Some(rowan_ast::Element::List(list)) => Ok(parse_list_pattern(&list, desugarer)?
+            .map(|(heads, tail)| ParamPattern::List(heads, tail))),
         Some(rowan_ast::Element::Block(block)) => {
-            parse_block_pattern(&block).map(|fields| Some(ParamPattern::Block(fields)))
+            parse_block_pattern(&block, desugarer).map(|fields| Some(ParamPattern::Block(fields)))
         }
         _ => Ok(None),
     }
@@ -285,8 +356,11 @@ fn parse_soup_as_pattern(soup: &rowan_ast::Soup) -> Result<Option<ParamPattern>,
 /// Parse a function parameter soup into a `ParamPattern`.
 ///
 /// Returns `Err` for unsupported nesting, `Ok(None)` for non-pattern elements.
-fn parse_param_pattern(soup: &rowan_ast::Soup) -> Result<Option<ParamPattern>, CoreError> {
-    parse_soup_as_pattern(soup)
+fn parse_param_pattern(
+    soup: &rowan_ast::Soup,
+    desugarer: &mut Desugarer,
+) -> Result<Option<ParamPattern>, CoreError> {
+    parse_soup_as_pattern(soup, desugarer)
 }
 
 /// Ordered record of a destructuring let to emit after the body is desugared.
@@ -1724,7 +1798,7 @@ fn extract_rowan_declaration_components(
                 // happen after Task 2 validation, but be defensive).
                 let patterns: Vec<ParamPattern> = args_tuple
                     .items()
-                    .filter_map(|soup| parse_param_pattern(&soup).transpose())
+                    .filter_map(|soup| parse_param_pattern(&soup, desugarer).transpose())
                     .collect::<Result<Vec<_>, _>>()?;
 
                 // If all patterns are Simple (no destructuring), use the
@@ -1838,7 +1912,7 @@ fn extract_rowan_declaration_components(
                 })?;
                 // Parse the bracket parameter as a pattern (simple name,
                 // list destructuring, or block destructuring)
-                let pattern = parse_param_pattern(&param_soup)?.ok_or_else(|| {
+                let pattern = parse_param_pattern(&param_soup, desugarer)?.ok_or_else(|| {
                     CoreError::InvalidEmbedding(
                         "invalid bracket parameter pattern".to_string(),
                         desugarer.new_smid(span),
@@ -1866,6 +1940,17 @@ fn extract_rowan_declaration_components(
                         desugarer.new_smid(span),
                     )
                 })?;
+                // Only an empty block `⟦{}⟧` marks a monadic bracket pair.  A
+                // block with content (`⟦{m}⟧`) reads as a block pattern, which
+                // cannot bind: the argument is always a list.  Report it rather
+                // than silently dropping the content.
+                if let Some(block) = bracket_block_parameter(&bracket_expr) {
+                    if block.syntax().children().next().is_some() {
+                        let smid =
+                            desugarer.new_smid(text_range_to_span(block.syntax().text_range()));
+                        return Err(CoreError::BracketPairBlockParameter(smid));
+                    }
+                }
                 // No formal args — the body is the monad spec block.
                 let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &[], span)?;
 
@@ -2544,7 +2629,6 @@ fn name_identifier_span(decl: &rowan_ast::Declaration) -> Option<Span> {
     }
 }
 
-/// Extract just the declaration name without desugaring body
 /// Operators of the inline assertion family (`lib/prelude.eu`,
 /// "Assertions"), whose failures a test target's verdict reports.
 const ASSERTION_OPERATORS: [&str; 5] = ["//=", "//=?", "//!", "//=>", "//=?>"];
@@ -2570,6 +2654,7 @@ fn declaration_has_checks(decl: &rowan_ast::Declaration) -> bool {
     })
 }
 
+/// Extract just the declaration name without desugaring body
 fn extract_declaration_name(decl: &rowan_ast::Declaration) -> Result<String, CoreError> {
     if let Some(head) = decl.head() {
         let kind = head.classify_declaration();

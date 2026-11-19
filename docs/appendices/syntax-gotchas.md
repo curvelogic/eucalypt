@@ -827,6 +827,20 @@ destructuring:
 The prelude `⌈⌉` and `⌊⌋` bracket pairs do this automatically:
 they destructure `[x]` so `⌈3.7⌉` works as expected.
 
+### A Block Pattern Cannot Be the Bracket Parameter
+
+Because the argument is always a list, a block pattern as the whole
+parameter can never match, and `⟦{m}⟧: …` is reported as an error
+("a block in a bracket pair declaration head must be empty"). An empty block,
+`⟦{}⟧: { :monad … }`, is reserved for declaring a monadic bracket pair.
+To destructure a single block item, put the block pattern in a list
+pattern:
+
+```eu,notest
+⟦ [{m}] ⟧: m
+⟦ {m: 1} ⟧   # => 1
+```
+
 ### Multi-Token Items Must Be Parenthesised
 
 Items inside idiot brackets are separated by whitespace. A compound
@@ -882,3 +896,41 @@ result: { :io }.42
 # CORRECT
 result: { :io r: io.return(42) }.r
 ```
+
+---
+
+## Block Pattern Gotchas
+
+### A Shorthand Field After a Rename Needs a Comma
+
+In a block pattern, as in a block literal, a declaration's body runs
+until the next comma or declaration. Without a comma, a shorthand field
+written after a rename becomes part of the rename's body:
+
+```eu,notest
+# WRONG — the body of `y` is `height x`; neither `height` nor `x` is bound
+describe{y: height x}: "x={x} h={height}"
+
+# CORRECT — a comma ends the rename
+describe{y: height, x}: "x={x} h={height}"
+```
+
+Before the first declaration, commas between shorthand fields are
+optional (`{x y}` and `{x, y}` are the same).
+
+### A Field Body That Is Not a Pattern Binds the Field's Own Name
+
+The body of a `field: pattern` declaration should be a name, a list
+pattern or a block pattern. Any other body (`height x`, `3`, `[1, b]`)
+is currently ignored without a diagnostic, and the field is bound under
+its own name instead: `f{y: height x}` binds `y`, not `height`, so a
+use of `height` fails as an unresolved variable. Whether this should
+become an error is an open decision (eu-ioz21.16).
+
+### Stray Content in a Block Pattern Is an Error
+
+Outside field bodies, a block pattern holds only shorthand names and
+`field: pattern` declarations. A literal or other expression among the
+shorthand names (`f{3, k: kk}`, `f{k: kk, 3}`) or a function or
+operator declaration (`f{k: kk, g(x): x}`) is reported as "unexpected
+content in block pattern".

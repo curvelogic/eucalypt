@@ -5,6 +5,7 @@ use crate::core::expr::*;
 use crate::core::metadata::{ReadMetadata, TestHeaderMetadata};
 use crate::core::target::Target;
 use crate::core::unit::TranslationUnit;
+use crate::syntax::input::Locator;
 use regex::Regex;
 use std::path::{Path, PathBuf};
 
@@ -299,6 +300,12 @@ pub struct TestPlan {
     /// Targets declared in the file whose bodies carry checks but which
     /// the tester does not run, so their checks would never gate
     unrun_checked_targets: Vec<Target>,
+    /// The format the file is read in, when it is not the one its
+    /// extension implies (`yaml@x.txt`)
+    input_format: Option<String>,
+    /// Whether the title is the default one, derived from the file
+    /// name, rather than one the file sets in its metadata
+    default_title: bool,
 }
 
 impl TestPlan {
@@ -310,6 +317,64 @@ impl TestPlan {
     /// A test title
     pub fn title(&self) -> &String {
         &self.title
+    }
+
+    /// Replace the default title (see `has_default_title`)
+    pub fn set_title(&mut self, title: String) {
+        self.title = title;
+    }
+
+    /// Whether the title is the default one, derived from the file
+    /// name, rather than one the file sets in its metadata
+    pub fn has_default_title(&self) -> bool {
+        self.default_title
+    }
+
+    /// The file's path, prefixed with the format it is read in where
+    /// that is not the one its extension implies
+    pub fn qualified_path(&self) -> String {
+        let path = self.file.display();
+        match &self.input_format {
+            Some(format) => format!("{format}@{path}"),
+            None => path.to_string(),
+        }
+    }
+
+    /// The format the file is read in
+    pub fn input_format(&self) -> String {
+        self.input_format
+            .clone()
+            .unwrap_or_else(|| self.inferred_format())
+    }
+
+    /// Read the file in `format`
+    pub fn with_input_format(self, format: &str) -> Self {
+        let input_format = (format != self.inferred_format()).then(|| format.to_string());
+        Self {
+            input_format,
+            ..self
+        }
+    }
+
+    /// The format the file's extension implies
+    fn inferred_format(&self) -> String {
+        Locator::Fs(self.file.clone())
+            .infer_format()
+            .unwrap_or_else(|| "eu".to_string())
+    }
+
+    /// The file's name, prefixed with the format it is read in where
+    /// that is not the one its extension implies (`yaml@x.txt`)
+    pub fn qualified_file_name(&self) -> String {
+        let name = self
+            .file()
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled".to_string());
+        match &self.input_format {
+            Some(format) => format!("{format}@{name}"),
+            None => name,
+        }
     }
 
     /// Test targets to run
@@ -338,7 +403,9 @@ impl TestPlan {
     /// Targets declared in the file under test whose bodies carry checks
     /// (a `RESULT` binding or an inline assertion) but which the tester
     /// does not run: not named `test…` or `bench-…`, not `main`, and
-    /// with no `verify`. Their checks would never gate, so the tester
+    /// with no `verify`. A target nested inside one that runs is
+    /// included: its `RESULT` is rendered as part of the outer output but
+    /// does not decide the outer verdict. Their checks would never gate, so the tester
     /// fails the file.
     pub fn unrun_checked_targets(&self) -> &[Target] {
         &self.unrun_checked_targets
@@ -377,14 +444,10 @@ impl TestPlan {
 
     /// Name of a result file for this test: the test file's full name
     /// with `suffix` appended, so `x.eu` and `x.yaml` in one directory
-    /// get distinct files (`x.eu.report.yaml`, `x.yaml.report.yaml`).
+    /// get distinct files (`x.eu.report.yaml`, `x.yaml.report.yaml`),
+    /// as do one file read in two formats (`yaml@x.txt.report.yaml`).
     fn sidecar_name(&self, suffix: &str) -> String {
-        let name = self
-            .file()
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled".to_string());
-        format!("{name}.{suffix}")
+        format!("{}.{suffix}", self.qualified_file_name())
     }
 
     pub fn prepare_directory(&self) -> Result<(), std::io::Error> {
@@ -451,6 +514,7 @@ impl TestPlan {
         Ok(TestPlan {
             run_id: run_id.to_string(),
             file: filename.to_path_buf(),
+            default_title: header.title.is_none(),
             title: header
                 .title
                 .or_else(|| {
@@ -464,6 +528,7 @@ impl TestPlan {
             error_expectation: None,
             requires_io: header.requires_io,
             unrun_checked_targets,
+            input_format: None,
         })
     }
 
@@ -505,6 +570,8 @@ impl TestPlan {
             error_expectation: Some(expectation),
             requires_io: false,
             unrun_checked_targets: vec![],
+            input_format: None,
+            default_title: true,
         }
     }
 
@@ -523,6 +590,8 @@ impl TestPlan {
             error_expectation: None,
             requires_io: false,
             unrun_checked_targets: vec![],
+            input_format: None,
+            default_title: true,
         }
     }
 }

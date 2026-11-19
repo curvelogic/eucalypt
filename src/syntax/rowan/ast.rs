@@ -709,14 +709,16 @@ pub enum DeclarationKind {
     /// The optional `ParenExpr` is `Some` when parens were written and `None` when the
     /// bracket appears directly in the head (paren-free style).
     /// The `BracketExpr` contains the bracket pair characters.
-    /// The `Soup` is the bracket's inner content — the parameter pattern (simple name,
-    /// list destructuring, or block destructuring), parsed later by the desugarer.
+    /// The `Soup` is the bracket's inner content — the parameter pattern (simple name
+    /// or list destructuring), parsed later by the desugarer.  The argument is always
+    /// a list, so a block in this position is classified as `BracketBlockDef`.
     BracketPair(Option<ParenExpr>, BracketExpr, Soup),
     /// Monadic bracket block definition — e.g. `⟦{}⟧: body` or `(⟦{}⟧): body`
     ///
     /// The optional `ParenExpr` is `Some` when parens were written and `None` for paren-free style.
     /// An empty block `{}` as the parameter signals that this bracket pair expects block content
-    /// (declarations) for monadic use.
+    /// (declarations) for monadic use.  A non-empty block here is rejected by the desugarer
+    /// (`CoreError::BracketPairBlockParameter`).
     BracketBlockDef(Option<ParenExpr>, BracketExpr),
     /// Invalid declaration head - Embedding: `[:a-decl-malformed errors...]`
     MalformedHead(Vec<ParseError>),
@@ -740,7 +742,7 @@ fn classify_bracket_direct(bracket: BracketExpr, head_range: TextRange) -> Decla
             // Block-mode bracket pair definition: ⟦{}⟧: ...
             DeclarationKind::BracketBlockDef(None, bracket)
         } else if let Some(soup) = bracket.soup() {
-            // Idiot bracket with parameter pattern (simple name, list, or block destructuring)
+            // Idiot bracket with parameter pattern (simple name or list destructuring)
             DeclarationKind::BracketPair(None, bracket, soup)
         } else {
             DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {

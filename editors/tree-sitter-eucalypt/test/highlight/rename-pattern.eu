@@ -1,0 +1,16 @@
+# Juxtaposed block-pattern heads (eu-oaz72.206): the field names and the
+# local names of a rename pattern are parameters, as in rowan and TextMate.
+
+magnitude-sq{x: px  y: py}: px * px + py * py
+#            ^ parameter
+#               ^ parameter
+#                   ^ parameter
+#                      ^ parameter
+
+shorthand{x y}: x + y
+#         ^ parameter
+#           ^ parameter
+
+nested{k: {z}}: z
+#      ^ parameter
+#          ^ parameter
