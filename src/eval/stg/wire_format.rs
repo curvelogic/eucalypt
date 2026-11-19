@@ -92,7 +92,8 @@ use sha2::{Digest, Sha256};
 ///   bump is what makes either mismatch a *detected* staleness. The
 ///   bytecode encoder, the closedness analysis, the opcode flag definitions
 ///   and the constructor arities (`stg/tags.rs`) are now freshness inputs
-///   ([`DEMAND_ANALYSIS_PATHS`]), since they decide or encode the flag.
+///   ([`DEMAND_ANALYSIS_PATHS`], and since eu-ox7qz [`STG_SOURCE_ROOTS`] for
+///   `tags.rs`), since they decide or encode the flag.
 pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 11;
 
 /// Path, relative to the workspace root, of the prelude source baked into the
@@ -122,10 +123,10 @@ pub const INTRINSIC_TABLE_PATH: &str = "src/eval/intrinsics.rs";
 
 /// Paths, relative to the workspace root, of the demand analysis that derives
 /// the blob's per-slot demand signatures (`PreludeBlob::demand_signatures`,
-/// eu-oaz72.77), of the STG compiler that turns those signatures, and
-/// every prelude body, into the blob's code, and of the bytecode encoder and
-/// closedness analysis (with the opcode and constructor-arity tables they
-/// read) that decide the encoded form flags (eu-oaz72.175).
+/// eu-oaz72.77), and of the bytecode encoder and closedness analysis (with
+/// the opcode table they read) that decide the encoded form flags
+/// (eu-oaz72.175). The STG compiler, which acts on the signatures, and the
+/// constructor-arity table are covered by [`STG_SOURCE_ROOTS`].
 ///
 /// A signature is a claim about which arguments a prelude function forces,
 /// and the STG compiler acts on it by evaluating those arguments early. A
@@ -138,16 +139,119 @@ pub const DEMAND_ANALYSIS_PATHS: &[&str] = &[
     "src/core/analyse_demand.rs",
     "src/core/demand.rs",
     "src/core/dependency.rs",
-    "src/eval/stg/compiler.rs",
     "src/eval/bytecode/encode.rs",
     "src/eval/bytecode/closed.rs",
     "src/eval/bytecode/opcode.rs",
-    "src/eval/stg/tags.rs",
     // The generator that runs the analysis over each prelude body
     // (eu-oaz72.175): a change to what it compiles changes the blob's code.
     "xtask/src/main.rs",
     "src/core/reflatten.rs",
 ];
+
+/// Roots, relative to the workspace root, of the STG sources the blob's code
+/// is built from: every `.rs` file under a directory root, or the file
+/// itself, is hashed into [`blob_source_hash`] (eu-ox7qz).
+///
+/// The blob bakes in the encoded intrinsic wrapper globals and, inlined into
+/// prelude bodies, the wrapper bodies themselves, so a hand-written wrapper
+/// (`StgIntrinsic::wrapper`, e.g. in `src/eval/stg/force.rs`) is as much a
+/// blob input as the prelude source. Those wrappers live across the
+/// intrinsic modules of `src/eval/stg/`, built with its `dsl` and passed
+/// through its compiler (`compiler.rs`), optimiser and constructor tags
+/// (`tags.rs`); `src/eval/machine/intrinsic.rs` holds the default wrapper.
+/// Hashing the whole directory rather than a list of wrapper files means a
+/// new intrinsic module, or a helper a wrapper starts to use, is covered
+/// without anyone remembering to list it. It over-invalidates — an edit
+/// to an intrinsic's Rust implementation alone forces a regeneration — which
+/// is the safe direction, as for [`INTRINSIC_TABLE_PATH`].
+pub const STG_SOURCE_ROOTS: &[&str] = &["src/eval/stg", "src/eval/machine/intrinsic.rs"];
+
+/// Read every `.rs` file under [`STG_SOURCE_ROOTS`], relative to
+/// `workspace_root`, as `(path, contents)` pairs sorted by path, the path
+/// relative to the workspace root with `/` separators.
+///
+/// Only regular files are read, and entries whose names start with a dot
+/// (editor lock and backup files, such as a dangling `.#force.rs`) are
+/// skipped; no symlink is followed, a root included, so a symlinked
+/// directory is not entered. Sorting makes the hash independent of
+/// directory iteration order, and the path goes into the hash with the
+/// contents, so moving code between files also invalidates the blob. A
+/// missing root, or one that is not a real directory or regular file, is an
+/// error: the caller cannot verify the blob without it.
+///
+/// `build.rs` declares `rerun-if-changed` on the same roots, and cargo's scan
+/// of a directory does not skip what this walk skips: creating an editor
+/// lock file there re-runs the build script, which then finds the blob
+/// unchanged. That errs in the safe direction.
+pub fn read_stg_sources(
+    workspace_root: &std::path::Path,
+) -> std::io::Result<Vec<(String, Vec<u8>)>> {
+    fn push(
+        root: &std::path::Path,
+        path: &std::path::Path,
+        out: &mut Vec<(String, Vec<u8>)>,
+    ) -> std::io::Result<()> {
+        let relative = path.strip_prefix(root).map_err(|_| {
+            std::io::Error::other(format!(
+                "STG source {} is outside the workspace {}",
+                path.display(),
+                root.display()
+            ))
+        })?;
+        let relative = relative
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        out.push((relative, std::fs::read(path)?));
+        Ok(())
+    }
+
+    // `DirEntry::file_type` does not follow symlinks, so a symlinked
+    // directory is never entered (no cycles) and a dangling link is never
+    // read.
+    fn walk(
+        root: &std::path::Path,
+        dir: &std::path::Path,
+        out: &mut Vec<(String, Vec<u8>)>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                walk(root, &path, out)?;
+            } else if file_type.is_file() && path.extension().is_some_and(|e| e == "rs") {
+                push(root, &path, out)?;
+            }
+        }
+        Ok(())
+    }
+
+    let mut out = Vec::new();
+    for root in STG_SOURCE_ROOTS {
+        let path = workspace_root.join(root);
+        let file_type = std::fs::symlink_metadata(&path).map(|m| m.file_type());
+        if file_type.as_ref().is_ok_and(|t| t.is_dir()) {
+            walk(workspace_root, &path, &mut out)?;
+        } else if file_type.as_ref().is_ok_and(|t| t.is_file()) {
+            push(workspace_root, &path, &mut out)?;
+        } else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "STG source root {} is missing, or is not a real directory or regular file",
+                    path.display()
+                ),
+            ));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
+}
 
 /// Path, relative to the workspace root, of this very file — which `build.rs`
 /// `include!`s, and which cargo therefore does not track for it.
@@ -174,13 +278,15 @@ pub const BUILD_RERUN_PATHS: &[&str] = &[
     "src/core/analyse_demand.rs",
     "src/core/demand.rs",
     "src/core/dependency.rs",
-    "src/eval/stg/compiler.rs",
     "src/eval/bytecode/encode.rs",
     "src/eval/bytecode/closed.rs",
     "src/eval/bytecode/opcode.rs",
-    "src/eval/stg/tags.rs",
     "xtask/src/main.rs",
     "src/core/reflatten.rs",
+    // A directory: cargo re-runs the build script when any file under it
+    // changes. See `STG_SOURCE_ROOTS`.
+    "src/eval/stg",
+    "src/eval/machine/intrinsic.rs",
     // Embedded via `include_bytes!` in `src/driver/resources.rs`; cargo does
     // not track non-Rust files referenced that way.
     "lib/test.eu",
@@ -205,8 +311,11 @@ fn absorb(hasher: &mut Sha256, tag: &[u8], bytes: &[u8]) {
 ///   serialised code-stream layout, which nothing on disk reveals;
 /// - `lib/prelude.eu` — the bindings themselves;
 /// - `src/eval/intrinsics.rs` — the global slot numbering the blob bakes in;
-/// - the demand analysis and STG compiler sources ([`DEMAND_ANALYSIS_PATHS`],
-///   in that order) — what derived the blob's signatures and compiled its code.
+/// - the demand analysis and bytecode encoder sources
+///   ([`DEMAND_ANALYSIS_PATHS`], in that order) — what derived the blob's
+///   signatures and encoded its code;
+/// - the STG sources ([`STG_SOURCE_ROOTS`], as read by [`read_stg_sources`]),
+///   each with its path — the compiler and the intrinsic wrappers baked in.
 ///
 /// `xtask prelude-compile` stamps the result into `PreludeBlob::source_hash`;
 /// `build.rs` recomputes it and compares.
@@ -214,6 +323,7 @@ pub fn blob_source_hash(
     prelude_source: &[u8],
     intrinsic_table_source: &[u8],
     demand_analysis_sources: &[Vec<u8>],
+    stg_sources: &[(String, Vec<u8>)],
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
     absorb(
@@ -225,6 +335,10 @@ pub fn blob_source_hash(
     absorb(&mut hasher, b"intrinsic-table", intrinsic_table_source);
     for source in demand_analysis_sources {
         absorb(&mut hasher, b"demand-analysis", source);
+    }
+    for (path, source) in stg_sources {
+        absorb(&mut hasher, b"stg-source-path", path.as_bytes());
+        absorb(&mut hasher, b"stg-source", source);
     }
     hasher.finalize().into()
 }
@@ -271,8 +385,8 @@ impl BlobFreshness {
                  run `cargo xtask prelude-compile` to regenerate.",
             ),
             BlobFreshness::Stale => Some(
-                "prelude blob is stale (prelude source, intrinsic table, demand analysis or bytecode \
-                 wire format has changed) — run `cargo xtask prelude-compile` to regenerate.",
+                "prelude blob is stale (prelude source, intrinsic table, demand analysis, STG \
+                 sources or bytecode wire format has changed) — run `cargo xtask prelude-compile` to regenerate.",
             ),
         }
     }
@@ -305,8 +419,13 @@ mod tests {
     /// `blob_source_hash` and this fails.
     #[test]
     fn intrinsic_table_changes_change_the_hash() {
-        let before = blob_source_hash(PRELUDE, TABLE, &[]);
-        let after = blob_source_hash(PRELUDE, b"INTRINSICS: [LOOKUP, RENDER, CONTRACT_FAIL]", &[]);
+        let before = blob_source_hash(PRELUDE, TABLE, &[], &[]);
+        let after = blob_source_hash(
+            PRELUDE,
+            b"INTRINSICS: [LOOKUP, RENDER, CONTRACT_FAIL]",
+            &[],
+            &[],
+        );
         assert_ne!(
             before, after,
             "adding an intrinsic must invalidate the prelude blob"
@@ -315,16 +434,16 @@ mod tests {
 
     #[test]
     fn prelude_source_changes_change_the_hash() {
-        let before = blob_source_hash(PRELUDE, TABLE, &[]);
-        let after = blob_source_hash(b"map(f, xs): different", TABLE, &[]);
+        let before = blob_source_hash(PRELUDE, TABLE, &[], &[]);
+        let after = blob_source_hash(b"map(f, xs): different", TABLE, &[], &[]);
         assert_ne!(before, after);
     }
 
     #[test]
     fn the_hash_is_deterministic() {
         assert_eq!(
-            blob_source_hash(PRELUDE, TABLE, &[]),
-            blob_source_hash(PRELUDE, TABLE, &[])
+            blob_source_hash(PRELUDE, TABLE, &[], &[]),
+            blob_source_hash(PRELUDE, TABLE, &[], &[])
         );
     }
 
@@ -335,9 +454,76 @@ mod tests {
     /// `blob_source_hash` and this fails.
     #[test]
     fn demand_analysis_changes_change_the_hash() {
-        let before = blob_source_hash(PRELUDE, TABLE, &[b"analyse v1".to_vec()]);
-        let after = blob_source_hash(PRELUDE, TABLE, &[b"analyse v2".to_vec()]);
+        let before = blob_source_hash(PRELUDE, TABLE, &[b"analyse v1".to_vec()], &[]);
+        let after = blob_source_hash(PRELUDE, TABLE, &[b"analyse v2".to_vec()], &[]);
         assert_ne!(before, after);
+    }
+
+    /// A change to an STG source — a hand-written intrinsic wrapper, say —
+    /// must change the hash, as must the same code under another path
+    /// (eu-ox7qz).
+    ///
+    /// Fault injection: drop either `stg-source` term from
+    /// `blob_source_hash` and this fails.
+    #[test]
+    fn stg_source_changes_change_the_hash() {
+        let source = |path: &str, text: &[u8]| vec![(path.to_string(), text.to_vec())];
+        let base = blob_source_hash(PRELUDE, TABLE, &[], &source("force.rs", b"lambda(2, ..)"));
+        assert_ne!(
+            base,
+            blob_source_hash(
+                PRELUDE,
+                TABLE,
+                &[],
+                &source("force.rs", b"lambda(2, local(1))")
+            ),
+            "editing an intrinsic wrapper must invalidate the prelude blob"
+        );
+        assert_ne!(
+            base,
+            blob_source_hash(PRELUDE, TABLE, &[], &source("dict.rs", b"lambda(2, ..)")),
+            "moving code to another STG source must invalidate the prelude blob"
+        );
+    }
+
+    /// The walk reads regular `.rs` files only: a dangling editor lock
+    /// symlink (`.#force.rs`), a dot-file, a non-Rust file and a symlinked
+    /// directory are all passed over, and the result is sorted.
+    ///
+    /// Fault injection: follow symlinks or drop the dot-file skip in
+    /// `read_stg_sources` and this fails.
+    #[test]
+    #[cfg(unix)]
+    fn stg_sources_skip_links_dot_files_and_non_rust_files() {
+        use std::os::unix::fs::symlink;
+
+        let scratch = tempfile::tempdir().unwrap();
+        let root = scratch.path();
+        let stg = root.join("src/eval/stg");
+        std::fs::create_dir_all(stg.join("sub")).unwrap();
+        std::fs::create_dir_all(root.join("src/eval/machine")).unwrap();
+        std::fs::write(root.join("src/eval/machine/intrinsic.rs"), b"m").unwrap();
+        std::fs::write(stg.join("force.rs"), b"f").unwrap();
+        std::fs::write(stg.join("sub/dict.rs"), b"d").unwrap();
+        std::fs::write(stg.join("notes.txt"), b"n").unwrap();
+        std::fs::write(stg.join(".hidden.rs"), b"h").unwrap();
+        symlink("user@host.1234", stg.join(".#force.rs")).unwrap();
+        symlink(stg.join("sub"), stg.join("linked")).unwrap();
+        symlink(stg.join("force.rs"), stg.join("alias.rs")).unwrap();
+
+        let paths: Vec<String> = read_stg_sources(root)
+            .expect("STG sources read despite links and dot-files")
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                "src/eval/machine/intrinsic.rs",
+                "src/eval/stg/force.rs",
+                "src/eval/stg/sub/dict.rs"
+            ]
+        );
     }
 
     /// Tag- and length-prefixing must stop a byte moving across the boundary
@@ -345,8 +531,8 @@ mod tests {
     #[test]
     fn inputs_are_unambiguously_separated() {
         assert_ne!(
-            blob_source_hash(b"ab", b"c", &[]),
-            blob_source_hash(b"a", b"bc", &[])
+            blob_source_hash(b"ab", b"c", &[], &[]),
+            blob_source_hash(b"a", b"bc", &[], &[])
         );
     }
 
@@ -358,17 +544,18 @@ mod tests {
     #[test]
     fn a_blob_predating_a_new_intrinsic_is_stale() {
         // A blob stamped before the new intrinsic landed.
-        let mut blob = blob_source_hash(PRELUDE, TABLE, &[]).to_vec();
+        let mut blob = blob_source_hash(PRELUDE, TABLE, &[], &[]).to_vec();
         blob.extend_from_slice(b"...rest of the postcard payload...");
 
-        let expected_after = blob_source_hash(PRELUDE, b"INTRINSICS: [LOOKUP, RENDER, NEW]", &[]);
+        let expected_after =
+            blob_source_hash(PRELUDE, b"INTRINSICS: [LOOKUP, RENDER, NEW]", &[], &[]);
         assert_eq!(
             classify_blob(Some(&blob), &expected_after),
             BlobFreshness::Stale
         );
 
         // Sanity: against the table it was built from, the same blob is fresh.
-        let expected_before = blob_source_hash(PRELUDE, TABLE, &[]);
+        let expected_before = blob_source_hash(PRELUDE, TABLE, &[], &[]);
         assert_eq!(
             classify_blob(Some(&blob), &expected_before),
             BlobFreshness::Fresh
@@ -377,7 +564,7 @@ mod tests {
 
     #[test]
     fn a_missing_or_truncated_blob_is_never_fresh() {
-        let expected = blob_source_hash(PRELUDE, TABLE, &[]);
+        let expected = blob_source_hash(PRELUDE, TABLE, &[], &[]);
         assert_eq!(classify_blob(None, &expected), BlobFreshness::Missing);
         assert_eq!(
             classify_blob(Some(&[0u8; 31]), &expected),

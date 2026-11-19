@@ -2629,7 +2629,6 @@ fn name_identifier_span(decl: &rowan_ast::Declaration) -> Option<Span> {
     }
 }
 
-/// Extract just the declaration name without desugaring body
 /// Operators of the inline assertion family (`lib/prelude.eu`,
 /// "Assertions"), whose failures a test target's verdict reports.
 const ASSERTION_OPERATORS: [&str; 5] = ["//=", "//=?", "//!", "//=>", "//=?>"];
@@ -2655,6 +2654,7 @@ fn declaration_has_checks(decl: &rowan_ast::Declaration) -> bool {
     })
 }
 
+/// Extract just the declaration name without desugaring body
 fn extract_declaration_name(decl: &rowan_ast::Declaration) -> Result<String, CoreError> {
     if let Some(head) = decl.head() {
         let kind = head.classify_declaration();

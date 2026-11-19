@@ -8,7 +8,9 @@ running user code. There are two ways this happens:
    prelude-compile` — is embedded into the binary at compile time
    (`src/driver/resources.rs`, gated on `cfg(prelude_blob_ok)`, set by
    `build.rs` when the blob is present and its embedded source hash
-   matches `lib/prelude.eu`). At runtime the prelude's operators, type
+   matches the inputs it was built from: `lib/prelude.eu`, the intrinsic
+   catalogue, the demand analysis and bytecode encoder, and the STG sources
+   with their intrinsic wrappers). At runtime the prelude's operators, type
    summary, and compiled STG globals are loaded straight from the blob;
    the prelude source is never parsed, cooked, or merged.
 2. **Source-prelude fallback.** Used when no blob is embedded (a plain
@@ -110,6 +112,14 @@ Because they are derived, they cannot drift from the definitions. The
 blob's freshness hash covers the analysis sources
 (`DEMAND_ANALYSIS_PATHS` in `src/eval/stg/wire_format.rs`), so a blob whose
 signatures came from an older analysis is stale, not misread.
+
+The hash also covers every `.rs` file under `src/eval/stg/` and
+`src/eval/machine/intrinsic.rs` (`STG_SOURCE_ROOTS`), because the blob
+bakes in the encoded intrinsic wrapper globals and the wrapper bodies
+inlined into prelude code. Editing a hand-written wrapper (for example in
+`src/eval/stg/force.rs`) therefore marks a local blob stale, and the build
+falls back to the source prelude, with a warning, until `cargo xtask
+prelude-compile` is rerun (eu-ox7qz).
 
 ## What this means in practice
 
