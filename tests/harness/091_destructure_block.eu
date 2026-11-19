@@ -6,6 +6,36 @@ f-mixed({x  y: b}): x + b
 f-comma({x, y}): x + y
 f-comma-rename({x: a, y: b}): a * b
 
+` "Shorthand after a renamed field, juxtaposed parameter form (eu-ioz21.14)"
+j-after-rename{k: kk, m}: [kk, m]
+
+` "Shorthand after a renamed field, parenthesised parameter form (eu-ioz21.14)"
+p-after-rename({k: kk, m}): [kk, m]
+
+` "Shorthand before a renamed field"
+j-before-rename{m, k: kk}: [kk, m]
+
+` "Shorthands before, between and after renamed fields"
+j-interleaved{a, k: kk, m, n: nn, z}: [a, kk, m, nn, z]
+
+` "Several shorthands after a renamed field"
+j-after-rename-many{k: kk, m, n z}: [kk, m, n, z]
+
+` "Shorthand after a nested list field"
+j-after-list{k: [x, y], m}: [x, y, m]
+
+` "Shorthand after a nested block field"
+j-after-block{k: {x}, m}: [x, m]
+
+` "Shorthand after a renamed field inside a nested block field"
+j-nested-inner{k: {x: xx, y}, m}: [xx, y, m]
+
+` "Parenthesised form with a shorthand after a nested list field"
+p-after-list({k: [x, y], m}): [x, y, m]
+
+` "Block pattern with a trailing shorthand inside a list pattern"
+j-in-list[{k: kk, m}, z]: [kk, m, z]
+
 tests: {
 
   ` "Basic block destructuring"
@@ -46,6 +76,30 @@ tests: {
     a: f-comma-rename({x: 3, y: 4}) //= 12
     ` "product with different values"
     b: f-comma-rename({x: 5, y: 6}) //= 30
+  }
+
+  ` "Shorthand fields in any order among renamed and nested fields (eu-ioz21.14)"
+  any-order: {
+    ` "juxtaposed: shorthand after rename"
+    a: j-after-rename{k: 1, m: 2} //= [1, 2]
+    ` "parenthesised: shorthand after rename"
+    b: p-after-rename({k: 1, m: 2}) //= [1, 2]
+    ` "juxtaposed: shorthand before rename"
+    c: j-before-rename{k: 1, m: 2} //= [1, 2]
+    ` "shorthands before, between and after renames"
+    d: j-interleaved{a: 0, k: 1, m: 2, n: 3, z: 4} //= [0, 1, 2, 3, 4]
+    ` "several shorthands after a rename"
+    e: j-after-rename-many{k: 1, m: 2, n: 3, z: 4} //= [1, 2, 3, 4]
+    ` "shorthand after a nested list field"
+    f: j-after-list{k: [1, 2], m: 3} //= [1, 2, 3]
+    ` "shorthand after a nested block field"
+    g: j-after-block{k: {x: 1}, m: 2} //= [1, 2]
+    ` "shorthand after a rename in a nested block field"
+    h: j-nested-inner{k: {x: 1, y: 2}, m: 3} //= [1, 2, 3]
+    ` "parenthesised: shorthand after a nested list field"
+    i: p-after-list({k: [1, 2], m: 3}) //= [1, 2, 3]
+    ` "block pattern inside a list pattern"
+    j: j-in-list[{k: 1, m: 2}, 3] //= [1, 2, 3]
   }
 
 }

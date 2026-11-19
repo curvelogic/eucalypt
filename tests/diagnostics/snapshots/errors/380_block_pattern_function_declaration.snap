@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/380_block_pattern_function_declaration
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/380_block_pattern_function_declaration.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/380_block_pattern_function_declaration.eu:2:10
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unexpected content in block pattern
+  ┌─ tests/harness/errors/380_block_pattern_function_declaration.eu:2:10
+  │
+2 │ f{k: kk, g(x): x}: kk
+  │          ^^^^
+  │
+  = a block pattern holds only fields: shorthand names (`x`) and `field: pattern` declarations (`x: a`, `x: [a, b]`, `x: {a b}`)
+  = literals, other expressions and function or operator declarations cannot appear in a block pattern

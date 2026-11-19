@@ -89,6 +89,11 @@ pub enum CoreError {
     /// an assignment from another language.  Eucalypt uses `:` for declarations.
     #[error("assignment-style syntax: '{1} = ...' is not a valid eucalypt declaration")]
     AssignmentStyleDeclaration(Smid, String),
+    /// Content in a block parameter pattern that is not a field: after a
+    /// `field: pattern` declaration, a block pattern may only list further
+    /// shorthand field names or declarations (e.g. `{x: a, y}`).
+    #[error("unexpected content in block pattern")]
+    InvalidBlockPatternContent(Smid),
 }
 
 impl HasSmid for CoreError {
@@ -112,6 +117,7 @@ impl HasSmid for CoreError {
             VersionRequirementFailed(s, _, _) => s,
             InvalidVersionConstraint(s, _, _) => s,
             AssignmentStyleDeclaration(s, _) => s,
+            InvalidBlockPatternContent(s) => s,
             _ => Smid::default(),
         }
     }
@@ -195,6 +201,16 @@ impl CoreError {
                         "eucalypt uses ':' for declarations, not '='; \
                          write '{name}: <value>' instead of '{name} = <value>'"
                     ),
+                ])
+            }
+            CoreError::InvalidBlockPatternContent(_) => {
+                source_map.diagnostic(self).with_notes(vec![
+                    "a block pattern holds only fields: shorthand names (`x`) and \
+                     `field: pattern` declarations (`x: a`, `x: [a, b]`, `x: {a b}`)"
+                        .to_string(),
+                    "literals, other expressions and function or operator declarations \
+                     cannot appear in a block pattern"
+                        .to_string(),
                 ])
             }
             CoreError::VersionRequirementFailed(_, version, constraint) => {
