@@ -1561,6 +1561,19 @@ pub fn extract_bound_var<'a>(smid: &'a Smid, var: &'a Var) -> Result<&'a BoundVa
 }
 
 /// Compile literal into a consistent boxed representation
+/// True when a `Meta` node's metadata exists only for the type checker
+/// and must not reach run time: a literal block whose every key is
+/// `__type_hint`, the hint the desugarer attaches to monadic binding values
+/// and lens paths.  Compiling such a node as its body keeps the value's own
+/// metadata (a YAML tag, say) intact and keeps `x meta` free of checker
+/// hints, so a hint can never change what a program evaluates to.
+fn is_checker_only_meta(meta: &RcExpr) -> bool {
+    match &*meta.inner {
+        Expr::Block(_, block) => !block.is_empty() && block.iter().all(|(k, _)| k == "__type_hint"),
+        _ => false,
+    }
+}
+
 pub fn compile_boxed_literal(prim: &Primitive) -> Rc<StgSyn> {
     match prim {
         Primitive::Str(s) => dsl::box_str(s),
@@ -1896,6 +1909,9 @@ impl<'rt> Compiler<'rt> {
                 let lookup = self.compile_lookup(binder, obj, k, d, *s)?;
                 Ok(Box::new(lookup))
             }
+            Expr::Meta(_, body, meta) if is_checker_only_meta(meta) => {
+                self.compile_body(binder, body.clone(), self_recurse)
+            }
             Expr::Meta(s, body, meta) => {
                 let m = self.compile_binding(binder, meta.clone(), *s, Demand::default(), None)?;
                 // `self_recurse` must thread through to `body` (eu-e3c3i),
@@ -1981,6 +1997,9 @@ impl<'rt> Compiler<'rt> {
                 binder.add_deferred(Box::new(lookup))
             }
             Expr::Name(s, _) => Err(CompileError::UnexpectedExpression(*s)),
+            Expr::Meta(_, body, meta) if is_checker_only_meta(meta) => {
+                self.compile_binding(binder, body.clone(), annotation, demand, self_recurse)
+            }
             Expr::Meta(s, body, meta) => {
                 // `self_recurse` must thread through to `body`: a
                 // self-recursive combinator's canonical binding (e.g. every

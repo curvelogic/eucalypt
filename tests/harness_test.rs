@@ -4802,6 +4802,67 @@ pub fn test_typecheck_159_let_monad_return_misuse_warns() {
     run_typecheck_test("159_let_monad_return_misuse_warns.eu");
 }
 
+/// A misused binding in a typed monadic block is reported once, by the
+/// binding's `__type_hint` check, not again by `bind` now that its
+/// parameter is concrete (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_monadic_binding_mismatch_reported_once() {
+    for name in [
+        "010_for_number_binding.eu",
+        "011_for_string_binding.eu",
+        "013_io_number_binding.eu",
+        "063_for_wrong_binding.eu",
+        "085_random_wrong_binding.eu",
+    ] {
+        let path = format!("tests/harness/typecheck/{name}");
+        let output = std::process::Command::new(eu_binary())
+            .args(["check", &path])
+            .output()
+            .expect("failed to run eu check");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Strip ANSI colour codes, which the renderer may emit.
+        let mut plain = String::new();
+        let mut chars = stderr.chars();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                for c in chars.by_ref() {
+                    if c == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                plain.push(c);
+            }
+        }
+        let warnings = plain
+            .lines()
+            .filter(|l| l.starts_with("warning") && !l.starts_with("warning: eucalypt@"))
+            .count();
+        assert_eq!(warnings, 1, "{name}: expected one warning, got:\n{stderr}");
+    }
+}
+
+/// A lambda argument's result type is inferred in any higher-order call,
+/// so a misused result warns (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_161_lambda_result_inferred_misuse_warns() {
+    run_typecheck_test("161_lambda_result_inferred_misuse_warns.eu");
+}
+
+/// A correct higher-order call with an inferred lambda result checks
+/// clean (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_162_lambda_result_inferred_no_warning() {
+    run_typecheck_test("162_lambda_result_inferred_no_warning.eu");
+}
+
+/// `do`'s prelude actions match its declared wrapper, so a `:do` block of
+/// lifted state and random actions checks clean (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_160_do_block_lifted_actions_no_warning() {
+    run_typecheck_test("160_do_block_lifted_actions_no_warning.eu");
+}
+
 /// A list-destructuring parameter with a block element is not a block
 /// parameter: the valid call checks clean (eu-oaz72.172).
 #[test]
@@ -6301,4 +6362,11 @@ pub fn test_missing_prelude_path_is_an_error() {
 #[test]
 pub fn test_336_list_split_on() {
     run_test(&opts("336_list_split_on.eu"));
+}
+
+/// A `:let` binding keeps its value's tag and metadata: the checker's
+/// `__type_hint` never reaches run time (eu-oaz72.183).
+#[test]
+pub fn test_338_let_block_keeps_metadata() {
+    run_test(&opts("338_let_block_keeps_metadata.eu"));
 }

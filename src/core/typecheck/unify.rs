@@ -693,12 +693,20 @@ pub fn freshen(scheme: &TypeScheme, counter: &mut u32) -> Type {
     let mut rename: Substitution = HashMap::new();
     for var in &scheme.vars {
         let kind = var_kind_in_type(var, &scheme.body);
-        let fresh = TypeVarId(format!("_t{}", *counter));
-        *counter += 1;
+        let fresh = fresh_var_id(counter);
         rename.insert(var.clone(), Type::hk_var(fresh, kind));
     }
 
     apply_subst(&scheme.body, &rename)
+}
+
+/// A fresh type-variable name (`_t{n}`) from `counter`, which advances.
+/// Every fresh variable the checker makes is named here, so names from
+/// different sources cannot collide.
+pub fn fresh_var_id(counter: &mut u32) -> TypeVarId {
+    let fresh = TypeVarId(format!("_t{counter}"));
+    *counter += 1;
+    fresh
 }
 
 /// Instantiate a polymorphic scheme, renaming type variables to fresh names
@@ -718,8 +726,7 @@ pub fn freshen_with_constraints(scheme: &TypeScheme, counter: &mut u32) -> (Type
     let mut rename: Substitution = HashMap::new();
     for var in &scheme.vars {
         let kind = var_kind_in_type(var, &scheme.body);
-        let fresh = TypeVarId(format!("_t{}", *counter));
-        *counter += 1;
+        let fresh = fresh_var_id(counter);
         rename.insert(var.clone(), Type::hk_var(fresh, kind));
     }
 
@@ -743,8 +750,7 @@ pub fn freshen_with_constraints(scheme: &TypeScheme, counter: &mut u32) -> (Type
 pub fn freshen_forall(binders: &[(TypeVarId, Kind)], body: &Type, counter: &mut u32) -> Type {
     let mut rename: Substitution = HashMap::new();
     for (id, kind) in binders {
-        let fresh = TypeVarId(format!("_t{counter}"));
-        *counter += 1;
+        let fresh = fresh_var_id(counter);
         rename.insert(id.clone(), Type::hk_var(fresh, kind.clone()));
     }
     apply_subst(body, &rename)

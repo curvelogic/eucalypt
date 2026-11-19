@@ -38,7 +38,7 @@ use crate::{
             subtype::{is_abstract_hkt_app, is_consistent, is_subtype},
             types::{unfold_mu, Constraint, Kind, Type, TypeScheme, TypeVarId},
             unify::{
-                apply_subst, free_higher_kinded_vars, freshen, freshen_forall,
+                apply_subst, free_higher_kinded_vars, fresh_var_id, freshen, freshen_forall,
                 freshen_with_constraints, infer_scheme, unify, Substitution,
             },
         },
@@ -1302,9 +1302,7 @@ impl Checker {
 
     /// A fresh type-variable name from the checker's counter.
     fn fresh_type_var_id(&mut self) -> TypeVarId {
-        let id = TypeVarId(format!("_t{}", self.var_counter));
-        self.var_counter += 1;
-        id
+        fresh_var_id(&mut self.var_counter)
     }
 
     /// Synthesise the type of a let-binding value, giving priority to any
@@ -1362,6 +1360,10 @@ impl Checker {
                         &inner_type,
                         "expression type does not match annotation",
                     );
+                    // Reported once, here: the value is gradual from now on,
+                    // so the bind it feeds (whose parameter is the same
+                    // wrapper once `m` is resolved) does not report it again.
+                    return Type::Any;
                 }
 
                 // Small list literals synthesise as tuples (e.g. [1,2,3] →
@@ -1415,8 +1417,12 @@ impl Checker {
         let mut field_types: BTreeMap<String, FieldPresence> = BTreeMap::new();
         for (key, value) in fields.iter() {
             let ty = self.synthesise(value);
-            // Only include fields whose type carries real information.
-            if is_informative(&ty) {
+            // The key is certainly present, so an unannotated field is kept
+            // as `any` rather than dropped: a dropped field would make the
+            // record fail a check that requires it (`{value: r.value}`
+            // against `{value: a}`, eu-oaz72.183).  `never` fields (which
+            // cannot evaluate) are still left out.
+            if !matches!(ty, Type::Never) {
                 field_types.insert(key.clone(), FieldPresence::Required(ty));
             }
         }
@@ -1712,15 +1718,15 @@ impl Checker {
                     if let Some(elem_type) =
                         self.infer_elem_type_from_hint_str(&hint_str, &val_type)
                     {
-                        // Record lambda parameter types for LSP inlay hints.
-                        let params: Vec<(String, Type)> = scope
-                            .pattern
-                            .iter()
-                            .map(|name| (name.clone(), elem_type.clone()))
-                            .collect();
-                        if !params.is_empty() {
-                            self.lambda_params.insert(*lam_smid, params);
-                        }
+                        // Record the bound name's type for LSP inlay hints:
+                        // the continuation is `elem → _`.
+                        let continuation = Type::Function(Box::new(elem_type), Box::new(Type::Any));
+                        self.record_lambda_params(
+                            *lam_smid,
+                            scope,
+                            &continuation,
+                            &Substitution::new(),
+                        );
                     }
                 }
             }
@@ -2058,12 +2064,21 @@ impl Checker {
     }
 
     /// Infer the result of a lambda argument whose expected type returns a
-    /// bare, unresolved type variable (e.g. the `a → m b` continuation of a
-    /// monad's `bind` once `m` is known): checking the body against a bare
+    /// bare, unresolved type variable: checking the body against a bare
     /// variable tests nothing, so the body is synthesised once with the
-    /// parameters bound and the variable is unified with its type.  Without
-    /// this, `let.bind("s", λx. let.return(x))` would be typed `b`, losing
-    /// the mismatch in `double({ :let x: "s" }.(x))` (eu-oaz72.183).
+    /// parameters bound and the variable is unified with its type.
+    ///
+    /// This is general: it applies to any higher-order call whose parameter
+    /// is a function returning a bare variable, not only to a monad's
+    /// `bind` continuation (`a → m b` once `m` is known).  So
+    /// `apply(λx. "s", 1)` with `apply : (a → b) → a → b` is typed
+    /// `string`, and `let.bind("s", λx. let.return(x))` is typed `string`
+    /// rather than `b`, which keeps the mismatch in
+    /// `double({ :let x: "s" }.(x))` (eu-oaz72.183).  If the body's type
+    /// conflicts with what the variable is already bound to, the conflict
+    /// is not reported here (the variable stays as it was, so the result
+    /// is no less gradual than without this inference); it surfaces, if
+    /// at all, where the result is used.
     ///
     /// Returns `None`, leaving the caller to check the lambda as before,
     /// when the expected result is not a bare variable or the lambda has
