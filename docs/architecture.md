@@ -718,7 +718,7 @@ blob. `cargo xtask prelude-compile` stamps it into the blob's `source_hash`
 field and `build.rs` recomputes it; the recipe, the version constant and the
 staleness verdict all live in one file, `src/eval/stg/wire_format.rs`, which
 `build.rs` `include!`s (a build script cannot depend on its own crate). The
-three hashed inputs are:
+hashed inputs are:
 
 - **`lib/prelude.eu`** — the prelude bindings themselves.
 - **`src/eval/intrinsics.rs`** — the intrinsic catalogue. Its length fixes the
@@ -730,6 +730,11 @@ three hashed inputs are:
 - **`BYTECODE_WIRE_FORMAT_VERSION`** — the serialised code-stream layout, which
   nothing on disk reveals. This constant is hand-bumped, and only when the
   encoder's byte layout changes; intrinsic-table changes need no bump.
+- **The sources that build the blob** — the demand analysis and bytecode
+  encoder (`DEMAND_ANALYSIS_PATHS`), every STG source including the
+  hand-written intrinsic wrappers (`STG_SOURCE_ROOTS`), and the parser and
+  core front end (`FRONT_END_SOURCE_ROOTS`), each with its path. See
+  `docs/development/prelude-blob.md`.
 
 A blob that fails the check is not used: `build.rs` emits a `cargo:warning`
 naming `cargo xtask prelude-compile` and sets `cfg(prelude_blob_stale)`, and

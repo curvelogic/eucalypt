@@ -6,7 +6,8 @@
 //! 2. Verify the pre-compiled prelude blob (`lib/prelude.blob`) against the
 //!    inputs it was generated from — `lib/prelude.eu`, the intrinsic
 //!    catalogue `src/eval/intrinsics.rs`, the demand analysis and STG sources
-//!    (intrinsic wrappers included), the parser and core front end, and the BV1 wire-format version:
+//!    (intrinsic wrappers included), the parser and core front end, and the
+//!    BV1 wire-format version:
 //!    - If the blob is missing, unparseable, or was generated against
 //!      different inputs, emit a build warning and set
 //!      `cfg(prelude_blob_stale)` so the driver falls back to source-prelude.

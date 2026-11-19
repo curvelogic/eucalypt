@@ -9,8 +9,9 @@ running user code. There are two ways this happens:
    (`src/driver/resources.rs`, gated on `cfg(prelude_blob_ok)`, set by
    `build.rs` when the blob is present and its embedded source hash
    matches the inputs it was built from: `lib/prelude.eu`, the intrinsic
-   catalogue, the demand analysis and bytecode encoder, and the STG sources
-   with their intrinsic wrappers). At runtime the prelude's operators, type
+   catalogue, the demand analysis and bytecode encoder, the STG sources
+   with their intrinsic wrappers, and the parser and core front end). At
+   runtime the prelude's operators, type
    summary, and compiled STG globals are loaded straight from the blob;
    the prelude source is never parsed, cooked, or merged.
 2. **Source-prelude fallback.** Used when no blob is embedded (a plain
@@ -126,7 +127,8 @@ It covers the parser and the core front end too (`FRONT_END_SOURCE_ROOTS`):
 the core passes that `prelude-compile` runs before STG compilation
 (`src/core/desugar/`, `cook/`, `transform/`, `inline/`, the core expression
 and metadata, and the type-annotation renderer in
-`src/core/typecheck/parse.rs` that the desugarer calls). Editing any of
+`src/core/typecheck/parse.rs`, with the `types.rs` it uses, that the
+desugarer calls). Editing any of
 them marks a local blob stale in the same way (eu-d3ydw). The type checker
 proper, `src/core/verify/`, `src/core/simplify/` and the dump and error
 modules are left out, since nothing in them can change a generated blob;

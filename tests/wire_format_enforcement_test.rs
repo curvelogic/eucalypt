@@ -287,9 +287,8 @@ fn every_intrinsic_wrapper_source_is_hashed() {
 
 /// Files under `src/core` and `src/syntax` deliberately left out of the
 /// blob's freshness key, each with the reason nothing in it can change a
-/// generated blob. A directory entry ends with `/`; a file under it that
-/// `FRONT_END_SOURCE_ROOTS` names (`src/core/typecheck/parse.rs`) is hashed
-/// all the same. See `FRONT_END_SOURCE_ROOTS` (eu-d3ydw).
+/// generated blob. A directory entry ends with `/`. Every entry must exist
+/// and must not also be hashed. See `FRONT_END_SOURCE_ROOTS` (eu-d3ydw).
 const FRONT_END_UNHASHED: &[(&str, &str)] = &[
     ("src/core/mod.rs", "module declarations"),
     ("src/core/error.rs", "failure diagnostics"),
@@ -303,10 +302,20 @@ const FRONT_END_UNHASHED: &[(&str, &str)] = &[
         "src/core/verify/",
         "checks that can fail generation, never alter it",
     ),
+    // The type checker proper, file by file, so that a new file under
+    // `src/core/typecheck/` (a renderer split out of `parse.rs`, say) must
+    // be decided on rather than excluded by default. Its result is not
+    // baked: prelude-compile type-checks only as a sanity pass.
+    ("src/core/typecheck/mod.rs", "module declarations"),
+    ("src/core/typecheck/check.rs", "checker; result not baked"),
+    ("src/core/typecheck/env.rs", "checker; result not baked"),
+    ("src/core/typecheck/error.rs", "checker diagnostics"),
     (
-        "src/core/typecheck/",
-        "the checker is a sanity pass; its result is not baked",
+        "src/core/typecheck/resolve_typedata.rs",
+        "checker; result not baked",
     ),
+    ("src/core/typecheck/subtype.rs", "checker; result not baked"),
+    ("src/core/typecheck/unify.rs", "checker; result not baked"),
     ("src/syntax/mod.rs", "module declarations"),
     ("src/syntax/error.rs", "failure diagnostics"),
     ("src/syntax/export/", "dump rendering"),
@@ -318,8 +327,8 @@ const FRONT_END_UNHASHED: &[(&str, &str)] = &[
 /// new file under `src/core` or `src/syntax` cannot leave an edit to it
 /// reported fresh without someone deciding so (eu-d3ydw).
 ///
-/// Fault injection: drop `src/core/desugar` from `FRONT_END_SOURCE_ROOTS`
-/// and this fails.
+/// Fault injection: drop `src/core/desugar` from `FRONT_END_SOURCE_ROOTS`,
+/// or add a file under `src/core/typecheck/`, and this fails.
 #[test]
 fn every_front_end_source_is_hashed_or_excluded_with_a_reason() {
     let hashed: Vec<String> = read_front_end_sources(&root())
@@ -331,6 +340,9 @@ fn every_front_end_source_is_hashed_or_excluded_with_a_reason() {
         .into_iter()
         .map(|(path, _)| path)
         .filter(|path| path.starts_with("src/core/") || path.starts_with("src/syntax/"))
+        // Dot-files (editor lock and backup files) are skipped, as
+        // `read_source_roots` skips them.
+        .filter(|path| !path.split('/').any(|c| c.starts_with('.')))
         .collect();
     assert!(
         front_end
@@ -352,6 +364,18 @@ fn every_front_end_source_is_hashed_or_excluded_with_a_reason() {
             "{path} is neither hashed into the prelude blob's freshness key nor \
              excluded with a reason — add it under FRONT_END_SOURCE_ROOTS, or to \
              FRONT_END_UNHASHED if nothing in it can change a generated blob (eu-d3ydw)"
+        );
+        assert!(
+            !(excluded && hashed.contains(path)),
+            "{path} is both hashed and listed in FRONT_END_UNHASHED"
+        );
+    }
+    // A stale exclusion (a file moved or deleted) would otherwise sit
+    // unnoticed and could later exclude a new file of the same name.
+    for (entry, _) in FRONT_END_UNHASHED {
+        assert!(
+            root().join(entry).exists(),
+            "FRONT_END_UNHASHED names {entry}, which no longer exists"
         );
     }
 }

@@ -490,7 +490,8 @@ impl BlobFreshness {
             ),
             BlobFreshness::Stale => Some(
                 "prelude blob is stale (prelude source, intrinsic table, demand analysis, STG or \
-                 front-end sources or bytecode wire format has changed) — run `cargo xtask prelude-compile` to regenerate.",
+                 front-end sources or bytecode wire format has changed) — \
+                 run `cargo xtask prelude-compile` to regenerate.",
             ),
         }
     }
