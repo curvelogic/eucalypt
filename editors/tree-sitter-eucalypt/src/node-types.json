@@ -181,6 +181,10 @@
         {
           "type": "identifier",
           "named": true
+        },
+        {
+          "type": "quoted_identifier",
+          "named": true
         }
       ]
     }
@@ -199,6 +203,10 @@
         },
         {
           "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         }
       ]
@@ -325,6 +333,10 @@
         },
         {
           "type": "list_pattern",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         }
       ]
@@ -579,6 +591,10 @@
         {
           "type": "list_pattern",
           "named": true
+        },
+        {
+          "type": "quoted_identifier",
+          "named": true
         }
       ]
     }
@@ -605,6 +621,10 @@
         },
         {
           "type": "list_pattern",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         }
       ]
@@ -744,6 +764,10 @@
         },
         {
           "type": "list_pattern",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         }
       ]

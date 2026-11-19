@@ -402,7 +402,7 @@
                   },
                   {
                     "type": "SYMBOL",
-                    "name": "identifier"
+                    "name": "_name"
                   }
                 ]
               },
@@ -469,7 +469,7 @@
                 },
                 {
                   "type": "SYMBOL",
-                  "name": "identifier"
+                  "name": "_name"
                 }
               ]
             },
@@ -571,7 +571,7 @@
               "members": [
                 {
                   "type": "SYMBOL",
-                  "name": "identifier"
+                  "name": "_name"
                 },
                 {
                   "type": "SYMBOL",
@@ -579,7 +579,7 @@
                 },
                 {
                   "type": "SYMBOL",
-                  "name": "identifier"
+                  "name": "_name"
                 }
               ]
             },
@@ -592,7 +592,7 @@
                 },
                 {
                   "type": "SYMBOL",
-                  "name": "identifier"
+                  "name": "_name"
                 }
               ]
             },
@@ -601,7 +601,7 @@
               "members": [
                 {
                   "type": "SYMBOL",
-                  "name": "identifier"
+                  "name": "_name"
                 },
                 {
                   "type": "SYMBOL",
@@ -621,12 +621,25 @@
         }
       ]
     },
-    "_param": {
+    "_name": {
       "type": "CHOICE",
       "members": [
         {
           "type": "SYMBOL",
           "name": "identifier"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "quoted_identifier"
+        }
+      ]
+    },
+    "_param": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "_name"
         },
         {
           "type": "SYMBOL",
@@ -724,7 +737,7 @@
                   },
                   {
                     "type": "SYMBOL",
-                    "name": "identifier"
+                    "name": "_name"
                   }
                 ]
               },
@@ -858,7 +871,7 @@
         },
         {
           "type": "SYMBOL",
-          "name": "identifier"
+          "name": "_name"
         },
         {
           "type": "STRING",
@@ -2039,10 +2052,6 @@
     ],
     [
       "operator_declaration",
-      "name"
-    ],
-    [
-      "operator_declaration",
       "soup"
     ],
     [
@@ -2053,7 +2062,7 @@
       "name"
     ],
     [
-      "_param",
+      "_name",
       "name"
     ],
     [

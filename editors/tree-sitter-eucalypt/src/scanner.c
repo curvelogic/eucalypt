@@ -647,6 +647,15 @@ static bool at_declaration_start(TSLexer *lexer) {
             if (is_identifier_start(lexer->lookahead)) {
                 skip_identifier(lexer);
                 has_identifier = true;
+            } else if (lexer->lookahead == '\'') {
+                // A quoted operand: ('l' + 'r'):, (! 'x'): (eu-aejhk)
+                lexer->advance(lexer, true);
+                while (lexer->lookahead != '\'' && !lexer->eof(lexer)) {
+                    lexer->advance(lexer, true);
+                }
+                if (lexer->lookahead != '\'') break;
+                lexer->advance(lexer, true);
+                has_identifier = true;
             } else if (is_operator_char(lexer->lookahead)) {
                 skip_operator(lexer);
                 has_operator = true;

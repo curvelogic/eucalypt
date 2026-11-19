@@ -8,12 +8,12 @@
   "web_tree_sitter": "0.22.6",
   "wasm": {
     "file": "tree-sitter-eucalypt.wasm",
-    "sha256": "38d3133b5d5c78505915df73877cb9d80864c441a617ed0780180db48b7f67c4",
-    "bytes": 63508
+    "sha256": "4bada3de9780ae7a1e041c01dcbd8bd0b1c4ed89500702433e893924ddad84c2",
+    "bytes": 64498
   },
   "sources": {
-    "src/parser.c": "55bcd059ad2e98122e3ac1bba9f69b06d3249cc4a095439b5ef5636bde714201",
-    "src/scanner.c": "29ab6066a761537791ad5f63bc32e87a2179579902a81bb00ab1d3d56f50361c",
+    "src/parser.c": "86dea831bb3cc8255d8307226c17d0c32689c6c77bfeadabf1c9bb78bbd00247",
+    "src/scanner.c": "1f1bb403186c474a1d9c732c15e21c34c8bb6cf1ee2f74e25ae14eae99147a75",
     "src/tree_sitter/alloc.h": "253b44a7b4313a7afd0c505c2fc6e7ce4b8e78955ebf4be3ea000532ec060673",
     "src/tree_sitter/array.h": "4ff743903dc46f5db6aa54f31c6b4d160a8a9779e5b2ab1ee59ae7ebcd850ea1",
     "src/tree_sitter/parser.h": "a3eb18ef034b3f4255b965a26caa276f9cfe13a79573b402f1a12dc5018052aa"

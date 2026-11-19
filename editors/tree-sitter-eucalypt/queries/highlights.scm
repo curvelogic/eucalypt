@@ -186,9 +186,9 @@
     [(parameter_list) (block_param) (list_param)]))
 
 ; Operator declarations: the operator keeps its general @operator capture;
-; every operand is a parameter
+; every operand, plain or quoted, is a parameter
 (operator_declaration
-  (identifier) @parameter)
+  [(identifier) (quoted_identifier)] @parameter)
 
 ; Bracket-pair declaration heads — a plain or quoted name parameter
 ; (⟦ x ⟧:, ⟦ 'q' ⟧:); list,
@@ -198,17 +198,17 @@
   (bracket_expr
     [(identifier) (quoted_identifier)] @parameter))
 
-; Function parameters — simple identifiers
+; Function parameters — plain or quoted names (f(x, 'q'):, eu-aejhk)
 (parameter_list
-  (identifier) @parameter)
+  [(identifier) (quoted_identifier)] @parameter)
 
 ; Juxtaposed parameters — f{x y}:, f[a, b]: and f[h : t]:
 ; (renamed or nested fields, f{x: px}: and f{k: {z}}:, are block_pattern_field
 ; nodes, covered by the destructuring rules below)
 (block_param
-  (identifier) @parameter)
+  [(identifier) (quoted_identifier)] @parameter)
 (list_param
-  (identifier) @parameter)
+  [(identifier) (quoted_identifier)] @parameter)
 
 ; Destructuring parameters — block pattern shorthand fields (`{x y}`) and
 ; renamed or nested fields (`{x: a}` binds field x
@@ -216,17 +216,17 @@
 ; a plain bound name are parameters; the list_pattern/cons_pattern rules
 ; below cover identifiers nested deeper.
 (block_pattern
-  (identifier) @parameter)
+  [(identifier) (quoted_identifier)] @parameter)
 (block_pattern_field
-  (identifier) @parameter)
+  [(identifier) (quoted_identifier)] @parameter)
 
 ; Destructuring parameters — list pattern element names
 (list_pattern
-  (identifier) @parameter)
+  [(identifier) (quoted_identifier)] @parameter)
 
 ; Destructuring parameters — cons pattern head and tail names
 (cons_pattern
-  (identifier) @parameter)
+  [(identifier) (quoted_identifier)] @parameter)
 
 ; Metadata
 (metadata
