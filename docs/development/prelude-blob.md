@@ -11,9 +11,9 @@ running user code. There are two ways this happens:
    matches the inputs it was built from: `lib/prelude.eu`, the intrinsic
    catalogue, the demand analysis and bytecode encoder, the STG sources
    with their intrinsic wrappers, and the parser and core front end). At
-   runtime the prelude's operators, type
-   summary, and compiled STG globals are loaded straight from the blob;
-   the prelude source is never parsed, cooked, or merged.
+   runtime the prelude's operators, type summary, and compiled STG globals
+   are loaded straight from the blob; the prelude source is never parsed,
+   cooked, or merged.
 2. **Source-prelude fallback.** Used when no blob is embedded (a plain
    checkout with `lib/prelude.blob` absent — it is git-ignored — or a
    stale blob whose hash doesn't match), or when explicitly requested via
@@ -128,8 +128,8 @@ the core passes that `prelude-compile` runs before STG compilation
 (`src/core/desugar/`, `cook/`, `transform/`, `inline/`, the core expression
 and metadata, and the type-annotation renderer in
 `src/core/typecheck/parse.rs`, with the `types.rs` it uses, that the
-desugarer calls). Editing any of
-them marks a local blob stale in the same way (eu-d3ydw). The type checker
+desugarer calls). Editing any of them marks a local blob stale in the same
+way (eu-d3ydw). The type checker
 proper, `src/core/verify/`, `src/core/simplify/` and the dump and error
 modules are left out, since nothing in them can change a generated blob;
 `tests/wire_format_enforcement_test.rs` makes every file under `src/core`

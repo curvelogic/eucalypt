@@ -242,8 +242,9 @@ pub fn read_front_end_sources(
     read_source_roots(workspace_root, FRONT_END_SOURCE_ROOTS)
 }
 
-/// Read every `.rs` file under `roots`, relative to `workspace_root`, as `(path, contents)` pairs sorted by path, the path
-/// relative to the workspace root with `/` separators.
+/// Read every `.rs` file under `roots`, relative to `workspace_root`, as
+/// `(path, contents)` pairs sorted by path, the path relative to the
+/// workspace root with `/` separators.
 ///
 /// Only regular files are read, and entries whose names start with a dot
 /// (editor lock and backup files, such as a dangling `.#force.rs`) are

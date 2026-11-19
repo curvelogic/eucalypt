@@ -43,7 +43,9 @@ fn all_rust_sources() -> Vec<(String, String)> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() {
+            // `DirEntry::file_type` does not follow symlinks, so a symlinked
+            // directory is not entered, as `read_source_roots` does not.
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
                 walk(&path, out);
             } else if path.extension().is_some_and(|e| e == "rs") {
                 out.push(path);
