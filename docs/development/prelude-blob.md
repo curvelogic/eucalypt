@@ -111,6 +111,14 @@ blob's freshness hash covers the analysis sources
 (`DEMAND_ANALYSIS_PATHS` in `src/eval/stg/wire_format.rs`), so a blob whose
 signatures came from an older analysis is stale, not misread.
 
+The hash also covers every `.rs` file under `src/eval/stg/` and
+`src/eval/machine/intrinsic.rs` (`STG_SOURCE_ROOTS`), because the blob
+bakes in the encoded intrinsic wrapper globals and the wrapper bodies
+inlined into prelude code. Editing a hand-written wrapper (for example in
+`src/eval/stg/force.rs`) therefore marks a local blob stale, and the build
+falls back to the source prelude, with a warning, until `cargo xtask
+prelude-compile` is rerun (eu-ox7qz).
+
 ## What this means in practice
 
 - **Released binaries are unaffected.** `cargo xtask prelude-compile` runs

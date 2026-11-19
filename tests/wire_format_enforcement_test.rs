@@ -19,8 +19,8 @@
 use std::path::{Path, PathBuf};
 
 use eucalypt::eval::stg::wire_format::{
-    blob_source_hash, BLOB_PATH, BUILD_RERUN_PATHS, DEMAND_ANALYSIS_PATHS, INTRINSIC_TABLE_PATH,
-    PRELUDE_SOURCE_PATH, WIRE_FORMAT_MODULE_PATH,
+    blob_source_hash, read_stg_sources, BLOB_PATH, BUILD_RERUN_PATHS, DEMAND_ANALYSIS_PATHS,
+    INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH, STG_SOURCE_ROOTS, WIRE_FORMAT_MODULE_PATH,
 };
 
 /// Workspace root — `CARGO_MANIFEST_DIR` for the `eucalypt` package.
@@ -149,6 +149,7 @@ fn the_build_script_reruns_on_the_inputs_it_hashes() {
     ]
     .into_iter()
     .chain(DEMAND_ANALYSIS_PATHS.iter().copied())
+    .chain(STG_SOURCE_ROOTS.iter().copied())
     {
         assert!(
             BUILD_RERUN_PATHS.contains(&required),
@@ -216,7 +217,8 @@ fn the_embedded_blob_matches_the_inputs_on_disk() {
         .iter()
         .map(|p| std::fs::read(root().join(p)).expect("demand analysis source"))
         .collect();
-    let expected = blob_source_hash(&prelude, &table, &analysis);
+    let stg = read_stg_sources(&root()).expect("STG sources");
+    let expected = blob_source_hash(&prelude, &table, &analysis, &stg);
 
     let embedded = read_blob_source_hash(eucalypt::driver::resources::PRELUDE_BLOB_BYTES)
         .expect("embedded blob carries a source hash");
@@ -240,11 +242,62 @@ fn the_freshness_hash_covers_the_real_inputs() {
         .extend_from_slice(b"\n// Intrinsic { name: \"CONTRACT_FAIL\", .. }: an added intrinsic\n");
 
     assert_ne!(
-        blob_source_hash(&prelude, &table, &[]),
-        blob_source_hash(&prelude, &table_with_new_intrinsic, &[]),
+        blob_source_hash(&prelude, &table, &[], &[]),
+        blob_source_hash(&prelude, &table_with_new_intrinsic, &[], &[]),
         "editing the intrinsic catalogue must invalidate the prelude blob without \
          anyone hand-bumping BYTECODE_WIRE_FORMAT_VERSION (eu-3skeg)"
     );
+}
+
+/// Every hand-written intrinsic wrapper is a blob input (eu-ox7qz): the blob
+/// bakes in the encoded wrapper globals and the wrapper bodies inlined into
+/// prelude code, so a file that defines `StgIntrinsic::wrapper` and is not
+/// under a hashed STG root would let a wrapper edit leave a stale blob
+/// reported fresh — blob mode silently running the old wrapper.
+///
+/// Fault injection: drop `src/eval/stg` (or `src/eval/machine/intrinsic.rs`)
+/// from `STG_SOURCE_ROOTS` and this fails.
+#[test]
+fn every_intrinsic_wrapper_source_is_hashed() {
+    let hashed: Vec<String> = read_stg_sources(&root())
+        .expect("STG sources")
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    let wrappers: Vec<String> = all_rust_sources()
+        .into_iter()
+        .filter(|(path, text)| path.starts_with("src/") && text.contains("fn wrapper("))
+        .map(|(path, _)| path)
+        .collect();
+    assert!(
+        wrappers.iter().any(|p| p == "src/eval/stg/force.rs"),
+        "the scan found no wrapper in src/eval/stg/force.rs: {wrappers:?}"
+    );
+    for path in &wrappers {
+        assert!(
+            hashed.contains(path),
+            "{path} defines an intrinsic wrapper but is not hashed into the prelude \
+             blob's freshness key — add it under STG_SOURCE_ROOTS (eu-ox7qz)"
+        );
+    }
+}
+
+/// Reading the STG sources is deterministic and keyed by workspace-relative
+/// path, so `build.rs` (run from the package root) and `xtask` (given an
+/// absolute workspace root) compute the same hash.
+#[test]
+fn stg_sources_are_read_relative_and_sorted() {
+    let absolute = read_stg_sources(&root()).expect("STG sources");
+    let paths: Vec<&str> = absolute.iter().map(|(p, _)| p.as_str()).collect();
+    let mut sorted = paths.clone();
+    sorted.sort();
+    assert_eq!(paths, sorted);
+    assert!(paths.contains(&"src/eval/stg/force.rs"), "{paths:?}");
+    assert!(
+        paths.contains(&"src/eval/machine/intrinsic.rs"),
+        "{paths:?}"
+    );
+    assert!(paths.iter().all(|p| p.ends_with(".rs")));
 }
 
 /// The embedded blob carries the demand signatures the analysis derived for
