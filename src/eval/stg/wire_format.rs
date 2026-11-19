@@ -497,8 +497,8 @@ mod tests {
     fn stg_sources_skip_links_dot_files_and_non_rust_files() {
         use std::os::unix::fs::symlink;
 
-        let root = std::env::temp_dir().join(format!("eu-stg-sources-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let scratch = tempfile::tempdir().unwrap();
+        let root = scratch.path();
         let stg = root.join("src/eval/stg");
         std::fs::create_dir_all(stg.join("sub")).unwrap();
         std::fs::create_dir_all(root.join("src/eval/machine")).unwrap();
@@ -511,9 +511,7 @@ mod tests {
         symlink(stg.join("sub"), stg.join("linked")).unwrap();
         symlink(stg.join("force.rs"), stg.join("alias.rs")).unwrap();
 
-        let result = read_stg_sources(&root);
-        let _ = std::fs::remove_dir_all(&root);
-        let paths: Vec<String> = result
+        let paths: Vec<String> = read_stg_sources(root)
             .expect("STG sources read despite links and dot-files")
             .into_iter()
             .map(|(p, _)| p)
