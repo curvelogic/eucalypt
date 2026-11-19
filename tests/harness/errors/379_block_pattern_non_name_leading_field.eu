@@ -1,0 +1,3 @@
+` "Error test: content before the first declaration in a block pattern that is not a shorthand name (eu-ioz21.14)"
+f{3, k: kk}: kk
+RESULT: f{k: 1}
