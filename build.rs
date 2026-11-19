@@ -69,9 +69,16 @@ fn verify_prelude_blob() {
         return;
     };
 
-    let Ok(stg_sources) = read_stg_sources(Path::new(".")) else {
-        println!("cargo:rustc-cfg=prelude_blob_stale");
-        return;
+    let stg_sources = match read_stg_sources(Path::new(".")) {
+        Ok(sources) => sources,
+        Err(e) => {
+            println!(
+                "cargo:warning=cannot read the STG sources to verify the prelude blob ({e}) — \
+                 compiling the prelude from source each run."
+            );
+            println!("cargo:rustc-cfg=prelude_blob_stale");
+            return;
+        }
     };
 
     let expected = blob_source_hash(

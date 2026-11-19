@@ -92,7 +92,8 @@ use sha2::{Digest, Sha256};
 ///   bump is what makes either mismatch a *detected* staleness. The
 ///   bytecode encoder, the closedness analysis, the opcode flag definitions
 ///   and the constructor arities (`stg/tags.rs`) are now freshness inputs
-///   ([`DEMAND_ANALYSIS_PATHS`]), since they decide or encode the flag.
+///   ([`DEMAND_ANALYSIS_PATHS`], and since eu-ox7qz [`STG_SOURCE_ROOTS`] for
+///   `tags.rs`), since they decide or encode the flag.
 pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 11;
 
 /// Path, relative to the workspace root, of the prelude source baked into the
@@ -169,31 +170,56 @@ pub const STG_SOURCE_ROOTS: &[&str] = &["src/eval/stg", "src/eval/machine/intrin
 /// `workspace_root`, as `(path, contents)` pairs sorted by path, the path
 /// relative to the workspace root with `/` separators.
 ///
-/// Sorting makes the hash independent of directory iteration order, and the
+/// Only regular files are read, and entries whose names start with a dot
+/// (editor lock and backup files, such as a dangling `.#force.rs`) are
+/// skipped; a symlinked directory is not entered. Sorting makes the hash independent of directory iteration order, and the
 /// path goes into the hash with the contents, so moving code between files
 /// also invalidates the blob. A missing root is an error: the caller cannot
 /// verify the blob without it.
 pub fn read_stg_sources(
     workspace_root: &std::path::Path,
 ) -> std::io::Result<Vec<(String, Vec<u8>)>> {
-    fn walk(
+    fn push(
         root: &std::path::Path,
         path: &std::path::Path,
         out: &mut Vec<(String, Vec<u8>)>,
     ) -> std::io::Result<()> {
-        if path.is_dir() {
-            for entry in std::fs::read_dir(path)? {
-                walk(root, &entry?.path(), out)?;
+        let relative = path.strip_prefix(root).map_err(|_| {
+            std::io::Error::other(format!(
+                "STG source {} is outside the workspace {}",
+                path.display(),
+                root.display()
+            ))
+        })?;
+        let relative = relative
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        out.push((relative, std::fs::read(path)?));
+        Ok(())
+    }
+
+    // `DirEntry::file_type` does not follow symlinks, so a symlinked
+    // directory is never entered (no cycles) and a dangling link is never
+    // read.
+    fn walk(
+        root: &std::path::Path,
+        dir: &std::path::Path,
+        out: &mut Vec<(String, Vec<u8>)>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
             }
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            let relative = path
-                .strip_prefix(root)
-                .unwrap_or(path)
-                .components()
-                .map(|c| c.as_os_str().to_string_lossy())
-                .collect::<Vec<_>>()
-                .join("/");
-            out.push((relative, std::fs::read(path)?));
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                walk(root, &path, out)?;
+            } else if file_type.is_file() && path.extension().is_some_and(|e| e == "rs") {
+                push(root, &path, out)?;
+            }
         }
         Ok(())
     }
@@ -201,13 +227,16 @@ pub fn read_stg_sources(
     let mut out = Vec::new();
     for root in STG_SOURCE_ROOTS {
         let path = workspace_root.join(root);
-        if !path.exists() {
+        if path.is_dir() {
+            walk(workspace_root, &path, &mut out)?;
+        } else if path.is_file() {
+            push(workspace_root, &path, &mut out)?;
+        } else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 format!("STG source root {} not found", path.display()),
             ));
         }
-        walk(workspace_root, &path, &mut out)?;
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
@@ -443,6 +472,48 @@ mod tests {
             base,
             blob_source_hash(PRELUDE, TABLE, &[], &source("dict.rs", b"lambda(2, ..)")),
             "moving code to another STG source must invalidate the prelude blob"
+        );
+    }
+
+    /// The walk reads regular `.rs` files only: a dangling editor lock
+    /// symlink (`.#force.rs`), a dot-file, a non-Rust file and a symlinked
+    /// directory are all passed over, and the result is sorted.
+    ///
+    /// Fault injection: follow symlinks or drop the dot-file skip in
+    /// `read_stg_sources` and this fails.
+    #[test]
+    #[cfg(unix)]
+    fn stg_sources_skip_links_dot_files_and_non_rust_files() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("eu-stg-sources-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let stg = root.join("src/eval/stg");
+        std::fs::create_dir_all(stg.join("sub")).unwrap();
+        std::fs::create_dir_all(root.join("src/eval/machine")).unwrap();
+        std::fs::write(root.join("src/eval/machine/intrinsic.rs"), b"m").unwrap();
+        std::fs::write(stg.join("force.rs"), b"f").unwrap();
+        std::fs::write(stg.join("sub/dict.rs"), b"d").unwrap();
+        std::fs::write(stg.join("notes.txt"), b"n").unwrap();
+        std::fs::write(stg.join(".hidden.rs"), b"h").unwrap();
+        symlink("user@host.1234", stg.join(".#force.rs")).unwrap();
+        symlink(stg.join("sub"), stg.join("linked")).unwrap();
+        symlink(stg.join("force.rs"), stg.join("alias.rs")).unwrap();
+
+        let result = read_stg_sources(&root);
+        let _ = std::fs::remove_dir_all(&root);
+        let paths: Vec<String> = result
+            .expect("STG sources read despite links and dot-files")
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                "src/eval/machine/intrinsic.rs",
+                "src/eval/stg/force.rs",
+                "src/eval/stg/sub/dict.rs"
+            ]
         );
     }
 

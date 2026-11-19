@@ -8,7 +8,9 @@ running user code. There are two ways this happens:
    prelude-compile` — is embedded into the binary at compile time
    (`src/driver/resources.rs`, gated on `cfg(prelude_blob_ok)`, set by
    `build.rs` when the blob is present and its embedded source hash
-   matches `lib/prelude.eu`). At runtime the prelude's operators, type
+   matches the inputs it was built from: `lib/prelude.eu`, the intrinsic
+   catalogue, the demand analysis and bytecode encoder, and the STG sources
+   with their intrinsic wrappers). At runtime the prelude's operators, type
    summary, and compiled STG globals are loaded straight from the blob;
    the prelude source is never parsed, cooked, or merged.
 2. **Source-prelude fallback.** Used when no blob is embedded (a plain
