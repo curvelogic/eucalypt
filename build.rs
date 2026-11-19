@@ -6,7 +6,7 @@
 //! 2. Verify the pre-compiled prelude blob (`lib/prelude.blob`) against the
 //!    inputs it was generated from — `lib/prelude.eu`, the intrinsic
 //!    catalogue `src/eval/intrinsics.rs`, the demand analysis and STG sources
-//!    (intrinsic wrappers included), and the BV1 wire-format version:
+//!    (intrinsic wrappers included), the parser and core front end, and the BV1 wire-format version:
 //!    - If the blob is missing, unparseable, or was generated against
 //!      different inputs, emit a build warning and set
 //!      `cfg(prelude_blob_stale)` so the driver falls back to source-prelude.
@@ -25,8 +25,8 @@ mod wire_format {
 
 use std::path::Path;
 use wire_format::{
-    blob_source_hash, classify_blob, read_stg_sources, BlobFreshness, BLOB_PATH, BUILD_RERUN_PATHS,
-    DEMAND_ANALYSIS_PATHS, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH,
+    blob_source_hash, classify_blob, read_front_end_sources, read_stg_sources, BlobFreshness,
+    BLOB_PATH, BUILD_RERUN_PATHS, DEMAND_ANALYSIS_PATHS, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH,
 };
 
 fn main() {
@@ -81,11 +81,24 @@ fn verify_prelude_blob() {
         }
     };
 
+    let front_end_sources = match read_front_end_sources(Path::new(".")) {
+        Ok(sources) => sources,
+        Err(e) => {
+            println!(
+                "cargo:warning=cannot read the front-end sources to verify the prelude blob ({e}) — \
+                 compiling the prelude from source each run."
+            );
+            println!("cargo:rustc-cfg=prelude_blob_stale");
+            return;
+        }
+    };
+
     let expected = blob_source_hash(
         &prelude_source,
         &intrinsic_table,
         &demand_analysis,
         &stg_sources,
+        &front_end_sources,
     );
     let blob = std::fs::read(Path::new(BLOB_PATH)).ok();
 

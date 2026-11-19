@@ -121,6 +121,18 @@ inlined into prelude code. Editing a hand-written wrapper (for example in
 falls back to the source prelude, with a warning, until `cargo xtask
 prelude-compile` is rerun (eu-ox7qz).
 
+It covers the parser and the core front end too (`FRONT_END_SOURCE_ROOTS`):
+`src/syntax/rowan/` and the input, import and span modules beside it, and
+the core passes that `prelude-compile` runs before STG compilation
+(`src/core/desugar/`, `cook/`, `transform/`, `inline/`, the core expression
+and metadata, and the type-annotation renderer in
+`src/core/typecheck/parse.rs` that the desugarer calls). Editing any of
+them marks a local blob stale in the same way (eu-d3ydw). The type checker
+proper, `src/core/verify/`, `src/core/simplify/` and the dump and error
+modules are left out, since nothing in them can change a generated blob;
+`tests/wire_format_enforcement_test.rs` makes every file under `src/core`
+and `src/syntax` either hashed or excluded with a stated reason.
+
 ## What this means in practice
 
 - **Released binaries are unaffected.** `cargo xtask prelude-compile` runs

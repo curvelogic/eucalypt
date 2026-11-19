@@ -19,8 +19,9 @@
 use std::path::{Path, PathBuf};
 
 use eucalypt::eval::stg::wire_format::{
-    blob_source_hash, read_stg_sources, BLOB_PATH, BUILD_RERUN_PATHS, DEMAND_ANALYSIS_PATHS,
-    INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH, STG_SOURCE_ROOTS, WIRE_FORMAT_MODULE_PATH,
+    blob_source_hash, read_front_end_sources, read_stg_sources, BLOB_PATH, BUILD_RERUN_PATHS,
+    DEMAND_ANALYSIS_PATHS, FRONT_END_SOURCE_ROOTS, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH,
+    STG_SOURCE_ROOTS, WIRE_FORMAT_MODULE_PATH,
 };
 
 /// Workspace root — `CARGO_MANIFEST_DIR` for the `eucalypt` package.
@@ -150,6 +151,7 @@ fn the_build_script_reruns_on_the_inputs_it_hashes() {
     .into_iter()
     .chain(DEMAND_ANALYSIS_PATHS.iter().copied())
     .chain(STG_SOURCE_ROOTS.iter().copied())
+    .chain(FRONT_END_SOURCE_ROOTS.iter().copied())
     {
         assert!(
             BUILD_RERUN_PATHS.contains(&required),
@@ -218,7 +220,8 @@ fn the_embedded_blob_matches_the_inputs_on_disk() {
         .map(|p| std::fs::read(root().join(p)).expect("demand analysis source"))
         .collect();
     let stg = read_stg_sources(&root()).expect("STG sources");
-    let expected = blob_source_hash(&prelude, &table, &analysis, &stg);
+    let front_end = read_front_end_sources(&root()).expect("front-end sources");
+    let expected = blob_source_hash(&prelude, &table, &analysis, &stg, &front_end);
 
     let embedded = read_blob_source_hash(eucalypt::driver::resources::PRELUDE_BLOB_BYTES)
         .expect("embedded blob carries a source hash");
@@ -242,8 +245,8 @@ fn the_freshness_hash_covers_the_real_inputs() {
         .extend_from_slice(b"\n// Intrinsic { name: \"CONTRACT_FAIL\", .. }: an added intrinsic\n");
 
     assert_ne!(
-        blob_source_hash(&prelude, &table, &[], &[]),
-        blob_source_hash(&prelude, &table_with_new_intrinsic, &[], &[]),
+        blob_source_hash(&prelude, &table, &[], &[], &[]),
+        blob_source_hash(&prelude, &table_with_new_intrinsic, &[], &[], &[]),
         "editing the intrinsic catalogue must invalidate the prelude blob without \
          anyone hand-bumping BYTECODE_WIRE_FORMAT_VERSION (eu-3skeg)"
     );
@@ -280,6 +283,107 @@ fn every_intrinsic_wrapper_source_is_hashed() {
              blob's freshness key — add it under STG_SOURCE_ROOTS (eu-ox7qz)"
         );
     }
+}
+
+/// Files under `src/core` and `src/syntax` deliberately left out of the
+/// blob's freshness key, each with the reason nothing in it can change a
+/// generated blob. A directory entry ends with `/`; a file under it that
+/// `FRONT_END_SOURCE_ROOTS` names (`src/core/typecheck/parse.rs`) is hashed
+/// all the same. See `FRONT_END_SOURCE_ROOTS` (eu-d3ydw).
+const FRONT_END_UNHASHED: &[(&str, &str)] = &[
+    ("src/core/mod.rs", "module declarations"),
+    ("src/core/error.rs", "failure diagnostics"),
+    ("src/core/analyse/", "test plans for eu test"),
+    ("src/core/export/", "dump rendering"),
+    (
+        "src/core/simplify/",
+        "prelude-compile runs no elimination pass",
+    ),
+    (
+        "src/core/verify/",
+        "checks that can fail generation, never alter it",
+    ),
+    (
+        "src/core/typecheck/",
+        "the checker is a sanity pass; its result is not baked",
+    ),
+    ("src/syntax/mod.rs", "module declarations"),
+    ("src/syntax/error.rs", "failure diagnostics"),
+    ("src/syntax/export/", "dump rendering"),
+];
+
+/// Every Rust file of the parser and core front end is either hashed into
+/// the blob's freshness key — through `FRONT_END_SOURCE_ROOTS` or
+/// `DEMAND_ANALYSIS_PATHS` — or on `FRONT_END_UNHASHED` with a reason, so a
+/// new file under `src/core` or `src/syntax` cannot leave an edit to it
+/// reported fresh without someone deciding so (eu-d3ydw).
+///
+/// Fault injection: drop `src/core/desugar` from `FRONT_END_SOURCE_ROOTS`
+/// and this fails.
+#[test]
+fn every_front_end_source_is_hashed_or_excluded_with_a_reason() {
+    let hashed: Vec<String> = read_front_end_sources(&root())
+        .expect("front-end sources")
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    let front_end: Vec<String> = all_rust_sources()
+        .into_iter()
+        .map(|(path, _)| path)
+        .filter(|path| path.starts_with("src/core/") || path.starts_with("src/syntax/"))
+        .collect();
+    assert!(
+        front_end
+            .iter()
+            .any(|p| p == "src/core/desugar/rowan_ast.rs"),
+        "the scan found no desugarer: {front_end:?}"
+    );
+    for path in &front_end {
+        let excluded = FRONT_END_UNHASHED.iter().any(|(entry, _)| {
+            if entry.ends_with('/') {
+                path.starts_with(entry)
+            } else {
+                path == entry
+            }
+        });
+        let in_demand_analysis = DEMAND_ANALYSIS_PATHS.contains(&path.as_str());
+        assert!(
+            hashed.contains(path) || in_demand_analysis || excluded,
+            "{path} is neither hashed into the prelude blob's freshness key nor \
+             excluded with a reason — add it under FRONT_END_SOURCE_ROOTS, or to \
+             FRONT_END_UNHASHED if nothing in it can change a generated blob (eu-d3ydw)"
+        );
+    }
+}
+
+/// The type-annotation renderer the desugarer runs is hashed even though the
+/// checker beside it is not: the desugarer bakes `render_scheme`'s output
+/// into the blob's desugared cores (eu-d3ydw).
+///
+/// Fault injection: drop `src/core/typecheck/parse.rs` from
+/// `FRONT_END_SOURCE_ROOTS` and this fails.
+#[test]
+fn the_desugarer_s_type_renderer_is_hashed() {
+    let hashed: Vec<String> = read_front_end_sources(&root())
+        .expect("front-end sources")
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    for path in [
+        "src/core/typecheck/parse.rs",
+        "src/core/typecheck/types.rs",
+        "src/syntax/rowan/parse.rs",
+        "src/core/expr.rs",
+    ] {
+        assert!(
+            hashed.iter().any(|p| p == path),
+            "{path} not hashed: {hashed:?}"
+        );
+    }
+    assert!(
+        !hashed.iter().any(|p| p == "src/core/typecheck/check.rs"),
+        "the checker is not a blob input"
+    );
 }
 
 /// Reading the STG sources is deterministic and keyed by workspace-relative

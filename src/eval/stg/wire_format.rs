@@ -166,8 +166,83 @@ pub const DEMAND_ANALYSIS_PATHS: &[&str] = &[
 /// is the safe direction, as for [`INTRINSIC_TABLE_PATH`].
 pub const STG_SOURCE_ROOTS: &[&str] = &["src/eval/stg", "src/eval/machine/intrinsic.rs"];
 
-/// Read every `.rs` file under [`STG_SOURCE_ROOTS`], relative to
-/// `workspace_root`, as `(path, contents)` pairs sorted by path, the path
+/// Roots, relative to the workspace root, of the front-end sources that
+/// `xtask prelude-compile` runs over the prelude before STG compilation:
+/// every `.rs` file under a directory root, or the file itself, is hashed
+/// into [`blob_source_hash`] (eu-d3ydw).
+///
+/// A root is here when a change to it can change the bytes of a blob that
+/// generates successfully:
+///
+/// - `src/syntax/rowan`, `parser.rs`, `import.rs`, `input.rs`, `span.rs` —
+///   parse the prelude units and give them the tags, locators and spans the
+///   blob bakes in (`desugared_unit_cores`, `binding_spans`);
+/// - `src/core/desugar`, `cook`, `transform`, `inline`, with `anaphora.rs`,
+///   `binding.rs`, `rt.rs`, `unit.rs`, `target.rs` and `doc.rs` — the passes
+///   (desugar, cook, merge, namespace hoisting, destructure fusion,
+///   combinator tagging and blob inline expansion) whose output is the
+///   blob's code, `inlinable_bindings` and the desugar-phase blame and
+///   deprecation tables;
+/// - `src/core/expr.rs` and `metadata.rs` — the core expression and the
+///   blame and deprecation specs, serialised into the blob;
+/// - `src/core/typecheck/parse.rs` and `types.rs` — the desugarer renders
+///   every type annotation through `parse_scheme`/`render_scheme` into the
+///   core baked as `desugared_unit_cores`.
+///
+/// Left out, as nothing in them can change a generated blob: the rest of
+/// `src/core/typecheck` (prelude-compile type-checks only as a sanity pass;
+/// the result is not baked), `src/core/verify` (checks that can fail
+/// generation but never alter it), `src/core/simplify` (prelude-compile
+/// runs no elimination pass), `src/core/analyse` (test plans for `eu test`),
+/// `src/core/export` and `src/syntax/export` (dump rendering), the two
+/// `error.rs` (failure diagnostics) and the two `mod.rs` (module
+/// declarations). The demand analysis files of `src/core` are hashed through
+/// [`DEMAND_ANALYSIS_PATHS`] instead. `tests/wire_format_enforcement_test.rs`
+/// checks that every file under `src/core` and `src/syntax` is either hashed
+/// or deliberately left out, so a new file forces the decision.
+///
+/// Like [`STG_SOURCE_ROOTS`], this over-invalidates (an edit to a pass's
+/// handling of user-only syntax forces a regeneration too), which is the
+/// safe direction: the blob is gitignored and CI generates it fresh.
+pub const FRONT_END_SOURCE_ROOTS: &[&str] = &[
+    "src/syntax/rowan",
+    "src/syntax/parser.rs",
+    "src/syntax/import.rs",
+    "src/syntax/input.rs",
+    "src/syntax/span.rs",
+    "src/core/desugar",
+    "src/core/cook",
+    "src/core/transform",
+    "src/core/inline",
+    "src/core/expr.rs",
+    "src/core/metadata.rs",
+    "src/core/anaphora.rs",
+    "src/core/binding.rs",
+    "src/core/rt.rs",
+    "src/core/unit.rs",
+    "src/core/target.rs",
+    "src/core/doc.rs",
+    "src/core/typecheck/parse.rs",
+    "src/core/typecheck/types.rs",
+];
+
+/// Read every `.rs` file under [`STG_SOURCE_ROOTS`]; see
+/// [`read_source_roots`].
+pub fn read_stg_sources(
+    workspace_root: &std::path::Path,
+) -> std::io::Result<Vec<(String, Vec<u8>)>> {
+    read_source_roots(workspace_root, STG_SOURCE_ROOTS)
+}
+
+/// Read every `.rs` file under [`FRONT_END_SOURCE_ROOTS`]; see
+/// [`read_source_roots`].
+pub fn read_front_end_sources(
+    workspace_root: &std::path::Path,
+) -> std::io::Result<Vec<(String, Vec<u8>)>> {
+    read_source_roots(workspace_root, FRONT_END_SOURCE_ROOTS)
+}
+
+/// Read every `.rs` file under `roots`, relative to `workspace_root`, as `(path, contents)` pairs sorted by path, the path
 /// relative to the workspace root with `/` separators.
 ///
 /// Only regular files are read, and entries whose names start with a dot
@@ -183,8 +258,9 @@ pub const STG_SOURCE_ROOTS: &[&str] = &["src/eval/stg", "src/eval/machine/intrin
 /// of a directory does not skip what this walk skips: creating an editor
 /// lock file there re-runs the build script, which then finds the blob
 /// unchanged. That errs in the safe direction.
-pub fn read_stg_sources(
+pub fn read_source_roots(
     workspace_root: &std::path::Path,
+    roots: &[&str],
 ) -> std::io::Result<Vec<(String, Vec<u8>)>> {
     fn push(
         root: &std::path::Path,
@@ -193,7 +269,7 @@ pub fn read_stg_sources(
     ) -> std::io::Result<()> {
         let relative = path.strip_prefix(root).map_err(|_| {
             std::io::Error::other(format!(
-                "STG source {} is outside the workspace {}",
+                "blob source {} is outside the workspace {}",
                 path.display(),
                 root.display()
             ))
@@ -232,7 +308,7 @@ pub fn read_stg_sources(
     }
 
     let mut out = Vec::new();
-    for root in STG_SOURCE_ROOTS {
+    for root in roots {
         let path = workspace_root.join(root);
         let file_type = std::fs::symlink_metadata(&path).map(|m| m.file_type());
         if file_type.as_ref().is_ok_and(|t| t.is_dir()) {
@@ -243,7 +319,7 @@ pub fn read_stg_sources(
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 format!(
-                    "STG source root {} is missing, or is not a real directory or regular file",
+                    "blob source root {} is missing, or is not a real directory or regular file",
                     path.display()
                 ),
             ));
@@ -287,6 +363,26 @@ pub const BUILD_RERUN_PATHS: &[&str] = &[
     // changes. See `STG_SOURCE_ROOTS`.
     "src/eval/stg",
     "src/eval/machine/intrinsic.rs",
+    // The front end; see `FRONT_END_SOURCE_ROOTS`.
+    "src/syntax/rowan",
+    "src/syntax/parser.rs",
+    "src/syntax/import.rs",
+    "src/syntax/input.rs",
+    "src/syntax/span.rs",
+    "src/core/desugar",
+    "src/core/cook",
+    "src/core/transform",
+    "src/core/inline",
+    "src/core/expr.rs",
+    "src/core/metadata.rs",
+    "src/core/anaphora.rs",
+    "src/core/binding.rs",
+    "src/core/rt.rs",
+    "src/core/unit.rs",
+    "src/core/target.rs",
+    "src/core/doc.rs",
+    "src/core/typecheck/parse.rs",
+    "src/core/typecheck/types.rs",
     // Embedded via `include_bytes!` in `src/driver/resources.rs`; cargo does
     // not track non-Rust files referenced that way.
     "lib/test.eu",
@@ -315,7 +411,10 @@ fn absorb(hasher: &mut Sha256, tag: &[u8], bytes: &[u8]) {
 ///   ([`DEMAND_ANALYSIS_PATHS`], in that order) — what derived the blob's
 ///   signatures and encoded its code;
 /// - the STG sources ([`STG_SOURCE_ROOTS`], as read by [`read_stg_sources`]),
-///   each with its path — the compiler and the intrinsic wrappers baked in.
+///   each with its path — the compiler and the intrinsic wrappers baked in;
+/// - the front-end sources ([`FRONT_END_SOURCE_ROOTS`], as read by
+///   [`read_front_end_sources`]), each with its path — the parser and the
+///   core passes that turn the prelude source into what is compiled.
 ///
 /// `xtask prelude-compile` stamps the result into `PreludeBlob::source_hash`;
 /// `build.rs` recomputes it and compares.
@@ -324,6 +423,7 @@ pub fn blob_source_hash(
     intrinsic_table_source: &[u8],
     demand_analysis_sources: &[Vec<u8>],
     stg_sources: &[(String, Vec<u8>)],
+    front_end_sources: &[(String, Vec<u8>)],
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
     absorb(
@@ -339,6 +439,10 @@ pub fn blob_source_hash(
     for (path, source) in stg_sources {
         absorb(&mut hasher, b"stg-source-path", path.as_bytes());
         absorb(&mut hasher, b"stg-source", source);
+    }
+    for (path, source) in front_end_sources {
+        absorb(&mut hasher, b"front-end-source-path", path.as_bytes());
+        absorb(&mut hasher, b"front-end-source", source);
     }
     hasher.finalize().into()
 }
@@ -385,8 +489,8 @@ impl BlobFreshness {
                  run `cargo xtask prelude-compile` to regenerate.",
             ),
             BlobFreshness::Stale => Some(
-                "prelude blob is stale (prelude source, intrinsic table, demand analysis, STG \
-                 sources or bytecode wire format has changed) — run `cargo xtask prelude-compile` to regenerate.",
+                "prelude blob is stale (prelude source, intrinsic table, demand analysis, STG or \
+                 front-end sources or bytecode wire format has changed) — run `cargo xtask prelude-compile` to regenerate.",
             ),
         }
     }
@@ -419,10 +523,11 @@ mod tests {
     /// `blob_source_hash` and this fails.
     #[test]
     fn intrinsic_table_changes_change_the_hash() {
-        let before = blob_source_hash(PRELUDE, TABLE, &[], &[]);
+        let before = blob_source_hash(PRELUDE, TABLE, &[], &[], &[]);
         let after = blob_source_hash(
             PRELUDE,
             b"INTRINSICS: [LOOKUP, RENDER, CONTRACT_FAIL]",
+            &[],
             &[],
             &[],
         );
@@ -434,16 +539,16 @@ mod tests {
 
     #[test]
     fn prelude_source_changes_change_the_hash() {
-        let before = blob_source_hash(PRELUDE, TABLE, &[], &[]);
-        let after = blob_source_hash(b"map(f, xs): different", TABLE, &[], &[]);
+        let before = blob_source_hash(PRELUDE, TABLE, &[], &[], &[]);
+        let after = blob_source_hash(b"map(f, xs): different", TABLE, &[], &[], &[]);
         assert_ne!(before, after);
     }
 
     #[test]
     fn the_hash_is_deterministic() {
         assert_eq!(
-            blob_source_hash(PRELUDE, TABLE, &[], &[]),
-            blob_source_hash(PRELUDE, TABLE, &[], &[])
+            blob_source_hash(PRELUDE, TABLE, &[], &[], &[]),
+            blob_source_hash(PRELUDE, TABLE, &[], &[], &[])
         );
     }
 
@@ -454,8 +559,8 @@ mod tests {
     /// `blob_source_hash` and this fails.
     #[test]
     fn demand_analysis_changes_change_the_hash() {
-        let before = blob_source_hash(PRELUDE, TABLE, &[b"analyse v1".to_vec()], &[]);
-        let after = blob_source_hash(PRELUDE, TABLE, &[b"analyse v2".to_vec()], &[]);
+        let before = blob_source_hash(PRELUDE, TABLE, &[b"analyse v1".to_vec()], &[], &[]);
+        let after = blob_source_hash(PRELUDE, TABLE, &[b"analyse v2".to_vec()], &[], &[]);
         assert_ne!(before, after);
     }
 
@@ -468,21 +573,70 @@ mod tests {
     #[test]
     fn stg_source_changes_change_the_hash() {
         let source = |path: &str, text: &[u8]| vec![(path.to_string(), text.to_vec())];
-        let base = blob_source_hash(PRELUDE, TABLE, &[], &source("force.rs", b"lambda(2, ..)"));
+        let base = blob_source_hash(
+            PRELUDE,
+            TABLE,
+            &[],
+            &source("force.rs", b"lambda(2, ..)"),
+            &[],
+        );
         assert_ne!(
             base,
             blob_source_hash(
                 PRELUDE,
                 TABLE,
                 &[],
-                &source("force.rs", b"lambda(2, local(1))")
+                &source("force.rs", b"lambda(2, local(1))"),
+                &[]
             ),
             "editing an intrinsic wrapper must invalidate the prelude blob"
         );
         assert_ne!(
             base,
-            blob_source_hash(PRELUDE, TABLE, &[], &source("dict.rs", b"lambda(2, ..)")),
+            blob_source_hash(
+                PRELUDE,
+                TABLE,
+                &[],
+                &source("dict.rs", b"lambda(2, ..)"),
+                &[]
+            ),
             "moving code to another STG source must invalidate the prelude blob"
+        );
+    }
+
+    /// A change to a front-end source — the desugarer, say — must change
+    /// the hash, as must the same code under another path, and a source
+    /// must not hash the same as an STG source of the same path and text
+    /// (eu-d3ydw).
+    ///
+    /// Fault injection: drop either `front-end-source` term from
+    /// `blob_source_hash` and this fails.
+    #[test]
+    fn front_end_source_changes_change_the_hash() {
+        let source = |path: &str, text: &[u8]| vec![(path.to_string(), text.to_vec())];
+        let hash =
+            |front_end: &[(String, Vec<u8>)]| blob_source_hash(PRELUDE, TABLE, &[], &[], front_end);
+        let base = hash(&source("desugar.rs", b"desugar v1"));
+        assert_ne!(
+            base,
+            hash(&source("desugar.rs", b"desugar v2")),
+            "editing the desugarer must invalidate the prelude blob"
+        );
+        assert_ne!(
+            base,
+            hash(&source("cook.rs", b"desugar v1")),
+            "moving code to another front-end source must invalidate the prelude blob"
+        );
+        assert_ne!(
+            base,
+            blob_source_hash(
+                PRELUDE,
+                TABLE,
+                &[],
+                &source("desugar.rs", b"desugar v1"),
+                &[]
+            ),
+            "a front-end source must not be interchangeable with an STG source"
         );
     }
 
@@ -531,8 +685,8 @@ mod tests {
     #[test]
     fn inputs_are_unambiguously_separated() {
         assert_ne!(
-            blob_source_hash(b"ab", b"c", &[], &[]),
-            blob_source_hash(b"a", b"bc", &[], &[])
+            blob_source_hash(b"ab", b"c", &[], &[], &[]),
+            blob_source_hash(b"a", b"bc", &[], &[], &[])
         );
     }
 
@@ -544,18 +698,18 @@ mod tests {
     #[test]
     fn a_blob_predating_a_new_intrinsic_is_stale() {
         // A blob stamped before the new intrinsic landed.
-        let mut blob = blob_source_hash(PRELUDE, TABLE, &[], &[]).to_vec();
+        let mut blob = blob_source_hash(PRELUDE, TABLE, &[], &[], &[]).to_vec();
         blob.extend_from_slice(b"...rest of the postcard payload...");
 
         let expected_after =
-            blob_source_hash(PRELUDE, b"INTRINSICS: [LOOKUP, RENDER, NEW]", &[], &[]);
+            blob_source_hash(PRELUDE, b"INTRINSICS: [LOOKUP, RENDER, NEW]", &[], &[], &[]);
         assert_eq!(
             classify_blob(Some(&blob), &expected_after),
             BlobFreshness::Stale
         );
 
         // Sanity: against the table it was built from, the same blob is fresh.
-        let expected_before = blob_source_hash(PRELUDE, TABLE, &[], &[]);
+        let expected_before = blob_source_hash(PRELUDE, TABLE, &[], &[], &[]);
         assert_eq!(
             classify_blob(Some(&blob), &expected_before),
             BlobFreshness::Fresh
@@ -564,7 +718,7 @@ mod tests {
 
     #[test]
     fn a_missing_or_truncated_blob_is_never_fresh() {
-        let expected = blob_source_hash(PRELUDE, TABLE, &[], &[]);
+        let expected = blob_source_hash(PRELUDE, TABLE, &[], &[], &[]);
         assert_eq!(classify_blob(None, &expected), BlobFreshness::Missing);
         assert_eq!(
             classify_blob(Some(&[0u8; 31]), &expected),
