@@ -178,6 +178,14 @@ fn parse_block_pattern(
     Ok(fields)
 }
 
+/// The block inside a bracket pair declaration head (`{}` in `⟦{}⟧`).
+fn bracket_block_parameter(bracket: &rowan_ast::BracketExpr) -> Option<rowan_ast::Block> {
+    bracket.soup()?.elements().find_map(|e| match e {
+        rowan_ast::Element::Block(b) => Some(b),
+        _ => None,
+    })
+}
+
 /// Read a rename or nested field declaration in a block pattern.
 ///
 /// Only a property declaration (`field: pattern`) is a field.  Any other
@@ -1932,6 +1940,17 @@ fn extract_rowan_declaration_components(
                         desugarer.new_smid(span),
                     )
                 })?;
+                // Only an empty block `⟦{}⟧` marks a monadic bracket pair.  A
+                // block with content (`⟦{m}⟧`) reads as a block pattern, which
+                // cannot bind: the argument is always a list.  Report it rather
+                // than silently dropping the content.
+                if let Some(block) = bracket_block_parameter(&bracket_expr) {
+                    if block.syntax().children().next().is_some() {
+                        let smid =
+                            desugarer.new_smid(text_range_to_span(block.syntax().text_range()));
+                        return Err(CoreError::BracketPairBlockParameter(smid));
+                    }
+                }
                 // No formal args — the body is the monad spec block.
                 let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &[], span)?;
 

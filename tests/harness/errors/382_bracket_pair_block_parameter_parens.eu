@@ -1,0 +1,5 @@
+"A renaming block pattern in a parenthesised bracket pair head is rejected too."
+
+(⟦{k: kk, m}⟧): [kk, m]
+
+r: ⟦ {k: 1, m: 2} ⟧

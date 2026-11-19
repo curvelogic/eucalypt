@@ -1,0 +1,3 @@
+exit: 1
+stderr: "a block in a bracket pair declaration head must be empty"
+location: 3:2
