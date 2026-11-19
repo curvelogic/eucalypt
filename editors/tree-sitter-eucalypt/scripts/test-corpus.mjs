@@ -40,10 +40,12 @@ function treeSitterBin() {
 
 // The CLI's header and divider syntax (test.rs HEADER_REGEX, DIVIDER_REGEX).
 // `[^=]` matches a newline, as in the Rust regex, so blank lines may sit in
-// the name block.
+// the name block. The Rust regexes are multi-line, so `^` is a line start;
+// `(?<![^\n])` says the same without the `m` flag, which in JS would also
+// take U+2028 and U+2029 as line ends.
 const HEADER_RE =
-  /^(={3,})([^=\r\n][^\r\n]*)?\r?\n((?:[^=][^\r\n]*\r?\n)+)===+([^=\r\n][^\r\n]*)?\r?\n/gm;
-const DIVIDER_RE = /^(-{3,})([^-\r\n][^\r\n]*)?\r?\n/gm;
+  /(?<![^\n])(={3,})([^=\r\n][^\r\n]*)?\r?\n((?:[^=][^\r\n]*\r?\n)+)===+([^=\r\n][^\r\n]*)?\r?\n/g;
+const DIVIDER_RE = /(?<![^\n])(-{3,})([^-\r\n][^\r\n]*)?\r?\n/g;
 
 // std::env::consts::OS for the current platform.
 const RUST_OS = { darwin: "macos", win32: "windows" }[process.platform] ?? process.platform;
@@ -78,11 +80,16 @@ function parseAttributes(block) {
 
 // Every case in one corpus file: { name, attrs, input | null }. `input` is
 // null when the CLI would drop the case for want of a divider.
-export function parseCorpusFile(content) {
+function parseCorpusFile(content) {
   const headers = [];
+  // The first header's suffix, which may be none (undefined), as in the CLI.
   let firstSuffix;
+  let seenHeader = false;
   for (const m of content.matchAll(HEADER_RE)) {
-    if (firstSuffix === undefined) firstSuffix = m[2];
+    if (!seenHeader) {
+      seenHeader = true;
+      firstSuffix = m[2];
+    }
     if (m[2] !== firstSuffix || m[4] !== firstSuffix) continue;
     headers.push({ start: m.index, end: m.index + m[0].length, ...parseAttributes(m[3]) });
   }
@@ -112,9 +119,20 @@ function corpusFiles(dir) {
   return out.sort();
 }
 
+// tree-sitter resolves a file's language from its configured parser
+// directories as well as the current directory, so another eucalypt grammar
+// there could parse an :error case instead of this package's. A config with
+// no parser directories leaves only this package (the working directory).
+const ISOLATED_CONFIG = { "parser-directories": [] };
+
+// npm resolves a .cmd shim for the CLI on Windows, which needs a shell.
+const SPAWN_SHELL = process.platform === "win32";
+
 function checkCorpus() {
   const problems = [];
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ts-eucalypt-error-cases-"));
+  const config = path.join(tmp, "config.json");
+  fs.writeFileSync(config, JSON.stringify(ISOLATED_CONFIG));
   let errorCases = 0;
   try {
     for (const file of corpusFiles(CORPUS_DIR)) {
@@ -138,10 +156,11 @@ function checkCorpus() {
         errorCases += 1;
         const input = path.join(tmp, `case-${errorCases}.eu`);
         fs.writeFileSync(input, c.input);
-        const r = spawnSync(treeSitterBin(), ["parse", "--quiet", input], {
-          cwd: PKG_DIR,
-          encoding: "utf8",
-        });
+        const r = spawnSync(
+          treeSitterBin(),
+          ["parse", "--quiet", "--config-path", config, input],
+          { cwd: PKG_DIR, encoding: "utf8", shell: SPAWN_SHELL },
+        );
         if (r.error) throw r.error;
         const reported = /\((ERROR|MISSING)\b/.test(r.stdout);
         if (r.status === 0 && !reported) {
@@ -160,9 +179,22 @@ function checkCorpus() {
 }
 
 const args = process.argv.slice(2);
+// --update rewrites the corpus and drops every :error case from the files it
+// rewrites, so the check after it would pass with nothing to check.
+if (args.some((a) => a === "--update" || a === "-u")) {
+  console.error(
+    "test-corpus.mjs: run `npx tree-sitter test --update` directly; it deletes :error " +
+      "cases from the files it rewrites, so re-add them and then run npm test.",
+  );
+  process.exit(2);
+}
 const corpusOnly = args[0] === "--corpus-only";
 if (!corpusOnly) {
-  const r = spawnSync(treeSitterBin(), ["test", ...args], { cwd: PKG_DIR, stdio: "inherit" });
+  const r = spawnSync(treeSitterBin(), ["test", ...args], {
+    cwd: PKG_DIR,
+    stdio: "inherit",
+    shell: SPAWN_SHELL,
+  });
   if (r.error) throw r.error;
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
