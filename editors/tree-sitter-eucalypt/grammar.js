@@ -51,11 +51,18 @@ module.exports = grammar({
 
   conflicts: $ => [
     [$.declaration_head, $.name],
-    [$.declaration_head, $._element],
     [$.operator_declaration, $.name],
     [$.operator_declaration, $.soup],
     [$.soup],
-    [$._bracket_cons_pattern, $.name],
+    // A bracket-pair declaration head (_bracket_head) reads like a bracket
+    // expression until its ':' (⟦ x ⟧, ⟦ [{m}] ⟧, (⟦{}⟧)), so its
+    // patterns fork against the expression rules they resemble (eu-jd7l4).
+    [$._bracket_param, $.name],
+    [$._param, $.name],
+    [$.block_pattern, $.block],
+    [$.operator_declaration, $.block],
+    [$.declaration_head, $.block_pattern_field],
+    [$._bracket_block_soup, $._element],
   ],
 
   rules: {
@@ -139,12 +146,50 @@ module.exports = grammar({
       // Operator declarations in parentheses
       $.operator_declaration,
       // Bracket-pair ("idiot bracket") declarations: ⟦ x ⟧: x declares the
-      // ⟦⟧ bracket pair as a function of x. The bracket's content is an
-      // ordinary soup (often a list_pattern-shaped `[x]`, or a block for
-      // inline monad definitions like ⟦{}⟧: { :monad ... }) — bracket_expr
-      // already parses all of that — or a cons pattern, as in
-      // ⌈ [f: lists] ⌉: (see bracket_expr). Audit report §2.3.
-      $.bracket_expr,
+      // ⟦⟧ bracket pair as a function of x (audit report §2.3). The
+      // parameter is a pattern (see _bracket_head), or a single block, as
+      // in the monad marker ⟦{}⟧: { :monad ... } (_bracket_block_head).
+      alias($._bracket_head, $.bracket_expr),
+      alias($._bracket_block_head, $.bracket_expr),
+    ),
+
+    // A bracket-pair head holding one block: Rowan reads it as a monadic
+    // bracket pair (BracketBlockDef), and the desugarer rejects a non-empty
+    // block (eu-hvuqc). Any other content that is not a parameter (see
+    // _bracket_head) is rejected, as Rowan rejects it: ⟦ a b ⟧: is a
+    // malformed head, and ⟦ 1 ⟧: an invalid bracket parameter pattern. The
+    // block keeps the bracket_expr shape an expression has,
+    // (bracket_expr (soup (block))).
+    _bracket_block_head: $ => seq(
+      BRACKET_OPEN_RE,
+      alias($._bracket_block_soup, $.soup),
+      BRACKET_CLOSE_RE,
+    ),
+
+    _bracket_block_soup: $ => $.block,
+
+    // The head of a bracket-pair declaration, as the Rowan parser reads it
+    // (classify_bracket_direct in src/syntax/rowan/ast.rs): one parameter,
+    // which is a plain or quoted name (⟦ x ⟧:, ⟦ 'q' ⟧:) or a list or cons
+    // pattern whose elements are any patterns, so ⟦ [{m}] ⟧:, ⟦ [{k: kk, m}] ⟧: and
+    // ⌈ [f: lists] ⌉: destructure the operand (eu-jd7l4). A bracket pair's
+    // operand is always a list, so a block pattern directly in the head is
+    // not a parameter: a non-empty block there is an error, and an empty
+    // one, ⟦{}⟧:, is the monad marker (eu-hvuqc). Aliased to bracket_expr,
+    // so editors keep one node type for bracket delimiters; the dynamic
+    // precedence prefers it to the bracket_expr reading of the same head,
+    // as ⟦ x ⟧ and ⟦ [a, b] ⟧ are also expressions.
+    _bracket_head: $ => prec.dynamic(1, seq(
+      BRACKET_OPEN_RE,
+      $._bracket_param,
+      BRACKET_CLOSE_RE,
+    )),
+
+    _bracket_param: $ => choice(
+      $.identifier,
+      $.quoted_identifier,
+      $.list_pattern,
+      $.cons_pattern,
     ),
 
     // Block destructuring parameter in juxtaposed position: f{x y} or f{x, y}
@@ -188,8 +233,11 @@ module.exports = grammar({
     operator_declaration: $ => seq(
       '(',
       choice(
-        // Idiot bracket operator: (⟦ x ⟧) — declares a bracket-pair function
-        seq(BRACKET_OPEN_RE, $.identifier, BRACKET_CLOSE_RE),
+        // Idiot bracket operator: (⟦ x ⟧), (⟦ [{m}] ⟧) — declares a
+        // bracket-pair function, with the same parameter as an unparenthesised
+        // bracket head (_bracket_head); (⟦{}⟧) declares a monadic one
+        seq(BRACKET_OPEN_RE, $._bracket_param, BRACKET_CLOSE_RE),
+        seq(BRACKET_OPEN_RE, '{', '}', BRACKET_CLOSE_RE),
         // Binary operator: (l op r)
         seq($.identifier, $.operator, $.identifier),
         // Unary prefix operator: (op x)
@@ -379,25 +427,8 @@ module.exports = grammar({
       optional(choice(
         $.soup,
         repeat1(seq($.declaration, optional(','))),
-        // A cons pattern, for a bracket-pair declaration head that takes
-        // its operand apart: ⌈ [f: lists] ⌉: (tests/harness/097). As an
-        // expression, [f: lists] is a list holding a declaration colon,
-        // since a symbol's name must follow its colon immediately
-        // (eu-ioz21.7). Heads are plain names: a nested pattern head here
-        // would make every block and list in a bracket expression
-        // ambiguous with a pattern.
-        alias($._bracket_cons_pattern, $.cons_pattern),
       )),
       BRACKET_CLOSE_RE,
-    ),
-
-    _bracket_cons_pattern: $ => seq(
-      '[',
-      $.identifier,
-      repeat(seq(',', $.identifier)),
-      ':',
-      $.identifier,
-      ']',
     ),
 
     // === Literals ===

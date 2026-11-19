@@ -190,6 +190,14 @@
 (operator_declaration
   (identifier) @parameter)
 
+; Bracket-pair declaration heads — a plain or quoted name parameter
+; (⟦ x ⟧:, ⟦ 'q' ⟧:); list,
+; cons and nested block patterns (⟦ [{m}] ⟧:) are covered by the
+; destructuring rules below (eu-jd7l4)
+(declaration_head
+  (bracket_expr
+    [(identifier) (quoted_identifier)] @parameter))
+
 ; Function parameters — simple identifiers
 (parameter_list
   (identifier) @parameter)
