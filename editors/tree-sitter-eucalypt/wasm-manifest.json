@@ -8,11 +8,11 @@
   "web_tree_sitter": "0.22.6",
   "wasm": {
     "file": "tree-sitter-eucalypt.wasm",
-    "sha256": "aeb9e0382a6b135130c00dca9cd5bf9ce5ccf47b5c5ba4fd538bcbdb5f4b60fb",
-    "bytes": 64393
+    "sha256": "38d3133b5d5c78505915df73877cb9d80864c441a617ed0780180db48b7f67c4",
+    "bytes": 63508
   },
   "sources": {
-    "src/parser.c": "86dea831bb3cc8255d8307226c17d0c32689c6c77bfeadabf1c9bb78bbd00247",
+    "src/parser.c": "55bcd059ad2e98122e3ac1bba9f69b06d3249cc4a095439b5ef5636bde714201",
     "src/scanner.c": "29ab6066a761537791ad5f63bc32e87a2179579902a81bb00ab1d3d56f50361c",
     "src/tree_sitter/alloc.h": "253b44a7b4313a7afd0c505c2fc6e7ce4b8e78955ebf4be3ea000532ec060673",
     "src/tree_sitter/array.h": "4ff743903dc46f5db6aa54f31c6b4d160a8a9779e5b2ab1ee59ae7ebcd850ea1",

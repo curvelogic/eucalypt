@@ -51,16 +51,14 @@ module.exports = grammar({
 
   conflicts: $ => [
     [$.declaration_head, $.name],
+    [$.operator_declaration, $.name],
     [$.operator_declaration, $.soup],
     [$.soup],
     // A bracket-pair declaration head (_bracket_head) reads like a bracket
     // expression until its ':' (⟦ x ⟧, ⟦ [{m}] ⟧, (⟦{}⟧)), so its
     // patterns fork against the expression rules they resemble (eu-jd7l4).
     [$._bracket_param, $.name],
-    // A plain or quoted name in a parameter or operator-operand position
-    // reads like a name in an expression until the head's ':', inside a
-    // bracket head as elsewhere (eu-aejhk).
-    [$._name, $.name],
+    [$._param, $.name],
     [$.block_pattern, $.block],
     [$.operator_declaration, $.block],
     [$.declaration_head, $.block_pattern_field],
@@ -202,7 +200,7 @@ module.exports = grammar({
     block_param: $ => seq(
       token.immediate('{'),
       repeat(seq(
-        choice($.block_pattern_field, $._name),
+        choice($.block_pattern_field, $.identifier),
         optional(','),
       )),
       '}',
@@ -218,7 +216,7 @@ module.exports = grammar({
           $._param,
           repeat(seq(',', $._param)),
           ':',
-          $._name,
+          $.identifier,
         ),
         // List pattern: [x, y, ...]; elements may be nested patterns,
         // e.g. `live?[_, [bit, _]]` (eu-ioz21.12)
@@ -240,31 +238,25 @@ module.exports = grammar({
         // bracket head (_bracket_head); (⟦{}⟧) declares a monadic one
         seq(BRACKET_OPEN_RE, $._bracket_param, BRACKET_CLOSE_RE),
         seq(BRACKET_OPEN_RE, '{', '}', BRACKET_CLOSE_RE),
-        // Binary operator: (l op r); an operand may be quoted, ('l' op 'r')
-        seq($._name, $.operator, $._name),
+        // Binary operator: (l op r)
+        seq($.identifier, $.operator, $.identifier),
         // Unary prefix operator: (op x)
-        seq($.operator, $._name),
+        seq($.operator, $.identifier),
         // Unary postfix operator: (x op)
-        seq($._name, $.operator),
+        seq($.identifier, $.operator),
         // Nullary operator: (op)
         $.operator,
       ),
       ')',
     ),
 
-    // A name bound by a parameter pattern: Rowan accepts a quoted name
-    // wherever it accepts a plain one (f('q'):, f({'x'}):, f([h : 't']):,
-    // ('l' + 'r'):, eu-aejhk). Hidden, so trees keep the identifier and
-    // quoted_identifier nodes the queries capture.
-    _name: $ => choice($.identifier, $.quoted_identifier),
-
     // A parameter in a function declaration may be:
-    //   - a plain or quoted name: f(x, y), f('q') (eu-aejhk)
+    //   - a simple identifier: f(x, y)
     //   - a block destructuring pattern: f({x y}) or f({x: a  y: b})
     //   - a fixed-length list destructuring pattern: f([a, b])
     //   - a head/tail cons pattern: f([h : t])
     _param: $ => choice(
-      $._name,
+      $.identifier,
       $.block_pattern,
       $.list_pattern,
       $.cons_pattern,
@@ -297,7 +289,7 @@ module.exports = grammar({
     block_pattern: $ => seq(
       '{',
       repeat(seq(
-        choice($.block_pattern_field, $._name),  // bare name = shorthand binding
+        choice($.block_pattern_field, $.identifier),  // bare identifier = shorthand binding
         optional(','),
       )),
       '}',
@@ -331,14 +323,14 @@ module.exports = grammar({
     // heads, [h1, h2 : t] (audit report §2.6's "multi-head cons pattern",
     // e.g. `[a, b : rest]`). Each head is recursively any pattern (e.g.
     // `[[a, b] : rest]`'s nested-list head); the tail is always a plain
-    // binding name, plain or quoted.
+    // binding name.
     // Uses ':' as the separator (not ',') to distinguish from list_pattern.
     cons_pattern: $ => seq(
       '[',
       $._param,
       repeat(seq(',', $._param)),
       ':',
-      $._name,
+      $.identifier,
       ']',
     ),
 
