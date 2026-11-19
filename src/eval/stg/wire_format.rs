@@ -172,10 +172,17 @@ pub const STG_SOURCE_ROOTS: &[&str] = &["src/eval/stg", "src/eval/machine/intrin
 ///
 /// Only regular files are read, and entries whose names start with a dot
 /// (editor lock and backup files, such as a dangling `.#force.rs`) are
-/// skipped; a symlinked directory is not entered. Sorting makes the hash independent of directory iteration order, and the
-/// path goes into the hash with the contents, so moving code between files
-/// also invalidates the blob. A missing root is an error: the caller cannot
-/// verify the blob without it.
+/// skipped; no symlink is followed, a root included, so a symlinked
+/// directory is not entered. Sorting makes the hash independent of
+/// directory iteration order, and the path goes into the hash with the
+/// contents, so moving code between files also invalidates the blob. A
+/// missing root, or one that is not a real directory or regular file, is an
+/// error: the caller cannot verify the blob without it.
+///
+/// `build.rs` declares `rerun-if-changed` on the same roots, and cargo's scan
+/// of a directory does not skip what this walk skips: creating an editor
+/// lock file there re-runs the build script, which then finds the blob
+/// unchanged. That errs in the safe direction.
 pub fn read_stg_sources(
     workspace_root: &std::path::Path,
 ) -> std::io::Result<Vec<(String, Vec<u8>)>> {
@@ -227,14 +234,18 @@ pub fn read_stg_sources(
     let mut out = Vec::new();
     for root in STG_SOURCE_ROOTS {
         let path = workspace_root.join(root);
-        if path.is_dir() {
+        let file_type = std::fs::symlink_metadata(&path).map(|m| m.file_type());
+        if file_type.as_ref().is_ok_and(|t| t.is_dir()) {
             walk(workspace_root, &path, &mut out)?;
-        } else if path.is_file() {
+        } else if file_type.as_ref().is_ok_and(|t| t.is_file()) {
             push(workspace_root, &path, &mut out)?;
         } else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("STG source root {} not found", path.display()),
+                format!(
+                    "STG source root {} is missing, or is not a real directory or regular file",
+                    path.display()
+                ),
             ));
         }
     }
