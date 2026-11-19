@@ -1403,9 +1403,10 @@ impl Checker {
 
     /// Synthesise a record type from a block's fields.
     ///
-    /// Only fields with known (non-`any`, non-`never`) types are included in
-    /// the synthesised record — unannotated fields synthesise as `any` and
-    /// don't add useful information.  Annotated function members (type
+    /// Every field except a `never`-typed one is included: an unannotated
+    /// field synthesises as `any` and is kept as `any`, because its key is
+    /// certainly present and a record missing it would fail a check that
+    /// requires it.  Annotated function members (type
     /// `A -> B`) ARE included; the type system treats all block members
     /// equally for type checking even though functions don't appear in
     /// rendered output.

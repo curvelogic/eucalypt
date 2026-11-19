@@ -1560,7 +1560,6 @@ pub fn extract_bound_var<'a>(smid: &'a Smid, var: &'a Var) -> Result<&'a BoundVa
     }
 }
 
-/// Compile literal into a consistent boxed representation
 /// True when a `Meta` node's metadata exists only for the type checker
 /// and must not reach run time: a literal block whose every key is
 /// `__type_hint`, the hint the desugarer attaches to monadic binding values
@@ -1574,6 +1573,7 @@ fn is_checker_only_meta(meta: &RcExpr) -> bool {
     }
 }
 
+/// Compile literal into a consistent boxed representation
 pub fn compile_boxed_literal(prim: &Primitive) -> Rc<StgSyn> {
     match prim {
         Primitive::Str(s) => dsl::box_str(s),
