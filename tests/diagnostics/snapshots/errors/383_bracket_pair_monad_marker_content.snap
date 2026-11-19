@@ -18,12 +18,12 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: a bracket pair parameter cannot be a block pattern
+error: a block in a bracket pair declaration head must be empty
   ┌─ tests/harness/errors/383_bracket_pair_monad_marker_content.eu:3:2
   │
 3 │ ⟦{x}⟧: { :monad bind(m, f): f(m)  return(a): a }
   │  ^^^
   │
-  = a bracket pair always receives its items as a list, so its parameter is a name (`⟦ xs ⟧`) or a list pattern (`⟦ [x, y] ⟧`)
+  = a bracket pair always receives its items as a list, so its parameter is a name (`⟦ xs ⟧`) or a list pattern (`⟦ [x, y] ⟧`), not a block pattern
   = to destructure a single block item, put the block pattern in a list pattern: `⟦ [{m}] ⟧: m`
   = an empty block `⟦{}⟧: { :monad … }` declares a monadic bracket pair

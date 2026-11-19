@@ -95,10 +95,10 @@ pub enum CoreError {
     #[error("unexpected content in block pattern")]
     InvalidBlockPatternContent(Smid),
     /// A non-empty block as the parameter of a bracket pair declaration
-    /// (`⟦{m}⟧: m`).  A bracket pair's argument is always a list, so a
-    /// block pattern cannot bind there, and an empty block `⟦{}⟧` is the
-    /// marker for a monadic bracket pair.
-    #[error("a bracket pair parameter cannot be a block pattern")]
+    /// (`⟦{m}⟧: m`, `⟦{x}⟧: { :monad … }`).  A bracket pair's argument is
+    /// always a list, so a block pattern cannot bind there, and only an
+    /// empty block `⟦{}⟧` marks a monadic bracket pair.
+    #[error("a block in a bracket pair declaration head must be empty")]
     BracketPairBlockParameter(Smid),
 }
 
@@ -223,7 +223,8 @@ impl CoreError {
             CoreError::BracketPairBlockParameter(_) => {
                 source_map.diagnostic(self).with_notes(vec![
                     "a bracket pair always receives its items as a list, so its \
-                     parameter is a name (`⟦ xs ⟧`) or a list pattern (`⟦ [x, y] ⟧`)"
+                     parameter is a name (`⟦ xs ⟧`) or a list pattern (`⟦ [x, y] ⟧`), \
+                     not a block pattern"
                         .to_string(),
                     "to destructure a single block item, put the block pattern in a \
                      list pattern: `⟦ [{m}] ⟧: m`"

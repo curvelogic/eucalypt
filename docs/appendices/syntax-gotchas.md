@@ -831,7 +831,7 @@ they destructure `[x]` so `⌈3.7⌉` works as expected.
 
 Because the argument is always a list, a block pattern as the whole
 parameter can never match, and `⟦{m}⟧: …` is reported as an error
-("a bracket pair parameter cannot be a block pattern"). An empty block,
+("a block in a bracket pair declaration head must be empty"). An empty block,
 `⟦{}⟧: { :monad … }`, is reserved for declaring a monadic bracket pair.
 To destructure a single block item, put the block pattern in a list
 pattern:
