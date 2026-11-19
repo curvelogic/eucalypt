@@ -1,0 +1,10 @@
+# The inferred lambda result is used precisely, so a correct higher-order
+# call checks clean (eu-oaz72.183).
+` { type: "(a → b) → a → b" }
+apply(f, x): f(x)
+
+` { type: "number → number" }
+double(n): n * 2
+
+d: double(apply(_ + 1, 1))
+e: [1, 2, 3] map(_ * 2) foldl(+, 0) double

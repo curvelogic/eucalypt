@@ -1,0 +1,2 @@
+` "random.join on a string warns: m (m a) is a random action of actions (eu-oaz72.183)."
+joined: random.join("s")

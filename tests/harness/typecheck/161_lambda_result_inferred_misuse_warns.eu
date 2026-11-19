@@ -1,0 +1,11 @@
+# A lambda argument whose expected result is a bare type variable has its
+# body's type inferred, in any higher-order call, not only in a monad's
+# bind: here `b` is string, so passing the result to `double` warns
+# (eu-oaz72.183).
+` { type: "(a → b) → a → b" }
+apply(f, x): f(x)
+
+` { type: "number → number" }
+double(n): n * 2
+
+d: double(apply(_ str.of, 1))

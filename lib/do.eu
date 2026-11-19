@@ -62,7 +62,7 @@ do-lift-random(raction, c): io.return(thread-seed(c, raction(c.seed)))
           is one monadic bind step.  Members delegate to the underlying io,
           state and random monads; combinators (map, then, and-then, join,
           sequence, map-m, filter-m) are derived by the monad utility."
-    monad: s"ctx → IO(a)" }
+    monad: s"ctx → IO({value: a, ctx: ctx})" }
 do: monad{bind: do-bind, return: do-ret} {
 
   # io capabilities

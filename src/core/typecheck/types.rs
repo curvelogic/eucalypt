@@ -729,30 +729,84 @@ impl fmt::Display for Type {
 /// Format a constructor application, re-sugaring known constructors.
 fn fmt_app(f: &mut fmt::Formatter<'_>, head: &Type, arg: &Type) -> fmt::Result {
     // Two-arg constructors: `App(App(Con("Lens"), a), b)` → `Lens(a, b)`
-    if let Type::App(inner_head, a) = head {
-        if let Type::Con(name) = inner_head.as_ref() {
-            match name.as_str() {
-                "Lens" => return write!(f, "Lens({a}, {arg})"),
-                "Traversal" => return write!(f, "Traversal({a}, {arg})"),
-                "dict" => return write!(f, "dict({a}, {arg})"),
-                _ => {}
-            }
-        }
+    if let Some((name, a)) = two_arg_sugar(head) {
+        return write!(f, "{name}({a}, {arg})");
     }
     // Single-arg constructors.
-    if let Type::Con(name) = head {
-        match name.as_str() {
-            "List" => return write!(f, "[{arg}]"),
-            "IO" => return write!(f, "IO({arg})"),
-            "block" => return write!(f, "block({arg})"),
-            "NonEmpty" => return write!(f, "NonEmpty([{arg}])"),
-            "Random" => return write!(f, "Random({arg})"),
-            "State" => return write!(f, "State({arg})"),
-            _ => {}
-        }
+    if let Some(name) = one_arg_sugar(head) {
+        return match name {
+            "List" => write!(f, "[{arg}]"),
+            "NonEmpty" => write!(f, "NonEmpty([{arg}])"),
+            _ => write!(f, "{name}({arg})"),
+        };
     }
-    // Generic application by juxtaposition.
-    write!(f, "{head} {arg}")
+    // Generic application by juxtaposition.  An argument that itself
+    // renders by juxtaposition (`m a`) or with an infix or binder form
+    // (`a → b`, `a | b`, `forall a. …`) is parenthesised, so that the
+    // rendering re-parses to the same type: `m (m a)`, not `m m a`, which
+    // reads back as `(m m) a` (eu-oaz72.183).  Likewise a head that is not
+    // itself an application or atom.
+    if needs_parens_in_app(head, false) {
+        write!(f, "({head})")?;
+    } else {
+        write!(f, "{head}")?;
+    }
+    if needs_parens_in_app(arg, true) {
+        write!(f, " ({arg})")
+    } else {
+        write!(f, " {arg}")
+    }
+}
+
+/// Whether `ty` must be parenthesised when rendered as the head
+/// (`is_arg == false`) or argument (`is_arg == true`) of a juxtaposed type
+/// application.
+fn needs_parens_in_app(ty: &Type, is_arg: bool) -> bool {
+    match ty {
+        Type::Function(_, _) | Type::Forall(_, _) | Type::Lam(_, _) => true,
+        Type::Union(variants) => variants.len() > 1,
+        // A juxtaposed application is left-associative, so it needs
+        // parentheses only in argument position; sugared constructors
+        // (`[a]`, `IO(a)`, `Lens(a, b)`, …) are self-delimiting.
+        Type::App(_, _) => is_arg && renders_by_juxtaposition(ty),
+        _ => false,
+    }
+}
+
+/// The single-argument constructors [`fmt_app`] renders in a
+/// self-delimiting sugared form (`[a]`, `IO(a)`, …), if `head` is one.
+fn one_arg_sugar(head: &Type) -> Option<&str> {
+    match head {
+        Type::Con(name) => match name.as_str() {
+            n @ ("List" | "IO" | "block" | "NonEmpty" | "Random" | "State") => Some(n),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The two-argument constructors [`fmt_app`] renders as `Name(a, b)`, with
+/// the first argument, if `head` (`App(Con(name), a)`) is one.
+fn two_arg_sugar(head: &Type) -> Option<(&str, &Type)> {
+    match head {
+        Type::App(inner, a) => match inner.as_ref() {
+            Type::Con(name) => match name.as_str() {
+                n @ ("Lens" | "Traversal" | "dict") => Some((n, a.as_ref())),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Whether an application renders by juxtaposition (`m a`) rather than
+/// through one of the self-delimiting sugared forms in [`fmt_app`].
+fn renders_by_juxtaposition(ty: &Type) -> bool {
+    match ty {
+        Type::App(head, _) => one_arg_sugar(head).is_none() && two_arg_sugar(head).is_none(),
+        _ => false,
+    }
 }
 
 // ── humanise ─────────────────────────────────────────────────────────────────
@@ -1513,5 +1567,36 @@ mod tests {
         } else {
             panic!("expected Record");
         }
+    }
+
+    /// A juxtaposed application whose argument is itself an application, a
+    /// function or a union renders with parentheses, so the rendering parses
+    /// back to the same type (eu-oaz72.183).
+    #[test]
+    fn display_nested_application_round_trips() {
+        use crate::core::typecheck::parse::parse_type;
+        for src in [
+            "m (m a) → m a",
+            "m (a → b)",
+            "m (a | b)",
+            "f a b",
+            "m [a]",
+            "m IO(a)",
+            "[m (m a)]",
+            "m (n (m a))",
+        ] {
+            let parsed = parse_type(src).unwrap();
+            let rendered = parsed.to_string();
+            assert_eq!(
+                parse_type(&rendered).unwrap(),
+                parsed,
+                "{src} rendered as {rendered}, which parses differently"
+            );
+        }
+        let nested = Type::App(
+            Box::new(hk_var("m")),
+            Box::new(Type::App(Box::new(hk_var("m")), Box::new(var("a")))),
+        );
+        assert_eq!(nested.to_string(), "m (m a)");
     }
 }

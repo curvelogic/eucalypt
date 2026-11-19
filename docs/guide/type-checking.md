@@ -733,72 +733,47 @@ value, so bound variables keep their inferred types directly:
 `monad({ bind(m, f): ..., return(v): ... })` derives the standard
 monad combinators (`map`, `then`, `and-then`, `join`, `sequence`,
 `map-m`, `filter-m`) and annotates them with higher-kinded types using
-`forall (m :: * -> *)`.
+`forall (m :: * -> *)`: `map` is `(a → b) → m a → m b`, `join` is
+`m (m a) → m a`, and so on.
 
-When `monad()` is called with a concrete `bind` and `return`, the type
-checker instantiates `m :: * → *` as a fresh higher-kinded variable and
-runs higher-order pattern unification: it unifies `m a` against the
-concrete first-argument type of `bind`.  For named constructors such as
-`List` (`[a]`) this decomposes via the first-order rule; for anonymous
-type constructors (e.g. `stream → {value: a, rest: stream}`) the
-Miller pattern fragment fires and binds `m` to a type-level lambda.
-No annotation is required — the binding is inferred entirely from the
-`bind` implementation.
-
-For example, a list monad:
+`monad()` accepts any block with `bind` and `return`, so the checker
+cannot work out `m` from the call itself. It takes `m` from the
+binding's `monad:` metadata instead, which names the monad's wrapper
+type with `a` as the element:
 
 ```eu,notest
+` { monad: s"[a]" }
 my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
 ```
 
-The checker unifies `m a` against `[a]`, infers `m = List`, and gives
-`my-for.map` type `forall a b. (a → b) → [a] → [b]`.  Passing a
-non-function triggers a type warning:
+Here `m` is the list constructor, so `my-for.map` is checked as
+`(a → b) → [a] → [b]` and misuse warns:
 
 ```eu,notest
-[1, 2, 3] my-for.map(true)   # warning: expected a → b, found bool
+my-for.map(inc, 41)          # warning: expected [number], found number
+io.map(inc, 41)              # warning: expected IO(number), found number
+random.map(inc, 41)          # warning: expected any → {rest: any, value: number}, found number
 ```
 
-#### How combinator types are inferred
+Other type variables in the metadata, such as `stream` in the random
+monad's `stream → {value: a, rest: stream}`, are not fixed by it and
+are read as `any`. An identity monad, such as `let`, declares
+`monad: s"a"`, so `double({ :let x: "s" }.(x))` warns when `double`
+takes a number. A wrapper with several type variables, none of them
+`a`, names no element, and the monad stays unchecked.
 
-Monad combinator types are inferred automatically via higher-order
-pattern unification — no `monad:` annotation is needed for type
-checking.  When `monad()` is called with a concrete `bind`
-implementation, the checker unifies the `bind` argument type against
-the polymorphic `m a → (a → m b) → m b` signature.  If `m` is applied
-to a variable (the Miller pattern fragment), the unifier constructs a
-type-level lambda: for example, a `bind` whose first argument has type
-`stream → {value: a, rest: stream}` causes the checker to infer
-`m = λa. stream → {value: a, rest: stream}` and propagate that
-instantiation through all nine derived combinators.
+#### Monads without a wrapper type
 
-Named constructors (`List`, `IO`) are handled by the existing
-first-order rule: `m a` against `[a]` decomposes as `m = List`.
+A monad declared with `monad: true`, or with no `monad:` metadata at
+all, has an unknown wrapper: its derived combinators accept any
+action, and a block built with them (for example
+`{ :ident x: 1 }.{ a: x }.(a)`) is not mistaken for its first
+binding's type. Give the monad a `monad:` wrapper type to have its
+combinators checked.
 
-No annotation is required:
-
-```eu,notest
-my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
-```
-
-`my-for.bind` is inferred as `[a] → (a → [b]) → [b]`, `my-for.map`
-as `(a → b) → [a] → [b]`, and so on.
-
-#### `monad:` metadata for LSP hints
-
-The `monad:` metadata key is **not** used for type checking.  It is
-retained solely for A10 LSP element-type hints: when the language
-server displays inlay hints inside a monadic block, `monad:` tells it
-which element type to show next to each bound variable (e.g.
-`x: number` instead of `x: [number]`).
-
-```eu,notest
-` { monad: "[a]" }
-my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
-```
-
-Omitting `monad:` does not affect type checking; it only suppresses
-the LSP element-type inlay hints.
+The `monad:` type is also what the language server uses for
+element-type inlay hints inside a monadic block (e.g. `x: number`
+instead of `x: [number]`).
 
 ### What the checker validates
 

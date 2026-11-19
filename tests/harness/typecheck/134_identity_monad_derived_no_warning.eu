@@ -1,8 +1,31 @@
-` "Derived monad combinators on an identity-like monad, and on random, check clean (eu-oaz72.170)."
+{ import: "resource:do" }
+
+` "Derived monad combinators on an identity-like monad, and on random, check clean (eu-oaz72.170); monadic blocks and monad results used as blocks check clean too (eu-oaz72.171)."
 id-bind(m, f): f(m)
 
-id-monad: monad{bind: id-bind, return: id}
+id-monad: monad{bind: id-bind, return: identity}
 
 mapped: id-monad.map(inc, 41)
 joined: id-monad.join(42)
 random-mapped: random.map(inc, random.int(10))
+
+` "A user monad with no monad metadata, as in harness test 129."
+ident: monad{bind(ma, f): f(ma), return(a): a}
+
+let-chain: { :let x: 1 }.{ a: x }.(a)
+let-sum: { :let x: 1 y: 2 }.{ s: x + y }.(s)
+let-nested: { :let x: 1 }.{ :let y: x + 10 }.(y)
+ret-block: let.return{ a: 1 }.(a)
+` "Continuation for the bind-block check."
+wrap-a(x): let.return{ a: x }
+
+bind-block: let.bind(1, wrap-a).(a)
+ident-chain: { :ident x: 1 }.{ a: x }.(a)
+ident-implicit: { :ident _: 99 r: 7 }
+ident-has: ident-implicit has(:_)
+
+` { doc: "A do action, typed as its monad: metadata declares (a ctx → IO action of a value-and-ctx block)."
+    type: s"any → IO({value: number, ctx: any})" }
+act(c): io.return{ value: 1, ctx: c }
+
+do-mapped: do.map(inc, act)
