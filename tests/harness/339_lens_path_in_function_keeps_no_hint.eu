@@ -1,0 +1,20 @@
+{
+  title: "339 a lens path in a function body carries no checker hint"
+  doc: "eu-oaz72.183: the desugarer attaches a `__type_hint` to a lens
+        path for the type checker. It is checker-only and must not reach
+        run time, including where the path is a function's body (compiled
+        as a body rather than as a binding)."
+  import: "resource:lens"
+}
+
+h(z): ‹ :a ›
+
+hint-free: (h(1) meta) = {}
+focus: view(h(1), { a: 7 })
+
+checks: {
+  no-hint-in-function-body: hint-free
+  lens-still-works: focus = 7
+}
+
+RESULT: checks values all-true? then(:PASS, :FAIL)

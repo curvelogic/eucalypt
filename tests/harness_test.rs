@@ -6370,3 +6370,10 @@ pub fn test_336_list_split_on() {
 pub fn test_338_let_block_keeps_metadata() {
     run_test(&opts("338_let_block_keeps_metadata.eu"));
 }
+
+/// A lens path in a function body carries no checker hint at run time:
+/// the `compile_body` arm of the hint strip (eu-oaz72.183).
+#[test]
+pub fn test_339_lens_path_in_function_keeps_no_hint() {
+    run_test(&opts("339_lens_path_in_function_keeps_no_hint.eu"));
+}
