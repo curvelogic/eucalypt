@@ -300,6 +300,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(arith::MulMod));
     rt.add(Box::new(arith::PowMod));
     rt.add(Box::new(arith::ModInv));
+    rt.add(Box::new(dict::DictMergeWithStrict));
+    rt.add(Box::new(force::SeqListThen));
     rt.prepare(source_map);
     Box::new(rt)
 }

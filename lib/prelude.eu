@@ -2371,12 +2371,9 @@ dict: {
       type: s"(v → v → v) → dict(k, v) → dict(k, v) → dict(k, v)" }
   merge-with: '__DICT.MERGE_WITH'
 
-  ` { doc: "`dict.merge-with-strict(f, a, b)` - as `dict.merge-with`, but each combined value `f(va, vb)` is evaluated before it is stored."
+  ` { doc: "`dict.merge-with-strict(f, a, b)` - as `dict.merge-with`, but each combined value `f(va, vb)` is evaluated before the dict is returned, in constant stack however large `b` is."
       type: s"(v → v → v) → dict(k, v) → dict(k, v) → dict(k, v)" }
-  merge-with-strict(f, a, b): {
-    ` "merge the entry `[k, v]` of `b` into `acc`"
-    step(acc, [k, v]): (acc contains?(k)) then(acc update-strict(k, flip(f, v), null), acc assoc(k, v))
-  }.(b to-list foldl(step, a))
+  merge-with-strict: '__DICT.MERGE_WITH_STRICT'
 
   ` { doc: "`dict.from-block(b)` - create a dict from block `b`, keyed by its symbol keys. Values stay lazy."
       type: s"{..} → dict(symbol, any)" }

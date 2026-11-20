@@ -1,0 +1,3 @@
+exit: 1
+stderr: "expected dict, found number 5"
+location: 2:9

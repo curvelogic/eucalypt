@@ -1,0 +1,4 @@
+exit: 1
+stderr: "panic: from b"
+stderr-absent: "panic: from a"
+location: 2:52

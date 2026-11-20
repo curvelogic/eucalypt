@@ -2,6 +2,12 @@
 
 All notable changes to eucalypt are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- **`dict.merge-with-strict` is native** — same name and results, and the same evaluation order (`b`, then `a`, then the combined values in `b`'s key order), now the `DICT.MERGE_WITH_STRICT` intrinsic rather than a prelude fold. One edge case changes: `a` is now evaluated even when `b` is empty, so a non-dict `a` merged with an empty `b`, returned unchanged before, is now a type error, as it is for `dict.merge-with`. It runs in constant stack however large `b` is, and on the counting benchmark takes about half the time of the fold, level with the lazy `dict.merge-with` (measured-single, `docs/superpowers/reports/2026-11-18-native-merge-with-strict.md`).
+
 ## [0.16.0] - 2026-11-18
 
 Eucalypt 0.16, inspired by the approaching Advent of Code 2026,

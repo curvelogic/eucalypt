@@ -1227,6 +1227,19 @@ lazy_static! {
             ty: function(vec![str_(), str_(), list()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 230
+            // DICT.MERGE_WITH_STRICT(f, a, b): as DICT.MERGE_WITH, with
+            // each combined value evaluated before the dict is returned.
+            name: "DICT.MERGE_WITH_STRICT",
+            ty: function(vec![any(), dict_type(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![1, 2],
+    },
+    Intrinsic { // 231
+            // seqListThen(xs, r): force each element of xs, then return r.
+            name: "seqListThen",
+            ty: function(vec![list(), any(), any()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 
