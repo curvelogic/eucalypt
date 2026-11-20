@@ -8,9 +8,12 @@ running user code. There are two ways this happens:
    prelude-compile` — is embedded into the binary at compile time
    (`src/driver/resources.rs`, gated on `cfg(prelude_blob_ok)`, set by
    `build.rs` when the blob is present and its embedded source hash
-   matches `lib/prelude.eu`). At runtime the prelude's operators, type
-   summary, and compiled STG globals are loaded straight from the blob;
-   the prelude source is never parsed, cooked, or merged.
+   matches the inputs it was built from: `lib/prelude.eu`, the intrinsic
+   catalogue, the demand analysis and bytecode encoder, the STG sources
+   with their intrinsic wrappers, and the parser and core front end). At
+   runtime the prelude's operators, type summary, and compiled STG globals
+   are loaded straight from the blob; the prelude source is never parsed,
+   cooked, or merged.
 2. **Source-prelude fallback.** Used when no blob is embedded (a plain
    checkout with `lib/prelude.blob` absent — it is git-ignored — or a
    stale blob whose hash doesn't match), or when explicitly requested via
@@ -110,6 +113,27 @@ Because they are derived, they cannot drift from the definitions. The
 blob's freshness hash covers the analysis sources
 (`DEMAND_ANALYSIS_PATHS` in `src/eval/stg/wire_format.rs`), so a blob whose
 signatures came from an older analysis is stale, not misread.
+
+The hash also covers every `.rs` file under `src/eval/stg/` and
+`src/eval/machine/intrinsic.rs` (`STG_SOURCE_ROOTS`), because the blob
+bakes in the encoded intrinsic wrapper globals and the wrapper bodies
+inlined into prelude code. Editing a hand-written wrapper (for example in
+`src/eval/stg/force.rs`) therefore marks a local blob stale, and the build
+falls back to the source prelude, with a warning, until `cargo xtask
+prelude-compile` is rerun (eu-ox7qz).
+
+It covers the parser and the core front end too (`FRONT_END_SOURCE_ROOTS`):
+`src/syntax/rowan/` and the input, import and span modules beside it, and
+the core passes that `prelude-compile` runs before STG compilation
+(`src/core/desugar/`, `cook/`, `transform/`, `inline/`, the core expression
+and metadata, and the type-annotation renderer in
+`src/core/typecheck/parse.rs`, with the `types.rs` it uses, that the
+desugarer calls). Editing any of them marks a local blob stale in the same
+way (eu-d3ydw). The type checker proper, `src/core/verify/`,
+`src/core/simplify/`, `src/core/analyse/` and the dump and error modules
+are left out, since nothing in them can change a generated blob;
+`tests/wire_format_enforcement_test.rs` makes every file under `src/core`
+and `src/syntax` either hashed or excluded with a stated reason.
 
 ## What this means in practice
 

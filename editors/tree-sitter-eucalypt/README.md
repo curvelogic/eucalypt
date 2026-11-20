@@ -75,6 +75,13 @@ npm run test
 npx tree-sitter parse /path/to/file.eu
 ```
 
+`npm run test` runs `tree-sitter test` through `scripts/test-corpus.mjs`,
+which also fails the run where tree-sitter CLI 0.22.6 exits 0: a corpus case
+marked `:error` whose input parses without an error, an `:error` case marked
+`:fail-fast`, and a case with no `---` divider. Prefer it to a bare
+`npx tree-sitter test`. Note that `tree-sitter test --update` deletes `:error`
+cases from the file it rewrites, so add those after running it.
+
 ### Rust
 
 The Rust binding (`bindings/rust/lib.rs`) exports `language()`,

@@ -600,12 +600,12 @@ fn inlay_hint_shows_element_type_after_pipeline() {
 }
 
 #[test]
-fn inlay_hint_let_monad_shows_wrapper_not_element() {
+fn inlay_hint_let_monad_shows_element_type() {
     let mut s = LspTestSession::new();
-    // :let is untyped (monad: true) — no element type inference
+    // :let is the identity monad (monad: s"a"), so the bound name's
+    // element type is the binding's own type (eu-oaz72.183).
     s.run_pipeline("main: { :let x: 42 }.(x)");
     let hints = s.inlay_hints();
-    // Should NOT show a resolved element type — :let has no typed wrapper
     let number_hints: Vec<_> = hints
         .iter()
         .filter(
@@ -613,8 +613,8 @@ fn inlay_hint_let_monad_shows_wrapper_not_element() {
         )
         .collect();
     assert!(
-        number_hints.is_empty(),
-        ":let monad should not show element type hints, got: {:?}",
+        !number_hints.is_empty(),
+        ":let monad should show element type 'number', got: {:?}",
         hints
             .iter()
             .filter_map(|h| match &h.label {

@@ -1,0 +1,27 @@
+{
+  title: "338 :let bindings keep their value's metadata"
+  doc: "eu-oaz72.183: the type checker's `__type_hint` on a monadic binding
+        value is checker-only. Once `let` declared an `a` wrapper, the hint
+        reached run time: a `:let` binding lost its value's YAML tag and
+        `x meta` showed `__type_hint`. A binding's value, tag and metadata
+        must be exactly those of the bound expression."
+}
+
+` { tag: "!Ref" note: "kept" }
+y: { a: 1 }
+
+meta-of-let: { :let x: y }.(x meta)
+meta-in-list: { :let x: y }.[x] head meta
+meta-of-plain: { :let x: 1 }.(x meta)
+value-of-let: { :let x: y }.(x)
+
+checks: {
+  tag-kept: meta-of-let.tag = "!Ref"
+  other-meta-kept: meta-of-let.note = "kept"
+  tag-kept-in-list: meta-in-list.tag = "!Ref"
+  no-hint-on-let: meta-of-let has(:__type_hint) not
+  no-hint-on-plain: meta-of-plain = {}
+  value-unchanged: value-of-let = { a: 1 }
+}
+
+RESULT: checks values all-true? then(:PASS, :FAIL)

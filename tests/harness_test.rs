@@ -4776,10 +4776,115 @@ pub fn test_typecheck_133_prelude_override_type_mismatch() {
 }
 
 /// Derived monad combinators on identity-like monads and `random` check
-/// clean: an abstract `m a` is gradual against a concrete type (eu-oaz72.170).
+/// clean: an abstract `m a` is gradual against a concrete type (eu-oaz72.170);
+/// monadic blocks and monad results used as blocks check clean (eu-oaz72.171).
 #[test]
 pub fn test_typecheck_134_identity_monad_derived_no_warning() {
     run_typecheck_test("134_identity_monad_derived_no_warning.eu");
+}
+
+/// `io.map` on a non-IO argument warns: `m` is resolved to `IO` from the
+/// `monad:` metadata on `io` (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_154_io_monad_map_misuse_warns() {
+    run_typecheck_test("154_io_monad_map_misuse_warns.eu");
+}
+
+/// `random.map` on a non-action warns: `m` is resolved from the `monad:`
+/// metadata on `random` (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_155_random_monad_map_misuse_warns() {
+    run_typecheck_test("155_random_monad_map_misuse_warns.eu");
+}
+
+/// `random.join` on a string warns: its parameter is `m (m a)`, which the
+/// type parser and renderer must keep nested (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_156_random_monad_join_misuse_warns() {
+    run_typecheck_test("156_random_monad_join_misuse_warns.eu");
+}
+
+/// A user monad declaring `monad: s"a"` is the identity monad, so its
+/// derived `map` is checked precisely (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_157_metadata_identity_monad_map_misuse_warns() {
+    run_typecheck_test("157_metadata_identity_monad_map_misuse_warns.eu");
+}
+
+/// A `:let` block's result is checked: `let` is the identity monad
+/// (`monad: s"a"`) and the bind continuation's result is inferred
+/// (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_158_let_monad_block_misuse_warns() {
+    run_typecheck_test("158_let_monad_block_misuse_warns.eu");
+}
+
+/// `let.return` is the identity, so its result type is checked
+/// (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_159_let_monad_return_misuse_warns() {
+    run_typecheck_test("159_let_monad_return_misuse_warns.eu");
+}
+
+/// A misused binding in a typed monadic block is reported once, by the
+/// binding's `__type_hint` check, not again by `bind` now that its
+/// parameter is concrete (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_monadic_binding_mismatch_reported_once() {
+    for name in [
+        "010_for_number_binding.eu",
+        "011_for_string_binding.eu",
+        "013_io_number_binding.eu",
+        "063_for_wrong_binding.eu",
+        "085_random_wrong_binding.eu",
+    ] {
+        let path = format!("tests/harness/typecheck/{name}");
+        let output = std::process::Command::new(eu_binary())
+            .args(["check", &path])
+            .output()
+            .expect("failed to run eu check");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Strip ANSI colour codes, which the renderer may emit.
+        let mut plain = String::new();
+        let mut chars = stderr.chars();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                for c in chars.by_ref() {
+                    if c == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                plain.push(c);
+            }
+        }
+        let warnings = plain
+            .lines()
+            .filter(|l| l.starts_with("warning") && !l.starts_with("warning: eucalypt@"))
+            .count();
+        assert_eq!(warnings, 1, "{name}: expected one warning, got:\n{stderr}");
+    }
+}
+
+/// A lambda argument's result type is inferred in any higher-order call,
+/// so a misused result warns (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_161_lambda_result_inferred_misuse_warns() {
+    run_typecheck_test("161_lambda_result_inferred_misuse_warns.eu");
+}
+
+/// A correct higher-order call with an inferred lambda result checks
+/// clean (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_162_lambda_result_inferred_no_warning() {
+    run_typecheck_test("162_lambda_result_inferred_no_warning.eu");
+}
+
+/// `do`'s prelude actions match its declared wrapper, so a `:do` block of
+/// lifted state and random actions checks clean (eu-oaz72.183).
+#[test]
+pub fn test_typecheck_160_do_block_lifted_actions_no_warning() {
+    run_typecheck_test("160_do_block_lifted_actions_no_warning.eu");
 }
 
 /// A list-destructuring parameter with a block element is not a block
@@ -5717,6 +5822,22 @@ pub fn test_error_380_block_pattern_function_declaration() {
     run_error_test(&error_opts("380_block_pattern_function_declaration.eu"));
 }
 
+/// A block pattern as a bracket pair parameter is a located error (eu-hvuqc).
+#[test]
+pub fn test_error_381_bracket_pair_block_parameter() {
+    run_error_test(&error_opts("381_bracket_pair_block_parameter.eu"));
+}
+
+#[test]
+pub fn test_error_382_bracket_pair_block_parameter_parens() {
+    run_error_test(&error_opts("382_bracket_pair_block_parameter_parens.eu"));
+}
+
+#[test]
+pub fn test_error_383_bracket_pair_monad_marker_content() {
+    run_error_test(&error_opts("383_bracket_pair_monad_marker_content.eu"));
+}
+
 /// A non-integer argument to `combinations` is an error (eu-oaz72.26).
 #[test]
 pub fn test_error_336_non_integer_combinations() {
@@ -6312,4 +6433,18 @@ pub fn test_missing_prelude_path_is_an_error() {
 #[test]
 pub fn test_336_list_split_on() {
     run_test(&opts("336_list_split_on.eu"));
+}
+
+/// A `:let` binding keeps its value's tag and metadata: the checker's
+/// `__type_hint` never reaches run time (eu-oaz72.183).
+#[test]
+pub fn test_338_let_block_keeps_metadata() {
+    run_test(&opts("338_let_block_keeps_metadata.eu"));
+}
+
+/// A lens path in a function body carries no checker hint at run time:
+/// the `compile_body` arm of the hint strip (eu-oaz72.183).
+#[test]
+pub fn test_339_lens_path_in_function_keeps_no_hint() {
+    run_test(&opts("339_lens_path_in_function_keeps_no_hint.eu"));
 }

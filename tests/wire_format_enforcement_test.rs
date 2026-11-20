@@ -19,8 +19,9 @@
 use std::path::{Path, PathBuf};
 
 use eucalypt::eval::stg::wire_format::{
-    blob_source_hash, BLOB_PATH, BUILD_RERUN_PATHS, DEMAND_ANALYSIS_PATHS, INTRINSIC_TABLE_PATH,
-    PRELUDE_SOURCE_PATH, WIRE_FORMAT_MODULE_PATH,
+    blob_source_hash, read_front_end_sources, read_stg_sources, BLOB_PATH, BUILD_RERUN_PATHS,
+    DEMAND_ANALYSIS_PATHS, FRONT_END_SOURCE_ROOTS, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH,
+    STG_SOURCE_ROOTS, WIRE_FORMAT_MODULE_PATH,
 };
 
 /// Workspace root — `CARGO_MANIFEST_DIR` for the `eucalypt` package.
@@ -42,9 +43,13 @@ fn all_rust_sources() -> Vec<(String, String)> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() {
+            // `DirEntry::file_type` does not follow symlinks, so a symlinked
+            // directory is not entered, as `read_source_roots` does not.
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
                 walk(&path, out);
-            } else if path.extension().is_some_and(|e| e == "rs") {
+            } else if entry.file_type().is_ok_and(|t| t.is_file())
+                && path.extension().is_some_and(|e| e == "rs")
+            {
                 out.push(path);
             }
         }
@@ -149,6 +154,8 @@ fn the_build_script_reruns_on_the_inputs_it_hashes() {
     ]
     .into_iter()
     .chain(DEMAND_ANALYSIS_PATHS.iter().copied())
+    .chain(STG_SOURCE_ROOTS.iter().copied())
+    .chain(FRONT_END_SOURCE_ROOTS.iter().copied())
     {
         assert!(
             BUILD_RERUN_PATHS.contains(&required),
@@ -216,7 +223,9 @@ fn the_embedded_blob_matches_the_inputs_on_disk() {
         .iter()
         .map(|p| std::fs::read(root().join(p)).expect("demand analysis source"))
         .collect();
-    let expected = blob_source_hash(&prelude, &table, &analysis);
+    let stg = read_stg_sources(&root()).expect("STG sources");
+    let front_end = read_front_end_sources(&root()).expect("front-end sources");
+    let expected = blob_source_hash(&prelude, &table, &analysis, &stg, &front_end);
 
     let embedded = read_blob_source_hash(eucalypt::driver::resources::PRELUDE_BLOB_BYTES)
         .expect("embedded blob carries a source hash");
@@ -240,11 +249,187 @@ fn the_freshness_hash_covers_the_real_inputs() {
         .extend_from_slice(b"\n// Intrinsic { name: \"CONTRACT_FAIL\", .. }: an added intrinsic\n");
 
     assert_ne!(
-        blob_source_hash(&prelude, &table, &[]),
-        blob_source_hash(&prelude, &table_with_new_intrinsic, &[]),
+        blob_source_hash(&prelude, &table, &[], &[], &[]),
+        blob_source_hash(&prelude, &table_with_new_intrinsic, &[], &[], &[]),
         "editing the intrinsic catalogue must invalidate the prelude blob without \
          anyone hand-bumping BYTECODE_WIRE_FORMAT_VERSION (eu-3skeg)"
     );
+}
+
+/// Every hand-written intrinsic wrapper is a blob input (eu-ox7qz): the blob
+/// bakes in the encoded wrapper globals and the wrapper bodies inlined into
+/// prelude code, so a file that defines `StgIntrinsic::wrapper` and is not
+/// under a hashed STG root would let a wrapper edit leave a stale blob
+/// reported fresh — blob mode silently running the old wrapper.
+///
+/// Fault injection: drop `src/eval/stg` (or `src/eval/machine/intrinsic.rs`)
+/// from `STG_SOURCE_ROOTS` and this fails.
+#[test]
+fn every_intrinsic_wrapper_source_is_hashed() {
+    let hashed: Vec<String> = read_stg_sources(&root())
+        .expect("STG sources")
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    let wrappers: Vec<String> = all_rust_sources()
+        .into_iter()
+        .filter(|(path, text)| path.starts_with("src/") && text.contains("fn wrapper("))
+        .map(|(path, _)| path)
+        .collect();
+    assert!(
+        wrappers.iter().any(|p| p == "src/eval/stg/force.rs"),
+        "the scan found no wrapper in src/eval/stg/force.rs: {wrappers:?}"
+    );
+    for path in &wrappers {
+        assert!(
+            hashed.contains(path),
+            "{path} defines an intrinsic wrapper but is not hashed into the prelude \
+             blob's freshness key — add it under STG_SOURCE_ROOTS (eu-ox7qz)"
+        );
+    }
+}
+
+/// Files under `src/core` and `src/syntax` deliberately left out of the
+/// blob's freshness key, each with the reason nothing in it can change a
+/// generated blob. A directory entry ends with `/`. Every entry must exist
+/// and must not also be hashed. See `FRONT_END_SOURCE_ROOTS` (eu-d3ydw).
+const FRONT_END_UNHASHED: &[(&str, &str)] = &[
+    ("src/core/mod.rs", "module declarations"),
+    ("src/core/error.rs", "failure diagnostics"),
+    ("src/core/analyse/", "test plans for eu test"),
+    ("src/core/export/", "dump rendering"),
+    (
+        "src/core/simplify/",
+        "prelude-compile runs no elimination pass",
+    ),
+    (
+        "src/core/verify/",
+        "checks that can fail generation, never alter it",
+    ),
+    // The type checker proper, file by file, so that a new file under
+    // `src/core/typecheck/` (a renderer split out of `parse.rs`, say) must
+    // be decided on rather than excluded by default. Its result is not
+    // baked: prelude-compile type-checks only as a sanity pass.
+    ("src/core/typecheck/mod.rs", "module declarations"),
+    ("src/core/typecheck/check.rs", "checker; result not baked"),
+    ("src/core/typecheck/env.rs", "checker; result not baked"),
+    ("src/core/typecheck/error.rs", "checker diagnostics"),
+    (
+        "src/core/typecheck/resolve_typedata.rs",
+        "checker; result not baked",
+    ),
+    ("src/core/typecheck/subtype.rs", "checker; result not baked"),
+    ("src/core/typecheck/unify.rs", "checker; result not baked"),
+    ("src/syntax/mod.rs", "module declarations"),
+    ("src/syntax/error.rs", "failure diagnostics"),
+    ("src/syntax/export/", "dump rendering"),
+];
+
+/// Every Rust file of the parser and core front end is either hashed into
+/// the blob's freshness key — through `FRONT_END_SOURCE_ROOTS` or
+/// `DEMAND_ANALYSIS_PATHS` — or on `FRONT_END_UNHASHED` with a reason, so a
+/// new file under `src/core` or `src/syntax` cannot leave an edit to it
+/// reported fresh without someone deciding so (eu-d3ydw).
+///
+/// Fault injection: drop `src/core/desugar` from `FRONT_END_SOURCE_ROOTS`,
+/// or add a file under `src/core/typecheck/`, and this fails.
+#[test]
+fn every_front_end_source_is_hashed_or_excluded_with_a_reason() {
+    let hashed: Vec<String> = read_front_end_sources(&root())
+        .expect("front-end sources")
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    let front_end: Vec<String> = all_rust_sources()
+        .into_iter()
+        .map(|(path, _)| path)
+        .filter(|path| path.starts_with("src/core/") || path.starts_with("src/syntax/"))
+        // Dot-files (editor lock and backup files) are skipped, as
+        // `read_source_roots` skips them.
+        .filter(|path| !path.split('/').any(|c| c.starts_with('.')))
+        .collect();
+    assert!(
+        front_end
+            .iter()
+            .any(|p| p == "src/core/desugar/rowan_ast.rs"),
+        "the scan found no desugarer: {front_end:?}"
+    );
+    for path in &front_end {
+        let excluded = FRONT_END_UNHASHED.iter().any(|(entry, _)| {
+            if entry.ends_with('/') {
+                path.starts_with(entry)
+            } else {
+                path == entry
+            }
+        });
+        let in_demand_analysis = DEMAND_ANALYSIS_PATHS.contains(&path.as_str());
+        assert!(
+            hashed.contains(path) || in_demand_analysis || excluded,
+            "{path} is neither hashed into the prelude blob's freshness key nor \
+             excluded with a reason — add it under FRONT_END_SOURCE_ROOTS, or to \
+             FRONT_END_UNHASHED if nothing in it can change a generated blob (eu-d3ydw)"
+        );
+        assert!(
+            !(excluded && (hashed.contains(path) || in_demand_analysis)),
+            "{path} is both hashed and listed in FRONT_END_UNHASHED"
+        );
+    }
+    // A stale exclusion (a file moved or deleted) would otherwise sit
+    // unnoticed and could later exclude a new file of the same name.
+    for (entry, _) in FRONT_END_UNHASHED {
+        assert!(
+            root().join(entry).exists(),
+            "FRONT_END_UNHASHED names {entry}, which no longer exists"
+        );
+    }
+}
+
+/// The type-annotation renderer the desugarer runs is hashed even though the
+/// checker beside it is not: the desugarer bakes `render_scheme`'s output
+/// into the blob's desugared cores (eu-d3ydw).
+///
+/// Fault injection: drop `src/core/typecheck/parse.rs` from
+/// `FRONT_END_SOURCE_ROOTS` and this fails.
+#[test]
+fn the_desugarer_s_type_renderer_is_hashed() {
+    let hashed: Vec<String> = read_front_end_sources(&root())
+        .expect("front-end sources")
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    for path in [
+        "src/core/typecheck/parse.rs",
+        "src/core/typecheck/types.rs",
+        "src/syntax/rowan/parse.rs",
+        "src/core/expr.rs",
+    ] {
+        assert!(
+            hashed.iter().any(|p| p == path),
+            "{path} not hashed: {hashed:?}"
+        );
+    }
+    assert!(
+        !hashed.iter().any(|p| p == "src/core/typecheck/check.rs"),
+        "the checker is not a blob input"
+    );
+}
+
+/// Reading the STG sources is deterministic and keyed by workspace-relative
+/// path, so `build.rs` (run from the package root) and `xtask` (given an
+/// absolute workspace root) compute the same hash.
+#[test]
+fn stg_sources_are_read_relative_and_sorted() {
+    let absolute = read_stg_sources(&root()).expect("STG sources");
+    let paths: Vec<&str> = absolute.iter().map(|(p, _)| p.as_str()).collect();
+    let mut sorted = paths.clone();
+    sorted.sort();
+    assert_eq!(paths, sorted);
+    assert!(paths.contains(&"src/eval/stg/force.rs"), "{paths:?}");
+    assert!(
+        paths.contains(&"src/eval/machine/intrinsic.rs"),
+        "{paths:?}"
+    );
+    assert!(paths.iter().all(|p| p.ends_with(".rs")));
 }
 
 /// The embedded blob carries the demand signatures the analysis derived for

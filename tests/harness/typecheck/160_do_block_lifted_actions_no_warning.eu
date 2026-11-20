@@ -1,0 +1,14 @@
+{ import: ["resource:state", "resource:do"] }
+
+# The prelude's own do actions match do's declared wrapper
+# ctx → IO({value: a, ctx: ctx}), so a :do block using lifted state and
+# random actions checks clean (eu-oaz72.183).
+
+pipeline: { :do
+  _: do.put(:count, 1)
+  _: do.st(:count %! (+ 9))
+  r1: do.float
+  r2: do.int(6)
+  s: do.get
+  n: do.query(_.count)
+}.([r1, r2, n])

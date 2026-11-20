@@ -1,0 +1,2 @@
+` "io.map on a non-IO action warns: m is IO, from the monad: metadata on io (eu-oaz72.183)."
+mapped: io.map(inc, 41)

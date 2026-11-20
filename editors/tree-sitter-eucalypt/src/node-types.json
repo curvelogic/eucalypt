@@ -181,6 +181,10 @@
         {
           "type": "identifier",
           "named": true
+        },
+        {
+          "type": "quoted_identifier",
+          "named": true
         }
       ]
     }
@@ -199,6 +203,10 @@
         },
         {
           "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         }
       ]
@@ -254,6 +262,18 @@
         },
         {
           "type": "declaration",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "list_pattern",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         },
         {
@@ -313,6 +333,10 @@
         },
         {
           "type": "list_pattern",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         }
       ]
@@ -567,6 +591,10 @@
         {
           "type": "list_pattern",
           "named": true
+        },
+        {
+          "type": "quoted_identifier",
+          "named": true
         }
       ]
     }
@@ -593,6 +621,10 @@
         },
         {
           "type": "list_pattern",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         }
       ]
@@ -685,14 +717,26 @@
     "fields": {},
     "children": {
       "multiple": true,
-      "required": true,
+      "required": false,
       "types": [
+        {
+          "type": "cons_pattern",
+          "named": true
+        },
         {
           "type": "identifier",
           "named": true
         },
         {
+          "type": "list_pattern",
+          "named": true
+        },
+        {
           "type": "operator",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         }
       ]
@@ -720,6 +764,10 @@
         },
         {
           "type": "list_pattern",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         }
       ]

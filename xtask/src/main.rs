@@ -50,8 +50,8 @@ use eucalypt::{
         make_standard_runtime,
         syntax::LambdaForm,
         wire_format::{
-            blob_source_hash, BLOB_PATH, DEMAND_ANALYSIS_PATHS, INTRINSIC_TABLE_PATH,
-            PRELUDE_SOURCE_PATH,
+            blob_source_hash, read_front_end_sources, read_stg_sources, BLOB_PATH,
+            DEMAND_ANALYSIS_PATHS, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH,
         },
     },
     syntax::input::{Input, Locator},
@@ -105,8 +105,10 @@ fn compile_prelude_in(workspace_root: &Path) -> Result<()> {
     // the module), so the stamp written here and the expectation checked there
     // cannot drift. It covers the prelude source, the intrinsic catalogue —
     // whose length fixes the global slot numbering baked in below — the
-    // demand analysis that derives the baked signatures (step 5b), and the
-    // BV1 wire-format version.
+    // demand analysis that derives the baked signatures (step 5b), the STG
+    // sources (compiler and intrinsic wrappers) whose code is baked in, the
+    // parser and core front end that run in step 2, and the BV1 wire-format
+    // version.
     let source_bytes = std::fs::read(&prelude_src)
         .with_context(|| format!("reading {}", prelude_src.display()))?;
     let intrinsic_table_bytes = std::fs::read(&intrinsic_table)
@@ -118,10 +120,15 @@ fn compile_prelude_in(workspace_root: &Path) -> Result<()> {
             std::fs::read(&path).with_context(|| format!("reading {}", path.display()))
         })
         .collect::<Result<Vec<_>>>()?;
+    let stg_sources = read_stg_sources(workspace_root).context("reading the STG sources")?;
+    let front_end_sources =
+        read_front_end_sources(workspace_root).context("reading the front-end sources")?;
     let source_hash = blob_source_hash(
         &source_bytes,
         &intrinsic_table_bytes,
         &demand_analysis_bytes,
+        &stg_sources,
+        &front_end_sources,
     );
 
     // ── 2. Run the front-end pipeline ────────────────────────────────────────
@@ -803,6 +810,15 @@ mod tests {
             let to = dir.join(rel);
             std::fs::create_dir_all(to.parent().unwrap()).unwrap();
             std::fs::copy(real.join(rel), &to).unwrap();
+        }
+        let sources = read_stg_sources(&real)
+            .unwrap()
+            .into_iter()
+            .chain(read_front_end_sources(&real).unwrap());
+        for (rel, bytes) in sources {
+            let to = dir.join(rel);
+            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+            std::fs::write(&to, bytes).unwrap();
         }
         let source = std::fs::read_to_string(real.join(PRELUDE_SOURCE_PATH)).unwrap();
         let prelude = dir.join(PRELUDE_SOURCE_PATH);

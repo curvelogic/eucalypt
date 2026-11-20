@@ -1,0 +1,34 @@
+# Quoted names in parameter patterns and operator operands (eu-aejhk) are
+# parameters, as plain names are.
+
+f('q', b): 'q' + b
+# ^ parameter
+#      ^ parameter
+
+g(['h' : 't']): 't'
+#  ^ parameter
+#        ^ parameter
+
+h({'x'}, {y: 'z'}): 'x'
+#  ^ parameter
+#         ^ parameter
+#            ^ parameter
+
+k{'x'}: 'x'
+# ^ parameter
+
+m['a', b]: 'a'
+# ^ parameter
+
+('l' +++ 'r'): 'l'
+#^ parameter
+#        ^ parameter
+
+n(['a', b]): 'a'
+#  ^ parameter
+
+(! 'x'): 'x'
+#  ^ parameter
+
+('x' !!!): 'x'
+#^ parameter

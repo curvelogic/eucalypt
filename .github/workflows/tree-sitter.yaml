@@ -40,8 +40,12 @@ jobs:
         run: npx tree-sitter generate
         working-directory: editors/tree-sitter-eucalypt
 
+      # npm test wraps tree-sitter test (scripts/test-corpus.mjs, eu-2skal):
+      # tree-sitter CLI 0.22.6 exits 0 when an :error corpus case parses
+      # cleanly, when an :error case is :fail-fast, and when a case has no
+      # divider; the wrapper fails on each.
       - name: Run tree-sitter's own corpus tests
-        run: npx tree-sitter test
+        run: npm test
         working-directory: editors/tree-sitter-eucalypt
 
       - name: Make tree-sitter CLI available on PATH

@@ -33,7 +33,7 @@
 //!
 //! | Field | Purpose | Granularity | Pipeline stage | Consumer | Snapshot / derived |
 //! |---|---|---|---|---|---|
-//! | `source_hash` | SHA-256 of `lib/prelude.eu`, `src/eval/intrinsics.rs` and the wire-format version (see `stg::wire_format`); checked by `build.rs` | — | — | `build.rs` staleness check | — |
+//! | `source_hash` | SHA-256 of `lib/prelude.eu`, `src/eval/intrinsics.rs`, the wire-format version and the sources that build the blob (demand analysis, STG, front end; see `stg::wire_format::blob_source_hash`); checked by `build.rs` | — | — | `build.rs` staleness check | — |
 //! | `nodes` / `forms_pool` / `binding_entries` | STG arena: compiled lambda forms for every prelude global | binding (compiled) | `stg` (post `eu dump stg`) | Runtime global list (`rt.set_prelude_bindings`), consumed by the bytecode encoder | derived (compiled, not a source-structure snapshot) |
 //! | `name_to_slot` | Binding name → global slot index | — | — | STG compiler (`Ref::G` resolution), loader | — |
 //! | `binding_spans` | Byte span of each binding's declaration in `lib/prelude.eu`, in slot order | binding | desugared (`SourceMap` lookup of the peeled body's Smid) | blob-mode trace renderers, via `SourceMap::global_slot_info` (eu-7x0r) | derived (span extract) |

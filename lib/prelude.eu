@@ -172,7 +172,7 @@ random: monad{bind: random-bind, return: random-ret} {
   as-list(s): cons(__STREAM_VALUE(s), as-list(__STREAM_ADVANCE(s)))
 
   ` { doc: "random.float - state-monad action returning a random float in [0,1)."
-      type: s"any → {..}" }
+      type: s"any → {value: number, rest: any, ..}" }
   float(s): {
     pair: __STREAM_FLOAT(s)
     value: pair head
@@ -180,7 +180,7 @@ random: monad{bind: random-bind, return: random-ret} {
   }
 
   ` { doc: "random.int(n) - state-monad action returning a random integer in [0,n)."
-      type: s"number → any → {..}" }
+      type: s"number → any → {value: number, rest: any, ..}" }
   int(n, s): {
     pair: __STREAM_INT(n, s)
     value: pair head
@@ -188,7 +188,7 @@ random: monad{bind: random-bind, return: random-ret} {
   }
 
   ` { doc: "random.split - state-monad action that splits the stream into two independent streams. Returns a value/rest block where value and rest are each independent streams."
-      type: s"any → {..}" }
+      type: s"any → {value: any, rest: any, ..}" }
   split(s): {
     pair: __STREAM_SPLIT(s)
     value: pair head
@@ -196,7 +196,7 @@ random: monad{bind: random-bind, return: random-ret} {
   }
 
   ` { doc: "random.choice(list) - state-monad action returning a random element from list."
-      type: s"[a] → any → {..}" }
+      type: s"[a] → any → {value: a, rest: any, ..}" }
   choice(lst, stream): {
     r: int(lst count, stream)
     next: random-ret(lst nth(r.value), r.rest)
@@ -205,7 +205,7 @@ random: monad{bind: random-bind, return: random-ret} {
   }
 
   ` { doc: "random.shuffle(list) - state-monad action returning a shuffled copy of list."
-      type: s"[a] → any → {..}" }
+      type: s"[a] → any → {value: [a], rest: any, ..}" }
   shuffle(lst): {
     ` { type: s"[a] → number → [a] → any → {..}" }
     shuffle-impl(remaining, n, acc, stream):
@@ -224,7 +224,7 @@ random: monad{bind: random-bind, return: random-ret} {
   }.(shuffle-impl(lst, lst count, []))
 
   ` { doc: "random.sample(n, list) - state-monad action returning n elements sampled without replacement; a non-integer n is an error."
-      type: s"number → [a] → any → {..}" }
+      type: s"number → [a] → any → {value: [a], rest: any, ..}" }
   sample(n, lst, stream): __require-int("random.sample count", n, {
     shuffled: shuffle(lst, stream)
     value: shuffled.value __take(n)
@@ -2585,7 +2585,7 @@ graph: {
 ##
 
 ` { doc: "Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha."
-    monad: true }
+    monad: s"a" }
 let: monad({bind(m, f): f(m), return: identity})
 
 ##
