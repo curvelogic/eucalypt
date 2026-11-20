@@ -44,7 +44,7 @@
   },
   "scripts": {
     "build": "tree-sitter generate",
-    "test": "tree-sitter test",
+    "test": "node scripts/test-corpus.mjs",
     "parse": "tree-sitter parse",
     "install": "node-gyp-build",
     "prebuildify": "prebuildify --napi --strip",
