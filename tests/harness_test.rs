@@ -3219,6 +3219,9 @@ pub fn test_250_dict() {
         "to-list-shared",
         "update-shared",
         "merge-shared",
+        // `merge-with-strict` forces the cell it stores, so later reads
+        // share that one evaluation (eu-oaz72.124).
+        "merge-strict-shared",
         // A thunk over an evaluated variable, stored and also read through its
         // own slot, or stored twice: still one evaluation (eu-oaz72.84).
         "slot-shared",
@@ -3827,6 +3830,27 @@ pub fn test_error_250_dict_update_strict() {
 /// eu-oaz72.21: `dict.merge-with-strict` evaluates each combined value when it stores it.
 pub fn test_error_250_dict_merge_strict() {
     run_error_test(&error_opts("250_dict_merge_strict.eu"));
+}
+
+#[test]
+/// eu-oaz72.124: `dict.merge-with-strict` evaluates the combined value at every
+/// shared key, not only the first.
+pub fn test_error_250_dict_merge_strict_later() {
+    run_error_test(&error_opts("250_dict_merge_strict_later.eu"));
+}
+
+#[test]
+/// eu-oaz72.124: `dict.merge-with-strict` evaluates `b` before `a`, so when
+/// both fail the error is `b`'s.
+pub fn test_error_250_dict_merge_strict_order() {
+    run_error_test(&error_opts("250_dict_merge_strict_order.eu"));
+}
+
+#[test]
+/// eu-oaz72.124: `dict.merge-with-strict` rejects a non-dict `a` even when `b`
+/// is empty.
+pub fn test_error_250_dict_merge_strict_not_dict() {
+    run_error_test(&error_opts("250_dict_merge_strict_not_dict.eu"));
 }
 
 #[test]

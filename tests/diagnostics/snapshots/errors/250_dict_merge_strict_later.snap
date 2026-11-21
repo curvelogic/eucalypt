@@ -1,0 +1,59 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/250_dict_merge_strict_later
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_merge_strict_later.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_merge_strict_later.eu:2:30
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: last shared key
+  ┌─ tests/harness/errors/250_dict_merge_strict_later.eu:2:30
+  │
+2 │ combine(a, b): (b = 30) then(panic("last shared key"), a + b)
+  │                              ^^^^^^^^^^^^^^^^^^^^^^^^
+3 │
+4 │ result: dict.merge-with-strict(combine, dict.of[[1, 1], [2, 2], [3, 3]], dict.of[[1, 10], [2, 20], [3, 30]]) dict.size
+  │         ---------------------------------------------------------------------------------------------------- called from here
+  │
+  = while evaluating (outermost first):
+    - result at 250_dict_merge_strict_later.eu:4:110
+    - result at 250_dict_merge_strict_later.eu:4:9
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_merge_strict_later.eu:2:30
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: last shared key
+  ┌─ tests/harness/errors/250_dict_merge_strict_later.eu:2:30
+  │
+2 │ combine(a, b): (b = 30) then(panic("last shared key"), a + b)
+  │ -----------------------------^^^^^^^^^^^^^^^^^^^^^^^^--------
+  │ │
+  │ called from here
+  │
+  = while evaluating (outermost first):
+    - result at 250_dict_merge_strict_later.eu:4:110
+    - result at 250_dict_merge_strict_later.eu:4:9

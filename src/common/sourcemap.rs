@@ -1269,6 +1269,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "DICT.UPDATE" => Some("dict.update"),
         "DICT.UPDATE_STRICT" => Some("dict.update-strict"),
         "DICT.MERGE_WITH" => Some("dict.merge-with"),
+        "DICT.MERGE_WITH_STRICT" => Some("dict.merge-with-strict"),
         "DICT.TO_BLOCK" => Some("dict.to-block"),
 
         // Lookup error path
@@ -1288,7 +1289,9 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "AND" | "OR" | "SATURATED" => None,
         // Internal block/list helpers
         "LOOKUPOR#" | "MATCHES_KEY" | "EXTRACT_VALUE" | "EXTRACT_KEY" | "PACK_PAIR"
-        | "BLOCK_PAIR" | "seqStrList" | "seqKey" | "seqDictPairs" | "NV.ALL[*]" => None,
+        | "BLOCK_PAIR" | "seqStrList" | "seqKey" | "seqDictPairs" | "seqListThen" | "NV.ALL[*]" => {
+            None
+        }
         // Internal constants and data constructors
         "KNIL" | "K[]" | "K{}" | "DQ" | "IFIELDS" | "SUPPRESSES" | "REQUIRES" => None,
 

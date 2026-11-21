@@ -1,0 +1,3 @@
+exit: 1
+stderr: "last shared key"
+location: 2:30

@@ -1,0 +1,4 @@
+` "`dict.merge-with-strict` evaluates the combined value at every shared key, not only the first: here only the last one fails."
+combine(a, b): (b = 30) then(panic("last shared key"), a + b)
+
+result: dict.merge-with-strict(combine, dict.of[[1, 1], [2, 2], [3, 3]], dict.of[[1, 10], [2, 20], [3, 30]]) dict.size

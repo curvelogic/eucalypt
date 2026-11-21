@@ -12161,7 +12161,7 @@ d2: set.diff(b, a) set.to-list     //=> [1]
 | `dict.update` | Return dict `d` with key `k` mapped to the lazy value `f(old)`, where `old` is the value at `k`, or `default` if `d` does not hold `k` |
 | `dict.update-strict` | As `dict.update`, but `f(old)` is evaluated before it is stored, so repeated updates (such as counting) do not build up unevaluated values |
 | `dict.merge-with` | Return the union of dicts `a` and `b`. Where both hold a key, the value is the lazy `f(va, vb)`, with `a`'s value first, and `a`'s key is kept |
-| `dict.merge-with-strict(f, a, b)` | As `dict.merge-with`, but each combined value `f(va, vb)` is evaluated before it is stored |
+| `dict.merge-with-strict` | As `dict.merge-with`, but each combined value `f(va, vb)` is evaluated before the dict is returned, in constant stack however large `b` is |
 | `dict.from-block(b)` | Create a dict from block `b`, keyed by its symbol keys. Values stay lazy |
 | `dict.to-block` | Return a block of the entries of dict `d` in key order. Symbol keys are kept, string keys become symbols, and number keys become symbols of their rendered text. A list key, or two keys that become the same symbol (a string and a symbol with the same text, say), is an error |
 

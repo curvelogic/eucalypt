@@ -1,0 +1,2 @@
+` "`dict.merge-with-strict` checks that `a` is a dict even when `b` is empty, as `dict.merge-with` does."
+result: dict.merge-with-strict(+, 5, dict.empty) dict.size

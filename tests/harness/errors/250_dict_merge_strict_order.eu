@@ -1,0 +1,2 @@
+` "`dict.merge-with-strict` evaluates `b` before `a`, as the prelude fold it replaced did, so when both fail the error is `b`'s."
+result: dict.merge-with-strict(+, panic("from a"), panic("from b")) dict.size

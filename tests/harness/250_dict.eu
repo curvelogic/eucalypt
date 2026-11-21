@@ -7,8 +7,8 @@
         docs/superpowers/plans/2026-11-12-dict-design.md). Each target
         computes `ok` from its checks. The tick and peak-heap gates in
         `tests/harness_test.rs` run the `fold`, `*-shared`, `merged-*`,
-        `assoc-chain`, `assoc-chain-lists`, `update-*` and `merge-shared`
-        targets."
+        `assoc-chain`, `assoc-chain-lists`, `update-*`, `merge-shared` and
+        `merge-strict-shared` targets."
 }
 
 ` "the target computes the right value"
@@ -283,6 +283,12 @@ ordered-ops: {
     (dict.merge-with(+, dict.of[[1, 1]], dict.of[[1.0, 2]]) dict.keys head str.of) = "1",
     (dict.merge-with(+, dict.of[[1.0, 1]], dict.of[[1, 2]]) dict.keys head str.of) = "1.0",
     (dict.merge-with-strict(never2, a, dict.of[[9, "a9"]]) dict.size) = 4,
+    (dict.merge-with-strict(+, dict.of[[1, 1]], dict.of[[1.0, 2]]) dict.keys head str.of) = "1",
+    (dict.merge-with-strict(+, dict.of[[1.0, 1]], dict.of[[1, 2]]) dict.keys head str.of) = "1.0",
+    (dict.merge-with-strict(never2, a, dict.empty) dict.to-list) = (a dict.to-list),
+    (dict.merge-with-strict(never2, dict.empty, b) dict.to-list) = (b dict.to-list),
+    (dict.merge-with-strict(+, nums, nums) dict.values) = (range(0, 20) map(* 2)),
+    (dict.merge-with-strict(+, dict.of[[1, never(1)], [2, 1]], dict.of[[2, 2], [3, never(3)]]) dict.get(2)) = 3,
     (a dict.merge-with(ba, b) dict.get(2)) = ["a2", "b2"]
   ]
 
@@ -453,6 +459,39 @@ merge-shared: {
   y: [d dict.get(:k), d dict.dissoc(:j) dict.get(:k), d dict.values head]
   ok: y = [199990003, 199990003, 199990003]
 }
+
+` { target: :merge-strict-shared
+    verify: [:passes] }
+merge-strict-shared: {
+  ` :suppress
+  d: dict.merge-with-strict(combine, dict.of[[:k, 1]], dict.of[[:k, 2]])
+  y: [d dict.get(:k), d dict.dissoc(:j) dict.get(:k), d dict.values head]
+  ok: y = [199990003, 199990003, 199990003]
+}
+
+#
+# Stack: `dict.merge-with-strict` evaluates its combined values in a loop
+# that runs in constant stack however large `b` is (eu-oaz72.124).
+#
+
+` "the size of the dicts `merge-strict-stack` merges"
+merge-n: 10000
+
+` "map `k` to itself in `acc`"
+add-self(acc, k): acc dict.assoc(k, k)
+
+` { target: :merge-strict-stack
+    verify: [:merge-stack-checks] }
+merge-strict-stack: {
+  ` :suppress
+  d: range(0, merge-n) foldl-strict(add-self, dict.empty)
+  ` :suppress
+  m: dict.merge-with-strict(+, d, d)
+  total: m dict.values foldl-strict(+, 0)
+}
+
+` "the merge is right and its stack stays small"
+merge-stack-checks(context): ((context.result.total = merge-n * (merge-n - 1)) ∧ (context.stats.max-stack < 1000)) then(:PASS, :FAIL)
 
 #
 # Retention: each version of a dict threaded through a loop must become
